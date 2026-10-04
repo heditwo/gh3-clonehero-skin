@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export MISE_QUIET=1
+export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
+
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+game_dir="$(realpath "${GH3_CLONE_HERO_DIR:-$HOME/games/clonehero-gh3-melon}")"
+song_dir="$(realpath "${GH3_SKIN_PREVIEW_SONG:-$game_dir/PlayerData/Songs/GH3 Skin Preview}")"
+instance="$(hyprctl instances -j | jq -r '.[0].instance')"
+output="${GH3_SKIN_VIDEO:-$project_dir/preview-gameplay.mp4}"
+seconds="${GH3_SKIN_VIDEO_SECONDS:-15}"
+trim="${GH3_SKIN_VIDEO_TRIM:-13.5}"
+framerate="${GH3_SKIN_VIDEO_FPS:-60}"
+display_number="$((100 + $$ % 10000))"
+log="$(mktemp /tmp/opencode/gh3-video.XXXXXX.log)"
+xlog="$(mktemp /tmp/opencode/gh3-xwayland.XXXXXX.log)"
+raw="$(mktemp /tmp/opencode/gh3-video-raw.XXXXXX.mp4)"
+clean="$(mktemp /tmp/opencode/gh3-video-clean.XXXXXX.mp4)"
+
+cleanup() {
+  if [[ -n "${recorder_pid:-}" ]]; then
+    kill -INT "$recorder_pid" 2>/dev/null || true
+    wait "$recorder_pid" 2>/dev/null || true
+  fi
+  for entry in /proc/[0-9]*; do
+    pid="${entry##*/}"
+    [[ "$(readlink "$entry/cwd" 2>/dev/null || true)" == "$game_dir" ]] || continue
+    tr '\0' '\n' < "$entry/environ" 2>/dev/null | grep -Fqx "DISPLAY=:$display_number" || continue
+    kill -TERM "$pid" 2>/dev/null || true
+  done
+  sleep 0.5
+  for entry in /proc/[0-9]*; do
+    pid="${entry##*/}"
+    [[ "$(readlink "$entry/cwd" 2>/dev/null || true)" == "$game_dir" ]] || continue
+    tr '\0' '\n' < "$entry/environ" 2>/dev/null | grep -Fqx "DISPLAY=:$display_number" || continue
+    kill -KILL "$pid" 2>/dev/null || true
+  done
+  [[ -z "${game_pid:-}" ]] || wait "$game_pid" 2>/dev/null || true
+  if [[ -n "${xwayland_pid:-}" ]]; then
+    kill -TERM "$xwayland_pid" 2>/dev/null || true
+    wait "$xwayland_pid" 2>/dev/null || true
+  fi
+  rm -f -- "$raw" "$clean"
+}
+trap cleanup EXIT
+
+WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}" Xwayland ":$display_number" -geometry 1600x900 > "$xlog" 2>&1 &
+xwayland_pid=$!
+ready=false
+for ((attempt = 0; attempt < 30; attempt++)); do
+  if DISPLAY=":$display_number" xrandr --query >/dev/null 2>&1; then
+    ready=true
+    break
+  fi
+  kill -0 "$xwayland_pid" 2>/dev/null || break
+  sleep 0.2
+done
+if [[ "$ready" != true ]]; then
+  printf 'Xwayland did not start. See %s\n' "$xlog" >&2
+  exit 1
+fi
+
+address=""
+for ((attempt = 0; attempt < 30; attempt++)); do
+  address="$(hyprctl -i "$instance" clients -j | jq -r --argjson pid "$xwayland_pid" '.[] | select(.pid == $pid) | .address')"
+  [[ -z "$address" ]] || break
+  sleep 0.2
+done
+if [[ -z "$address" ]]; then
+  printf 'Xwayland window did not appear. See %s\n' "$xlog" >&2
+  exit 1
+fi
+hyprctl -i "$instance" dispatch "hl.dsp.window.float({ action = 'set', window = 'address:$address' })" >/dev/null
+
+started="$(date +%s)"
+WAYLAND_DISPLAY='' DISPLAY=":$display_number" GH3_SKIN_PREVIEW_SONG="$song_dir" \
+  "$project_dir/run-gh3-skin.sh" --preview > "$log" 2>&1 &
+game_pid=$!
+ready=false
+for ((attempt = 0; attempt < 150; attempt++)); do
+  if [[ -f "$game_dir/MelonLoader/Latest.log" ]] &&
+    [[ "$(stat -c %Y "$game_dir/MelonLoader/Latest.log")" -ge "$started" ]] &&
+    rg -q 'GH3 gameplay scene loaded' "$game_dir/MelonLoader/Latest.log"; then
+    ready=true
+    break
+  fi
+  sleep 0.2
+done
+if [[ "$ready" != true ]]; then
+  printf 'Gameplay did not start. See %s\n' "$log" >&2
+  exit 1
+fi
+sleep 0.5
+
+DISPLAY=":$display_number" ffmpeg -hide_banner -loglevel error -nostdin -y \
+  -f x11grab -framerate "$framerate" -video_size 1600x900 -draw_mouse 0 -i ":$display_number.0" \
+  -c:v libx264 -preset veryfast -crf 22 -pix_fmt yuv420p "$raw" > "$log.recorder" 2>&1 &
+recorder_pid=$!
+sleep "$seconds"
+kill -INT "$recorder_pid" 2>/dev/null || true
+wait "$recorder_pid" || true
+recorder_pid=""
+
+if [[ ! -s "$raw" ]]; then
+  printf 'Video capture failed. See %s.recorder\n' "$log" >&2
+  exit 1
+fi
+ffmpeg -hide_banner -loglevel error -nostdin -y -i "$raw" -t "$trim" \
+  -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -movflags +faststart "$clean"
+mv -- "$clean" "$output"
+printf 'Recorded %s\n' "$output"

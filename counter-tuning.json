@@ -1,0 +1,14 @@
+{
+  "lastReelWidth": 39,
+  "firstReelWidth": 33,
+  "counterOffsetX": -2,
+  "counterOffsetY": 9,
+  "scoreOffsetX": 0,
+  "scoreOffsetY": -11,
+  "rockScale": 1.05,
+  "rockVerticalScale": 1.01,
+  "rockOffsetX": -4,
+  "rockOffsetY": -7,
+  "rollAlpha": [1, 0, 0.24, 0.39, 0.56, 0.76, 1],
+  "rollOffset720": [-0.5, 0, 3.7, 1.9, 1.32, 0.5, 0]
+}

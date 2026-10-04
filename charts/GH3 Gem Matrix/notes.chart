@@ -1,0 +1,67 @@
+[Song]
+{
+  Name = "GH3 Gem Matrix"
+  Artist = "Test Tone"
+  Charter = "GH3 Skin Project"
+  Resolution = 192
+}
+[SyncTrack]
+{
+  0 = TS 4
+  0 = B 120000
+}
+[Events]
+{
+  0 = E "section Regular"
+  1536 = E "section Forced HOPO"
+  2304 = E "section Tap"
+  3072 = E "section Open"
+  3840 = E "section Open HOPO"
+  4608 = E "section Open Tap"
+  5376 = E "section Natural HOPO"
+}
+[ExpertSingle]
+{
+  768 = N 0 0
+  768 = N 1 0
+  768 = N 2 0
+  768 = N 3 0
+  768 = N 4 0
+  1536 = N 0 0
+  1536 = N 1 0
+  1536 = N 2 0
+  1536 = N 3 0
+  1536 = N 4 0
+  1536 = N 5 0
+  2304 = N 0 0
+  2304 = N 1 0
+  2304 = N 2 0
+  2304 = N 3 0
+  2304 = N 4 0
+  2304 = N 6 0
+  3072 = N 7 0
+  3840 = N 7 0
+  3840 = N 5 0
+  4608 = N 7 0
+  4608 = N 6 0
+  5376 = N 0 0
+  5424 = N 1 0
+  5472 = N 2 0
+  5520 = N 3 0
+  5568 = N 4 0
+  6144 = N 0 0
+  6144 = N 1 0
+  6144 = N 2 0
+  6144 = N 3 0
+  6144 = N 4 0
+  6912 = N 0 0
+  6912 = N 6 0
+  6960 = N 1 0
+  6960 = N 6 0
+  7008 = N 2 0
+  7008 = N 6 0
+  7056 = N 3 0
+  7056 = N 6 0
+  7104 = N 4 0
+  7104 = N 6 0
+}
