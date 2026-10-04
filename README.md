@@ -2,7 +2,13 @@
 
 This mod uses gameplay art extracted from the owner's BetterGH3 PC copy. It runs with the isolated Linux Clone Hero v1.1.0.6142 copy and MelonLoader 0.7.3.
 
-The default highway in v0.8.75 is black to match the new FastGH3 capture. Descriptions of the skull highway below apply to earlier versions.
+The current v0.8.98 uses a black highway with GH3 rail art and revised camera and gem depth. Clone Hero keeps its original fret buttons, fret positions, strings, and button animation. The GH3 lower-left graphic is absent. The older version notes below describe earlier builds.
+
+The ready banner plays once when the displayed meter reaches 50%. It replays 126 frames extracted from the owner's GH3 recording at 60 fps, including the text, stars, light sweep, and lower lightning. It disappears after 2.1 seconds while the meter remains charged. It can play again after the meter falls below 50% and then reaches 50% again. Run `uv run --with pillow --with numpy ./prepare-ready-animation.py` with `gh3-long-star-power-1600x900.mp4` in the project directory to regenerate these assets. The lower lightning uses a color and frame-difference mask because the source is a gameplay recording, not a transparent effect asset.
+
+At 1600 × 900, the [complete, uncropped side-by-side video](https://filebin.net/gh3-sourceframes-v098-9024f1/comparison-gh3-ready-sourceframes-full-0.8.98.mp4) shows the new animation against GH3. A [smaller phone video](https://filebin.net/gh3-sourceframes-v098-9024f1/comparison-gh3-ready-sourceframes-phone-0.8.98.mp4), [entrance frame](https://filebin.net/gh3-sourceframes-v098-9024f1/comparison-gh3-ready-sourceframes-entrance-0.8.98.png), and [settled frame](https://filebin.net/gh3-sourceframes-v098-9024f1/comparison-gh3-ready-sourceframes-settled-0.8.98.png) are also available. Links expire October 10, 2026. For five aligned sample frames, the mean absolute RGB difference on opaque extracted banner pixels was 5–8 levels out of 255 after both videos were encoded. This does **not** establish pixel identity. The complete frames remain different: the notes, score, gauge, original fret art, and later GH3 Star Power activation do not match. The user-requested original Clone Hero frets and omitted lower-left GH3 graphic also prevent a whole-frame pixel match.
+
+Set `GH3_SKIN_FORCE_POWER=0.5 GH3_SKIN_FORCE_POWER_AT_COMBO=20 GH3_SKIN_FORCE_ROCK=0.8` before `record-preview.sh` to repeat the delayed ready-banner test. Set `GH3_SKIN_FORCE_POWER=1` without a combo threshold to show a full meter from the start. Forced meter values and the gem display offset do not grant power or change hit timing. The banner does not detect active Star Power. The preview bot hits notes but does not earn Star Power.
 
 Run the mod:
 

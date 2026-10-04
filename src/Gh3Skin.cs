@@ -6,7 +6,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
-[assembly: MelonInfo(typeof(Gh3Skin.SkinMod), "GH3 Gameplay Skin", "0.8.85", "hedi")]
+[assembly: MelonInfo(typeof(Gh3Skin.SkinMod), "GH3 Gameplay Skin", "0.8.98", "hedi")]
 [assembly: MelonGame("srylain Inc.", "Clone Hero")]
 
 namespace Gh3Skin;
@@ -14,6 +14,7 @@ namespace Gh3Skin;
 public sealed class SkinMod : MelonMod
 {
     private static readonly string[] Lanes = { "green", "red", "yellow", "blue", "orange" };
+    private const float Gh3NoteStep = 1.75f;
     private static readonly float[] ComboEntryOffsets =
     {
         62, 50, 32, 20, 10, -6, -20, -30, -37, -41, -40, -20,
@@ -36,6 +37,10 @@ public sealed class SkinMod : MelonMod
     private readonly Dictionary<string, Texture2D> _hudTextures = new();
     private readonly Dictionary<string, RawImage> _hudImages = new();
     private readonly Dictionary<string, Rect> _hudLayouts = new();
+    private readonly List<Texture2D> _readyFrames = new();
+    private readonly List<Rect> _readyFrameLayouts = new();
+    private readonly List<Texture2D> _readyLightningFrames = new();
+    private readonly List<Rect> _readyLightningLayouts = new();
     private readonly List<float> _captureTimes = new();
     private readonly RawImage[] _comboRollNew = new RawImage[4];
     private readonly bool[] _comboRolling = new bool[4];
@@ -53,9 +58,12 @@ public sealed class SkinMod : MelonMod
     private bool _keepStockFlames;
     private string _captureDirectory = "/tmp/opencode/gh3-matrix-mod";
     private float? _previewPower;
+    private int _forcePowerAtCombo;
     private float? _previewRock;
     private float _rock = 0.5f;
     private float _starPower;
+    private bool _wasPowerReady;
+    private float _readyBannerStarted = float.NegativeInfinity;
     private int _score;
     private int _combo;
     private int _shownCombo;
@@ -102,12 +110,47 @@ public sealed class SkinMod : MelonMod
                    System.Globalization.CultureInfo.InvariantCulture, out var previewRock) && _captureAfter > 0)
             _previewRock = Math.Clamp(previewRock, 0, 1);
         if (float.TryParse(Environment.GetEnvironmentVariable("GH3_SKIN_FORCE_POWER"), System.Globalization.NumberStyles.Float,
-                   System.Globalization.CultureInfo.InvariantCulture, out var forcedPower))
+                    System.Globalization.CultureInfo.InvariantCulture, out var forcedPower))
             _previewPower = Math.Clamp(forcedPower, 0, 1);
+        if (int.TryParse(Environment.GetEnvironmentVariable("GH3_SKIN_FORCE_POWER_AT_COMBO"), out var forcePowerAtCombo))
+            _forcePowerAtCombo = Math.Max(0, forcePowerAtCombo);
         if (float.TryParse(Environment.GetEnvironmentVariable("GH3_SKIN_FORCE_ROCK"), System.Globalization.NumberStyles.Float,
                    System.Globalization.CultureInfo.InvariantCulture, out var forcedRock))
             _previewRock = Math.Clamp(forcedRock, 0, 1);
         _hudTextures["highway"] = LoadTexture(Path.Combine(root, "highway.png"));
+        _hudTextures["highway-edges-blue"] = LoadTexture(Path.Combine(root, "highway-edges-blue.png"));
+        _hudTextures["highway-edges-normal"] = LoadTexture(Path.Combine(root, "highway-edges-normal.png"));
+        using (var animation = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "ready-animation.json"))))
+        {
+            if (animation.RootElement.GetProperty("fps").GetInt32() != 60)
+                throw new InvalidDataException("Ready animation must have 60 frames per second");
+            foreach (var frame in animation.RootElement.GetProperty("frames").EnumerateArray())
+            {
+                var texture = LoadTexture(Path.Combine(root, $"ready-animation-{_readyFrames.Count:000}.png"));
+                texture.filterMode = FilterMode.Point;
+                _readyFrames.Add(texture);
+                _readyFrameLayouts.Add(new Rect(
+                    frame.GetProperty("x").GetInt32() * 1.2f,
+                    frame.GetProperty("y").GetInt32() * 1.2f + 12,
+                    frame.GetProperty("width").GetInt32() * 1.2f,
+                    frame.GetProperty("height").GetInt32() * 1.2f));
+            }
+            foreach (var frame in animation.RootElement.GetProperty("lightning").EnumerateArray())
+            {
+                var texture = LoadTexture(Path.Combine(root, $"ready-lightning-{_readyLightningFrames.Count:000}.png"));
+                texture.filterMode = FilterMode.Point;
+                _readyLightningFrames.Add(texture);
+                _readyLightningLayouts.Add(new Rect(
+                    frame.GetProperty("x").GetInt32() * 1.2f,
+                    frame.GetProperty("y").GetInt32() * 1.2f + 12,
+                    frame.GetProperty("width").GetInt32() * 1.2f,
+                    frame.GetProperty("height").GetInt32() * 1.2f));
+            }
+        }
+        if (_readyFrames.Count == 0 || _readyLightningFrames.Count == 0)
+            throw new InvalidDataException("Missing GH3 ready animation frames");
+        _hudTextures["ready-animation-first"] = _readyFrames[0];
+        _hudTextures["ready-lightning-first"] = _readyLightningFrames[0];
 
         foreach (var lane in Lanes)
         {
@@ -183,6 +226,8 @@ public sealed class SkinMod : MelonMod
             _captureIndex = 0;
             _rock = 0.5f;
             _starPower = 0;
+            _wasPowerReady = false;
+            _readyBannerStarted = float.NegativeInfinity;
             _score = 0;
             _combo = 0;
             _shownCombo = 0;
@@ -204,6 +249,12 @@ public sealed class SkinMod : MelonMod
         if (_canvas == null)
             CreateHud();
 
+        foreach (var player in UnityEngine.Object.FindObjectsOfType<BasePlayer>())
+        {
+            PositionHighway(player.transform);
+            break;
+        }
+
         var renderers = UnityEngine.Object.FindObjectsOfType<SpriteRenderer>();
         var changed = 0;
         foreach (var renderer in renderers)
@@ -224,6 +275,8 @@ public sealed class SkinMod : MelonMod
                 var star = name.StartsWith("spr_star_notes_", StringComparison.Ordinal);
                 if (!open && !standard && !star)
                     continue;
+                var lane = Math.Clamp((int)MathF.Round((renderer.transform.position.x + 0.39f) / 0.195f), 0, 4);
+                var notePosition = note.localPosition;
                 var body = note.Find("Body")?.GetComponent<SpriteRenderer>();
                 var anim = note.Find("Anim")?.GetComponent<SpriteRenderer>();
                 var openHopo = note.Find("Open_HOPO")?.GetComponent<SpriteRenderer>();
@@ -251,8 +304,11 @@ public sealed class SkinMod : MelonMod
                     gemRenderer.sortingOrder = 10;
                     gemTransform = gem.transform;
                 }
-                var laneName = LaneAt(renderer.transform.position.x);
-                gemTransform.localPosition = new Vector3(0, 0.008f, 0);
+                var laneName = Lanes[lane];
+                var visualLead = Math.Clamp(notePosition.z, 0, Gh3NoteStep);
+                gemTransform.localPosition = new Vector3(0, 0.008f, visualLead);
+                var size = 1 - 0.17f * visualLead / Gh3NoteStep;
+                gemTransform.localScale = new Vector3(size, size, 1);
                 var display = gemTransform.GetComponent<SpriteRenderer>();
                 display.enabled = true;
                 display.sprite = star ? _sprites[$"{laneName}-{(name == "spr_star_notes_strip4_1" ? "star-glow" : "star")}-{(int)(Time.time * 12) % 16}"]
@@ -348,8 +404,13 @@ public sealed class SkinMod : MelonMod
             break;
         }
 
-        if (_previewPower.HasValue)
+        if (_previewPower.HasValue && _combo >= _forcePowerAtCombo)
             _starPower = _previewPower.Value;
+        _hudImages["highwayEdges"].texture = _hudTextures[_starPower >= 0.5f ? "highway-edges-blue" : "highway-edges-normal"];
+        var powerReady = _starPower >= 0.5f;
+        if (powerReady && !_wasPowerReady)
+            _readyBannerStarted = Time.time;
+        _wasPowerReady = powerReady;
         for (var bulb = 0; bulb < 6; bulb++)
         {
             var visible = bulb < 3 || _starPower >= 0.5f;
@@ -441,6 +502,7 @@ public sealed class SkinMod : MelonMod
                 _hudLayouts[key] = ComboSlotLayout(comboStart, slot, streak.Length);
             }
         }
+        UpdateReadyAnimation();
         PositionHud();
         for (var slot = 0; slot < 4; slot++)
         {
@@ -484,6 +546,9 @@ public sealed class SkinMod : MelonMod
         _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         _canvas.overrideSorting = true;
         _canvas.sortingOrder = 500;
+        AddHud("highwayEdges", "highway-edges-normal", new Rect(0, 12, 1920, 1080));
+        AddHud("readyFrame", "ready-animation-first", _readyFrameLayouts[0]);
+        AddHud("readyLightning", "ready-lightning-first", _readyLightningLayouts[0]);
         foreach (var color in new[] { "green", "yellow", "red" })
             AddHud("rockBackground" + color, "HUD_rock_BG_" + color, new Rect(1390, 780, 256, 256));
         var bulbs = new[]
@@ -635,6 +700,29 @@ public sealed class SkinMod : MelonMod
         }
     }
 
+    private void UpdateReadyAnimation()
+    {
+        var elapsed = Time.time - _readyBannerStarted;
+        var image = _hudImages["readyFrame"];
+        var lightning = _hudImages["readyLightning"];
+        if (!_wasPowerReady || elapsed < 0 || elapsed >= _readyFrames.Count / 60f)
+        {
+            image.enabled = false;
+            lightning.enabled = false;
+            return;
+        }
+        var frame = (int)(elapsed * 60);
+        image.enabled = true;
+        image.texture = _readyFrames[frame];
+        _hudLayouts["readyFrame"] = _readyFrameLayouts[frame];
+        lightning.enabled = frame < _readyLightningFrames.Count;
+        if (lightning.enabled)
+        {
+            lightning.texture = _readyLightningFrames[frame];
+            _hudLayouts["readyLightning"] = _readyLightningLayouts[frame];
+        }
+    }
+
     private float ComboEntryOffset()
     {
         if (_comboEntryStarted < 0)
@@ -647,10 +735,21 @@ public sealed class SkinMod : MelonMod
         return (ComboEntryOffsets[index] * (1 - fraction) + ComboEntryOffsets[index + 1] * fraction) * 1.5f;
     }
 
-    private static string LaneAt(float x)
+    private static void PositionHighway(Transform player)
     {
-        var index = Math.Clamp((int)MathF.Round((x + 0.39f) / 0.195f), 0, 4);
-        return Lanes[index];
-    }
+        var camera = player.Find("PlayerCamera");
+        if (camera != null)
+            camera.localPosition = new Vector3(-0.005f, 1, -3.97f);
 
+        var neck = player.Find("Neck");
+        if (neck != null)
+            neck.localScale = new Vector3(0.96f, 5.05f, 1);
+
+        foreach (var name in new[] { "sidebar_l", "sidebar_r" })
+        {
+            var sidebar = player.Find(name)?.GetComponent<SpriteRenderer>();
+            if (sidebar != null)
+                sidebar.enabled = false;
+        }
+    }
 }

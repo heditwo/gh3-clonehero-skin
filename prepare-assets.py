@@ -84,6 +84,26 @@ global_images = source / "global-gfx-png"
 skull_highway = Image.open(next(global_images.glob("005_*.png"))).convert("RGBA")
 skull_highway.save(target / "highway-skull.png")
 Image.new("RGBA", skull_highway.size, (0, 0, 0, 255)).save(target / "highway.png")
+rail_reference = Image.open(Path(__file__).parent / "gh3-fast-six-bulbs-1600x900.png").convert("RGB")
+normal_reference = Image.open(Path(__file__).parent / "gh3-fast-autoplay-gameplay-1600x900.png").convert("RGB")
+blue_rails = Image.new("RGBA", rail_reference.size)
+gray_rails = Image.new("RGBA", rail_reference.size)
+for y in range(380, 900):
+    for side, center in enumerate((704 - 0.52 * (y - 400), 904 + 0.52 * (y - 400))):
+        for x in range(max(0, int(center) - 16), min(1600, int(center) + 17)):
+            sample_y = 784 if 785 <= y <= 800 else 816 if 801 <= y <= 815 else y
+            sample_x = round(x + (-0.52 if side == 0 else 0.52) * (sample_y - y))
+            red, green, blue = (normal_reference if side == 1 and 410 <= y <= 440 else rail_reference).getpixel((sample_x, sample_y))
+            if side == 1 and 410 <= y <= 440:
+                red, green, blue = round(red * 0.7), round(green * 0.9), min(255, round(blue * 1.25))
+            if blue <= 25 or blue < red + 8 or blue < green - 20:
+                continue
+            alpha = max(red, green, blue)
+            blue_rails.putpixel((x, y), (min(255, red * 255 // alpha), min(255, green * 255 // alpha), min(255, blue * 255 // alpha), alpha))
+            neutral = min(255, round((red + green + blue) / 3 * 1.25))
+            gray_rails.putpixel((x, y), (neutral, neutral, neutral, alpha))
+blue_rails.save(target / "highway-edges-blue.png")
+gray_rails.save(target / "highway-edges-normal.png")
 for name, index in (("beatline", 79), ("sustain", 53)):
     file = next(global_images.glob(f"{index:03d}_*.png"))
     image = Image.open(file).convert("RGBA")
