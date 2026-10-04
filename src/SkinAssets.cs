@@ -1,0 +1,162 @@
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
+using MelonLoader;
+using System.Text.Json;
+using UnityEngine;
+
+namespace Gh3Skin;
+
+internal readonly record struct AnimationFrame(Texture2D Texture, Rect Layout);
+
+internal sealed class SkinAssets
+{
+    private static readonly string[] Lanes = { "green", "red", "yellow", "blue", "orange" };
+    private readonly Dictionary<string, Sprite> _sprites = new();
+    private readonly Dictionary<string, Texture2D> _textures = new();
+    private readonly List<AnimationFrame> _readyFrames = new();
+    private readonly List<AnimationFrame> _readyLightningFrames = new();
+
+    public IReadOnlyDictionary<string, Texture2D> Textures => _textures;
+    public IReadOnlyList<AnimationFrame> ReadyFrames => _readyFrames;
+    public IReadOnlyList<AnimationFrame> ReadyLightningFrames => _readyLightningFrames;
+    public int GameplaySpriteCount => _sprites.Count;
+    public static string Lane(int index) => Lanes[index];
+
+    public SkinAssets(string root)
+    {
+        LoadCoreTextures(root);
+        LoadReadyAnimation(root);
+        LoadGameplaySprites(root);
+        LoadHudTextures(root);
+    }
+
+    private void LoadCoreTextures(string root)
+    {
+        _textures["highway"] = LoadTexture(Path.Combine(root, "highway.png"));
+        _textures["highway-edges-blue"] = LoadTexture(Path.Combine(root, "highway-edges-blue.png"));
+        _textures["highway-edges-normal"] = LoadTexture(Path.Combine(root, "highway-edges-normal.png"));
+    }
+
+    private void LoadReadyAnimation(string root)
+    {
+        using (var animation = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "ready-animation.json"))))
+        {
+            if (animation.RootElement.GetProperty("fps").GetInt32() != 60)
+                throw new InvalidDataException("Ready animation must have 60 frames per second");
+            LoadAnimationFrames(root, "ready-animation", animation.RootElement.GetProperty("frames"), _readyFrames);
+            LoadAnimationFrames(root, "ready-lightning", animation.RootElement.GetProperty("lightning"), _readyLightningFrames);
+        }
+        if (_readyFrames.Count == 0 || _readyLightningFrames.Count == 0)
+            throw new InvalidDataException("Missing GH3 ready animation frames");
+        _textures["ready-animation-first"] = _readyFrames[0].Texture;
+        _textures["ready-lightning-first"] = _readyLightningFrames[0].Texture;
+    }
+
+    private static void LoadAnimationFrames(string root, string prefix, JsonElement entries, List<AnimationFrame> destination)
+    {
+        foreach (var frame in entries.EnumerateArray())
+        {
+            var texture = LoadTexture(Path.Combine(root, $"{prefix}-{destination.Count:000}.png"));
+            texture.filterMode = FilterMode.Point;
+            var layout = new Rect(
+                frame.GetProperty("x").GetInt32() * 1.2f,
+                frame.GetProperty("y").GetInt32() * 1.2f + 12,
+                frame.GetProperty("width").GetInt32() * 1.2f,
+                frame.GetProperty("height").GetInt32() * 1.2f);
+            destination.Add(new AnimationFrame(texture, layout));
+        }
+    }
+
+    private void LoadGameplaySprites(string root)
+    {
+        foreach (var lane in Lanes)
+        {
+            Load(root, $"{lane}-note", 720, new Vector2(0.5f, 0.16f));
+            Load(root, $"{lane}-glow", 720, new Vector2(0.5f, 0.16f));
+            for (var frame = 0; frame < 16; frame++)
+            {
+                Load(root, $"{lane}-star-{frame}", 720, new Vector2(0.5f, 0.16f));
+                Load(root, $"{lane}-star-glow-{frame}", 720, new Vector2(0.5f, 0.16f));
+            }
+        }
+
+        Load(root, "clear", 20, new Vector2(0.5f, 0.16f));
+        Load(root, "beatline", 1100, new Vector2(0.5f, 0.2f));
+        for (var frame = 0; frame < 16; frame++)
+        {
+            Load(root, $"hit-{frame:00}", 150, new Vector2(0.5f, 0.2f));
+            Load(root, $"sustain-flame-{frame:00}", 400, new Vector2(0.5f, 0.2f));
+            Load(root, $"sp-spark-{frame:00}", 333, new Vector2(0.5f, 0.5f));
+        }
+    }
+
+    private void LoadHudTextures(string root)
+    {
+        var hudNames = new List<string>
+        {
+            "HUD_rock_body", "HUD_rock_BG_green", "HUD_rock_BG_yellow", "HUD_rock_BG_red",
+            "HUD_rock_lights_all", "HUD_rock_lights_green", "HUD_rock_lights_yellow",
+            "HUD_rock_lights_red", "HUD_rock_needle",
+            "HUD_score_body", "HUD_score_frame", "HUD_score_ring_front", "HUD_score_x",
+            "HUD_counter_body", "HUD_counter_frame", "HUD_counter_drum_icon",
+            "HUD_counter_drum_icon_back", "HUD_score_nixie_1a_wide", "HUD_score_nixie_2a_wide",
+            "HUD_score_nixie_3a_wide", "HUD_score_nixie_4a_wide", "HUD_rock_tube",
+            "HUD_rock_tube_glow_full", "HUD_rock_tube_glow_full_b"
+        };
+        hudNames.AddRange(new[] { "", "_blue", "_green", "_purple" }.SelectMany(color =>
+            Enumerable.Range(0, 3).Select(state => $"HUD_score_light_{state}{color}")));
+        hudNames.AddRange(Enumerable.Range(0, 10).Select(digit => $"score-digit-{digit}"));
+        hudNames.AddRange(Enumerable.Range(0, 4).SelectMany(slot => Enumerable.Range(0, 10).Select(digit => $"combo-{slot}-digit-{digit}")));
+        hudNames.AddRange(Enumerable.Range(0, 10).Select(digit => $"combo-2-dark-digit-{digit}"));
+        hudNames.AddRange(Enumerable.Range(0, 10).Select(digit => $"combo-2-extended-digit-{digit}"));
+        hudNames.AddRange(Enumerable.Range(0, 4).Select(slot => $"combo-reel-{slot}"));
+        hudNames.Add("combo-reel-2-dark");
+        hudNames.Add("combo-reel-2-extended");
+        hudNames.AddRange(new[] { "light", "dark" }.SelectMany(shade => Enumerable.Range(0, 10).Select(digit => $"combo-glyph-{shade}-{digit}")));
+
+        foreach (var name in hudNames)
+        {
+            var texture = LoadTexture(Path.Combine(root, name + ".png"));
+            if (name.StartsWith("HUD_score_light_", StringComparison.Ordinal))
+                texture.wrapMode = TextureWrapMode.Clamp;
+            _textures[name] = texture;
+        }
+    }
+
+    public Sprite GetSprite(string name) => _sprites[name];
+    public bool TryGetSprite(string name, out Sprite sprite) => _sprites.TryGetValue(name, out sprite!);
+
+    public Sprite Highway(Sprite original)
+    {
+        if (_sprites.TryGetValue("highway", out var highway))
+            return highway;
+        var texture = _textures["highway"];
+        highway = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height),
+            new Vector2(original.pivot.x / original.rect.width, original.pivot.y / original.rect.height), original.pixelsPerUnit);
+        highway.name = "GH3_highway";
+        _sprites["highway"] = highway;
+        MelonLogger.Msg($"Applied GH3 highway (original PPU {original.pixelsPerUnit})");
+        return highway;
+    }
+
+    private void Load(string root, string name, float pixelsPerUnit, Vector2 pivot)
+    {
+        var texture = LoadTexture(Path.Combine(root, name + ".png"));
+        var sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), pivot, pixelsPerUnit);
+        sprite.name = "GH3_" + name;
+        sprite.hideFlags = HideFlags.DontUnloadUnusedAsset;
+        texture.hideFlags = HideFlags.DontUnloadUnusedAsset;
+        _sprites[name] = sprite;
+    }
+
+    private static Texture2D LoadTexture(string file)
+    {
+        var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+        if (!texture.LoadImage(new Il2CppStructArray<byte>(File.ReadAllBytes(file))))
+            throw new InvalidDataException(file);
+
+        texture.filterMode = FilterMode.Bilinear;
+        texture.hideFlags = HideFlags.DontUnloadUnusedAsset;
+        return texture;
+    }
+
+}

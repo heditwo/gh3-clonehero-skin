@@ -10,6 +10,12 @@ At 1600 × 900, the [complete, uncropped side-by-side video](https://filebin.net
 
 Set `GH3_SKIN_FORCE_POWER=0.5 GH3_SKIN_FORCE_POWER_AT_COMBO=20 GH3_SKIN_FORCE_ROCK=0.8` before `record-preview.sh` to repeat the delayed ready-banner test. Set `GH3_SKIN_FORCE_POWER=1` without a combo threshold to show a full meter from the start. Forced meter values and the gem display offset do not grant power or change hit timing. The banner does not detect active Star Power. The preview bot hits notes but does not earn Star Power.
 
+## Code and checks
+
+`src/Gh3Skin.cs` controls the gameplay-scene lifecycle. `SkinOptions` reads test overrides, `GameplayStateReader` reads Clone Hero values, and `GameplaySpriteRenderer` replaces world sprites. `SkinAssets` loads art, while `GameplayHud` draws the score, rock meter, bulbs, streak counter, and ready animation. `HudTuning` loads measured layout values. `PreviewCapture` handles test screenshots. The source art and tuned coordinates are not changed by this code split.
+
+Run the logic checks with `dotnet run --project tests/SkinLogic.Tests.csproj -c Release`. Build the mod with `bash install.sh`; it needs the isolated Clone Hero installation. To check the visual output, use `record-preview.sh` with the same chart and environment values before and after a change. Do not treat the forced visual meter as earned Star Power.
+
 Run the mod:
 
 ```bash
