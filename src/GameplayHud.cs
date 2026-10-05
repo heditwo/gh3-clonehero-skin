@@ -65,7 +65,7 @@ internal sealed class GameplayHud
         }
         var time = Time.time;
         _highway!.Update(state, time);
-        _rock!.Update(state, time, Time.deltaTime);
+        _rock!.Update(state, time);
         _score!.Update(state, time);
     }
 }

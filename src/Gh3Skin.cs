@@ -59,8 +59,9 @@ public sealed class SkinMod : MelonMod
         }
         _lastSongTime = songTime;
         _hud.EnsureCreated();
-        _renderer.Update(player, score);
-        _hud.Update(GameplayStateReader.Read(player, score, _options), player.mainCamera);
+        var state = GameplayStateReader.Read(player, score, _options);
+        _renderer.Update(player, score, state.StarPowerActive);
+        _hud.Update(state, player.mainCamera);
         _capture.Update();
     }
 }

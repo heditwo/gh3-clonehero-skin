@@ -1,4 +1,8 @@
 from pathlib import Path
+from io import BytesIO
+from struct import unpack_from
+from zipfile import ZipFile
+from zlib import crc32
 import shutil
 from PIL import Image, ImageChops, ImageDraw
 
@@ -13,6 +17,7 @@ notes = {
     "yellow": (51, 23),
     "blue": (60, 12),
     "orange": (78, 94),
+    "active": (39, 27),
 }
 for lane, variants in notes.items():
     for variant, index in zip(("note", "glow"), variants):
@@ -31,6 +36,54 @@ for lane, (regular, glow) in star_notes.items():
         sheet = Image.open(next((source / "global-gfx-png").glob(f"{index:03d}_*.png"))).convert("RGBA")
         for frame in range(16):
             sheet.crop(((frame % 4) * 128, (frame // 4) * 64, (frame % 4 + 1) * 128, (frame // 4 + 1) * 64)).save(target / f"{lane}-{variant}-{frame}.png")
+
+def texture_images(bundle):
+    count = unpack_from(">H", bundle, 6)[0]
+    table = unpack_from(">I", bundle, 8)[0]
+    images = {}
+    for entry in range(count):
+        header = table + entry * 40
+        key = unpack_from(">I", bundle, header + 4)[0]
+        offset, size = unpack_from(">II", bundle, header + 28)
+        images[key] = bundle[offset:offset + size]
+    return images
+
+
+with ZipFile(Path.home() / "games/BetterGH3-FULLPACKAGE_v1.0.2.zip") as archive:
+    pak = archive.read("Guitar Hero III/DATA/ZONES/_DONOTDELETE.pak.xen")
+    pab = archive.read("Guitar Hero III/DATA/ZONES/_DONOTDELETE.pab.xen")
+texture_type, offset, size = unpack_from(">III", pak, 2 * 32)
+if texture_type != 0x8BFA5E8E:
+    raise ValueError("The BetterGH3 tap texture bundle is not present")
+start = 2 * 32 + offset - len(pak)
+bundle = pab[start:start + size]
+tap_images = texture_images(bundle)
+for lane in ("green", "red", "yellow", "blue", "orange", "starpower"):
+    for phrase in (False, True) if lane != "starpower" else (False,):
+        name = f"images\\highway\\tap2d_{lane}{'_star' if phrase else ''}.img"
+        image = Image.open(BytesIO(tap_images[~crc32(name.encode()) & 0xFFFFFFFF])).convert("RGBA")
+        if image.size != ((512, 256) if phrase else (128, 64)):
+            raise ValueError(f"Unexpected BetterGH3 tap dimensions: {name}")
+        if phrase:
+            for frame in range(16):
+                image.crop(((frame % 4) * 128, (frame // 4) * 64, (frame % 4 + 1) * 128, (frame // 4 + 1) * 64)).save(target / f"{lane}-star-tap-{frame}.png")
+        else:
+            image.save(target / f"{'active' if lane == 'starpower' else lane}-tap.png")
+
+with ZipFile(Path.home() / "games/gh3-test-tools/FastGH3_1.1.zip") as archive:
+    pak = archive.read("DATA/ZONES/global.pak.xen")
+    pab = archive.read("DATA/ZONES/global.pab.xen")
+entry = next(entry for entry in range(0, len(pak) - 31, 32) if unpack_from(">I", pak, entry)[0] == 0x8BFA5E8E)
+offset, size = unpack_from(">II", pak, entry + 4)
+start = entry + offset - len(pak)
+active_images = texture_images(pab[start:start + size])
+for variant, source_name in (("star", "star2d_star"), ("star-glow", "star2d_star_hammer"), ("star-tap", "star2d_star_tap")):
+    name = f"images\\highway\\{source_name}.img"
+    sheet = Image.open(BytesIO(active_images[~crc32(name.encode()) & 0xFFFFFFFF])).convert("RGBA")
+    if sheet.size != (512, 256):
+        raise ValueError(f"Unexpected FastGH3 active phrase dimensions: {name}")
+    for frame in range(16):
+        sheet.crop(((frame % 4) * 128, (frame // 4) * 64, (frame % 4 + 1) * 128, (frame // 4 + 1) * 64)).save(target / f"active-{variant}-{frame}.png")
 
 for name in ("HUD_score_body", "HUD_score_nixie_1a", "HUD_score_nixie_2a", "HUD_score_nixie_3a", "HUD_score_nixie_4a", "HUD_score_nixie_2b", "HUD_score_nixie_4b", "HUD_score_nixie_6b", "HUD_score_nixie_8b"):
     shutil.copyfile(source / "hud-runtime-dds" / f"{name}.dds", target / f"{name}.dds")

@@ -235,7 +235,7 @@ foreach (var (health, expectedColor) in new[]
     (MathF.BitDecrement(2f / 3), "yellow"), (2f / 3, "yellow"), (MathF.BitIncrement(2f / 3), "green")
 })
 {
-    meter.Reset(health);
+    meter.Update(health);
     Equal(expectedColor, meter.Color, "exact native threshold inclusivity");
 }
 var lastMappedAngle = 43f;
@@ -246,64 +246,23 @@ for (var index = 0; index <= 10000; index++)
     if (mappedAngle > lastMappedAngle || lastMappedAngle - mappedAngle > 0.012f)
         throw new Exception("Calibrated needle mapping must be continuous and monotonic");
     lastMappedAngle = mappedAngle;
-    meter.Reset(health);
+    meter.Update(health);
     Equal(health <= 1f / 3 ? "red" : health <= 2f / 3 ? "yellow" : "green", meter.Color,
-        "settled needle agrees with native health across the full range");
+        "needle agrees with native health on each update across the full range");
 }
-var halfSecondAngles = new List<float>();
-foreach (var fps in new[] { 30, 60, 144 })
-{
-    meter.Reset(0);
-    var intermediate = 0;
-    var blendedBackgroundFrames = 0;
-    for (var frame = 0; frame < fps * 2; frame++)
-    {
-        var previousAngle = meter.Angle;
-        var previousRed = meter.BackgroundRed;
-        var previousGreen = meter.BackgroundGreen;
-        meter.Update(1.04f, 1f / fps);
-        if (meter.BackgroundRed > previousRed || meter.BackgroundGreen < previousGreen ||
-            Math.Abs(meter.BackgroundRed - previousRed) > 6f / fps + 0.0001f ||
-            Math.Abs(meter.BackgroundGreen - previousGreen) > 6f / fps + 0.0001f ||
-            meter.BackgroundRed > 0 && meter.BackgroundGreen > 0)
-            throw new Exception("Background blend must follow the smooth needle without jumps or muddy colors");
-        if (meter.BackgroundRed > 0 && meter.BackgroundRed < 1 || meter.BackgroundGreen > 0 && meter.BackgroundGreen < 1)
-            blendedBackgroundFrames++;
-        if (meter.Angle > previousAngle || meter.Angle < -43 || previousAngle - meter.Angle > 90f / fps)
-            throw new Exception($"Needle jumps or overshoots at {fps} fps");
-        if (meter.Angle < 40 && meter.Angle > -40)
-            intermediate++;
-        if (meter.Color == "green" && meter.Angle > -18.5f)
-            throw new Exception("Green must follow the displayed needle, not raw health");
-        if (frame == fps / 2 - 1)
-            halfSecondAngles.Add(meter.Angle);
-    }
-    if (blendedBackgroundFrames < fps / 4)
-        throw new Exception("Both background transitions must have visible intermediate colors at every frame rate");
-    if (intermediate < fps / 2 || Math.Abs(meter.Angle + 43) > 0.001f)
-        throw new Exception($"Needle must traverse the dial and settle at {fps} fps");
-}
-if (halfSecondAngles.Max() - halfSecondAngles.Min() > 0.15f)
-    throw new Exception("Needle response must remain consistent across frame rates");
-meter.Reset();
-meter.Update(1, 1f / 60);
-Equal("yellow", meter.Color, "full native health does not turn the dial green before the needle arrives");
-var pausedAngle = meter.Angle;
-meter.Update(1, 0);
-Equal(pausedAngle, meter.Angle, "paused needle stays still");
-meter.Update(1, 2);
-if (pausedAngle - meter.Angle > 3)
-    throw new Exception("A stalled frame must not jump the needle to the end");
+meter.Reset(0);
+Equal(true, meter.Update(1.04f), "a health change updates the needle immediately");
+Equal(-43f, meter.Angle, "full health reaches the green endpoint in one update");
+Equal("green", meter.Color, "the lamp follows the current health immediately");
+Equal(1f, meter.BackgroundGreen, "the background follows the current needle position");
+Equal(false, meter.Update(1.04f), "unchanged health holds the needle still");
+Equal(true, meter.Update(0), "a reversal updates the needle immediately");
+Equal(43f, meter.Angle, "a reversal reaches the red endpoint in one update");
+Equal("red", meter.Color, "the lamp follows a health reversal immediately");
+Equal(1f, meter.BackgroundRed, "the background follows a health reversal");
 meter.Reset();
 Equal(0f, meter.Angle, "restart restores the neutral needle");
-Equal(false, meter.Update(0.5f, 1f / 60), "restart clears needle momentum");
-for (var frame = 0; frame < 120; frame++)
-{
-    var previousAngle = meter.Angle;
-    meter.Update(frame < 15 ? 1 : 0, 1f / 60);
-    if (Math.Abs(meter.Angle - previousAngle) > 1.5f || Math.Abs(meter.Angle) > 43)
-        throw new Exception("Needle reversals must remain smooth and inside the dial");
-}
+Equal(false, meter.Update(0.5f), "neutral health holds the reset needle still");
 foreach (var power in new[] { 0f, 0.25f, 0.5f, 0.75f, 1f })
 {
     var fills = Enumerable.Range(0, 6).Select(bulb => HudState.StarPowerBulbFill(power, bulb)).ToArray();
@@ -317,10 +276,42 @@ Equal(false, GameCompatibility.Supports("v1.1.0.6143-final"), "unverified fields
 Equal(new GemKind(0), GemKind.FromSprites("spr_newnotes_strip4_0", "spr_newnotes_strip4_2"), "regular note");
 Equal(new GemKind(1), GemKind.FromSprites("spr_newnotes_strip4_1", "spr_newnotes_strip4_2"), "HOPO");
 Equal(new GemKind(2), GemKind.FromSprites("spr_star_notes_cap_strip4_0", "spr_star_notes_strip1_3"), "phrase note");
-Equal(new GemKind(3), GemKind.FromSprites("spr_star_notes_cap_strip4_1", "spr_star_notes_strip1_3"), "phrase HOPO");
-Equal(GemKind.Stock, GemKind.FromSprites("spr_newnotes_strip4_0", "spr_newnotes_strip4_3"), "pooled tap restores stock sprites");
+Equal(new GemKind(3), GemKind.FromSprites("spr_star_notes_cap_strip4_2", "spr_star_notes_strip1_3"), "phrase HOPO");
+Equal(new GemKind(4), GemKind.FromSprites("spr_newnotes_strip4_0", "spr_newnotes_strip4_3"), "tap uses BetterGH3 art");
+Equal(new GemKind(4), GemKind.FromSprites("spr_newnotes_strip4_1", "spr_newnotes_strip4_3"), "tap takes priority over HOPO cap");
+for (var frame = 0; frame < 16; frame++)
+    Equal(new GemKind(5), GemKind.FromSprites("spr_star_notes_cap_strip4_0", $"spr_star_notes_strip2_{frame}"), "animated phrase tap");
 Equal(GemKind.Stock, GemKind.FromSprites("spr_open_notes_strip5_0", ""), "pooled open note restores stock sprites");
+Equal(GemKind.Stock, GemKind.FromSprites("spr_open_notes_strip5_0", "spr_newnotes_strip4_3"), "open tap keeps stock art");
 Equal(GemKind.Stock, GemKind.FromSprites("", ""), "empty pooled note hides the custom gem");
+Equal(GemKind.Stock, GemKind.FromSprites("", "spr_newnotes_strip4_3"), "stale tap body does not revive an empty note");
+foreach (var (time, frame) in new[] { (0.0, 0), (0.033, 0), (0.034, 1), (0.5, 15), (0.534, 0), (1.0, 14) })
+    Equal(frame, GemAnimation.Frame(time), "GH3 star animation uses a 16-frame atlas at 30 frames per second");
+foreach (var fps in new[] { 30, 60, 144 })
+{
+    var frames = Enumerable.Range(0, fps + 1).Select(frame => GemAnimation.Frame(frame / (double)fps)).ToArray();
+    Equal(14, frames[^1], "gem animation has the same speed at each display frame rate");
+    Equal(16, frames.Distinct().Count(), "gem animation uses every atlas frame");
+}
+
+var gemTextures = new List<string> { "active-note", "active-glow", "active-tap" };
+foreach (var variant in new[] { "star", "star-glow", "star-tap" })
+    for (var frame = 0; frame < GemAnimation.FrameCount; frame++)
+        gemTextures.Add($"active-{variant}-{frame}");
+foreach (var lane in new[] { "green", "red", "yellow", "blue", "orange" })
+{
+    gemTextures.Add($"{lane}-tap");
+    for (var frame = 0; frame < 16; frame++)
+        gemTextures.Add($"{lane}-star-tap-{frame}");
+}
+var gemHeader = new byte[24];
+foreach (var texture in gemTextures)
+{
+    using var image = File.OpenRead(Path.Combine(root, "assets", texture + ".png"));
+    image.ReadExactly(gemHeader);
+    Equal(128, BinaryPrimitives.ReadInt32BigEndian(gemHeader.AsSpan(16)), "gem frame width");
+    Equal(64, BinaryPrimitives.ReadInt32BigEndian(gemHeader.AsSpan(20)), "gem frame height");
+}
 
 using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "assets/ready-animation.json")));
 Equal(60, manifest.RootElement.GetProperty("fps").GetInt32(), "ready animation frame rate");

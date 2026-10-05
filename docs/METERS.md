@@ -1,8 +1,14 @@
 # Rock and Star Power meter correction — 2026-10-05
 
+## Direct needle updates
+
+The needle now moves directly to the angle for the current health value on each update. Smoothing, momentum, and the speed limit are removed. The calibrated angle mapping controls the needle, background blend, and lamp together. When health stays constant, the needle stays still.
+
+The logic checks cover immediate full-range moves, reversals, reset, background colors, and native lamp thresholds. The earlier motion checks and recordings below describe the previous smoothed behavior.
+
 ## Background color fade
 
-The background blends continuously from yellow at the center of the dial to green or red at 15° from the center. The blend follows the smooth needle, including reversals, pause, and reset. The lamps still use the calibrated Clone Hero health thresholds below.
+The background blends continuously from yellow at the center of the dial to green or red at 15° from the center. The blend follows the current needle angle. The lamps use the calibrated Clone Hero health thresholds below.
 
 The GH3 recording shows a health-dependent blend across the yellow part of the dial. A check of 363 unobstructed yellow-to-green frames gave a mean blend-weight difference of 0.0086 from a linear 15° fade. The first red fade used the same range. Older GH3 recordings, `gh3-source-combo-chart-1600x900.mp4` and `gh3-source-combo-played-1600x900.mp4`, also show a gradual blend as health falls into red.
 
@@ -38,7 +44,7 @@ Clone Hero uses red at or below `1f / 3`, yellow above `1f / 3` and at or below 
 
 The mapping is continuous and monotonic between these points. Exact threshold equality follows Clone Hero: one third is red; two thirds is yellow. Logic tests also check the adjacent single-precision values on both sides of each boundary and 10,001 health values across the full range.
 
-Needle motion remains smooth. Color follows the displayed needle, so a short visual delay remains while it moves across a divider. The health ranges now agree with Clone Hero; the animated display is not an instantaneous raw-health indicator.
+At the time of this threshold correction, needle motion remained smooth. Color followed the displayed needle with a short delay as it crossed a divider. The direct-update change above removes that delay.
 
 The review folder is `/tmp/opencode/gh3-native-thresholds-2026-10-05/`. The runtime boundary test compares the skin with Clone Hero's actual native classifier. The earlier results below are retained as history.
 

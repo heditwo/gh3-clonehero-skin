@@ -21,10 +21,10 @@ internal sealed class RockMeterHud
         HudVisual.Position(_gauge.Root, new Vector2(4 + tuning.RockOffsetX, 0.6f + tuning.RockOffsetY));
     }
 
-    public void Update(GameplayState state, float time, float deltaTime)
+    public void Update(GameplayState state, float time)
     {
         _bulbs.Update(state.StarPower, state.StarPowerActive, time);
-        _gauge.Update(state.Rock, deltaTime);
+        _gauge.Update(state.Rock);
         var pose = _bulbs.Pose;
         if (_pose == pose) return;
         _pose = pose;

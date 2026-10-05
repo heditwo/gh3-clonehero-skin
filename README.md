@@ -15,11 +15,12 @@ The installer builds the mod, copies the prepared assets and tuning file, and in
 
 ## Current behavior
 
-- Black highway, GH3 rails, regular gems, glowing HOPO gems, animated phrase gems, and hit effects.
-- GH3 moving beat lines at highway level, with the original bar, beat, and half-beat textures. Clone Hero supplies the fret buttons, strings, and button animations. Tap and open notes use stock art.
+- Black highway, GH3 rails, regular gems, glowing HOPO gems, animated phrase gems, BetterGH3 tap gems, and hit effects.
+- GH3 moving beat lines at highway level, with the original bar, beat, and half-beat textures. Clone Hero supplies the fret buttons, strings, button animations, and open-note art.
+- Active Star Power changes regular notes, HOPOs, and taps to their cyan art. Overlapping phrase notes use the corresponding cyan star textures from FastGH3. Stars animate at GH3's 30 frames per second. Lane colors return when Star Power ends. See [gem selection and assets](docs/GEMS.md).
 - Score, streak, rock meter, charge, active Star Power, and multiplier come from the game. Active Star Power uses the blue 2×, 4×, 6×, or 8× art.
 - Score digits align to a fixed right edge inside the amp. Long scores use narrower digits to stay inside the display.
-- The rock needle moves smoothly. Its background blends from yellow toward red or green as the needle moves from the center. The indicator lamps use Clone Hero's one-third and two-thirds health thresholds at the GH3 dial boundaries.
+- The rock needle follows the current health value directly. Its background blends from yellow toward red or green with the needle's distance from the center. The indicator lamps use Clone Hero's one-third and two-thirds health thresholds at the GH3 dial boundaries.
 - The extra Star Power bulbs slide out in sequence when charge reaches 50%. The meter lifts, tilts, and settles with the GH3 entrance motion. See [the animation measurements](docs/BULB-ANIMATION.md).
 - Active Star Power uses GH3's animated rail lightning and cyan glow. The stock highway effect is hidden. See [the source and checks](docs/STAR-POWER-HIGHWAY.md).
 - The ready banner runs for 126 frames at 60 fps when charge reaches 50%. Activation hides it. It can run again after the charge drops and refills.

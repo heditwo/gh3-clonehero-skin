@@ -37,7 +37,7 @@ internal sealed class AmpHud
         frame.uvRect = _multiplier.uvRect;
         frame.material = material;
         frame.rectTransform.localRotation = face.localRotation;
-        _score = new ScoreDigitsHud(foreground, new Rect(50, 35, 174, 37), textures);
+        _score = new ScoreDigitsHud(foreground, new Rect(50, 37, 174, 37), textures);
     }
 
     public void Update(GameplayState state)

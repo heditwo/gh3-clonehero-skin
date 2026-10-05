@@ -30,10 +30,10 @@ internal sealed class RockGaugeHud
         HudVisual.Image(Root, "rockBody", textures["HUD_rock_body"], body);
     }
 
-    public void Update(float rock, float deltaTime)
+    public void Update(float rock)
     {
         if (_first) _state.Reset(rock);
-        if (!_first && !_state.Update(rock, deltaTime)) return;
+        if (!_first && !_state.Update(rock)) return;
         _first = false;
         var red = _state.BackgroundRed;
         var green = _state.BackgroundGreen;

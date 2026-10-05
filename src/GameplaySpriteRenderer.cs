@@ -47,7 +47,7 @@ internal sealed class GameplaySpriteRenderer
         _childCount = -1;
     }
 
-    public void Update(BasePlayer player, ScoreManager score)
+    public void Update(BasePlayer player, ScoreManager score, bool starPowerActive)
     {
         if (_player == null)
         {
@@ -87,9 +87,12 @@ internal sealed class GameplaySpriteRenderer
             if (renderer != null)
                 renderer.sprite = _assets.GetSprite("clear");
         if (!_options.KeepStockGems)
+        {
+            var gemFrame = GemAnimation.Frame(Time.timeAsDouble);
             foreach (var note in _notes)
                 if (note.Object != null && note.Object.activeSelf)
-                    ReplaceGem(note);
+                    ReplaceGem(note, starPowerActive, gemFrame);
+        }
         foreach (var line in _beatlines)
             line.Update(player.mainCamera);
         foreach (var entry in _effects)
@@ -156,7 +159,7 @@ internal sealed class GameplaySpriteRenderer
         return name;
     }
 
-    private void ReplaceGem(GemVisual note)
+    private void ReplaceGem(GemVisual note, bool starPowerActive, int frame)
     {
         var name = SpriteName(note.Head.sprite);
         var kind = GemKind.FromSprites(name, SpriteName(note.Body?.sprite));
@@ -198,7 +201,7 @@ internal sealed class GameplaySpriteRenderer
             }
         }
         note.Display.enabled = true;
-        note.Display.sprite = _assets.Gem(lane, kind, (int)(Time.time * 12) % 16);
+        note.Display.sprite = _assets.Gem(lane, kind, frame, starPowerActive);
         note.Head.enabled = false;
         if (note.Body != null) note.Body.enabled = false;
         if (note.Anim != null) note.Anim.enabled = false;

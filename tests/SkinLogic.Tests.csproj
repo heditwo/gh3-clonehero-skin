@@ -15,6 +15,7 @@
     <Compile Include="../src/StarPowerBulbAnimation.cs" Link="StarPowerBulbAnimation.cs" />
     <Compile Include="../src/StarPowerHighwayAnimation.cs" Link="StarPowerHighwayAnimation.cs" />
     <Compile Include="../src/GemKind.cs" Link="GemKind.cs" />
+    <Compile Include="../src/GemAnimation.cs" Link="GemAnimation.cs" />
     <Compile Include="../src/GameCompatibility.cs" Link="GameCompatibility.cs" />
   </ItemGroup>
 </Project>

@@ -15,7 +15,8 @@ internal sealed class SkinAssets
     private readonly Dictionary<string, Texture2D> _textures = new();
     private readonly List<AnimationFrame> _readyFrames = new();
     private readonly List<AnimationFrame> _readyLightningFrames = new();
-    private readonly Sprite[,,] _gems = new Sprite[5, 4, 16];
+    private readonly Sprite[,,] _gems = new Sprite[5, 6, GemAnimation.FrameCount];
+    private readonly Sprite[,] _activeGems = new Sprite[6, GemAnimation.FrameCount];
     private Material? _beatlineMaterial;
     private Material? _ampMaterial;
 
@@ -102,25 +103,48 @@ internal sealed class SkinAssets
 
     private void LoadGameplaySprites(string root)
     {
+        Load(root, "active-note", 720, new Vector2(0.5f, 0.16f));
+        Load(root, "active-glow", 720, new Vector2(0.5f, 0.16f));
+        Load(root, "active-tap", 720, new Vector2(0.5f, 0.16f));
+        for (var frame = 0; frame < GemAnimation.FrameCount; frame++)
+        {
+            Load(root, $"active-star-{frame}", 550, new Vector2(0.5f, 0.16f));
+            Load(root, $"active-star-glow-{frame}", 550, new Vector2(0.5f, 0.16f));
+            Load(root, $"active-star-tap-{frame}", 550, new Vector2(0.5f, 0.16f));
+        }
         foreach (var lane in Lanes)
         {
             Load(root, $"{lane}-note", 720, new Vector2(0.5f, 0.16f));
             Load(root, $"{lane}-glow", 720, new Vector2(0.5f, 0.16f));
-            for (var frame = 0; frame < 16; frame++)
+            Load(root, $"{lane}-tap", 720, new Vector2(0.5f, 0.16f));
+            for (var frame = 0; frame < GemAnimation.FrameCount; frame++)
             {
                 Load(root, $"{lane}-star-{frame}", 550, new Vector2(0.5f, 0.16f));
                 Load(root, $"{lane}-star-glow-{frame}", 550, new Vector2(0.5f, 0.16f));
+                Load(root, $"{lane}-star-tap-{frame}", 550, new Vector2(0.5f, 0.16f));
             }
         }
 
         for (var lane = 0; lane < Lanes.Length; lane++)
-            for (var frame = 0; frame < 16; frame++)
+            for (var frame = 0; frame < GemAnimation.FrameCount; frame++)
             {
                 _gems[lane, 0, frame] = _sprites[$"{Lanes[lane]}-note"];
                 _gems[lane, 1, frame] = _sprites[$"{Lanes[lane]}-glow"];
                 _gems[lane, 2, frame] = _sprites[$"{Lanes[lane]}-star-{frame}"];
                 _gems[lane, 3, frame] = _sprites[$"{Lanes[lane]}-star-glow-{frame}"];
+                _gems[lane, 4, frame] = _sprites[$"{Lanes[lane]}-tap"];
+                _gems[lane, 5, frame] = _sprites[$"{Lanes[lane]}-star-tap-{frame}"];
             }
+
+        for (var frame = 0; frame < GemAnimation.FrameCount; frame++)
+        {
+            _activeGems[0, frame] = _sprites["active-note"];
+            _activeGems[1, frame] = _sprites["active-glow"];
+            _activeGems[2, frame] = _sprites[$"active-star-{frame}"];
+            _activeGems[3, frame] = _sprites[$"active-star-glow-{frame}"];
+            _activeGems[4, frame] = _sprites["active-tap"];
+            _activeGems[5, frame] = _sprites[$"active-star-tap-{frame}"];
+        }
 
         Load(root, "clear", 20, new Vector2(0.5f, 0.16f));
         foreach (var name in new[] { "beatline", "beatline-beat", "beatline-half" })
@@ -173,7 +197,8 @@ internal sealed class SkinAssets
     }
 
     public Sprite GetSprite(string name) => _sprites[name];
-    public Sprite Gem(int lane, GemKind kind, int frame) => _gems[lane, kind.Index, frame];
+    public Sprite Gem(int lane, GemKind kind, int frame, bool starPowerActive) =>
+        starPowerActive ? _activeGems[kind.Index, frame] : _gems[lane, kind.Index, frame];
     public bool TryGetSprite(string name, out Sprite sprite) => _sprites.TryGetValue(name, out sprite!);
 
     public Sprite Highway(Sprite original)
