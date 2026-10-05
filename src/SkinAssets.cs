@@ -42,6 +42,14 @@ internal sealed class SkinAssets
         _textures["highway"] = LoadTexture(Path.Combine(root, "highway.png"));
         _textures["highway-edges-blue"] = LoadTexture(Path.Combine(root, "highway-edges-blue.png"));
         _textures["highway-edges-normal"] = LoadTexture(Path.Combine(root, "highway-edges-normal.png"));
+        for (var frame = 0; frame < StarPowerHighwayAnimation.FrameCount; frame++)
+        {
+            var name = $"active-highway-{frame:00}";
+            var texture = LoadTexture(Path.Combine(root, name + ".png"));
+            texture.name = name;
+            texture.wrapMode = TextureWrapMode.Clamp;
+            _textures[name] = texture;
+        }
     }
 
     private void LoadReadyAnimation(string root)
@@ -67,7 +75,7 @@ internal sealed class SkinAssets
             texture.filterMode = FilterMode.Point;
             var layout = new Rect(
                 frame.GetProperty("x").GetInt32() * 1.2f,
-                frame.GetProperty("y").GetInt32() * 1.2f + 12,
+                frame.GetProperty("y").GetInt32() * 1.2f,
                 frame.GetProperty("width").GetInt32() * 1.2f,
                 frame.GetProperty("height").GetInt32() * 1.2f);
             destination.Add(new AnimationFrame(texture, layout));

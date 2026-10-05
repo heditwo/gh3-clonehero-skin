@@ -13,6 +13,7 @@ internal sealed class GameplaySpriteRenderer
     private readonly List<BeatlineVisual> _beatlines = new();
     private readonly List<(SpriteRenderer Renderer, Transform Transform, GameObject Object, string Name)> _effects = new();
     private readonly List<SpriteRenderer> _hidden = new();
+    private readonly List<(Renderer Renderer, bool ForceRenderingOff)> _stockStarPowerEffects = new();
     private readonly Dictionary<IntPtr, string> _spriteNames = new();
     private readonly Transform?[] _frets = new Transform?[5];
     private Transform? _player;
@@ -33,6 +34,10 @@ internal sealed class GameplaySpriteRenderer
         _beatlines.Clear();
         _effects.Clear();
         _hidden.Clear();
+        foreach (var (renderer, forceRenderingOff) in _stockStarPowerEffects)
+            if (renderer != null)
+                renderer.forceRenderingOff = forceRenderingOff;
+        _stockStarPowerEffects.Clear();
         _spriteNames.Clear();
         Array.Clear(_frets, 0, _frets.Length);
         _player = null;
@@ -55,6 +60,10 @@ internal sealed class GameplaySpriteRenderer
             if (hud != null)
                 CacheHidden(hud);
             _starParticles = score.starProgress?.starParticles?.GetComponent<ParticleSystemRenderer>();
+            var stockEffects = player.spNeckRenderer?.spController;
+            if (stockEffects != null)
+                foreach (var renderer in stockEffects.GetComponentsInChildren<Renderer>(true))
+                    _stockStarPowerEffects.Add((renderer, renderer.forceRenderingOff));
         }
         if (_childCount != _player.childCount)
         {
@@ -71,6 +80,9 @@ internal sealed class GameplaySpriteRenderer
             _neck.localScale = new Vector3(0.96f, 5.05f, 1);
         if (_starParticles != null)
             _starParticles.enabled = false;
+        foreach (var (renderer, _) in _stockStarPowerEffects)
+            if (renderer != null)
+                renderer.forceRenderingOff = true;
         foreach (var renderer in _hidden)
             if (renderer != null)
                 renderer.sprite = _assets.GetSprite("clear");

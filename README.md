@@ -18,10 +18,12 @@ The installer builds the mod, copies the prepared assets and tuning file, and in
 - Black highway, GH3 rails, regular gems, glowing HOPO gems, animated phrase gems, and hit effects.
 - GH3 moving beat lines at highway level, with the original bar, beat, and half-beat textures. Clone Hero supplies the fret buttons, strings, and button animations. Tap and open notes use stock art.
 - Score, streak, rock meter, charge, active Star Power, and multiplier come from the game. Active Star Power uses the blue 2×, 4×, 6×, or 8× art.
+- Score digits align to a fixed right edge inside the amp. Long scores use narrower digits to stay inside the display.
 - The rock needle moves smoothly. Its background blends from yellow toward red or green as the needle moves from the center. The indicator lamps use Clone Hero's one-third and two-thirds health thresholds at the GH3 dial boundaries.
 - The extra Star Power bulbs slide out in sequence when charge reaches 50%. The meter lifts, tilts, and settles with the GH3 entrance motion. See [the animation measurements](docs/BULB-ANIMATION.md).
+- Active Star Power uses GH3's animated rail lightning and cyan glow. The stock highway effect is hidden. See [the source and checks](docs/STAR-POWER-HIGHWAY.md).
 - The ready banner runs for 126 frames at 60 fps when charge reaches 50%. Activation hides it. It can run again after the charge drops and refills.
-- The note-streak counter appears at 25 notes. Its measured entrance and reel animation use `counter-tuning.json`.
+- The note-streak counter appears at 25 notes. Its measured entrance and reel animation use `counter-tuning.json`. Gray reel backgrounds extend behind the lower frame, with the numbers drawn separately.
 - One five-fret guitar player is supported. Other player layouts use the stock display. Other game versions are rejected before obfuscated fields are read.
 - HUD images fit a centered 16:9 area. Rails and ready effects follow the actual game camera area and field of view. Portrait layout is not supported.
 
@@ -72,6 +74,6 @@ Use `--times 2,4,6,8,10` for a shorter video. The tool aligns frames and writes 
 
 ## Assets and code
 
-`SkinMod` manages scene resets. `GameplayScene` caches the player and score manager. `GameplaySpriteRenderer` caches pooled objects and maps each note to the nearest local fret. `GameplayHud` uses one image per digit and updates layouts when needed. `SkinAssets` keeps GPU textures across scenes and releases their readable CPU copies.
+`SkinMod` manages scene resets. `GameplayScene` caches the player and score manager. `GameplaySpriteRenderer` caches pooled objects and maps each note to the nearest local fret. `GameplayHud` assembles the components in `src/Hud/`; each component owns its local layout and animation. See [the component structure](docs/HUD-COMPONENTS.md). `SkinAssets` keeps GPU textures across scenes and releases their readable CPU copies.
 
 Prepared assets are in `assets/`. To regenerate them, use `uv run --with pillow prepare-assets.py`. To regenerate the ready animation, put the owner's `gh3-long-star-power-1600x900.mp4` in the project root and run `uv run --with pillow --with numpy prepare-ready-animation.py`. These steps need the local source art and recordings. `counter-lab.py --measure` checks reel placement against the stored reference frames.

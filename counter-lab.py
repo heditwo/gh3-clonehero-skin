@@ -53,13 +53,18 @@ def render(previous, combo, frame, model, shift, tuning, reel_width):
     draw(canvas, "HUD_counter_drum_icon", ICON, tuning)
     if model != "current":
         backing = slot_layout(0, 0, reel_width, tuning)
-        draw(canvas, "combo-reel-0", (backing[0], backing[1], 38, backing[3]), tuning)
+        draw(canvas, "combo-reel-0", (backing[0], backing[1], 38, 50), tuning)
+        for slot in range(2):
+            x, y, width, _ = slot_layout(slot, shift, reel_width, tuning)
+            draw(canvas, f"combo-reel-{slot}", (x, y, width, 1022 - y), tuning)
     for slot, digit in enumerate(f"{combo:03}"):
         layout = slot_layout(slot, shift, reel_width, tuning)
         tile = f"combo-2-extended-digit-{digit}" if slot == 2 and model != "current" else f"combo-{slot}-digit-{digit}"
         if frame < 0 or digit == f"{previous:03}"[slot]:
             displayed = f"{previous:03}"[slot] if frame < 0 else digit
             tile = f"combo-2-extended-digit-{displayed}" if slot == 2 and model != "current" else f"combo-{slot}-digit-{displayed}"
+            if slot < 2 and model != "current":
+                tile = f"combo-glyph-light-{displayed}"
             draw(canvas, tile, layout, tuning)
             continue
         if model == "current":
@@ -70,12 +75,13 @@ def render(previous, combo, frame, model, shift, tuning, reel_width):
             offset = 0
         else:
             if frame >= len(tuning["rollAlpha"]):
-                draw(canvas, tile, layout, tuning)
+                draw(canvas, f"combo-glyph-light-{digit}" if slot < 2 else tile, layout, tuning)
                 continue
             opacity = tuning["rollAlpha"][frame]
             offset = tuning["rollOffset720"][frame] * 1600 / 1280
         reel = "combo-reel-2-extended" if slot == 2 and model != "current" else f"combo-reel-{slot}"
-        draw(canvas, reel, layout, tuning)
+        if slot == 2 or model == "current":
+            draw(canvas, reel, layout, tuning)
         glyph = f"combo-glyph-{'dark' if slot == 2 else 'light'}-{digit}"
         x, y, width, height = position(layout, tuning)
         face = Image.new("RGBA", (width, height))

@@ -186,6 +186,26 @@ Equal(0f, HudState.RockNeedleAngle(0.5f), "neutral rock points up");
 Equal(43f, HudState.RockNeedleAngle(-0.1f), "failed rock stops at the red endpoint");
 Equal(-43f, HudState.RockNeedleAngle(1.025f), "native rock overshoot stops at the green endpoint");
 var meter = new RockMeterState();
+var highwayAnimation = new StarPowerHighwayAnimation();
+highwayAnimation.Update(false, 1);
+Equal(-1, highwayAnimation.Frame, "charged but inactive Star Power has no highway effect");
+highwayAnimation.Update(true, 2);
+Equal(0, highwayAnimation.Frame, "activation starts the highway lightning");
+highwayAnimation.Update(true, 2.21f);
+Equal(3, highwayAnimation.Frame, "GH3 highway lightning uses 15 frames per second");
+highwayAnimation.Update(true, 2.21f);
+Equal(3, highwayAnimation.Frame, "paused game time holds the lightning frame");
+highwayAnimation.Update(true, 2 + 8f / 15 + 0.001f);
+Equal(0, highwayAnimation.Frame, "highway lightning loops after eight frames");
+highwayAnimation.Update(false, 3);
+Equal(-1, highwayAnimation.Frame, "drained Star Power removes the highway effect immediately");
+highwayAnimation.Update(true, 4);
+Equal(0, highwayAnimation.Frame, "second activation restarts the effect");
+highwayAnimation.Reset();
+Equal(-1, highwayAnimation.Frame, "scene reset hides the effect");
+highwayAnimation.Update(true, 10);
+highwayAnimation.Update(true, 5);
+Equal(0, highwayAnimation.Frame, "a backward clock starts a new effect");
 foreach (var (health, expectedRed, expectedGreen) in new[]
 {
     (0f, 1f, 0f), (0.4f, 0.78f, 0f), (0.45f, 0.39f, 0f),
