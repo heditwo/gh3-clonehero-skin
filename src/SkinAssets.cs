@@ -1,5 +1,6 @@
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using MelonLoader;
+using System.Buffers.Binary;
 using System.Text.Json;
 using UnityEngine;
 
@@ -16,6 +17,7 @@ internal sealed class SkinAssets
     private readonly List<AnimationFrame> _readyLightningFrames = new();
     private readonly Sprite[,,] _gems = new Sprite[5, 4, 16];
     private Material? _beatlineMaterial;
+    private Material? _ampMaterial;
 
     public IReadOnlyDictionary<string, Texture2D> Textures => _textures;
     public IReadOnlyList<AnimationFrame> ReadyFrames => _readyFrames;
@@ -28,6 +30,22 @@ internal sealed class SkinAssets
         renderQueue = 2980,
         hideFlags = HideFlags.DontUnloadUnusedAsset
     };
+
+    public Material AmpMaterial
+    {
+        get
+        {
+            if (_ampMaterial != null) return _ampMaterial;
+            // GH3 blends straight alpha; UI/Default premultiplies it in the fragment shader.
+            _ampMaterial = new Material(Shader.Find("Hidden/Internal-GUITextureClip"))
+            {
+                hideFlags = HideFlags.DontUnloadUnusedAsset
+            };
+            _ampMaterial.SetTexture("_GUIClipTexture", Texture2D.whiteTexture);
+            _ampMaterial.SetInt("_ManualTex2SRGB", 0);
+            return _ampMaterial;
+        }
+    }
 
     public SkinAssets(string root)
     {
@@ -125,10 +143,10 @@ internal sealed class SkinAssets
             "HUD_rock_body", "HUD_rock_BG_green", "HUD_rock_BG_yellow", "HUD_rock_BG_red",
             "HUD_rock_lights_all", "HUD_rock_lights_green", "HUD_rock_lights_yellow",
             "HUD_rock_lights_red", "HUD_rock_needle",
-            "HUD_score_body", "HUD_score_frame", "HUD_score_ring_front", "HUD_score_x",
+            "HUD_score_body",
             "HUD_counter_body", "HUD_counter_frame", "HUD_counter_drum_icon",
-            "HUD_counter_drum_icon_back", "HUD_score_nixie_1a_wide", "HUD_score_nixie_2a_wide",
-            "HUD_score_nixie_3a_wide", "HUD_score_nixie_4a_wide", "HUD_rock_tube",
+            "HUD_counter_drum_icon_back", "HUD_score_nixie_1a", "HUD_score_nixie_2a",
+            "HUD_score_nixie_3a", "HUD_score_nixie_4a", "HUD_rock_tube",
             "HUD_score_nixie_2b", "HUD_score_nixie_4b", "HUD_score_nixie_6b", "HUD_score_nixie_8b",
             "HUD_rock_tube_glow_full", "HUD_rock_tube_glow_full_b"
         };
@@ -145,7 +163,9 @@ internal sealed class SkinAssets
 
         foreach (var name in hudNames)
         {
-            var texture = LoadTexture(Path.Combine(root, name + ".png"));
+            var texture = name == "HUD_score_body" || name.StartsWith("HUD_score_nixie_", StringComparison.Ordinal)
+                ? LoadDxt5(Path.Combine(root, name + ".dds"))
+                : LoadTexture(Path.Combine(root, name + ".png"));
             if (name.StartsWith("HUD_score_light_", StringComparison.Ordinal))
                 texture.wrapMode = TextureWrapMode.Clamp;
             _textures[name] = texture;
@@ -187,6 +207,27 @@ internal sealed class SkinAssets
             throw new InvalidDataException(file);
 
         texture.filterMode = FilterMode.Bilinear;
+        texture.hideFlags = HideFlags.DontUnloadUnusedAsset;
+        return texture;
+    }
+
+    private static Texture2D LoadDxt5(string file)
+    {
+        var data = File.ReadAllBytes(file);
+        if (data.Length < 128 || BinaryPrimitives.ReadUInt32LittleEndian(data) != 0x20534444 ||
+            BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(84)) != 0x35545844)
+            throw new InvalidDataException(file);
+        var width = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(16));
+        var height = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(12));
+        if (width <= 0 || height <= 0 || width % 4 != 0 || height % 4 != 0 ||
+            data.Length - 128 != (long)width * height)
+            throw new InvalidDataException(file);
+        var texture = new Texture2D(width, height, TextureFormat.DXT5, false);
+        texture.name = Path.GetFileNameWithoutExtension(file);
+        texture.LoadRawTextureData(new Il2CppStructArray<byte>(data[128..]));
+        texture.Apply(false, true);
+        texture.filterMode = FilterMode.Bilinear;
+        texture.wrapMode = TextureWrapMode.Clamp;
         texture.hideFlags = HideFlags.DontUnloadUnusedAsset;
         return texture;
     }

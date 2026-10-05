@@ -12,7 +12,7 @@ internal static class HudState
 
     public static string MultiplierTexture(int multiplier, bool active) => active
         ? $"HUD_score_nixie_{Math.Clamp(multiplier / 2, 1, 4) * 2}b"
-        : $"HUD_score_nixie_{Math.Clamp(multiplier, 1, 4)}a_wide";
+        : $"HUD_score_nixie_{Math.Clamp(multiplier, 1, 4)}a";
 
     public static int BaseMultiplier(int multiplier, bool active) =>
         Math.Clamp(active ? multiplier / 2 : multiplier, 1, 4);

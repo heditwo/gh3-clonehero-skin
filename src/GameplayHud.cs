@@ -43,7 +43,7 @@ internal sealed class GameplayHud
         _screenRoot = HudVisual.Group("Screen HUD", _canvas.transform);
         _rock = new RockMeterHud(_screenRoot, _tuning, _assets.Textures);
         HudVisual.Position(_rock.Root, new Vector2(1326, 752.4f));
-        _score = new ScorePanelHud(_screenRoot, _tuning, _assets.Textures);
+        _score = new ScorePanelHud(_screenRoot, _tuning, _assets.Textures, _assets.AmpMaterial);
         HudVisual.Position(_score.Root, new Vector2(322, 714));
     }
 
@@ -53,6 +53,7 @@ internal sealed class GameplayHud
         if (_screenViewport != screen)
         {
             HudVisual.Viewport(_screenRoot!, screen, screen.BottomOffsetY);
+            _score!.Layout(screen.Scale);
             _screenViewport = screen;
         }
         var rect = camera.pixelRect;

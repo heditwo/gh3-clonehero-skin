@@ -1,4 +1,5 @@
 from pathlib import Path
+import shutil
 from PIL import Image, ImageChops, ImageDraw
 
 source = Path.home() / "games/gh3-skin-assets"
@@ -31,30 +32,15 @@ for lane, (regular, glow) in star_notes.items():
         for frame in range(16):
             sheet.crop(((frame % 4) * 128, (frame // 4) * 64, (frame % 4 + 1) * 128, (frame // 4 + 1) * 64)).save(target / f"{lane}-{variant}-{frame}.png")
 
-for name in ("HUD_score_body", "HUD_counter_drum_icon", "HUD_rock_body", "HUD_rock_BG_green", "HUD_rock_BG_red", "HUD_rock_BG_yellow", "HUD_rock_lights_all", "HUD_rock_lights_green", "HUD_rock_lights_red", "HUD_rock_lights_yellow", "HUD_rock_needle", "HUD_rock_tube", "HUD_rock_tube_glow_full", "HUD_rock_tube_glow_full_b", "HUD_score_nixie_1a", "HUD_score_nixie_2a", "HUD_score_nixie_3a", "HUD_score_nixie_4a"):
+for name in ("HUD_score_body", "HUD_score_nixie_1a", "HUD_score_nixie_2a", "HUD_score_nixie_3a", "HUD_score_nixie_4a", "HUD_score_nixie_2b", "HUD_score_nixie_4b", "HUD_score_nixie_6b", "HUD_score_nixie_8b"):
+    shutil.copyfile(source / "hud-runtime-dds" / f"{name}.dds", target / f"{name}.dds")
+
+for name in ("HUD_counter_drum_icon", "HUD_rock_body", "HUD_rock_BG_green", "HUD_rock_BG_red", "HUD_rock_BG_yellow", "HUD_rock_lights_all", "HUD_rock_lights_green", "HUD_rock_lights_red", "HUD_rock_lights_yellow", "HUD_rock_needle", "HUD_rock_tube", "HUD_rock_tube_glow_full", "HUD_rock_tube_glow_full_b"):
     Image.open(source / "hud-png" / f"{name}.png").convert("RGBA").save(target / f"{name}.png")
-for value in range(1, 5):
-    name = f"HUD_score_nixie_{value}a"
-    original = Image.open(target / f"{name}.png").convert("RGBA")
-    face = original.crop((34, 0, 107, 128)).resize((85, 128), Image.Resampling.BICUBIC)
-    original.alpha_composite(face, (22, 0))
-    original.save(target / f"{name}_wide.png")
 for color in ("", "_blue", "_green", "_purple"):
     for state in range(3):
         name = f"HUD_score_light_{state}{color}"
         Image.open(source / "hud-png" / f"{name}.png").convert("RGBA").save(target / f"{name}.png")
-score_frame = Image.open(target / "HUD_score_body.png").convert("RGBA")
-score_frame_mask = Image.new("L", score_frame.size)
-ImageDraw.Draw(score_frame_mask).rectangle((35, 0, 255, 255), fill=255)
-score_frame.putalpha(ImageChops.multiply(score_frame.getchannel("A"), score_frame_mask))
-score_frame.save(target / "HUD_score_frame.png")
-ring_mask = Image.new("L", score_frame.size)
-ring_draw = ImageDraw.Draw(ring_mask)
-ring_draw.ellipse((65, 77, 203, 217), fill=255)
-ring_draw.ellipse((79, 96, 191, 205), fill=0)
-score_ring = score_frame.copy()
-score_ring.putalpha(ImageChops.multiply(score_ring.getchannel("A"), ring_mask))
-score_ring.save(target / "HUD_score_ring_front.png")
 icon_back = Image.new("RGBA", (64, 64), (29, 24, 23, 255))
 ImageDraw.Draw(icon_back).rectangle((0, 0, 19, 63), fill=(0, 0, 0, 0))
 icon_back.save(target / "HUD_counter_drum_icon_back.png")
@@ -78,7 +64,6 @@ counter_back.save(target / "HUD_counter_body.png")
 counter_frame = counter_body.copy()
 counter_frame.putalpha(ImageChops.multiply(counter_body.getchannel("A"), frame_mask))
 counter_frame.save(target / "HUD_counter_frame.png")
-Image.open(source / "hud-png/HUD_score_body.png").convert("RGBA").crop((68, 132, 116, 175)).save(target / "HUD_score_x.png")
 
 global_images = source / "global-gfx-png"
 skull_highway = Image.open(next(global_images.glob("005_*.png"))).convert("RGBA")
@@ -209,4 +194,4 @@ for digit in range(10):
             tile.alpha_composite(light)
             tile.save(target / f"combo-2-dark-digit-{digit}.png")
 
-print(f"Prepared {len(list(target.glob('*.png')))} GH3 textures in {target}")
+print(f"Prepared {len(list(target.glob('*.png'))) + len(list(target.glob('*.dds')))} GH3 textures in {target}")

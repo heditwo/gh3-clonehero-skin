@@ -14,21 +14,30 @@ internal sealed class AmpHud
 
     public RectTransform Root { get; }
 
-    public AmpHud(Transform parent, IReadOnlyDictionary<string, Texture2D> textures)
+    public AmpHud(Transform parent, IReadOnlyDictionary<string, Texture2D> textures, Material material)
     {
         _textures = textures;
         Root = HudVisual.Group("Amp", parent);
-        Root.sizeDelta = new Vector2(264, 256);
+        Root.sizeDelta = new Vector2(268.8f, 268.8f);
         var background = HudVisual.Group("Amp background", Root);
         var foreground = HudVisual.Group("Amp foreground", Root);
         _lights = new LampColumnHud(background, foreground, new Vector2(FrameLeftEdge - LampColumnHud.Width, 78), textures);
-        var frame = new Rect(0, 0, Root.rect.width, Root.rect.height);
-        HudVisual.Image(background, "scoreBody", textures["HUD_score_body"], frame);
-        HudVisual.Image(foreground, "scoreFrame", textures["HUD_score_frame"], frame);
+        var body = textures["HUD_score_body"];
+        var artwork = HudVisual.Group("Amp artwork", background);
+        artwork.sizeDelta = new Vector2(body.width, body.height);
+        artwork.localScale = new Vector3(Root.rect.width / body.width, Root.rect.height / body.height, 1);
+        var face = HudVisual.Group("Amp face", artwork);
+        // GH3 retains this rotation at both the container and sprite levels when script rotation is zero.
+        face.localRotation = Quaternion.Euler(0, 0, -0.001f * Mathf.Rad2Deg);
+        _multiplier = HudVisual.Image(face, "multiplier", textures["HUD_score_nixie_1a"], new Rect(70, 90, 128, 128));
+        _multiplier.uvRect = new Rect(0, 1, 1, -1);
+        _multiplier.material = material;
+        _multiplier.rectTransform.localRotation = face.localRotation;
+        var frame = HudVisual.Image(face, "scoreBody", body, new Rect(0, 0, body.width, body.height));
+        frame.uvRect = _multiplier.uvRect;
+        frame.material = material;
+        frame.rectTransform.localRotation = face.localRotation;
         _score = new ScoreDigitsHud(foreground, new Rect(50, 35, 174, 37), textures);
-        _multiplier = HudVisual.Image(foreground, "multiplier", textures["HUD_score_nixie_1a_wide"], new Rect(75, 93, 118, 118));
-        HudVisual.Image(foreground, "scoreRingFront", textures["HUD_score_ring_front"], frame);
-        HudVisual.Image(foreground, "scoreX", textures["HUD_score_x"], new Rect(68, 132, 48, 43));
     }
 
     public void Update(GameplayState state)

@@ -177,7 +177,7 @@ foreach (var active in new[] { false, true })
         var actual = active ? multiplier * 2 : multiplier;
         Equal(multiplier, HudState.BaseMultiplier(actual, active), "streak multiplier is separate from Star Power");
         var texture = HudState.MultiplierTexture(actual, active);
-        if (!File.Exists(Path.Combine(root, "assets", texture + ".png")))
+        if (!File.Exists(Path.Combine(root, "assets", texture + ".dds")))
             throw new Exception($"Missing multiplier texture: {texture}");
     }
 Equal("HUD_score_nixie_8b", HudState.MultiplierTexture(8, true), "active 8x art");

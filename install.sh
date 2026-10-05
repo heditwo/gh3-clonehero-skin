@@ -8,7 +8,7 @@ game_dir="${GH3_CLONE_HERO_DIR:-$HOME/games/clonehero-gh3-melon}"
 dotnet build "$project_dir/src/Gh3Skin.csproj" -c Release --nologo -p:GameRoot="$game_dir"
 mkdir -p "$game_dir/Mods/GH3Skin/assets"
 cp "$project_dir/src/bin/Release/net6.0/Gh3Skin.dll" "$game_dir/Mods/Gh3Skin.dll"
-cp "$project_dir/assets/"*.png "$game_dir/Mods/GH3Skin/assets/"
+cp "$project_dir/assets/"*.{png,dds} "$game_dir/Mods/GH3Skin/assets/"
 cp "$project_dir/assets/ready-animation.json" "$game_dir/Mods/GH3Skin/assets/"
 cp "$project_dir/counter-tuning.json" "$game_dir/Mods/GH3Skin/counter-tuning.json"
 for chart in "$project_dir/charts/"*; do
