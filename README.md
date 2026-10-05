@@ -18,7 +18,7 @@ The installer builds the mod, copies the prepared assets and tuning file, and in
 - Black highway, GH3 rails, regular gems, glowing HOPO gems, animated phrase gems, and hit effects.
 - GH3 moving beat lines at highway level, with the original bar, beat, and half-beat textures. Clone Hero supplies the fret buttons, strings, and button animations. Tap and open notes use stock art.
 - Score, streak, rock meter, charge, active Star Power, and multiplier come from the game. Active Star Power uses the blue 2×, 4×, 6×, or 8× art.
-- The rock needle moves smoothly. Clone Hero's one-third and two-thirds health thresholds map to the GH3 dial boundaries. Meter color follows the animated needle, with a short visual delay during changes.
+- The rock needle moves smoothly. Its background blends from yellow toward red or green as the needle moves from the center. The indicator lamps use Clone Hero's one-third and two-thirds health thresholds at the GH3 dial boundaries.
 - The extra Star Power bulbs slide out in sequence when charge reaches 50%. The meter lifts, tilts, and settles with the GH3 entrance motion. See [the animation measurements](docs/BULB-ANIMATION.md).
 - The ready banner runs for 126 frames at 60 fps when charge reaches 50%. Activation hides it. It can run again after the charge drops and refills.
 - The note-streak counter appears at 25 notes. Its measured entrance and reel animation use `counter-tuning.json`.

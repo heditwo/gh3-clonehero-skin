@@ -4,9 +4,12 @@ internal sealed class RockMeterState
 {
     private const float SmoothTime = 0.16f;
     private const float MaximumSpeed = 90;
+    private const float BackgroundFadeAngle = 15;
     private float _velocity;
 
     public float Angle { get; private set; }
+    public float BackgroundRed => Math.Clamp(Angle / BackgroundFadeAngle, 0, 1);
+    public float BackgroundGreen => Math.Clamp(-Angle / BackgroundFadeAngle, 0, 1);
     public string Color => Angle < HudState.RockGreenBoundaryAngle ? "green" :
         Angle >= HudState.RockRedBoundaryAngle ? "red" : "yellow";
 

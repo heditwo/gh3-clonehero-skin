@@ -181,17 +181,28 @@ internal sealed class GameplayHud
 
     private void UpdateRockMeter()
     {
+        var red = _rockMeter.BackgroundRed;
+        var green = _rockMeter.BackgroundGreen;
+        SetRockBackground("red", red > 0 ? 1 : 0);
+        SetRockBackground("yellow", green < 1 ? 1 - red : 0);
+        SetRockBackground("green", green);
         var gaugeColor = _rockMeter.Color;
         if (_rockColor != gaugeColor)
         {
             foreach (var color in new[] { "green", "yellow", "red" })
             {
-                _hudImages["rockBackground" + color].enabled = color == gaugeColor;
                 _hudImages["rockLight" + color].enabled = color == gaugeColor;
             }
             _rockColor = gaugeColor;
         }
         _hudImages["rockNeedle"].rectTransform.localEulerAngles = new Vector3(0, 0, _rockMeter.Angle);
+    }
+
+    private void SetRockBackground(string color, float alpha)
+    {
+        var image = _hudImages["rockBackground" + color];
+        image.enabled = alpha > 0;
+        image.color = new Color(1, 1, 1, alpha);
     }
 
     private void UpdateScore()
@@ -322,7 +333,7 @@ internal sealed class GameplayHud
             _hudImages[$"bulb{bulb}"].rectTransform.localEulerAngles = new Vector3(0, 0, angle);
             _hudImages[$"bulbGlow{bulb}"].rectTransform.localEulerAngles = new Vector3(0, 0, angle);
         }
-        foreach (var color in new[] { "green", "yellow", "red" })
+        foreach (var color in new[] { "red", "yellow", "green" })
             AddHud("rockBackground" + color, "HUD_rock_BG_" + color, new Rect(1390, 780, 256, 256));
         AddHud("rockLights", "HUD_rock_lights_all", new Rect(1390, 780, 256, 128));
         AddHud("rockLightgreen", "HUD_rock_lights_green", new Rect(1518, 780, 128, 128));

@@ -186,6 +186,17 @@ Equal(0f, HudState.RockNeedleAngle(0.5f), "neutral rock points up");
 Equal(43f, HudState.RockNeedleAngle(-0.1f), "failed rock stops at the red endpoint");
 Equal(-43f, HudState.RockNeedleAngle(1.025f), "native rock overshoot stops at the green endpoint");
 var meter = new RockMeterState();
+foreach (var (health, expectedRed, expectedGreen) in new[]
+{
+    (0f, 1f, 0f), (0.4f, 0.78f, 0f), (0.45f, 0.39f, 0f),
+    (0.5f, 0f, 0f), (0.55f, 0f, 0.37f), (0.6f, 0f, 0.74f), (1f, 0f, 1f)
+})
+{
+    meter.Reset(health);
+    if (Math.Abs(meter.BackgroundRed - expectedRed) > 0.0001f ||
+        Math.Abs(meter.BackgroundGreen - expectedGreen) > 0.0001f)
+        throw new Exception("Background must blend across the center of the dial");
+}
 meter.Reset(0.58f);
 Equal("yellow", meter.Color, "the previous green threshold still points into yellow");
 meter.Reset(0.7f);
@@ -224,10 +235,20 @@ foreach (var fps in new[] { 30, 60, 144 })
 {
     meter.Reset(0);
     var intermediate = 0;
+    var blendedBackgroundFrames = 0;
     for (var frame = 0; frame < fps * 2; frame++)
     {
         var previousAngle = meter.Angle;
+        var previousRed = meter.BackgroundRed;
+        var previousGreen = meter.BackgroundGreen;
         meter.Update(1.04f, 1f / fps);
+        if (meter.BackgroundRed > previousRed || meter.BackgroundGreen < previousGreen ||
+            Math.Abs(meter.BackgroundRed - previousRed) > 6f / fps + 0.0001f ||
+            Math.Abs(meter.BackgroundGreen - previousGreen) > 6f / fps + 0.0001f ||
+            meter.BackgroundRed > 0 && meter.BackgroundGreen > 0)
+            throw new Exception("Background blend must follow the smooth needle without jumps or muddy colors");
+        if (meter.BackgroundRed > 0 && meter.BackgroundRed < 1 || meter.BackgroundGreen > 0 && meter.BackgroundGreen < 1)
+            blendedBackgroundFrames++;
         if (meter.Angle > previousAngle || meter.Angle < -43 || previousAngle - meter.Angle > 90f / fps)
             throw new Exception($"Needle jumps or overshoots at {fps} fps");
         if (meter.Angle < 40 && meter.Angle > -40)
@@ -237,6 +258,8 @@ foreach (var fps in new[] { 30, 60, 144 })
         if (frame == fps / 2 - 1)
             halfSecondAngles.Add(meter.Angle);
     }
+    if (blendedBackgroundFrames < fps / 4)
+        throw new Exception("Both background transitions must have visible intermediate colors at every frame rate");
     if (intermediate < fps / 2 || Math.Abs(meter.Angle + 43) > 0.001f)
         throw new Exception($"Needle must traverse the dial and settle at {fps} fps");
 }

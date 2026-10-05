@@ -1,5 +1,27 @@
 # Rock and Star Power meter correction — 2026-10-05
 
+## Background color fade
+
+The background blends continuously from yellow at the center of the dial to green or red at 15° from the center. The blend follows the smooth needle, including reversals, pause, and reset. The lamps still use the calibrated Clone Hero health thresholds below.
+
+The GH3 recording shows a health-dependent blend across the yellow part of the dial. A check of 363 unobstructed yellow-to-green frames gave a mean blend-weight difference of 0.0086 from a linear 15° fade. The first red fade used the same range. Older GH3 recordings, `gh3-source-combo-chart-1600x900.mp4` and `gh3-source-combo-played-1600x900.mp4`, also show a gradual blend as health falls into red.
+
+The original red, yellow, and green textures are layered in GH3's drawing order. A fully opaque lower layer stays behind the fading layer, which prevents the face from becoming dark during a transition. Pure yellow, red, and green use their original textures.
+
+Logic checks cover intermediate colors, smooth progression at 30, 60, and 144 fps, and the existing needle and lamp behavior. The review folder is `/tmp/opencode/gh3-rock-fade-2026-10-05/`.
+
+### Fade verification
+
+- The Release build, logic tests, and `git diff --check` passed.
+- The final native-state run checked 2,758 game frames. It included 65 red/yellow blend frames and 365 yellow/green blend frames. The background stayed opaque, the lamps retained their native thresholds, and Star Power activated, drained, and refilled.
+- Image checks measured 2,572 of the 2,640 delivered video frames. The two short bulb-entry movements were checked separately. The face showed intermediate colors in both ranges. The mean blend-weight error was 0.0035; the maximum was 0.051, including color encoding and one-frame UI timing differences.
+- The bulb entrance still passed the 55-frame GH3 motion comparison. Its maximum position difference was 0.313 pixels at the 900p comparison size.
+- The preview was made from a lossless screen recording, then encoded at high quality to preserve the small color changes.
+
+The installed DLL matches the Release build: SHA-256 `08815c9e8eff0463d0533e9f0eccf689f2e477450cb495e1691f7eb3620355a2`. The temporary native-state probe has been removed. It enabled native phrase awards for the bot, invoked native activation, and injected misses for the test.
+
+Previews: [actual-speed close-up](https://filebin.net/gh3-fade-e438483d9cc0/gh3-rock-color-fade-closeup.mp4) and [full 1440p test](https://filebin.net/gh3-fade-e438483d9cc0/gh3-rock-color-fade-1440p.mp4). The links expire on October 12, 2026. Both uploads passed SHA-256 verification against the local files.
+
 ## Native threshold update
 
 Clone Hero uses red at or below `1f / 3`, yellow above `1f / 3` and at or below `2f / 3`, and green above `2f / 3`. The previous linear needle mapping changed the effective boundaries to about 27.3% and 71.5%. That mapping was incorrect.
