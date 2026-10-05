@@ -17,17 +17,33 @@ internal sealed class GameplayHud
     private readonly IReadOnlyList<AnimationFrame> _readyLightningFrames;
     private readonly Dictionary<string, RawImage> _hudImages = new();
     private readonly Dictionary<string, Rect> _hudLayouts = new();
+    private readonly string[] _scoreKeys = Enumerable.Range(0, 8).Select(slot => $"score-{slot}").ToArray();
+    private readonly string[] _comboKeys = Enumerable.Range(0, 4).Select(slot => $"combo-{slot}").ToArray();
+    private readonly RawImage[] _scoreDigits = new RawImage[8];
+    private readonly RawImage[] _comboDigits = new RawImage[4];
+    private readonly Texture2D[] _scoreTextures;
     private readonly RawImage[] _comboRollNew = new RawImage[4];
     private readonly bool[] _comboRolling = new bool[4];
     private readonly bool[] _comboCarry = new bool[4];
     private readonly float[] _comboRollStarted = new float[4];
     private readonly float[] _comboRollDurations = new float[4];
     private readonly ReadyAnimationTrigger _readyAnimation = new();
+    private readonly RockMeterState _rockMeter = new();
     private Canvas? _canvas;
     private int _score;
     private int _combo;
-    private float _rock = 0.5f;
+    private string _rockColor = "";
     private float _starPower;
+    private int _multiplier = 1;
+    private bool _starPowerActive;
+    private bool _firstUpdate = true;
+    private bool _layoutDirty = true;
+    private int _width;
+    private int _height;
+    private float _lastComboEntryOffset = float.NaN;
+    private string _streak = "000";
+    private int _readyFrame = -2;
+    private HudViewport _highwayViewport;
     private int _shownCombo;
     private float _comboEntryStarted = float.NegativeInfinity;
 
@@ -35,16 +51,27 @@ internal sealed class GameplayHud
     {
         _tuning = tuning;
         _hudTextures = assets.Textures;
+        _scoreTextures = Enumerable.Range(0, 10).Select(digit => _hudTextures[$"score-digit-{digit}"]).ToArray();
         _readyFrames = assets.ReadyFrames;
         _readyLightningFrames = assets.ReadyLightningFrames;
     }
 
     public void Reset()
     {
+        if (_canvas != null)
+            UnityEngine.Object.Destroy(_canvas.gameObject);
         _score = 0;
         _combo = 0;
-        _rock = 0.5f;
+        _rockMeter.Reset();
+        _rockColor = "";
         _starPower = 0;
+        _multiplier = 1;
+        _starPowerActive = false;
+        _firstUpdate = true;
+        _layoutDirty = true;
+        _lastComboEntryOffset = float.NaN;
+        _streak = "000";
+        _readyFrame = -2;
         _readyAnimation.Reset();
         _shownCombo = 0;
         _comboEntryStarted = float.NegativeInfinity;
@@ -61,54 +88,74 @@ internal sealed class GameplayHud
             CreateHud();
     }
 
-    public void Update(GameplayState snapshot)
+    public void Update(GameplayState snapshot, Camera camera)
     {
+        var cameraRect = camera.pixelRect;
+        var highwayViewport = HudViewport.ForHighway(Screen.height, cameraRect.x, cameraRect.y,
+            cameraRect.width, cameraRect.height, camera.fieldOfView);
+        if (_highwayViewport != highwayViewport)
+        {
+            _highwayViewport = highwayViewport;
+            _layoutDirty = true;
+        }
+        var powerChanged = _firstUpdate || _starPower != snapshot.StarPower || _starPowerActive != snapshot.StarPowerActive;
+        if (_firstUpdate)
+            _rockMeter.Reset(snapshot.Rock);
+        var rockChanged = _firstUpdate || _rockMeter.Update(snapshot.Rock, Time.deltaTime);
+        var scoreChanged = _firstUpdate || _score != snapshot.Score || _combo != snapshot.Combo ||
+            _multiplier != snapshot.Multiplier || _starPowerActive != snapshot.StarPowerActive;
         _score = snapshot.Score;
         _combo = snapshot.Combo;
-        _rock = snapshot.Rock;
         _starPower = snapshot.StarPower;
-        UpdateStarPower();
-        UpdateRockMeter();
-        UpdateScore();
+        _multiplier = snapshot.Multiplier;
+        _starPowerActive = snapshot.StarPowerActive;
+        _readyAnimation.Update(_starPower, Time.time, _starPowerActive);
+        if (powerChanged) UpdateStarPower();
+        if (rockChanged) UpdateRockMeter();
+        if (scoreChanged) UpdateScore();
         var streakLength = UpdateCombo();
         UpdateReadyAnimation();
         PositionHud();
         UpdateComboRolls(streakLength);
+        _firstUpdate = false;
     }
 
     private void UpdateStarPower()
     {
-        _hudImages["highwayEdges"].texture = _hudTextures[_starPower >= 0.5f ? "highway-edges-blue" : "highway-edges-normal"];
-        _readyAnimation.Update(_starPower, Time.time);
+        var blue = _starPowerActive || _starPower >= 0.5f;
+        _hudImages["highwayEdges"].texture = _hudTextures[blue ? "highway-edges-blue" : "highway-edges-normal"];
         for (var bulb = 0; bulb < 6; bulb++)
         {
-            var visible = bulb < 3 || _starPower >= 0.5f;
-            var fill = Math.Clamp(_starPower * 6 - bulb, 0, 1);
+            var visible = bulb < 3 || blue;
+            var fill = HudState.StarPowerBulbFill(_starPower, bulb);
             _hudImages[$"bulb{bulb}"].enabled = visible && fill < 1;
             var glow = _hudImages[$"bulbGlow{bulb}"];
             glow.enabled = visible && fill > 0;
             glow.color = new Color(1, 1, 1, fill);
-            glow.texture = _hudTextures[_starPower >= 0.5f ? "HUD_rock_tube_glow_full_b" : "HUD_rock_tube_glow_full"];
+            glow.texture = _hudTextures[blue ? "HUD_rock_tube_glow_full_b" : "HUD_rock_tube_glow_full"];
         }
     }
 
     private void UpdateRockMeter()
     {
-        var gaugeColor = _rock < 0.35f ? "red" : _rock < 0.58f ? "yellow" : "green";
-        foreach (var color in new[] { "green", "yellow", "red" })
+        var gaugeColor = _rockMeter.Color;
+        if (_rockColor != gaugeColor)
         {
-            _hudImages["rockBackground" + color].enabled = color == gaugeColor;
-            _hudImages["rockLight" + color].enabled = color == gaugeColor;
+            foreach (var color in new[] { "green", "yellow", "red" })
+            {
+                _hudImages["rockBackground" + color].enabled = color == gaugeColor;
+                _hudImages["rockLight" + color].enabled = color == gaugeColor;
+            }
+            _rockColor = gaugeColor;
         }
-        _hudImages["rockNeedle"].rectTransform.localEulerAngles = new Vector3(0, 0, 55 - 90 * _rock);
+        _hudImages["rockNeedle"].rectTransform.localEulerAngles = new Vector3(0, 0, _rockMeter.Angle);
     }
 
     private void UpdateScore()
     {
-        var multiplier = Math.Clamp(_combo / 10 + 1, 1, 4);
-        for (var value = 1; value <= 4; value++)
-            _hudImages["multiplier" + value].enabled = value == multiplier;
-        var scoreLightColor = multiplier == 4 ? "_purple" : multiplier == 3 ? "_green" : "";
+        var multiplier = HudState.BaseMultiplier(_multiplier, _starPowerActive);
+        _hudImages["multiplier"].texture = _hudTextures[HudState.MultiplierTexture(_multiplier, _starPowerActive)];
+        var scoreLightColor = _starPowerActive ? "_blue" : multiplier == 4 ? "_purple" : multiplier == 3 ? "_green" : "";
         var scoreLightProgress = multiplier == 4 || _combo > 0 && _combo % 10 == 0 ? 10 : _combo % 10;
         for (var light = 0; light < 5; light++)
         {
@@ -121,16 +168,14 @@ internal sealed class GameplayHud
             glow.enabled = state > 0;
             glow.color = Color.white;
         }
-        var digits = _score.ToString();
+        var digits = Math.Clamp(_score, 0, 99999999).ToString();
         var start = 473 - digits.Length * 15.5f;
         for (var slot = 0; slot < 8; slot++)
         {
-            for (var digit = 0; digit < 10; digit++)
-            {
-                var key = $"score-{slot}-{digit}";
-                _hudImages[key].enabled = slot < digits.Length && digits[slot] - '0' == digit;
-                _hudLayouts[key] = new Rect(start + slot * 31, 815, 31, 37);
-            }
+            _scoreDigits[slot].enabled = slot < digits.Length;
+            if (slot < digits.Length)
+                _scoreDigits[slot].texture = _scoreTextures[digits[slot] - '0'];
+            SetLayout(_scoreKeys[slot], new Rect(start + slot * 31, 815, 31, 37));
         }
     }
 
@@ -144,10 +189,12 @@ internal sealed class GameplayHud
         _hudImages["comboIconBack"].enabled = showCombo && _combo < 1000;
         _hudImages["comboIcon"].enabled = showCombo && _combo < 1000;
         _hudImages["comboBacking0"].enabled = showCombo;
-        var streak = Math.Clamp(_combo, 0, 9999).ToString("D3");
+        if (_combo != _shownCombo)
+            _streak = Math.Clamp(_combo, 0, 9999).ToString("D3");
+        var streak = _streak;
         var comboStart = streak.Length == 4 ? 388 : 426;
         var firstReel = ComboSlotLayout(comboStart, 0, streak.Length);
-        _hudLayouts["comboBacking0"] = new Rect(firstReel.x, firstReel.y, 38, firstReel.height);
+        SetLayout("comboBacking0", new Rect(firstReel.x, firstReel.y, 38, firstReel.height));
         if (_combo != _shownCombo)
         {
             var previous = Math.Clamp(_shownCombo, 0, 9999).ToString($"D{streak.Length}");
@@ -171,15 +218,12 @@ internal sealed class GameplayHud
             if (Time.time - _comboRollStarted[slot] >= _comboRollDurations[slot])
                 _comboRolling[slot] = false;
             _hudImages[$"comboRoll{slot}"].gameObject.SetActive(showCombo && _comboRolling[slot]);
-            _hudLayouts[$"comboRoll{slot}"] = ComboSlotLayout(comboStart, slot, streak.Length);
-            for (var digit = 0; digit < 10; digit++)
-            {
-                var key = $"combo-{slot}-{digit}";
-                _hudImages[key].enabled = showCombo && !_comboRolling[slot] && slot < streak.Length && streak[slot] - '0' == digit;
-                if (slot == 2)
-                    _hudImages[key].texture = _hudTextures[ComboDigitTexture(slot, digit, streak.Length)];
-                _hudLayouts[key] = ComboSlotLayout(comboStart, slot, streak.Length);
-            }
+            var layout = ComboSlotLayout(comboStart, slot, streak.Length);
+            SetLayout($"comboRoll{slot}", layout);
+            _comboDigits[slot].enabled = showCombo && !_comboRolling[slot] && slot < streak.Length;
+            if (slot < streak.Length)
+                _comboDigits[slot].texture = _hudTextures[ComboDigitTexture(slot, streak[slot] - '0', streak.Length)];
+            SetLayout(_comboKeys[slot], layout);
         }
         return streak.Length;
     }
@@ -197,7 +241,7 @@ internal sealed class GameplayHud
             _comboRollNew[slot].rectTransform.sizeDelta = slot == 2 && streakLength == 3
                 ? new Vector2(viewport.rect.width * 35f / _tuning.LastReelWidth, viewport.rect.height)
                 : viewport.rect.size;
-            var offset = _comboCarry[slot] ? 0 : _tuning.RollOffsets[frame] * Screen.height / 720f;
+            var offset = _comboCarry[slot] ? 0 : _tuning.RollOffsets[frame] * HudViewport.For(Screen.width, Screen.height).Scale * 1.5f;
             var opacity = _comboCarry[slot]
                 ? Math.Clamp((progress - 0.5f) / 0.5f, 0, 1)
                 : _tuning.RollAlphas[frame];
@@ -239,12 +283,12 @@ internal sealed class GameplayHud
             _hudImages[$"bulb{bulb}"].rectTransform.localEulerAngles = new Vector3(0, 0, angle);
             _hudImages[$"bulbGlow{bulb}"].rectTransform.localEulerAngles = new Vector3(0, 0, angle);
         }
-        AddHud("rockBody", "HUD_rock_body", new Rect(1390, 780, 256, 256));
         AddHud("rockLights", "HUD_rock_lights_all", new Rect(1390, 780, 256, 128));
         AddHud("rockLightgreen", "HUD_rock_lights_green", new Rect(1518, 780, 128, 128));
         AddHud("rockLightyellow", "HUD_rock_lights_yellow", new Rect(1452, 780, 128, 128));
         AddHud("rockLightred", "HUD_rock_lights_red", new Rect(1390, 780, 128, 128));
-        AddHud("rockNeedle", "HUD_rock_needle", new Rect(1520, 833, 16, 90));
+        AddHud("rockNeedle", "HUD_rock_needle", new Rect(1510, 831, 16, 114));
+        AddHud("rockBody", "HUD_rock_body", new Rect(1390, 780, 256, 256));
     }
 
     private void CreateScoreDisplay()
@@ -256,10 +300,8 @@ internal sealed class GameplayHud
             AddHud($"scoreLightGlow{light}", "HUD_score_light_0", new Rect(298, 858 + light * 31, 32, 32));
         AddHud("scoreFrame", "HUD_score_frame", new Rect(310, 780, 264, 256));
         for (var slot = 0; slot < 8; slot++)
-            for (var digit = 0; digit < 10; digit++)
-                AddHud($"score-{slot}-{digit}", $"score-digit-{digit}", new Rect(0, 817, 29, 34));
-        for (var value = 1; value <= 4; value++)
-            AddHud("multiplier" + value, $"HUD_score_nixie_{value}a_wide", new Rect(385, 873, 118, 118));
+            _scoreDigits[slot] = AddHud(_scoreKeys[slot], "score-digit-0", new Rect(0, 817, 29, 34));
+        AddHud("multiplier", "HUD_score_nixie_1a_wide", new Rect(385, 873, 118, 118));
         AddHud("scoreRingFront", "HUD_score_ring_front", new Rect(310, 780, 264, 256));
         AddHud("scoreX", "HUD_score_x", new Rect(378, 912, 48, 43));
     }
@@ -271,8 +313,7 @@ internal sealed class GameplayHud
         AddHud("comboIcon", "HUD_counter_drum_icon", new Rect(379.5f, 967.5f, 68, 66));
         AddHud("comboBacking0", "combo-reel-0", new Rect(0, 967, 38, 50));
         for (var slot = 0; slot < 4; slot++)
-            for (var digit = 0; digit < 10; digit++)
-                AddHud($"combo-{slot}-{digit}", $"combo-{slot}-digit-{digit}", new Rect(0, 967, 38, 50));
+            _comboDigits[slot] = AddHud(_comboKeys[slot], $"combo-{slot}-digit-0", new Rect(0, 967, 38, 50));
         for (var slot = 0; slot < 4; slot++)
         {
             AddHud($"comboRoll{slot}", $"combo-reel-{slot}", new Rect(0, 967, 38, 50));
@@ -319,7 +360,7 @@ internal sealed class GameplayHud
             slot == 2 ? 974 : 972, width, slot == 2 ? 48 : 45);
     }
 
-    private void AddHud(string key, string spriteName, Rect layout)
+    private RawImage AddHud(string key, string spriteName, Rect layout)
     {
         var gameObject = new GameObject("GH3 " + key);
         var rect = gameObject.AddComponent<RectTransform>();
@@ -329,14 +370,27 @@ internal sealed class GameplayHud
         image.raycastTarget = false;
         _hudImages[key] = image;
         _hudLayouts[key] = layout;
+        return image;
+    }
+
+    private void SetLayout(string key, Rect layout)
+    {
+        if (_hudLayouts[key] == layout)
+            return;
+        _hudLayouts[key] = layout;
+        _layoutDirty = true;
     }
 
     private void PositionHud()
     {
-        var scale = Math.Min(Screen.width / 1920f, Screen.height / 1080f);
-        var offsetX = (Screen.width - 1920 * scale) / 2;
-        var offsetY = (Screen.height - 1080 * scale) / 2;
         var comboEntryOffset = ComboEntryOffset();
+        if (!_layoutDirty && _width == Screen.width && _height == Screen.height && _lastComboEntryOffset == comboEntryOffset)
+            return;
+        _width = Screen.width;
+        _height = Screen.height;
+        _lastComboEntryOffset = comboEntryOffset;
+        _layoutDirty = false;
+        var viewport = HudViewport.For(Screen.width, Screen.height);
         foreach (var (key, image) in _hudImages)
         {
             var layout = _hudLayouts[key];
@@ -345,6 +399,20 @@ internal sealed class GameplayHud
             var rock = key.StartsWith("rock", StringComparison.Ordinal);
             var combo = key.StartsWith("combo", StringComparison.Ordinal);
             var leftHud = combo || key.StartsWith("score", StringComparison.Ordinal) || key.StartsWith("multiplier", StringComparison.Ordinal);
+            var highwayEdges = key == "highwayEdges";
+            if (highwayEdges)
+            {
+                var highway = _highwayViewport;
+                rect.anchorMin = new Vector2(0, 1);
+                rect.anchorMax = new Vector2(0, 1);
+                rect.pivot = new Vector2(0, 1);
+                rect.anchoredPosition = new Vector2(highway.OffsetX, -highway.CenterOffsetY);
+                rect.sizeDelta = new Vector2(1920 * highway.Scale, 1080 * highway.Scale);
+                continue;
+            }
+            var imageViewport = key is "readyFrame" or "readyLightning" ? _highwayViewport : viewport;
+            var imageScale = imageViewport.Scale;
+            var offsetY = leftHud || rock || bulb ? imageViewport.BottomOffsetY : imageViewport.CenterOffsetY;
             var x = bulb ? layout.x : rock ? 1330 + (layout.x - 1390) * _tuning.RockScale + _tuning.RockOffsetX : layout.x;
             var y = bulb ? layout.y - 72 : rock ? 753 + (layout.y - 780) * _tuning.RockVerticalScale + _tuning.RockOffsetY : layout.y - 12;
             if (combo)
@@ -374,17 +442,20 @@ internal sealed class GameplayHud
             rect.anchorMax = new Vector2(0, 1);
             rect.pivot = bulb || key == "rockNeedle" ? new Vector2(0.5f, 0) : new Vector2(0, 1);
             rect.anchoredPosition = bulb
-                ? new Vector2(offsetX + x * scale, -offsetY - y * scale)
+                ? new Vector2(imageViewport.OffsetX + x * imageScale, -offsetY - y * imageScale)
                 : key == "rockNeedle"
-                ? new Vector2(offsetX + (x + width / 2) * scale, -offsetY - (y + height) * scale)
-                : new Vector2(offsetX + x * scale, -offsetY - y * scale);
-            rect.sizeDelta = new Vector2(width * scale, height * scale);
+                ? new Vector2(imageViewport.OffsetX + (x + width / 2) * imageScale, -offsetY - (y + height) * imageScale)
+                : new Vector2(imageViewport.OffsetX + x * imageScale, -offsetY - y * imageScale);
+            rect.sizeDelta = new Vector2(width * imageScale, height * imageScale);
         }
     }
 
     private void UpdateReadyAnimation()
     {
         var frame = _readyAnimation.Frame(Time.time, _readyFrames.Count);
+        if (frame == _readyFrame)
+            return;
+        _readyFrame = frame;
         var image = _hudImages["readyFrame"];
         var lightning = _hudImages["readyLightning"];
         if (frame < 0)
@@ -395,12 +466,12 @@ internal sealed class GameplayHud
         }
         image.enabled = true;
         image.texture = _readyFrames[frame].Texture;
-        _hudLayouts["readyFrame"] = _readyFrames[frame].Layout;
+        SetLayout("readyFrame", _readyFrames[frame].Layout);
         lightning.enabled = frame < _readyLightningFrames.Count;
         if (lightning.enabled)
         {
             lightning.texture = _readyLightningFrames[frame].Texture;
-            _hudLayouts["readyLightning"] = _readyLightningFrames[frame].Layout;
+            SetLayout("readyLightning", _readyLightningFrames[frame].Layout);
         }
     }
 

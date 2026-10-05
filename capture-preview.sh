@@ -4,16 +4,39 @@ export MISE_QUIET=1
 
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 game_dir="$(realpath "${GH3_CLONE_HERO_DIR:-$HOME/games/clonehero-gh3-melon}")"
-song_dir="$(realpath "${GH3_SKIN_PREVIEW_SONG:-$game_dir/PlayerData/Songs/GH3 Skin Preview}")"
+song_dir="$(realpath "${GH3_SKIN_PREVIEW_SONG:-$project_dir/charts/GH3 Combo Preview}")"
 instance="$(hyprctl instances -j | jq -r '.[0].instance')"
 capture_after="${GH3_SKIN_CAPTURE_AFTER:-8}"
-duration="$(awk -v seconds="$capture_after" 'BEGIN { printf "%.0f", seconds + 20 }')"
+width="${GH3_SKIN_PREVIEW_WIDTH:-1600}"
+height="${GH3_SKIN_PREVIEW_HEIGHT:-900}"
+output="${GH3_SKIN_SCREENSHOT:-$project_dir/preview.png}"
+temporary_root="${TMPDIR:-/tmp}/opencode"
+mkdir -p "$temporary_root" "$(dirname -- "$output")"
+if [[ ! "$width" =~ ^[0-9]+$ || ! "$height" =~ ^[0-9]+$ ]] ||
+  (( width < 640 || height < 480 )); then
+  printf 'Preview resolution must be at least 640 x 480\n' >&2
+  exit 1
+fi
 display_number="$((100 + $$ % 10000))"
-log="$(mktemp /tmp/opencode/gh3-preview.XXXXXX.log)"
-xlog="$(mktemp /tmp/opencode/gh3-xwayland.XXXXXX.log)"
-resized="$(mktemp /tmp/opencode/gh3-preview.XXXXXX.png)"
-frames="$(mktemp -d /tmp/opencode/gh3-preview-frames.XXXXXX)"
-capture_times="$(awk -v start="$capture_after" 'BEGIN { for (i = 0; i < 7; i++) printf "%s%.1f", i ? "," : "", start + i }')"
+log="$(mktemp "$temporary_root/gh3-preview.XXXXXX.log")"
+xlog="$(mktemp "$temporary_root/gh3-xwayland.XXXXXX.log")"
+frames="${GH3_SKIN_CAPTURE_DIR:-$(mktemp -d "$temporary_root/gh3-preview-frames.XXXXXX")}"
+mkdir -p "$frames"
+frames="$(realpath "$frames")"
+capture_times="${GH3_SKIN_CAPTURE_TIMES:-$(awk -v start="$capture_after" 'BEGIN { for (i = 0; i < 7; i++) printf "%s%.1f", i ? "," : "", start + i }')}"
+read -r expected duration < <(python3 - "$capture_times" <<'PY'
+import math
+import sys
+times = sorted(set(float(value) for value in sys.argv[1].split(',') if value))
+if not times or any(not math.isfinite(value) or value <= 0 for value in times):
+    raise SystemExit("Capture times must be finite positive seconds")
+print(len(times), math.ceil(times[-1]) + 30)
+PY
+)
+if compgen -G "$frames/frame-*.png" >/dev/null; then
+  printf 'Capture folder must contain no frame-*.png files: %s\n' "$frames" >&2
+  exit 1
+fi
 
 cleanup() {
   for entry in /proc/[0-9]*; do
@@ -34,12 +57,13 @@ cleanup() {
     kill -TERM "$xwayland_pid" 2>/dev/null || true
     wait "$xwayland_pid" 2>/dev/null || true
   fi
-  rm -f -- "$resized"
-  rm -rf -- "$frames"
+  if [[ -z "${GH3_SKIN_CAPTURE_DIR:-}" ]]; then
+    rm -rf -- "$frames"
+  fi
 }
 trap cleanup EXIT
 
-WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}" Xwayland ":$display_number" -geometry 1600x900 > "$xlog" 2>&1 &
+WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}" Xwayland ":$display_number" -noreset -geometry "${width}x${height}" > "$xlog" 2>&1 &
 xwayland_pid=$!
 ready=false
 for ((attempt = 0; attempt < 30; attempt++)); do
@@ -67,27 +91,29 @@ if [[ -z "$address" ]]; then
 fi
 hyprctl -i "$instance" dispatch "hl.dsp.window.float({ action = 'set', window = 'address:$address' })" >/dev/null
 
-WAYLAND_DISPLAY='' DISPLAY=":$display_number" GH3_SKIN_PREVIEW_SONG="$song_dir" GH3_SKIN_CAPTURE_AFTER=1000 \
+WAYLAND_DISPLAY='' DISPLAY=":$display_number" GH3_SKIN_PREVIEW_SONG="$song_dir" GH3_SKIN_CAPTURE_AFTER=0 \
   GH3_SKIN_CAPTURE_TIMES="$capture_times" GH3_SKIN_CAPTURE_DIR="$frames" \
   "$project_dir/run-gh3-skin.sh" --preview > "$log" 2>&1 &
 game_pid=$!
 declare -A checked=()
+selected=""
 for ((attempt = 0; attempt < duration * 5; attempt++)); do
   sleep 0.2
+  kill -0 "$game_pid" 2>/dev/null || break
   for frame in "$frames"/frame-*.png; do
     [[ -f "$frame" && -z "${checked[$frame]:-}" ]] || continue
     brightness="$(magick "$frame" -gravity southeast -crop 40%x40%+0+0 +repage -colorspace gray -format '%[fx:mean]' info: 2>/dev/null || true)"
     [[ -n "$brightness" ]] || continue
     checked["$frame"]=1
-    if awk -v value="$brightness" 'BEGIN { exit !(value > 0.01) }'; then
-      ffmpeg -hide_banner -loglevel error -nostdin -y -i "$frame" \
-        -vf 'scale=1600:900:force_original_aspect_ratio=increase:flags=lanczos,crop=1600:900' \
-        -frames:v 1 "$resized"
-      mv -- "$resized" "$project_dir/preview.png"
-      printf 'Captured %s (1600 x 900). Loader log: %s/MelonLoader/Latest.log\n' "$project_dir/preview.png" "$game_dir"
-      exit 0
+    if [[ -z "$selected" ]] && awk -v value="$brightness" 'BEGIN { exit !(value > 0.01) }'; then
+      selected="$frame"
     fi
   done
+  if [[ -n "$selected" ]] && { [[ -z "${GH3_SKIN_CAPTURE_TIMES:-}" ]] || (( ${#checked[@]} == expected )); }; then
+    cp -- "$selected" "$output"
+    printf 'Captured %s (%s x %s). Loader log: %s/MelonLoader/Latest.log\n' "$output" "$width" "$height" "$game_dir"
+    exit 0
+  fi
 done
 
 printf 'Preview failed. See %s and %s/MelonLoader/Latest.log\n' "$log" "$game_dir" >&2

@@ -11,7 +11,8 @@ internal sealed class SkinOptions
     public int ForcePowerAtCombo { get; private init; }
     public float CaptureAfter { get; private init; }
     public IReadOnlyList<float> CaptureTimes { get; private init; } = Array.Empty<float>();
-    public string CaptureDirectory { get; private init; } = "/tmp/opencode/gh3-matrix-mod";
+    public string CaptureDirectory { get; private init; } = "";
+    public string ScreenshotPath { get; private init; } = "";
 
     public static SkinOptions FromEnvironment()
     {
@@ -20,10 +21,13 @@ internal sealed class SkinOptions
         var captureTimes = (Environment.GetEnvironmentVariable("GH3_SKIN_CAPTURE_TIMES") ?? "")
             .Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(value => float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var time) ? time : 0)
-            .Where(time => time > 0)
+            .Where(time => float.IsFinite(time) && time > 0)
+            .Distinct()
+            .OrderBy(time => time)
             .ToArray();
-        var power = captureAfter > 0 ? ParseFloat("GH3_SKIN_PREVIEW_POWER") : null;
-        var rock = captureAfter > 0 ? ParseFloat("GH3_SKIN_PREVIEW_ROCK") : null;
+        var capture = captureAfter > 0 || captureTimes.Length > 0;
+        var power = capture ? ParseFloat("GH3_SKIN_PREVIEW_POWER") : null;
+        var rock = capture ? ParseFloat("GH3_SKIN_PREVIEW_ROCK") : null;
         power = ParseFloat("GH3_SKIN_FORCE_POWER") ?? power;
         rock = ParseFloat("GH3_SKIN_FORCE_ROCK") ?? rock;
 
@@ -37,11 +41,14 @@ internal sealed class SkinOptions
                 ? Math.Max(0, combo) : 0,
             CaptureAfter = captureAfter,
             CaptureTimes = captureTimes,
-            CaptureDirectory = Environment.GetEnvironmentVariable("GH3_SKIN_CAPTURE_DIR") ?? "/tmp/opencode/gh3-matrix-mod"
+            CaptureDirectory = Path.GetFullPath(Environment.GetEnvironmentVariable("GH3_SKIN_CAPTURE_DIR") ??
+                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Captures", "GH3Skin")),
+            ScreenshotPath = Path.GetFullPath(Environment.GetEnvironmentVariable("GH3_SKIN_SCREENSHOT") ??
+                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Captures", "GH3Skin", "preview.png"))
         };
     }
 
     private static float? ParseFloat(string name) =>
-        float.TryParse(Environment.GetEnvironmentVariable(name), NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+        float.TryParse(Environment.GetEnvironmentVariable(name), NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && float.IsFinite(value)
             ? value : null;
 }

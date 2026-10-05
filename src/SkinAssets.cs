@@ -14,12 +14,20 @@ internal sealed class SkinAssets
     private readonly Dictionary<string, Texture2D> _textures = new();
     private readonly List<AnimationFrame> _readyFrames = new();
     private readonly List<AnimationFrame> _readyLightningFrames = new();
+    private readonly Sprite[,,] _gems = new Sprite[5, 4, 16];
+    private Material? _beatlineMaterial;
 
     public IReadOnlyDictionary<string, Texture2D> Textures => _textures;
     public IReadOnlyList<AnimationFrame> ReadyFrames => _readyFrames;
     public IReadOnlyList<AnimationFrame> ReadyLightningFrames => _readyLightningFrames;
     public int GameplaySpriteCount => _sprites.Count;
     public static string Lane(int index) => Lanes[index];
+    // The native track material can clip lines at highway level.
+    public Material BeatlineMaterial => _beatlineMaterial ??= new Material(Shader.Find("Sprites/Default"))
+    {
+        renderQueue = 2980,
+        hideFlags = HideFlags.DontUnloadUnusedAsset
+    };
 
     public SkinAssets(string root)
     {
@@ -74,13 +82,26 @@ internal sealed class SkinAssets
             Load(root, $"{lane}-glow", 720, new Vector2(0.5f, 0.16f));
             for (var frame = 0; frame < 16; frame++)
             {
-                Load(root, $"{lane}-star-{frame}", 720, new Vector2(0.5f, 0.16f));
-                Load(root, $"{lane}-star-glow-{frame}", 720, new Vector2(0.5f, 0.16f));
+                Load(root, $"{lane}-star-{frame}", 550, new Vector2(0.5f, 0.16f));
+                Load(root, $"{lane}-star-glow-{frame}", 550, new Vector2(0.5f, 0.16f));
             }
         }
 
+        for (var lane = 0; lane < Lanes.Length; lane++)
+            for (var frame = 0; frame < 16; frame++)
+            {
+                _gems[lane, 0, frame] = _sprites[$"{Lanes[lane]}-note"];
+                _gems[lane, 1, frame] = _sprites[$"{Lanes[lane]}-glow"];
+                _gems[lane, 2, frame] = _sprites[$"{Lanes[lane]}-star-{frame}"];
+                _gems[lane, 3, frame] = _sprites[$"{Lanes[lane]}-star-glow-{frame}"];
+            }
+
         Load(root, "clear", 20, new Vector2(0.5f, 0.16f));
-        Load(root, "beatline", 1100, new Vector2(0.5f, 0.2f));
+        foreach (var name in new[] { "beatline", "beatline-beat", "beatline-half" })
+        {
+            Load(root, name, 1024, new Vector2(0.5f, 0));
+            _sprites[name].texture.wrapMode = TextureWrapMode.Clamp;
+        }
         for (var frame = 0; frame < 16; frame++)
         {
             Load(root, $"hit-{frame:00}", 150, new Vector2(0.5f, 0.2f));
@@ -100,6 +121,7 @@ internal sealed class SkinAssets
             "HUD_counter_body", "HUD_counter_frame", "HUD_counter_drum_icon",
             "HUD_counter_drum_icon_back", "HUD_score_nixie_1a_wide", "HUD_score_nixie_2a_wide",
             "HUD_score_nixie_3a_wide", "HUD_score_nixie_4a_wide", "HUD_rock_tube",
+            "HUD_score_nixie_2b", "HUD_score_nixie_4b", "HUD_score_nixie_6b", "HUD_score_nixie_8b",
             "HUD_rock_tube_glow_full", "HUD_rock_tube_glow_full_b"
         };
         hudNames.AddRange(new[] { "", "_blue", "_green", "_purple" }.SelectMany(color =>
@@ -123,6 +145,7 @@ internal sealed class SkinAssets
     }
 
     public Sprite GetSprite(string name) => _sprites[name];
+    public Sprite Gem(int lane, GemKind kind, int frame) => _gems[lane, kind.Index, frame];
     public bool TryGetSprite(string name, out Sprite sprite) => _sprites.TryGetValue(name, out sprite!);
 
     public Sprite Highway(Sprite original)
@@ -133,6 +156,7 @@ internal sealed class SkinAssets
         highway = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height),
             new Vector2(original.pivot.x / original.rect.width, original.pivot.y / original.rect.height), original.pixelsPerUnit);
         highway.name = "GH3_highway";
+        highway.hideFlags = HideFlags.DontUnloadUnusedAsset;
         _sprites["highway"] = highway;
         MelonLogger.Msg($"Applied GH3 highway (original PPU {original.pixelsPerUnit})");
         return highway;
@@ -151,7 +175,7 @@ internal sealed class SkinAssets
     private static Texture2D LoadTexture(string file)
     {
         var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
-        if (!texture.LoadImage(new Il2CppStructArray<byte>(File.ReadAllBytes(file))))
+        if (!texture.LoadImage(new Il2CppStructArray<byte>(File.ReadAllBytes(file)), true))
             throw new InvalidDataException(file);
 
         texture.filterMode = FilterMode.Bilinear;

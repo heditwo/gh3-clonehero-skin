@@ -5,17 +5,26 @@ export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
 
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 game_dir="$(realpath "${GH3_CLONE_HERO_DIR:-$HOME/games/clonehero-gh3-melon}")"
-song_dir="$(realpath "${GH3_SKIN_PREVIEW_SONG:-$game_dir/PlayerData/Songs/GH3 Skin Preview}")"
+song_dir="$(realpath "${GH3_SKIN_PREVIEW_SONG:-$project_dir/charts/GH3 Combo Preview}")"
 instance="$(hyprctl instances -j | jq -r '.[0].instance')"
 output="${GH3_SKIN_VIDEO:-$project_dir/preview-gameplay.mp4}"
 seconds="${GH3_SKIN_VIDEO_SECONDS:-15}"
 trim="${GH3_SKIN_VIDEO_TRIM:-13.5}"
 framerate="${GH3_SKIN_VIDEO_FPS:-60}"
+width="${GH3_SKIN_PREVIEW_WIDTH:-1600}"
+height="${GH3_SKIN_PREVIEW_HEIGHT:-900}"
+if [[ ! "$width" =~ ^[0-9]+$ || ! "$height" =~ ^[0-9]+$ ]] ||
+  (( width < 640 || height < 480 || width % 2 || height % 2 )); then
+  printf 'Video dimensions must be even and at least 640 x 480\n' >&2
+  exit 1
+fi
 display_number="$((100 + $$ % 10000))"
-log="$(mktemp /tmp/opencode/gh3-video.XXXXXX.log)"
-xlog="$(mktemp /tmp/opencode/gh3-xwayland.XXXXXX.log)"
-raw="$(mktemp /tmp/opencode/gh3-video-raw.XXXXXX.mp4)"
-clean="$(mktemp /tmp/opencode/gh3-video-clean.XXXXXX.mp4)"
+temporary_root="${TMPDIR:-/tmp}/opencode"
+mkdir -p "$temporary_root" "$(dirname -- "$output")"
+log="$(mktemp "$temporary_root/gh3-video.XXXXXX.log")"
+xlog="$(mktemp "$temporary_root/gh3-xwayland.XXXXXX.log")"
+raw="$(mktemp "$temporary_root/gh3-video-raw.XXXXXX.mp4")"
+clean="$(mktemp "$temporary_root/gh3-video-clean.XXXXXX.mp4")"
 
 cleanup() {
   if [[ -n "${recorder_pid:-}" ]]; then
@@ -44,7 +53,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}" Xwayland ":$display_number" -geometry 1600x900 > "$xlog" 2>&1 &
+WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}" Xwayland ":$display_number" -noreset -geometry "${width}x${height}" > "$xlog" 2>&1 &
 xwayland_pid=$!
 ready=false
 for ((attempt = 0; attempt < 30; attempt++)); do
@@ -78,6 +87,7 @@ WAYLAND_DISPLAY='' DISPLAY=":$display_number" GH3_SKIN_PREVIEW_SONG="$song_dir" 
 game_pid=$!
 ready=false
 for ((attempt = 0; attempt < 150; attempt++)); do
+  kill -0 "$game_pid" 2>/dev/null || break
   if [[ -f "$game_dir/MelonLoader/Latest.log" ]] &&
     [[ "$(stat -c %Y "$game_dir/MelonLoader/Latest.log")" -ge "$started" ]] &&
     rg -q 'GH3 gameplay scene loaded' "$game_dir/MelonLoader/Latest.log"; then
@@ -93,7 +103,7 @@ fi
 sleep 0.5
 
 DISPLAY=":$display_number" ffmpeg -hide_banner -loglevel error -nostdin -y \
-  -f x11grab -framerate "$framerate" -video_size 1600x900 -draw_mouse 0 -i ":$display_number.0" \
+  -f x11grab -framerate "$framerate" -video_size "${width}x${height}" -draw_mouse 0 -i ":$display_number.0" \
   -c:v libx264 -preset veryfast -crf 22 -pix_fmt yuv420p "$raw" > "$log.recorder" 2>&1 &
 recorder_pid=$!
 sleep "$seconds"
@@ -108,4 +118,6 @@ fi
 ffmpeg -hide_banner -loglevel error -nostdin -y -i "$raw" -t "$trim" \
   -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -movflags +faststart "$clean"
 mv -- "$clean" "$output"
+cp -- "$game_dir/MelonLoader/Latest.log" "$output.log"
+python3 "$project_dir/capture-manifest.py" "$output" "$song_dir" "$game_dir/Mods/Gh3Skin.dll"
 printf 'Recorded %s\n' "$output"

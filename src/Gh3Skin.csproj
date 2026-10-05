@@ -3,7 +3,8 @@
     <TargetFramework>net6.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <GameRoot>/home/hedi/games/clonehero-gh3-melon</GameRoot>
+    <GameRoot Condition="'$(GameRoot)' == '' and '$(GH3_CLONE_HERO_DIR)' != ''">$(GH3_CLONE_HERO_DIR)</GameRoot>
+    <GameRoot Condition="'$(GameRoot)' == ''">$(HOME)/games/clonehero-gh3-melon</GameRoot>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
   </PropertyGroup>
   <ItemGroup>

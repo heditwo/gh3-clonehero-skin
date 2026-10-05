@@ -1,7 +1,9 @@
-/__pycache__/
+__pycache__/
 /src/bin/
 /src/obj/
 /tests/bin/
 /tests/obj/
 /*.mp4
+/*.mp4.log
+/*.mp4.json
 /*.png

@@ -3,8 +3,9 @@ set -euo pipefail
 export MISE_QUIET=1
 export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
 
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 base_dir="$(realpath "${GH3_UNMODDED_DIR:-$HOME/games/clonehero-1.1.0.6142}")"
-song_dir="$(realpath "${GH3_SKIN_PREVIEW_SONG:-$HOME/games/clonehero-gh3-melon/PlayerData/Songs/GH3 Skin Preview}")"
+song_dir="$(realpath "${GH3_SKIN_PREVIEW_SONG:-$project_dir/charts/GH3 Combo Preview}")"
 output_dir="${GH3_UNMODDED_FRAMES:-/tmp/opencode/gh3-unmodded}"
 instance="$(hyprctl instances -j | jq -r '.[0].instance')"
 mkdir -p "$output_dir"

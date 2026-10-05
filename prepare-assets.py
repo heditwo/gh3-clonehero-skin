@@ -104,11 +104,9 @@ for y in range(380, 900):
             gray_rails.putpixel((x, y), (neutral, neutral, neutral, alpha))
 blue_rails.save(target / "highway-edges-blue.png")
 gray_rails.save(target / "highway-edges-normal.png")
-for name, index in (("beatline", 79), ("sustain", 53)):
+for name, index in (("beatline", 79), ("beatline-beat", 90), ("beatline-half", 100), ("sustain", 53)):
     file = next(global_images.glob(f"{index:03d}_*.png"))
     image = Image.open(file).convert("RGBA")
-    if name == "beatline":
-        image = image.resize((image.width, image.height // 2), Image.Resampling.LANCZOS)
     image.save(target / f"{name}.png")
 
 flame_source = Path(__file__).parent / "reference-flames"

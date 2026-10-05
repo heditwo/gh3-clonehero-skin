@@ -5,17 +5,27 @@ export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
 
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 base_dir="$(realpath "${GH3_UNMODDED_DIR:-$HOME/games/clonehero-1.1.0.6142}")"
-song_dir="$(realpath "${GH3_SKIN_PREVIEW_SONG:-$HOME/games/clonehero-gh3-melon/PlayerData/Songs/GH3 Skin Preview}")"
+song_dir="$(realpath "${GH3_SKIN_PREVIEW_SONG:-$project_dir/charts/GH3 Combo Preview}")"
 instance="$(hyprctl instances -j | jq -r '.[0].instance')"
 output="${GH3_STOCK_VIDEO:-$project_dir/preview-stock-gameplay.mp4}"
 seconds="${GH3_STOCK_VIDEO_SECONDS:-15}"
 trim="${GH3_STOCK_VIDEO_TRIM:-13.5}"
+framerate="${GH3_STOCK_VIDEO_FPS:-60}"
+width="${GH3_SKIN_PREVIEW_WIDTH:-1600}"
+height="${GH3_SKIN_PREVIEW_HEIGHT:-900}"
+if [[ ! "$width" =~ ^[0-9]+$ || ! "$height" =~ ^[0-9]+$ ]] ||
+  (( width < 640 || height < 480 || width % 2 || height % 2 )); then
+  printf 'Video dimensions must be even and at least 640 x 480\n' >&2
+  exit 1
+fi
 display_number="$((100 + $$ % 10000))"
-log="$(mktemp /tmp/opencode/gh3-stock-video.XXXXXX.log)"
-xlog="$(mktemp /tmp/opencode/gh3-stock-xwayland.XXXXXX.log)"
-frame="$(mktemp /tmp/opencode/gh3-stock-frame.XXXXXX.png)"
-raw="$(mktemp /tmp/opencode/gh3-stock-raw.XXXXXX.mp4)"
-clean="$(mktemp /tmp/opencode/gh3-stock-clean.XXXXXX.mp4)"
+temporary_root="${TMPDIR:-/tmp}/opencode"
+mkdir -p "$temporary_root" "$(dirname -- "$output")"
+log="$(mktemp "$temporary_root/gh3-stock-video.XXXXXX.log")"
+xlog="$(mktemp "$temporary_root/gh3-stock-xwayland.XXXXXX.log")"
+frame="$(mktemp "$temporary_root/gh3-stock-frame.XXXXXX.png")"
+raw="$(mktemp "$temporary_root/gh3-stock-raw.XXXXXX.mp4")"
+clean="$(mktemp "$temporary_root/gh3-stock-clean.XXXXXX.mp4")"
 
 cleanup() {
   if [[ -n "${recorder_pid:-}" ]]; then
@@ -44,7 +54,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-Xwayland ":$display_number" -geometry 1600x900 > "$xlog" 2>&1 &
+Xwayland ":$display_number" -noreset -geometry "${width}x${height}" > "$xlog" 2>&1 &
 xwayland_pid=$!
 ready=false
 for ((attempt = 0; attempt < 30; attempt++)); do
@@ -76,7 +86,7 @@ hyprctl -i "$instance" dispatch "hl.dsp.window.float({ action = 'set', window = 
   cd "$base_dir"
   exec env -u LD_PRELOAD LD_LIBRARY_PATH="$base_dir" WAYLAND_DISPLAY='' DISPLAY=":$display_number" \
     ./clonehero --song "$song_dir" --player Guitar,Expert \
-    -screen-fullscreen 0 -screen-width 1600 -screen-height 900
+    -screen-fullscreen 0 -screen-width "$width" -screen-height "$height"
 ) > "$log" 2>&1 &
 game_pid=$!
 
@@ -84,9 +94,9 @@ ready=false
 for ((attempt = 0; attempt < 50; attempt++)); do
   kill -0 "$game_pid" 2>/dev/null || break
   if DISPLAY=":$display_number" ffmpeg -hide_banner -loglevel error -nostdin -y \
-      -f x11grab -framerate 1 -video_size 1600x900 -draw_mouse 0 -i ":$display_number.0" \
+      -f x11grab -framerate 1 -video_size "${width}x${height}" -draw_mouse 0 -i ":$display_number.0" \
       -frames:v 1 "$frame" >/dev/null 2>&1; then
-    brightness="$(magick "$frame" -crop 800x150+400+730 +repage -colorspace gray -format '%[fx:mean]' info: 2>/dev/null || true)"
+    brightness="$(magick "$frame" -crop "$((width / 2))x$((height / 6))+$((width / 4))+$((height * 4 / 5))" +repage -colorspace gray -format '%[fx:mean]' info: 2>/dev/null || true)"
     if [[ -n "$brightness" ]] && awk -v value="$brightness" 'BEGIN { exit !(value > 0.04) }'; then
       ready=true
       break
@@ -101,7 +111,7 @@ fi
 sleep 0.5
 
 DISPLAY=":$display_number" ffmpeg -hide_banner -loglevel error -nostdin -y \
-  -f x11grab -framerate 60 -video_size 1600x900 -draw_mouse 0 -i ":$display_number.0" \
+  -f x11grab -framerate "$framerate" -video_size "${width}x${height}" -draw_mouse 0 -i ":$display_number.0" \
   -c:v libx264 -preset veryfast -crf 22 -pix_fmt yuv420p "$raw" > "$log.recorder" 2>&1 &
 recorder_pid=$!
 sleep "$seconds"
@@ -116,4 +126,6 @@ fi
 ffmpeg -hide_banner -loglevel error -nostdin -y -i "$raw" -t "$trim" \
   -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -movflags +faststart "$clean"
 mv -- "$clean" "$output"
+cp -- "$log" "$output.log"
+python3 "$project_dir/capture-manifest.py" "$output" "$song_dir" "$base_dir/clonehero"
 printf 'Recorded %s\n' "$output"

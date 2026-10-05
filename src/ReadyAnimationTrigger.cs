@@ -11,9 +11,9 @@ internal sealed class ReadyAnimationTrigger
         _started = float.NegativeInfinity;
     }
 
-    public void Update(float power, float now)
+    public void Update(float power, float now, bool active = false)
     {
-        var ready = power >= 0.5f;
+        var ready = power >= 0.5f && !active;
         if (ready && !_wasReady)
             _started = now;
         _wasReady = ready;

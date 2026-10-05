@@ -10,7 +10,14 @@ internal sealed class PreviewCapture
     private bool _captured;
     private int _captureIndex;
 
-    public PreviewCapture(SkinOptions options) => _options = options;
+    public PreviewCapture(SkinOptions options)
+    {
+        _options = options;
+        if (options.CaptureTimes.Count > 0)
+            Directory.CreateDirectory(options.CaptureDirectory);
+        if (options.CaptureAfter > 0)
+            Directory.CreateDirectory(Path.GetDirectoryName(options.ScreenshotPath)!);
+    }
 
     public void Reset()
     {
@@ -23,7 +30,7 @@ internal sealed class PreviewCapture
     {
         if (_options.CaptureAfter > 0 && !_captured && Time.time - _gameplayStart > _options.CaptureAfter)
         {
-            var screenshot = "/home/hedi/Work/gh3-clonehero-skin/preview.png";
+            var screenshot = _options.ScreenshotPath;
             ScreenCapture.CaptureScreenshot(screenshot);
             MelonLogger.Msg($"Captured {screenshot}");
             _captured = true;

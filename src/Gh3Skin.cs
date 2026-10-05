@@ -1,5 +1,5 @@
 using MelonLoader;
-using UnityEngine.SceneManagement;
+using UnityEngine;
 
 [assembly: MelonInfo(typeof(Gh3Skin.SkinMod), "GH3 Gameplay Skin", "0.8.98", "hedi")]
 [assembly: MelonGame("srylain Inc.", "Clone Hero")]
@@ -12,10 +12,17 @@ public sealed class SkinMod : MelonMod
     private GameplaySpriteRenderer? _renderer;
     private GameplayHud? _hud;
     private PreviewCapture? _capture;
-    private GameplayState _state = new(0, 0, 0.5f, 0);
+    private readonly GameplayScene _scene = new();
+    private bool _gameplay;
+    private double _lastSongTime = double.NegativeInfinity;
 
     public override void OnInitializeMelon()
     {
+        if (!GameCompatibility.Supports(Application.version))
+        {
+            MelonLogger.Warning($"GH3 skin requires Clone Hero {GameCompatibility.Version}; found {Application.version}.");
+            return;
+        }
         var assetsDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Mods", "GH3Skin", "assets");
         _options = SkinOptions.FromEnvironment();
         var tuning = HudTuning.Load(Path.Combine(assetsDirectory, "..", "counter-tuning.json"));
@@ -28,23 +35,32 @@ public sealed class SkinMod : MelonMod
 
     public override void OnSceneWasLoaded(int buildIndex, string sceneName)
     {
-        if (sceneName != "Gameplay" || _hud == null || _capture == null)
-            return;
-        _state = new GameplayState(0, 0, 0.5f, 0);
-        _hud.Reset();
-        _capture.Reset();
-        MelonLogger.Msg("GH3 gameplay scene loaded");
+        _gameplay = sceneName == "Gameplay";
+        _scene.Reset();
+        _lastSongTime = double.NegativeInfinity;
+        _renderer?.Reset();
+        _hud?.Reset();
+        _capture?.Reset();
+        if (_gameplay)
+            MelonLogger.Msg("GH3 gameplay scene loaded");
     }
 
     public override void OnLateUpdate()
     {
         if (_renderer == null || _hud == null || _options == null || _capture == null ||
-            SceneManager.GetActiveScene().name != "Gameplay")
+            !_gameplay || !_scene.TryGetPlayer(out var player, out var score))
             return;
+        var songTime = player.gameManager.songTime;
+        if (songTime < _lastSongTime - 0.1)
+        {
+            _renderer.Reset();
+            _hud.Reset();
+            _capture.Reset();
+        }
+        _lastSongTime = songTime;
         _hud.EnsureCreated();
-        _renderer.Update();
-        _state = GameplayStateReader.Read(_state, _options);
-        _hud.Update(_state);
+        _renderer.Update(player, score);
+        _hud.Update(GameplayStateReader.Read(player, score, _options), player.mainCamera);
         _capture.Update();
     }
 }
