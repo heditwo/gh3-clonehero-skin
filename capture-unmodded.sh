@@ -63,8 +63,8 @@ if [[ -z "$address" ]]; then
   exit 1
 fi
 
-hyprctl -i "$instance" dispatch "hl.dsp.window.fullscreen({ action = 'unset', window = 'address:$address' })" >/dev/null
-hyprctl -i "$instance" dispatch "hl.dsp.window.float({ action = 'set', window = 'address:$address' })" >/dev/null
+hyprctl -i "$instance" dispatch "hl.dsp.window.fullscreen({ action = 'off', window = 'address:$address' })" >/dev/null
+hyprctl -i "$instance" dispatch "hl.dsp.window.float({ action = 'on', window = 'address:$address' })" >/dev/null
 hyprctl -i "$instance" dispatch "hl.dsp.window.resize({ x = 1600, y = 900, window = 'address:$address' })" >/dev/null
 
 for ((frame = 0; frame < 48; frame++)); do
@@ -72,8 +72,8 @@ for ((frame = 0; frame < 48; frame++)); do
   geometry="$(hyprctl -i "$instance" clients -j | jq -r --arg address "$address" '.[] | select(.address == $address) | "\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"')"
   [[ -n "$geometry" ]] || break
   if [[ "$geometry" != *" 1600x900" ]]; then
-    hyprctl -i "$instance" dispatch "hl.dsp.window.fullscreen({ action = 'unset', window = 'address:$address' })" >/dev/null
-    hyprctl -i "$instance" dispatch "hl.dsp.window.float({ action = 'set', window = 'address:$address' })" >/dev/null
+    hyprctl -i "$instance" dispatch "hl.dsp.window.fullscreen({ action = 'off', window = 'address:$address' })" >/dev/null
+    hyprctl -i "$instance" dispatch "hl.dsp.window.float({ action = 'on', window = 'address:$address' })" >/dev/null
     hyprctl -i "$instance" dispatch "hl.dsp.window.resize({ x = 1600, y = 900, window = 'address:$address' })" >/dev/null
     sleep 0.2
     geometry="$(hyprctl -i "$instance" clients -j | jq -r --arg address "$address" '.[] | select(.address == $address) | "\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"')"

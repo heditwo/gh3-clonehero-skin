@@ -12,6 +12,7 @@
     <Compile Include="../src/HudViewport.cs" Link="HudViewport.cs" />
     <Compile Include="../src/HudState.cs" Link="HudState.cs" />
     <Compile Include="../src/RockMeterState.cs" Link="RockMeterState.cs" />
+    <Compile Include="../src/StarPowerBulbAnimation.cs" Link="StarPowerBulbAnimation.cs" />
     <Compile Include="../src/GemKind.cs" Link="GemKind.cs" />
     <Compile Include="../src/GameCompatibility.cs" Link="GameCompatibility.cs" />
   </ItemGroup>

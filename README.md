@@ -19,6 +19,7 @@ The installer builds the mod, copies the prepared assets and tuning file, and in
 - GH3 moving beat lines at highway level, with the original bar, beat, and half-beat textures. Clone Hero supplies the fret buttons, strings, and button animations. Tap and open notes use stock art.
 - Score, streak, rock meter, charge, active Star Power, and multiplier come from the game. Active Star Power uses the blue 2×, 4×, 6×, or 8× art.
 - The rock needle moves smoothly. Clone Hero's one-third and two-thirds health thresholds map to the GH3 dial boundaries. Meter color follows the animated needle, with a short visual delay during changes.
+- The extra Star Power bulbs slide out in sequence when charge reaches 50%. The meter lifts, tilts, and settles with the GH3 entrance motion. See [the animation measurements](docs/BULB-ANIMATION.md).
 - The ready banner runs for 126 frames at 60 fps when charge reaches 50%. Activation hides it. It can run again after the charge drops and refills.
 - The note-streak counter appears at 25 notes. Its measured entrance and reel animation use `counter-tuning.json`.
 - One five-fret guitar player is supported. Other player layouts use the stock display. Other game versions are rejected before obfuscated fields are read.
@@ -36,7 +37,9 @@ MISE_QUIET=1 bash ./record-preview.sh
 MISE_QUIET=1 bash ./compare-gems.sh
 ```
 
-Captures need Hyprland, Xwayland, `xrandr`, `jq`, `ripgrep`, FFmpeg, ImageMagick, Python, and `uv`. Each script uses a temporary Xwayland display and stops its game and display processes when it ends. Videos have no audio.
+Captures need Hyprland, Xwayland, `xrandr`, `jq`, `ripgrep`, FFmpeg, ImageMagick, Python, and `uv`. Video capture also needs `gpu-screen-recorder`. Each script uses a temporary Xwayland display and stops its game and display processes when it ends. Videos have no audio.
+
+Video capture reads the compositor output in the game window's region. This avoids incomplete frames from X11 capture. Keep the game window visible and in place until recording ends.
 
 | Setting | Purpose |
 | --- | --- |

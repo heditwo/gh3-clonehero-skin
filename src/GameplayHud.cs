@@ -11,6 +11,11 @@ internal sealed class GameplayHud
         -13, -4, 2, 6, 7, 7, 6, 6, 6, 4, 2, 0
     };
     private const float ComboCarryDuration = 5f / 60f;
+    private static readonly (Rect Layout, float Angle)[] Bulbs =
+    {
+        (new(1364, 870, 48, 84), 40), (new(1390, 848, 46, 84), 27), (new(1422, 842, 50, 100), 14),
+        (new(1459, 839, 62, 130), -3), (new(1503, 847, 62, 128), -20), (new(1539, 870, 62, 130), -40)
+    };
     private readonly HudTuning _tuning;
     private readonly IReadOnlyDictionary<string, Texture2D> _hudTextures;
     private readonly IReadOnlyList<AnimationFrame> _readyFrames;
@@ -29,6 +34,10 @@ internal sealed class GameplayHud
     private readonly float[] _comboRollDurations = new float[4];
     private readonly ReadyAnimationTrigger _readyAnimation = new();
     private readonly RockMeterState _rockMeter = new();
+    private readonly StarPowerBulbAnimation _bulbAnimation = new();
+    private RectTransform? _rockContainer;
+    private RockMeterPose? _lastRockPose;
+    private HudViewport _rockAnimationViewport;
     private Canvas? _canvas;
     private int _score;
     private int _combo;
@@ -73,6 +82,9 @@ internal sealed class GameplayHud
         _streak = "000";
         _readyFrame = -2;
         _readyAnimation.Reset();
+        _bulbAnimation.Reset();
+        _rockContainer = null;
+        _lastRockPose = null;
         _shownCombo = 0;
         _comboEntryStarted = float.NegativeInfinity;
         Array.Fill(_comboRolling, false);
@@ -110,12 +122,14 @@ internal sealed class GameplayHud
         _multiplier = snapshot.Multiplier;
         _starPowerActive = snapshot.StarPowerActive;
         _readyAnimation.Update(_starPower, Time.time, _starPowerActive);
-        if (powerChanged) UpdateStarPower();
+        var bulbMotionChanged = _bulbAnimation.Update(_starPower, _starPowerActive, Time.time);
+        if (powerChanged || bulbMotionChanged) UpdateStarPower();
         if (rockChanged) UpdateRockMeter();
         if (scoreChanged) UpdateScore();
         var streakLength = UpdateCombo();
         UpdateReadyAnimation();
         PositionHud();
+        UpdateRockAnimation();
         UpdateComboRolls(streakLength);
         _firstUpdate = false;
     }
@@ -126,14 +140,43 @@ internal sealed class GameplayHud
         _hudImages["highwayEdges"].texture = _hudTextures[blue ? "highway-edges-blue" : "highway-edges-normal"];
         for (var bulb = 0; bulb < 6; bulb++)
         {
-            var visible = bulb < 3 || blue;
+            var extension = _bulbAnimation.Extension(bulb);
+            var visible = extension > 0;
             var fill = HudState.StarPowerBulbFill(_starPower, bulb);
             _hudImages[$"bulb{bulb}"].enabled = visible && fill < 1;
             var glow = _hudImages[$"bulbGlow{bulb}"];
             glow.enabled = visible && fill > 0;
             glow.color = new Color(1, 1, 1, fill);
             glow.texture = _hudTextures[blue ? "HUD_rock_tube_glow_full_b" : "HUD_rock_tube_glow_full"];
+            if (bulb >= 3)
+            {
+                var layout = Bulbs[bulb].Layout;
+                var angle = (bulb - 3) * 21 * Mathf.Deg2Rad;
+                var hiddenDistance = (1 - extension) * 178.5f;
+                layout.x -= Mathf.Sin(angle) * hiddenDistance;
+                layout.y += Mathf.Cos(angle) * hiddenDistance;
+                SetLayout($"bulb{bulb}", layout);
+                SetLayout($"bulbGlow{bulb}", layout);
+            }
         }
+    }
+
+    private void UpdateRockAnimation()
+    {
+        var pose = _bulbAnimation.Pose;
+        var viewport = HudViewport.For(Screen.width, Screen.height);
+        if (_lastRockPose == pose && _rockAnimationViewport == viewport)
+            return;
+        _lastRockPose = pose;
+        _rockAnimationViewport = viewport;
+        var pivot = new Vector2(viewport.OffsetX + 1326 * viewport.Scale,
+            -viewport.BottomOffsetY - 752.4f * viewport.Scale);
+        var rotation = Quaternion.Euler(0, 0, -pose.Angle);
+        var rotatedPivot = rotation * (Vector3)(pivot * pose.Scale);
+        _rockContainer!.anchoredPosition = pivot - (Vector2)rotatedPivot +
+            new Vector2(pose.X, -pose.Y) * (1.2f * viewport.Scale);
+        _rockContainer.localScale = new Vector3(pose.Scale, pose.Scale, 1);
+        _rockContainer.localRotation = rotation;
     }
 
     private void UpdateRockMeter()
@@ -267,22 +310,20 @@ internal sealed class GameplayHud
 
     private void CreateRockMeter()
     {
-        foreach (var color in new[] { "green", "yellow", "red" })
-            AddHud("rockBackground" + color, "HUD_rock_BG_" + color, new Rect(1390, 780, 256, 256));
-        var bulbs = new[]
+        _rockContainer = new GameObject("GH3 rock meter animation").AddComponent<RectTransform>();
+        _rockContainer.SetParent(_canvas!.transform, false);
+        _rockContainer.anchorMin = _rockContainer.anchorMax = _rockContainer.pivot = new Vector2(0, 1);
+        _rockContainer.sizeDelta = Vector2.zero;
+        for (var bulb = 0; bulb < Bulbs.Length; bulb++)
         {
-            (1364, 870, 48, 84, 40), (1390, 848, 46, 84, 27), (1422, 842, 50, 100, 14),
-            (1459, 839, 62, 130, -3), (1503, 847, 62, 128, -20), (1539, 870, 62, 130, -40)
-        };
-        for (var bulb = 0; bulb < bulbs.Length; bulb++)
-        {
-            var (x, y, width, height, angle) = bulbs[bulb];
-            var layout = new Rect(x, y, width, height);
+            var (layout, angle) = Bulbs[bulb];
             AddHud($"bulb{bulb}", "HUD_rock_tube", layout);
             AddHud($"bulbGlow{bulb}", "HUD_rock_tube_glow_full", layout);
             _hudImages[$"bulb{bulb}"].rectTransform.localEulerAngles = new Vector3(0, 0, angle);
             _hudImages[$"bulbGlow{bulb}"].rectTransform.localEulerAngles = new Vector3(0, 0, angle);
         }
+        foreach (var color in new[] { "green", "yellow", "red" })
+            AddHud("rockBackground" + color, "HUD_rock_BG_" + color, new Rect(1390, 780, 256, 256));
         AddHud("rockLights", "HUD_rock_lights_all", new Rect(1390, 780, 256, 128));
         AddHud("rockLightgreen", "HUD_rock_lights_green", new Rect(1518, 780, 128, 128));
         AddHud("rockLightyellow", "HUD_rock_lights_yellow", new Rect(1452, 780, 128, 128));
@@ -365,6 +406,8 @@ internal sealed class GameplayHud
         var gameObject = new GameObject("GH3 " + key);
         var rect = gameObject.AddComponent<RectTransform>();
         rect.SetParent(_canvas!.transform, false);
+        if (key.StartsWith("rock", StringComparison.Ordinal) || key.StartsWith("bulb", StringComparison.Ordinal))
+            rect.SetParent(_rockContainer, false);
         var image = gameObject.AddComponent<RawImage>();
         image.texture = _hudTextures[spriteName];
         image.raycastTarget = false;

@@ -32,6 +32,64 @@ animation.Update(0, 22);
 animation.Update(0.5f, 23);
 Equal(0, animation.Frame(23, 126), "earned recharge starts another banner");
 
+var bulbs = new StarPowerBulbAnimation();
+bulbs.Update(0.49f, false, 0);
+Equal(1f, bulbs.Extension(2), "small bulbs stay out before Star Power is ready");
+Equal(0f, bulbs.Extension(3), "large bulbs stay inside the housing below half charge");
+foreach (var fps in new[] { 30, 60, 144 })
+{
+    bulbs.Reset();
+    for (var frame = 0; frame <= fps; frame++)
+    {
+        var time = frame / (float)fps;
+        bulbs.Update(0.5f, false, time);
+        if (bulbs.Extension(3) < bulbs.Extension(4) || bulbs.Extension(4) < bulbs.Extension(5))
+            throw new Exception("Bulbs must emerge in order from the center to the right");
+        if (time <= 0.2f && bulbs.Extension(4) > 0 || time <= 0.4f && bulbs.Extension(5) > 0)
+            throw new Exception("Later bulbs must wait for their staggered starts");
+        if (time == 0.5f && Math.Abs(bulbs.Extension(4) - 0.75f) > 0.001f)
+            throw new Exception("GH3's middle bulb has one quarter of its travel left after half a second");
+    }
+    for (var bulb = 3; bulb < 6; bulb++)
+        Equal(1f, bulbs.Extension(bulb), "all large bulbs settle at every frame rate");
+    Equal(RockMeterPose.Rest, bulbs.Pose, "the meter settles without changing its layout");
+}
+bulbs.Reset();
+bulbs.Update(0.5f, false, 0);
+bulbs.Update(0.5f, false, 0.15f);
+if (Math.Abs(bulbs.Pose.Scale - 1.4453f) > 0.001f || Math.Abs(bulbs.Pose.Angle - 8.88f) > 0.01f)
+    throw new Exception("Meter lift must match the measured GH3 peak");
+var pausedPose = bulbs.Pose;
+var pausedBulb = bulbs.Extension(3);
+bulbs.Update(0.5f, false, 0.15f);
+Equal(pausedPose, bulbs.Pose, "pause holds the meter pose");
+Equal(pausedBulb, bulbs.Extension(3), "pause holds bulb travel");
+bulbs.Update(0.4f, true, 0.3f);
+if (Math.Abs(bulbs.Extension(3) - 0.75f) > 0.001f || bulbs.Pose.Scale >= 0.61f)
+    throw new Exception("Immediate activation must continue the entrance and meter rebound");
+bulbs.Update(0.1f, true, 2);
+Equal(1f, bulbs.Extension(5), "active drain below half charge keeps large bulbs out");
+bulbs.Update(0, false, 3);
+Equal(1f, bulbs.Extension(5), "deactivation begins retraction without a jump");
+bulbs.Update(0, false, 3.2f);
+if (bulbs.Extension(5) >= bulbs.Extension(3))
+    throw new Exception("Retraction must start with the rightmost bulb");
+var interrupted = bulbs.Extension(5);
+bulbs.Update(0.5f, false, 3.2f);
+Equal(interrupted, bulbs.Extension(5), "recharge preserves position during interrupted retraction");
+bulbs.Update(0.5f, false, 4.1f);
+Equal(1f, bulbs.Extension(5), "recharge completes another entrance");
+bulbs.Update(0, false, 5);
+bulbs.Update(0, false, 6);
+Equal(0f, bulbs.Extension(3), "all large bulbs retract after charge ends");
+Equal(0f, bulbs.Extension(5), "rightmost bulb retracts after charge ends");
+bulbs.Reset();
+Equal(RockMeterPose.Rest, bulbs.Pose, "scene reset clears the meter pulse");
+Equal(0f, bulbs.Extension(3), "scene reset retracts large bulbs");
+bulbs.Update(0.1f, true, 10);
+Equal(1f, bulbs.Extension(5), "joining active gameplay starts with a settled meter");
+Equal(RockMeterPose.Rest, bulbs.Pose, "joining active gameplay does not create a ready pulse");
+
 var variables = new[]
 {
     "GH3_SKIN_CAPTURE_AFTER", "GH3_SKIN_CAPTURE_TIMES", "GH3_SKIN_PREVIEW_POWER",

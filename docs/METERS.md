@@ -22,7 +22,7 @@ The review folder is `/tmp/opencode/gh3-native-thresholds-2026-10-05/`. The runt
 
 ### Native threshold verification
 
-The installed DLL SHA-256 is `63844ac49435ae55614b3ad7f594a972be549442cbaeaa50adc89ddc384df70e`. It matches the Release build and the corrected video manifest. The temporary probe has been removed.
+The native-threshold DLL SHA-256 was `63844ac49435ae55614b3ad7f594a972be549442cbaeaa50adc89ddc384df70e`. It matched that Release build and corrected video manifest. Its temporary probe was removed. The later [bulb entrance update](BULB-ANIMATION.md) adds meter and bulb motion.
 
 - The 900p boundary test recorded 1,782 runtime frames. All 605 settled frames matched Clone Hero's native color classifier across 13 health values. These include exact thresholds and the adjacent single-precision values on each side.
 - The 1440p native-state test checked 2,923 runtime frames. The needle moved between health updates on 1,253 frames. The five color transitions followed native state with observed animation delays of 0.08–0.27 seconds.

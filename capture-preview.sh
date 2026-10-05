@@ -89,7 +89,8 @@ if [[ -z "$address" ]]; then
   printf 'Xwayland window did not appear. See %s\n' "$xlog" >&2
   exit 1
 fi
-hyprctl -i "$instance" dispatch "hl.dsp.window.float({ action = 'set', window = 'address:$address' })" >/dev/null
+hyprctl -i "$instance" dispatch "hl.dsp.window.float({ action = 'on', window = 'address:$address' })" >/dev/null
+hyprctl -i "$instance" dispatch "hl.dsp.window.resize({ x = $width, y = $height, window = 'address:$address' })" >/dev/null
 
 WAYLAND_DISPLAY='' DISPLAY=":$display_number" GH3_SKIN_PREVIEW_SONG="$song_dir" GH3_SKIN_CAPTURE_AFTER=0 \
   GH3_SKIN_CAPTURE_TIMES="$capture_times" GH3_SKIN_CAPTURE_DIR="$frames" \

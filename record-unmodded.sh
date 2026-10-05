@@ -80,7 +80,9 @@ if [[ -z "$address" ]]; then
   printf 'Xwayland window did not appear. See %s\n' "$xlog" >&2
   exit 1
 fi
-hyprctl -i "$instance" dispatch "hl.dsp.window.float({ action = 'set', window = 'address:$address' })" >/dev/null
+hyprctl -i "$instance" dispatch "hl.dsp.window.float({ action = 'on', window = 'address:$address' })" >/dev/null
+hyprctl -i "$instance" dispatch "hl.dsp.window.resize({ x = $width, y = $height, window = 'address:$address' })" >/dev/null
+hyprctl -i "$instance" dispatch "hl.dsp.window.move({ x = 32, y = 64, window = 'address:$address' })" >/dev/null
 
 (
   cd "$base_dir"
@@ -109,10 +111,10 @@ if [[ "$ready" != true ]]; then
   exit 1
 fi
 sleep 0.5
+read -r x y < <(hyprctl -i "$instance" clients -j | jq -r --arg address "$address" '.[] | select(.address == $address) | "\(.at[0]) \(.at[1])"')
 
-DISPLAY=":$display_number" ffmpeg -hide_banner -loglevel error -nostdin -y \
-  -f x11grab -framerate "$framerate" -video_size "${width}x${height}" -draw_mouse 0 -i ":$display_number.0" \
-  -c:v libx264 -preset veryfast -crf 22 -pix_fmt yuv420p "$raw" > "$log.recorder" 2>&1 &
+gpu-screen-recorder -w region -region "${width}x${height}+${x}+${y}" \
+  -f "$framerate" -fm cfr -cursor no -k h264 -q very_high -o "$raw" > "$log.recorder" 2>&1 &
 recorder_pid=$!
 sleep "$seconds"
 kill -INT "$recorder_pid" 2>/dev/null || true
@@ -127,5 +129,6 @@ ffmpeg -hide_banner -loglevel error -nostdin -y -i "$raw" -t "$trim" \
   -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -movflags +faststart "$clean"
 mv -- "$clean" "$output"
 cp -- "$log" "$output.log"
-python3 "$project_dir/capture-manifest.py" "$output" "$song_dir" "$base_dir/clonehero"
+GH3_STOCK_VIDEO_BACKEND=gpu-screen-recorder GH3_STOCK_VIDEO_REGION="${width}x${height}+${x}+${y}" \
+  python3 "$project_dir/capture-manifest.py" "$output" "$song_dir" "$base_dir/clonehero"
 printf 'Recorded %s\n' "$output"
