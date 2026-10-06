@@ -30,7 +30,7 @@ BAND = [
 ]
 
 
-def convert(data_dir, output):
+def convert(data_dir, output, shared=False):
     sources = {}
 
     def load(relative):
@@ -46,10 +46,12 @@ def convert(data_dir, output):
 
     rigs = {name: data for kind, name, data in load("ZONES/global.pak.xen") if kind == key(".ske")}
     hands = {name: data for kind, name, data in load("PAK/perm_anims.pak.xen") if kind == key(".ska")}
-    venue = load("ZONES/z_budokan.pak.xen")
-    nodes = next(array for _, _, data in venue if len(data) > 28 and data[8:12] == bytes.fromhex("1c080204")
-                 if (array := find_array(data, "z_budokan_NodeArray")) is not None)
-    nodes = {node[key("Name")]: node for node in nodes if key("Name") in node}
+    nodes = {}
+    if not shared:
+        venue = load("ZONES/z_budokan.pak.xen")
+        nodes = next(array for _, _, data in venue if len(data) > 28 and data[8:12] == bytes.fromhex("1c080204")
+                     if (array := find_array(data, "z_budokan_NodeArray")) is not None)
+        nodes = {node[key("Name")]: node for node in nodes if key("Name") in node}
     members = []
     for role, model, rig, instrument, waypoint, clip_names, anim_pak in BAND:
         directory = output / role
@@ -127,7 +129,7 @@ def convert(data_dir, output):
                 if not np.isfinite(packed).all():
                     raise ValueError("Invalid sampled pose")
                 stream.write(packed.astype("<f4").tobytes())
-        node = nodes[key(f"Z_Budokan_TRG_Waypoint_{waypoint}_Start")]
+        node = nodes.get(key(f"Z_Budokan_TRG_Waypoint_{waypoint}_Start"), {key("Pos"): [0, 0, 0], key("Angles"): [0, 0, 0]})
         x, y, z = node[key("Pos")]
         members.append({"role": role, "model": model, "instrument": instrument,
                         "position": [x, y, -z], "yaw": -node[key("Angles")][1] * 180 / np.pi,

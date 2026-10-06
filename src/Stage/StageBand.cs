@@ -39,13 +39,13 @@ internal sealed class StageBand : IDisposable
     private StagePerformance? _performance;
     public Dictionary<string, Vector3> Positions { get; } = new();
 
-    public void Load(string directory, StageAssets stage, GameObject root, int layer, bool lighting = false)
+    public void Load(string directory, StageAssets stage, GameObject root, int layer, bool lighting = false,
+        IReadOnlyDictionary<string, StagePlacement>? placements = null)
     {
         var path = Path.Combine(directory, "band.json");
         if (!File.Exists(path))
         {
-            MelonLogger.Warning("GH3 band assets are missing. Run prepare-band.py and install.sh.");
-            return;
+            throw new FileNotFoundException("Shared band library is missing. Run prepare-library.py and install.sh.", path);
         }
         var definition = JsonSerializer.Deserialize<BandDefinition>(File.ReadAllText(path),
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
@@ -55,6 +55,7 @@ internal sealed class StageBand : IDisposable
         var hair = HairBank.Load(Path.Combine(directory, "hair.json"));
         foreach (var member in definition.Members)
         {
+            if (placements != null && !placements.ContainsKey(member.Role)) continue;
             if (member.Role is not ("singer" or "guitarist" or "bassist" or "drummer") ||
                 member.Position.Length != 3 || !member.Position.All(float.IsFinite) || !float.IsFinite(member.Yaw))
                 throw new InvalidDataException("Invalid band member");
@@ -65,6 +66,13 @@ internal sealed class StageBand : IDisposable
             performer.transform.SetParent(root.transform, false);
             performer.transform.localPosition = StageAssets.Vector(member.Position);
             performer.transform.localRotation = Quaternion.Euler(0, member.Yaw, 0);
+            if (placements != null)
+            {
+                var placement = placements[member.Role];
+                performer.transform.localPosition = StageAssets.Vector(placement.Position);
+                var q = placement.Rotation;
+                performer.transform.localRotation = new(q[0], q[1], q[2], q[3]);
+            }
             Positions.Add(member.Role, performer.transform.localPosition);
             var bones = new Transform[animation.Parents.Length];
             for (var i = 0; i < bones.Length; i++)
@@ -90,9 +98,10 @@ internal sealed class StageBand : IDisposable
         if (hair != null) MelonLogger.Msg($"GH3 hair physics: {hair.Members.Values.Sum(m => m.Joints.Length)} original joints");
     }
 
-    public void SetTimeline(string directory, StageTimeline timeline)
+    public void SetTimeline(string directory, StageTimeline timeline, IReadOnlyDictionary<string, StagePlacement>? waypoints = null,
+        StagePerformance? performance = null)
     {
-        _performance = StagePerformance.Load(Path.Combine(directory, "performance.json"));
+        _performance = performance ?? StagePerformance.Load(Path.Combine(directory, "performance.json"));
         if (_performance == null)
         {
             MelonLogger.Warning("GH3 direction assets are missing. Run prepare-direction.py and install.sh.");
@@ -113,9 +122,10 @@ internal sealed class StageBand : IDisposable
             }
             foreach (var cue in timeline.Track("walk", player.Role))
             {
-                if (!_performance.Waypoints.TryGetValue(Gh3Checksum.Of("z_budokan_trg_waypoint_" + cue.Value), out var waypoint)) continue;
-                var target = StageAssets.Vector(waypoint.Take(3).ToArray());
-                player.Walks.Add(new Walk(cue.Time, Math.Max(0.01, Vector3.Distance(position, target) / speed), position, target, Quaternion.Euler(0, waypoint[3], 0)));
+                if (waypoints == null || !waypoints.TryGetValue(cue.Value, out var waypoint)) continue;
+                var target = StageAssets.Vector(waypoint.Position);
+                var q = waypoint.Rotation;
+                player.Walks.Add(new Walk(cue.Time, Math.Max(0.01, Vector3.Distance(position, target) / speed), position, target, new(q[0], q[1], q[2], q[3])));
                 position = target;
             }
         }
@@ -134,6 +144,14 @@ internal sealed class StageBand : IDisposable
         return new BandPose(new(p.x, p.y, p.z), new(q.x, q.y, q.z, q.w));
     }
 
+    public Transform? HandFireBone(string bone, int fallback)
+    {
+        var player = _players.FirstOrDefault(p => p.Role == "guitarist");
+        if (player == null) return null;
+        var index = player.Definition == null ? fallback : Array.IndexOf(player.Definition.Bones, bone);
+        return index >= 0 && index < player.Bones.Length ? player.Bones[index] : null;
+    }
+
     public void Update(double time)
     {
         foreach (var player in _players)
@@ -142,6 +160,7 @@ internal sealed class StageBand : IDisposable
             var root = SamplePose(player, time, player.Pose);
             Apply(player.Root, root);
             player.Hair?.Apply(player.Pose);
+            if (player.Role == "drummer") StageDrumHands.Apply(player.Animation.Parents, player.Pose);
             for (var i = 0; i < player.Bones.Length; i++) Apply(player.Bones[i], player.Pose[i]);
             if (player.Role is "guitarist" or "bassist" && player.Performance?.ArmsEnabled == true)
                 SolveArms(player.Bones, player.Performance.StrumEnabled);

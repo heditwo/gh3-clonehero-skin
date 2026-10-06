@@ -28,17 +28,22 @@ internal sealed class StageLightingRenderer
         public Il2CppSystem.Array NormalBuffer = null!;
         public Il2CppStructArray<Color> Colors = null!;
     }
+    private sealed class ActorLights
+    {
+        public int[] Ambient = Array.Empty<int>();
+        public int[] Directional = Array.Empty<int>();
+        public StageLightSample[] Samples = Array.Empty<StageLightSample>();
+        public Vec Fill;
+        public int Count;
+    }
     private readonly StageLighting _lighting;
     private readonly StageFixtures? _fixtures;
     private readonly List<Surface> _surfaces = new();
     private readonly List<BandSurface> _bandMeshes = new();
-    private readonly int[] _bandLights;
-    private readonly int[] _bandAmbient;
-    private readonly StageLightSample[] _bandSamples;
+    private readonly Dictionary<string, ActorLights> _actorLights = new();
     private readonly List<(GameObject Object, Mesh Mesh, Material Material, Il2CppStructArray<Vector3> Vertices)> _beams = new();
     private StageLightingFrame? _frame;
     private float _amount = -1;
-    private readonly string _band = Gh3Checksum.Of("Band");
 
     public StageLightingRenderer(StageLighting lighting, StageAssets assets, GameObject root, int layer, StageFixtures? fixtures = null)
     {
@@ -65,12 +70,14 @@ internal sealed class StageLightingRenderer
             }
             _surfaces.Add(surface);
         }
-        var bandLights = Enumerable.Range(0, lighting.Bank.Lights.Length).Where(i => lighting.Bank.Lights[i].Group == _band).ToArray();
-        _bandLights = bandLights.Where(i => lighting.Bank.Lights[i].Type != "Ambient").ToArray();
-        _bandAmbient = bandLights.Where(i => lighting.Bank.Lights[i].Type == "Ambient").ToArray();
-        _bandSamples = new StageLightSample[_bandLights.Length];
         foreach (var source in assets.BandMeshes)
         {
+            if (!_actorLights.ContainsKey(source.Group))
+            {
+                var lights = Enumerable.Range(0, lighting.Bank.Lights.Length).Where(i => lighting.Bank.Lights[i].Group == source.Group).ToArray();
+                _actorLights[source.Group] = new() { Ambient = lights.Where(i => lighting.Bank.Lights[i].Type == "Ambient").ToArray(),
+                    Directional = lights.Where(i => lighting.Bank.Lights[i].Type != "Ambient").ToArray(), Samples = new StageLightSample[lights.Length] };
+            }
             var surface = new BandSurface { Source = source, Pose = assets.Own(new Mesh { name = "GH3 Band Lighting Pose" }),
                 Positions = new(source.Colors.Length), Normals = new(source.Colors.Length), Colors = new(source.Colors.Length) };
             surface.PositionBuffer = new(surface.Positions.Pointer);
@@ -163,15 +170,19 @@ internal sealed class StageLightingRenderer
 
     private void ShadeBand(StageLightingValues state)
     {
-        var ambient = Vec.Zero;
-        foreach (var i in _bandAmbient) ambient += state.Lights[i].Energy;
-        var count = 0;
-        foreach (var i in _bandLights)
-            if (state.Lights[i].Energy != Vec.Zero)
-                _bandSamples[count++] = new(_lighting.Bank.Lights[i], state.Lights[i]);
+        foreach (var group in _actorLights.Values)
+        {
+            group.Fill = group.Samples.Length == 0 ? Vec.One : Vec.Zero;
+            foreach (var i in group.Ambient) group.Fill += state.Lights[i].Energy;
+            group.Count = 0;
+            foreach (var i in group.Directional)
+                if (state.Lights[i].Energy != Vec.Zero)
+                    group.Samples[group.Count++] = new(_lighting.Bank.Lights[i], state.Lights[i]);
+        }
         foreach (var surface in _bandMeshes)
         {
             var source = surface.Source;
+            var light = _actorLights[source.Group];
             source.Renderer.BakeMesh(surface.Pose);
             surface.Pose.GetArrayFromChannelImpl(VertexAttribute.Position, VertexAttributeFormat.Float32, 3, surface.PositionBuffer);
             surface.Pose.GetArrayFromChannelImpl(VertexAttribute.Normal, VertexAttributeFormat.Float32, 3, surface.NormalBuffer);
@@ -187,9 +198,9 @@ internal sealed class StageLightingRenderer
                 var position = Vec.Transform(Numeric(vertices[v]), rotation) + offset;
                 var normal = Vec.Transform(Numeric(normals[v]), rotation);
                 normal = normal.LengthSquared() > 0.000001f ? Vec.Normalize(normal) : Vec.UnitY;
-                var energy = ambient;
-                for (var i = 0; i < count; i++)
-                    energy += _bandSamples[i].Energy * _bandSamples[i].Weight(position, normal);
+                var energy = light.Fill;
+                for (var i = 0; i < light.Count; i++)
+                    energy += light.Samples[i].Energy * light.Samples[i].Weight(position, normal);
                 var vertex = source.Colors[v];
                 colors[v] = new(energy.X * vertex.r / 255f, energy.Y * vertex.g / 255f, energy.Z * vertex.b / 255f, vertex.a / 255f);
             }

@@ -14,6 +14,9 @@ cp "$project_dir/counter-tuning.json" "$game_dir/Mods/GH3Skin/counter-tuning.jso
 if [[ -d "$project_dir/assets/stages" ]]; then
   cp -a "$project_dir/assets/stages" "$game_dir/Mods/GH3Skin/assets/"
 fi
+if [[ -d "$project_dir/assets/libraries" ]]; then
+  cp -a "$project_dir/assets/libraries" "$game_dir/Mods/GH3Skin/assets/"
+fi
 for chart in "$project_dir/charts/"*; do
   destination="$game_dir/PlayerData/Songs/$(basename "$chart")"
   mkdir -p "$destination"

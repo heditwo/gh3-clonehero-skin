@@ -1,0 +1,363 @@
+"""Compile public stage manifests and GLB assets into the shared runtime format."""
+
+from copy import deepcopy
+from hashlib import sha256
+import json
+import math
+from pathlib import Path
+import re
+import shutil
+import struct
+import tempfile
+
+import numpy as np
+
+from gh3_formats import key
+from gh3_mesh_cutout import alpha_region, trim_mesh
+from stage_gltf import GlbReader, VERTEX, matrix_quaternion
+
+
+ROLES = {"guitarist", "bassist", "singer", "drummer"}
+CONTROLS = {"TwoCam", "HandCam", "Orbit", "OrbitAndMorphTwoCam", "OrbitContinuous", "Keyframes", "Pan", "ThreePos", "FourPos", "SpecialStepMove"}
+EFFECTS = {"pyro", "sparks", "fireworks", "smoke"}
+
+
+def load_json(path):
+    def reject(value): raise ValueError(f"Non-finite JSON value: {value}")
+    return json.loads(Path(path).read_text(), parse_constant=reject)
+
+
+def write_json(path, value):
+    Path(path).write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
+
+
+def fields(value, allowed, required=()):
+    if not isinstance(value, dict) or set(value)-set(allowed) or set(required)-set(value):
+        raise ValueError(f"Invalid fields: expected {sorted(required)}; allowed {sorted(allowed)}; found {list(value) if isinstance(value, dict) else value}")
+
+
+def vector(value, size=3):
+    if not isinstance(value, list) or len(value) != size or any(type(v) not in (int, float) or not math.isfinite(v) for v in value):
+        raise ValueError(f"Expected a finite {size}-element vector")
+    return value
+
+
+def number(value, minimum, maximum):
+    if type(value) not in (int, float) or not math.isfinite(value) or not minimum <= value <= maximum:
+        raise ValueError(f"Expected a number from {minimum} to {maximum}")
+    return value
+
+
+def rotation(value):
+    q = vector(value, 4)
+    if abs(sum(v*v for v in q)-1) > 0.001: raise ValueError("Rotation must have unit length")
+    return q
+
+
+def transform(value):
+    fields(value, {"position", "rotation"}, {"position", "rotation"})
+    vector(value["position"]); rotation(value["rotation"])
+    return value
+
+
+def relative(root, name):
+    if not isinstance(name, str) or not name or "\\" in name or Path(name).is_absolute(): raise ValueError("Invalid pack-relative path")
+    root = Path(root).resolve(); path = (root/name).resolve()
+    if not path.is_relative_to(root) or not path.is_file(): raise ValueError(f"Missing pack file: {name}")
+    return path
+
+
+def anchor(name, roles):
+    if name == "world": return "world", "00000000"
+    role, _, part = name.partition(".")
+    if role not in roles: raise ValueError(f"Camera refers to absent performer: {name}")
+    bones = {"root": "00000000", "head": f'{key("bone_head"):08x}', "hand_left": f'{key("Bone_Palm_L"):08x}', "hand_right": f'{key("Bone_Palm_R"):08x}'}
+    if part in bones: return role, bones[part]
+    if part.startswith("bone."):
+        bone = part[5:]
+        return role, bone if re.fullmatch(r"[0-9a-f]{8}", bone) else f"{key(bone):08x}"
+    raise ValueError(f"Invalid actor anchor: {name}")
+
+
+def camera_array(group):
+    return "cameras" if group == "default" else "cameras_guitar_closeup" if group == "guitarist" else "cameras_"+group.replace("-", "_")
+
+
+def compile_cameras(data, band, waypoints):
+    fields(data, {"version", "shots", "groups", "notes"}, {"version", "shots", "groups"})
+    if type(data["version"]) != int or data["version"] != 1 or not data["groups"].get("wide"): raise ValueError("A stage needs a wide camera group")
+    shots = {}
+    for name, shot in data["shots"].items():
+        fields(shot, {"type", "control", "points", "orbitAngle", "stepTime", "stepCount", "stepDirection", "handCam", "disableOrbit1", "disableOrbit2", "waypoints", "tag", "angularSpeed", "heightEase", "times", "interpolation"}, {"type", "control", "points"})
+        keyframes = shot["control"] == "Keyframes"
+        if shot["control"] not in CONTROLS or not 1 <= len(shot["points"]) <= (64 if keyframes else 4): raise ValueError(f"Invalid camera control: {name}")
+        count = {"ThreePos": 3, "FourPos": 4}.get(shot["control"])
+        if count and len(shot["points"]) != count or not count and not keyframes and len(shot["points"]) > 2: raise ValueError(f"Invalid camera point count: {name}")
+        if keyframes:
+            times = shot.get("times", [])
+            if len(times) != len(shot["points"]) or len(times) < 2 or times[0] != 0: raise ValueError("Keyframe times must start at zero and match the camera points")
+            for time in times: number(time,0,86400)
+            if any(b <= a for a,b in zip(times,times[1:])): raise ValueError("Keyframe times must increase")
+        if shot.get("interpolation", "smooth") not in ("linear", "smooth"): raise ValueError("Invalid camera interpolation")
+        for prop in ("handCam", "disableOrbit1", "disableOrbit2"):
+            if prop in shot and type(shot[prop]) != bool: raise ValueError(f"Invalid camera flag: {prop}")
+        number(shot.get("orbitAngle", 0), -36000, 36000)
+        number(shot.get("stepTime", 6), 0.001, 86400)
+        number(shot.get("stepCount", 6), 0, 10000)
+        vector(shot.get("stepDirection", [0,0,0]))
+        number(shot.get("angularSpeed",0),-3600,3600)
+        ease = vector(shot.get("heightEase", [0,0,0]))
+        number(ease[2],0,100)
+        if shot["control"] == "OrbitContinuous":
+            if len(shot["points"]) != 1 or "lookAt" not in shot["points"][0]: raise ValueError("Continuous orbit needs one point and a target")
+        if any(n not in waypoints for n in shot.get("waypoints", [])): raise ValueError(f"Unknown camera waypoint: {name}")
+        row = {"name": shot.get("tag", name), "type": shot["type"], "control": shot["control"], "points": [], "nodes": shot.get("waypoints", [])}
+        for prop in ("orbitAngle", "stepTime", "stepCount", "stepDirection", "handCam", "disableOrbit1", "disableOrbit2", "angularSpeed", "heightEase", "times", "interpolation"):
+            if prop in shot: row[prop] = shot[prop]
+        for p in shot["points"]:
+            fields(p, {"position", "rotation", "horizontalFov", "anchor", "lookAt", "screenOffset"}, {"position", "horizontalFov", "anchor"})
+            role, bone = anchor(p["anchor"], band)
+            look, look_bone = anchor(p["lookAt"], band) if "lookAt" in p else ("", "00000000")
+            if not look and "rotation" not in p: raise ValueError("Camera point needs rotation or lookAt")
+            q = rotation(p.get("rotation", [0, 0, 0, 1]))
+            number(p["horizontalFov"], 0, 170)
+            if p["horizontalFov"] in (0,170): raise ValueError("Camera FOV must be greater than zero and less than 170")
+            row["points"].append({"position": vector(p["position"]), "rotation": q, "fieldOfView": p["horizontalFov"],
+                                  "lockTo": role, "lockBone": bone, "lookAt": look, "lookBone": look_bone,
+                                  "screenOffset": vector(p.get("screenOffset", [0, 0]), 2)})
+        shots[name] = row
+    arrays = {}
+    for group, names in data["groups"].items():
+        if not names or any(n not in shots for n in names): raise ValueError(f"Invalid camera group: {group}")
+        arrays[camera_array(group)] = [shots[n] for n in names]
+    if not any(not shot["nodes"] for shot in arrays["cameras_wide"]): raise ValueError("Wide group needs an unrestricted shot")
+    arrays.setdefault("cameras", arrays["cameras_wide"])
+    for group in ["guitarist", "bassist", "singer", "drummer", "orbit"]:
+        arrays.setdefault(camera_array(group), arrays["cameras_wide"])
+    notes = {}
+    for pitch, selector in data.get("notes", {}).items():
+        fields(selector, {"group", "tag", "type", "enable"})
+        if not str(pitch).isdigit() or not 0 <= int(pitch) <= 127: raise ValueError("Invalid camera note")
+        group = selector.get("group")
+        notes[pitch] = {"array": camera_array(group) if group else "", "name": selector.get("tag", ""),
+                        "type": selector.get("type", ""), "enable": selector.get("enable", True)}
+        if group and camera_array(group) not in arrays: raise ValueError(f"Missing note-selected camera group: {group}")
+    return {"version": 1, "arrays": arrays, "notes": notes}
+
+
+def compile_lighting(data):
+    data = deepcopy(data)
+    fields(data, {"version", "lights", "snapshots", "moods", "colors"}, {"version", "lights", "snapshots", "moods", "colors"})
+    if type(data["version"]) != int or data["version"] != 1 or not data["snapshots"] or not data["lights"]: raise ValueError("Invalid lighting bank")
+    for light in data["lights"]:
+        fields(light, {"id", "group", "type", "position", "rotation", "overrideColor", "hotspot", "field"}, {"id", "group", "type", "position", "rotation"})
+        if light["type"] not in ("Ambient", "Dir", "Point", "Spot"): raise ValueError("Unsupported light type")
+        vector(light["position"]); rotation(light["rotation"])
+        if type(light.get("overrideColor", False)) != bool: raise ValueError("Invalid light color override flag")
+        number(light.get("hotspot",0),0,180); number(light.get("field",0),0,180)
+        light["group"] = f'{key(light["group"]):08x}'
+        light["id"] = f'{key(light["id"]):08x}'
+    if len({l["id"] for l in data["lights"]}) != len(data["lights"]) or len(data["lights"]) > 128: raise ValueError("Duplicate or excess lights")
+    beam_ids = None
+    for snapshot in data["snapshots"].values():
+        fields(snapshot, {"lights", "beams"}, {"lights", "beams"})
+        if len(snapshot["lights"]) != len(data["lights"]): raise ValueError("Snapshot light count differs")
+        if beam_ids is not None and set(snapshot["beams"]) != beam_ids: raise ValueError("Snapshot beam IDs differ")
+        beam_ids = set(snapshot["beams"])
+        for light in snapshot["lights"]:
+            fields(light, {"color", "intensity", "near", "far", "specular", "inherit"}, {"color", "intensity", "near", "far"})
+            vector(light["color"]); number(light["intensity"],-100,100)
+            number(light["near"],0,100000); number(light["far"],light["near"],100001)
+            if type(light.get("inherit",False)) != bool: raise ValueError("Invalid light inheritance flag")
+        for beam in snapshot["beams"].values():
+            fields(beam, {"position", "rotation", "color", "density", "startRadius", "endRadius", "range", "inherit"}, {"position", "rotation", "color", "density", "startRadius", "endRadius", "range"})
+            vector(beam["position"]); rotation(beam["rotation"]); vector(beam["color"])
+            for prop in ("density", "startRadius", "endRadius", "range"): number(beam[prop],0,100000)
+            if type(beam.get("inherit",False)) != bool: raise ValueError("Invalid beam inheritance flag")
+        snapshot["beams"] = {f"{key(k):08x}": v for k, v in snapshot["beams"].items()}
+    for mood in ("intro", "blackout"):
+        if not data["moods"].get(mood): raise ValueError(f"Missing lighting mood: {mood}")
+    for mood in ("verse", "chorus", "solo", "flare", "strobe"):
+        data["moods"].setdefault(mood, data["moods"]["intro"])
+    if any(n not in data["snapshots"] for rows in data["moods"].values() for n in rows): raise ValueError("Unknown lighting snapshot")
+    for color in data["colors"].values(): vector(color)
+    return data
+
+
+def basic_lighting():
+    settings = [{"color": [1, 1, 1], "intensity": 0.65, "near": 0, "far": 200}] * 2
+    return {"version": 1, "lights": [{"id": g, "group": g, "type": "Ambient", "position": [0, 0, 0], "rotation": [0, 0, 0, 1]} for g in ("Stage", "Band")],
+            "snapshots": {"fill": {"lights": settings, "beams": {}}}, "moods": {"intro": ["fill"], "blackout": ["fill"]}, "colors": {}}
+
+
+def split_mesh(material, packed, faces):
+    for start in range(0, len(faces), 20000):
+        section = faces[start:start+20000]
+        used, indices = np.unique(section.reshape(-1), return_inverse=True)
+        yield material, len(used), packed[used].tobytes(), indices.reshape(-1, 3).tolist()
+
+
+def write_meshes(folder, meshes, materials, groups=None, skinned=False):
+    folder.mkdir(parents=True, exist_ok=True)
+    with (folder/"meshes.bin").open("wb") as stream:
+        stream.write((b"GH3BND01" if skinned else b"GH3STG01") + struct.pack("<I", len(meshes)))
+        for material, count, vertices, faces in meshes:
+            stream.write(struct.pack("<III", int(material, 16), count, len(faces)*3)); stream.write(vertices)
+            stream.write(np.asarray(faces, dtype="<u4").tobytes())
+    result = {"version": 1, "name": folder.name, "cameraPosition": [0, 3, -10], "cameraTarget": [0, 1, 0],
+              "fieldOfView": 55, "materials": materials, "lightGroups": groups or []}
+    write_json(folder/"stage.json", result)
+    return result
+
+
+def import_materials(glb, folder):
+    texture_dir = folder/"textures"; texture_dir.mkdir(parents=True)
+    materials = {}; images = {}; material_ids = {}
+    for i, material in enumerate(glb.data.get("materials", []) + [{}]):
+        name = f"{key('material-'+str(i)):08x}"
+        pbr = material.get("pbrMetallicRoughness", {}); extras = material.get("extras", {})
+        texture = ""
+        if "baseColorTexture" in pbr:
+            info = pbr["baseColorTexture"]
+            if info.get("texCoord", 0) != 0: raise ValueError("Stage materials use TEXCOORD_0")
+            texture = f"{key('texture-'+str(info['index'])):08x}"
+            if texture not in images:
+                images[texture] = glb.image(info["index"]); images[texture].save(texture_dir/(texture+".png"))
+        mode = material.get("alphaMode", "OPAQUE")
+        if mode not in ("OPAQUE", "MASK", "BLEND"): raise ValueError("Unsupported material alpha mode")
+        materials[name] = {"texture": texture, "blend": 1 if extras.get("gh3Additive") else 2 if mode == "BLEND" else 0,
+                           "cutoff": float(material.get("alphaCutoff", 0.5)) if mode == "MASK" else 0,
+                           "crowd": bool(extras.get("gh3CrowdAtlas")), "sortedTransparency": bool(extras.get("gh3SortedTransparency"))}
+        if materials[name]["crowd"]: materials[name].update(blend=3, cutoff=0.3)
+        material_ids[i] = name
+    return materials, material_ids, images
+
+
+def compile_stage(source, destination):
+    source = Path(source).resolve(); manifest = load_json(source/"stage-pack.json")
+    destination = Path(destination).resolve()
+    if source.is_relative_to(destination): raise ValueError("The compiled pack cannot replace its source")
+    fields(manifest, {"version", "kind", "id", "name", "library", "model", "band", "waypoints", "cameras", "lighting", "effects", "actors"},
+           {"version", "kind", "id", "name", "library", "model", "band", "cameras"})
+    if type(manifest["version"]) != int or manifest["version"] != 1 or manifest["kind"] != "stage" or manifest["library"] != "gh3-band-v1" or not isinstance(manifest["id"],str) or not re.fullmatch(r"[a-z0-9][a-z0-9.-]{0,95}", manifest["id"]):
+        raise ValueError("Invalid stage pack identity or version")
+    if not isinstance(manifest["name"],str) or not manifest["name"].strip(): raise ValueError("A stage needs a display name")
+    if set(manifest["band"]) != ROLES: raise ValueError("A stage needs all four performer placements")
+    for placement in manifest["band"].values(): transform(placement)
+    waypoints = {role+"_start": placement for role, placement in manifest["band"].items()}
+    for name, placement in manifest.get("waypoints", {}).items():
+        if name in waypoints: raise ValueError("Stage cannot replace a reserved start waypoint")
+        waypoints[name] = transform(placement)
+    effects = manifest.get("effects", {})
+    if set(effects)-EFFECTS: raise ValueError("Unknown stage effect")
+    for placements in effects.values():
+        if len(placements) > 64: raise ValueError("Too many effect emitters")
+        for placement in placements: transform(placement)
+    inputs = [source/"stage-pack.json", relative(source, manifest["model"]), relative(source, manifest["cameras"])]
+    cameras = compile_cameras(load_json(inputs[2]), manifest["band"], waypoints)
+    catalog_path = destination.parent.parent/"libraries"/manifest["library"]/"catalog.json"
+    if catalog_path.exists():
+        catalog = load_json(catalog_path)["members"]
+        for shots in cameras["arrays"].values():
+            for shot in shots:
+                for point in shot["points"]:
+                    for role, bone in ((point["lockTo"],point["lockBone"]), (point["lookAt"],point["lookBone"])):
+                        if role not in ("", "world") and bone != "00000000" and bone not in catalog[role]["bones"]:
+                            raise ValueError(f"Camera anchor is not in the shared rig: {role}/{bone}")
+    if "lighting" in manifest:
+        inputs.append(relative(source, manifest["lighting"])); lighting = compile_lighting(load_json(inputs[-1]))
+    else: lighting = compile_lighting(basic_lighting())
+    glb = GlbReader(inputs[1])
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".stage-import-", dir=destination.parent) as temporary:
+        folder = Path(temporary)
+        texture_dir = folder/"textures"
+        materials, material_ids, images = import_materials(glb, folder)
+        if glb.data.get("animations"): raise ValueError("Put stage animations in an actor GLB")
+        default = len(material_ids)-1
+        meshes = []; groups = []; fixtures = []; fixture_models = {}; masks = {}
+        for node_index, node, world in glb.nodes():
+            if "mesh" not in node: continue
+            if "skin" in node: raise ValueError("Skinned stage objects require an actor definition")
+            extras = node.get("extras", {}); fixture = extras.get("gh3FixtureId")
+            geometry_transform = world
+            fixture_rotation = None
+            if fixture:
+                scale = np.linalg.norm(world[:3,:3], axis=0)
+                orientation = world[:3,:3] / scale
+                if np.linalg.det(orientation) < 0: scale[2] *= -1; orientation[:,2] *= -1
+                if not np.allclose(orientation.T @ orientation, np.eye(3), atol=1e-5): raise ValueError("Apply fixture shear before export")
+                geometry_transform = np.diag([*scale,1])
+                fixture_rotation = matrix_quaternion(orientation)
+            local_meshes = []
+            for primitive in glb.data["meshes"][node["mesh"]]["primitives"]:
+                material = material_ids[primitive.get("material", default)]
+                packed, faces = glb.primitive(primitive, geometry_transform)
+                for part in split_mesh(material, packed, faces):
+                    mat = materials[material]
+                    if mat["cutoff"] and mat["texture"] and not mat["crowd"]:
+                        pair = mat["texture"], mat["cutoff"]
+                        if pair not in masks: masks[pair] = alpha_region(images[pair[0]], pair[1])
+                        part = trim_mesh(part, images[pair[0]], pair[1], masks[pair])
+                    if part[3]: local_meshes.extend(split_mesh(part[0], np.frombuffer(part[2],dtype=VERTEX), np.asarray(part[3])))
+            if fixture:
+                id = f"{key(fixture):08x}"
+                if id not in next(iter(lighting["snapshots"].values()))["beams"]: raise ValueError(f"Fixture has no lighting beam: {fixture}")
+                if any(f["id"] == id for f in fixtures): raise ValueError(f"Duplicate light fixture: {fixture}")
+                model = f"{key('mesh-'+str(node['mesh'])+'-'+str(scale.tolist())):08x}"
+                fixture_models.setdefault(model, local_meshes)
+                fixtures.append({"id": id, "model": model, "position": world[:3, 3].tolist(), "rotation": fixture_rotation,
+                                 "fixedPosition": bool(extras.get("gh3FixtureFixedPosition"))})
+            else:
+                meshes.extend(local_meshes)
+                groups.extend([f"{key(extras.get('gh3LightGroup', 'Stage')):08x}"]*len(local_meshes))
+        if not meshes: raise ValueError("Stage has no visible scenery")
+        definition = write_meshes(folder, meshes, materials, groups)
+        definition["name"] = manifest["name"]
+        start = manifest["band"].get("guitarist", next(iter(manifest["band"].values())))["position"]
+        definition["cameraPosition"] = [start[0], start[1]+3, start[2]-10]
+        definition["cameraTarget"] = [start[0], start[1]+1, start[2]]
+        write_json(folder/"stage.json", definition)
+        for name, parts in fixture_models.items():
+            model_dir = folder/"fixtures"/name
+            used = {p[0]: materials[p[0]] for p in parts}
+            write_meshes(model_dir, parts, used)
+            (model_dir/"textures").mkdir()
+            for texture in {m["texture"] for m in used.values()}-{""}:
+                shutil.copyfile(texture_dir/(texture+".png"), model_dir/"textures"/(texture+".png"))
+        if fixtures: write_json(folder/"fixtures"/"fixtures.json", {"version": 1, "housings": fixtures})
+        actors = []
+        for name, actor in manifest.get("actors", {}).items():
+            from stage_actor import compile_actor
+            fields(actor, {"model", "transform", "clip", "lightGroup", "playback"}, {"model", "transform"})
+            transform(actor["transform"])
+            model = relative(source, actor["model"]); inputs.append(model)
+            id = f"{key(name):08x}"
+            clips = compile_actor(model, folder/"actors"/id, import_materials, write_meshes, split_mesh)
+            clip = actor.get("clip", clips[0])
+            if clip not in clips: raise ValueError(f"Actor {name} has no clip {clip}")
+            playback = actor.get("playback", "loop")
+            if playback not in ("loop", "hold"): raise ValueError("Invalid actor playback mode")
+            actors.append({"id": id, "clip": clips.index(clip), "playback": playback, "transform": actor["transform"], "lightGroup": f"{key(actor.get('lightGroup', 'Stage')):08x}"})
+        if actors: write_json(folder/"actors.json", {"version": 1, "actors": actors})
+        write_json(folder/"cameras.json", cameras); write_json(folder/"lighting.json", lighting)
+        pack = {"version": 1, "id": manifest["id"], "name": manifest["name"], "library": manifest["library"],
+                "band": manifest["band"], "waypoints": waypoints, "effects": effects,
+                "sources": {str(p.relative_to(source)): sha256(p.read_bytes()).hexdigest() for p in inputs}}
+        pack["files"] = {str(p.relative_to(folder)): sha256(p.read_bytes()).hexdigest() for p in folder.rglob("*") if p.is_file()}
+        write_json(folder/"pack.json", pack)
+        if destination.exists():
+            if not (destination/"pack.json").is_file(): raise ValueError("Destination is not a compiled stage pack")
+            backup = Path(tempfile.mkdtemp(prefix=".stage-previous-", dir=destination.parent))
+            backup.rmdir()
+            destination.rename(backup)
+            try:
+                folder.rename(destination)
+            except OSError:
+                backup.rename(destination)
+                raise
+            shutil.rmtree(backup)
+        else:
+            folder.rename(destination)
+    return {"id": pack["id"], "name": pack["name"], "meshes": len(meshes), "vertices": sum(m[1] for m in meshes), "fixtures": len(fixtures),
+            "materials": len(materials), "cameras": sum(len(v) for v in cameras["arrays"].values())}

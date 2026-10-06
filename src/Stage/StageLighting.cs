@@ -21,6 +21,7 @@ internal sealed class StageLightDefinition
 
 internal sealed class StageLightSetting
 {
+    public bool Inherit { get; set; }
     public float[] Color { get; set; } = Array.Empty<float>();
     public float Intensity { get; set; }
     public float Specular { get; set; }
@@ -30,6 +31,7 @@ internal sealed class StageLightSetting
 
 internal sealed class StageBeamSetting
 {
+    public bool Inherit { get; set; }
     public float[] Position { get; set; } = Array.Empty<float>();
     public float[] Rotation { get; set; } = Array.Empty<float>();
     public float[] Color { get; set; } = Array.Empty<float>();
@@ -71,8 +73,8 @@ internal sealed class StageLightingBank
             if (snapshot.Lights.Length != bank.Lights.Length || snapshot.Beams.Count > 256 ||
                 !snapshot.Beams.Keys.OrderBy(k => k).SequenceEqual(beamIds)) throw new InvalidDataException("Incomplete lighting snapshot");
             foreach (var light in snapshot.Lights)
-                if (!ValidVector(light.Color) || !float.IsFinite(light.Intensity) || light.Intensity is < 0 or > 100 ||
-                    !float.IsFinite(light.Near) || !float.IsFinite(light.Far) || light.Near < 0 || light.Far <= light.Near)
+                if (!ValidVector(light.Color) || !float.IsFinite(light.Intensity) || light.Intensity is < -100 or > 100 ||
+                    !float.IsFinite(light.Near) || !float.IsFinite(light.Far) || light.Near < 0 || light.Far < light.Near)
                     throw new InvalidDataException("Invalid snapshot light");
             foreach (var beam in snapshot.Beams.Values)
                 if (!ValidVector(beam.Position) || !ValidRotation(beam.Rotation) || !ValidVector(beam.Color) ||
@@ -112,7 +114,7 @@ internal readonly struct StageLightSample
         _position = light.Location;
         _forward = light.Forward;
         _far = value.Far;
-        _rangeScale = 1 / (value.Far - value.Near);
+        _rangeScale = 1 / Math.Max(0.00001f, value.Far - value.Near);
         _ambient = light.Type == "Ambient";
         _directional = light.Type == "Dir";
         _spot = light.Type == "Spot";
@@ -224,8 +226,8 @@ internal sealed class StageLighting
                     break;
                 default: continue;
             }
-            var target = Values(snapshot, color, mood == "strobe" && strobeOn);
             var from = frames[^1].Sample(cue.Time);
+            var target = Values(snapshot, color, mood == "strobe" && strobeOn, from);
             if (mood == "strobe" || original.Type == "gh3-note" && original.Value == "57")
                 for (var i = 0; i < target.Beams.Length; i++)
                     target.Beams[i] = target.Beams[i] with { Position = from.Beams[i].Position, Rotation = from.Beams[i].Rotation };
@@ -239,14 +241,14 @@ internal sealed class StageLighting
 
     public StageLightingFrame At(double time) => _frames[Math.Max(0, StageTimeline.UpperBound(_frames, time, f => f.Time) - 1)];
 
-    private StageLightingValues Values(string name, string? color, bool fullIntensity = false)
+    private StageLightingValues Values(string name, string? color, bool fullIntensity = false, StageLightingValues? previous = null)
     {
         var snapshot = Bank.Snapshots[name];
         Vector3? tint = color == null ? null : Bank.Colors.TryGetValue(color, out var rgb) ? StageLightingBank.Vector(rgb) :
             new Vector3(StageColor.Named(color).R, StageColor.Named(color).G, StageColor.Named(color).B);
-        return new(snapshot.Lights.Select((s, i) => new StageLightValue(
+        return new(snapshot.Lights.Select((s, i) => s.Inherit && previous != null ? previous.Lights[i] : new StageLightValue(
                 (Bank.Lights[i].OverrideColor && tint.HasValue ? tint.Value : StageLightingBank.Vector(s.Color)) * (fullIntensity ? 1 : s.Intensity), s.Near, s.Far)).ToArray(),
-            BeamIds.Select(id => { var b = snapshot.Beams[id]; return new StageBeamValue(StageLightingBank.Vector(b.Position),
+            BeamIds.Select((id, i) => { var b = snapshot.Beams[id]; return b.Inherit && previous != null ? previous.Beams[i] : new StageBeamValue(StageLightingBank.Vector(b.Position),
                 Quaternion.Normalize(new(b.Rotation[0], b.Rotation[1], b.Rotation[2], b.Rotation[3])), tint ?? StageLightingBank.Vector(b.Color),
                 b.Density, b.StartRadius, b.EndRadius, b.Range); }).ToArray());
     }
@@ -256,7 +258,7 @@ internal sealed class StageLighting
         if (light.Type == "Ambient") return 1;
         var delta = light.Location - position;
         var distance = delta.Length();
-        var attenuation = Math.Clamp((value.Far - distance) / (value.Far - value.Near), 0, 1);
+        var attenuation = Math.Clamp((value.Far - distance) / Math.Max(0.00001f, value.Far - value.Near), 0, 1);
         var forward = light.Forward;
         var toward = light.Type == "Dir" ? -forward : delta / Math.Max(distance, 0.0001f);
         if (light.Type == "Spot")

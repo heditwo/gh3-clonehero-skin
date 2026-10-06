@@ -69,7 +69,26 @@ def diffuse_texture(material, available):
     return next((name for name in samples if name in available), "")
 
 
-def scene(data, nodes=None, skinned=False, light_groups=None):
+def crowd_uvs(vertices, count, faces, seed, stride):
+    parents = list(range(count))
+    def root(index):
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+    for face in faces:
+        for vertex in face[1:]: parents[root(vertex)] = root(face[0])
+    if any(size > 6 for size in Counter(root(v) for v in range(count)).values()):
+        raise ValueError("Crowd meshes must use independent crowd cards")
+    people = {}
+    for vertex in range(count):
+        person = people.setdefault(root(vertex), len(people))
+        tile = (person+seed) % 24
+        u, v = struct.unpack_from("<2f", vertices, vertex*stride+24)
+        struct.pack_into("<2f", vertices, vertex*stride+24, (tile % 8+u)/8, 1-(tile//8+1-v)/3)
+
+
+def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, crowd_cards=True):
     count = values(data, 34, "H")[0]
     end = 32 + word(data, 36)
     offset = 48
@@ -166,9 +185,6 @@ def scene(data, nodes=None, skinned=False, light_groups=None):
                 cursor += 4
             cursor += 4 if flags & 0x4000 and not weighted else 0
             uv = values(data, cursor, "2f") if uv_count else (0, 0)
-            if materials[material]["template"] == "a17d40ed":
-                person = (vertex // 4 + index) % 24
-                uv = ((person % 8 + uv[0]) / 8, (person // 8 + uv[1]) / 3)
             expected = cursor + uv_count * 8 + (8 if flags & 0x0C000000 else 0) + (8 if flags & 0x03000000 else 0)
             if expected != start + stride:
                 raise ValueError(f"Unsupported vertex layout {flags:08x}: {expected - start} != {stride}")
@@ -181,12 +197,13 @@ def scene(data, nodes=None, skinned=False, light_groups=None):
         faces = triangles(values(data, indices_at, f"{index_count}H"), kind)
         if any(max(face) >= vertex_count for face in faces):
             raise ValueError("Triangle index outside vertex buffer")
-        if materials[material]["template"] == "a17d40ed" and (
-                vertex_count % 4 or any(len({v // 4 for v in face}) != 1 for face in faces)):
-            raise ValueError("Crowd meshes must use independent four-vertex cards")
+        if crowd_cards and materials[material]["template"] == "a17d40ed":
+            crowd_uvs(vertex_data, vertex_count, faces, index, 56 if skinned else 36)
         if material not in materials:
             raise ValueError("Mesh has no material")
         meshes.append((material, vertex_count, vertex_data, faces))
+        if mesh_nodes is not None:
+            mesh_nodes.append(node)
         if light_groups is not None:
             light_groups.append(f"{(node or {}).get(key('LightGroup'), key('None')):08x}")
     return materials, meshes

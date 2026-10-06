@@ -6,6 +6,15 @@ from gh3_formats import key, qb_struct, qb_array
 
 
 class DirectionFormatTests(unittest.TestCase):
+    def test_particle_size_pairs_and_path_vectors(self):
+        pairs = struct.pack(">6I2fI2f", 0x10500, 2, 12, 20, 32, 0x10000, 0.2, 0.2, 0x10000, 0, 0)
+        self.assertAlmostEqual(qb_array(pairs, 0)[0][0], 0.2, places=6)
+        self.assertEqual(qb_array(pairs, 0)[1], (0, 0))
+        vector = struct.pack(">4I3f", 0x10600, 1, 12, 0x10000, 1, 2, 3)
+        self.assertEqual(qb_array(vector, 0), [(1, 2, 3)])
+        with self.assertRaises(ValueError):
+            qb_array(vector[:-1], 0)
+
     def test_light_node_float_array(self):
         data = struct.pack(">3I4f", 0x10200, 4, 12, 0.5, -0.5, 0.5, 0.5)
         self.assertEqual(qb_array(data, 0), [0.5, -0.5, 0.5, 0.5])

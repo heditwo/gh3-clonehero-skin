@@ -30,7 +30,7 @@ internal sealed class StageMaterial
 internal sealed class StageAssets : IDisposable
 {
     internal sealed record LitMesh(Mesh Mesh, string Group, Vector3[] Positions, Vector3[] Normals, Color32[] Colors);
-    internal sealed record LitBandMesh(SkinnedMeshRenderer Renderer, Color32[] Colors);
+    internal sealed record LitBandMesh(SkinnedMeshRenderer Renderer, Color32[] Colors, string Group);
     [StructLayout(LayoutKind.Sequential)]
     private struct SkinWeight
     {
@@ -71,7 +71,7 @@ internal sealed class StageAssets : IDisposable
         return material;
     }
 
-    public void Load(string directory, GameObject root, int layer, Transform[]? bones = null, bool lighting = false)
+    public void Load(string directory, GameObject root, int layer, Transform[]? bones = null, bool lighting = false, string? lightGroup = null)
     {
         Definition = JsonSerializer.Deserialize<StageDefinition>(File.ReadAllText(Path.Combine(directory, "stage.json")),
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? throw new InvalidDataException("Missing stage definition");
@@ -203,9 +203,9 @@ internal sealed class StageAssets : IDisposable
                 skin.bones = new Il2CppReferenceArray<Transform>(bones);
                 skin.rootBone = root.transform;
                 skin.updateWhenOffscreen = true;
-                skin.localBounds = new Bounds(new Vector3(0, 1, 0), new Vector3(8, 6, 8));
+                skin.localBounds = new Bounds(mesh.bounds.center, mesh.bounds.size * 2 + new Vector3(8, 6, 8));
                 renderer = skin;
-                if (lighting) BandMeshes.Add(new(skin, colors));
+                if (lighting) BandMeshes.Add(new(skin, colors, lightGroup ?? Gh3Checksum.Of("Band")));
                 if (sorted) TransparentMeshes.Add(new(this, skin, vertexCount, indices));
             }
             renderer.sharedMaterial = material;

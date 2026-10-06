@@ -28,6 +28,10 @@ internal sealed class OriginalCameraShot
     public OriginalCameraPoint[] Points { get; set; } = Array.Empty<OriginalCameraPoint>();
     public string[] Nodes { get; set; } = Array.Empty<string>();
     public float OrbitAngle { get; set; }
+    public float AngularSpeed { get; set; }
+    public float[] HeightEase { get; set; } = new float[3];
+    public float[] Times { get; set; } = Array.Empty<float>();
+    public string Interpolation { get; set; } = "smooth";
     public float StepTime { get; set; } = 6;
     public float StepCount { get; set; } = 6;
     public float[] StepDirection { get; set; } = new float[3];
@@ -58,14 +62,20 @@ internal sealed class StageCameraBank
             throw new InvalidDataException("Invalid original camera library");
         foreach (var shot in bank.Arrays.Values.SelectMany(s => s))
         {
-            if (shot.Points.Length is < 1 or > 4 || !float.IsFinite(shot.OrbitAngle) ||
+            if (shot.Points.Length < 1 || shot.Points.Length > (shot.Control == "Keyframes" ? 64 : 4) || !float.IsFinite(shot.OrbitAngle) ||
                 shot.StepTime <= 0 || !float.IsFinite(shot.StepTime) || !float.IsFinite(shot.StepCount) ||
-                shot.StepDirection.Length != 3 || !shot.StepDirection.All(float.IsFinite))
+                shot.StepDirection.Length != 3 || !shot.StepDirection.All(float.IsFinite) || !float.IsFinite(shot.AngularSpeed) ||
+                shot.HeightEase.Length != 3 || !shot.HeightEase.All(float.IsFinite) || shot.HeightEase[2] < 0 ||
+                shot.Control == "OrbitContinuous" && (shot.Points.Length != 1 || shot.Points[0].LookAt.Length == 0))
                 throw new InvalidDataException("Invalid original camera shot");
+            if (shot.Control == "Keyframes" && (shot.Times.Length != shot.Points.Length || shot.Times.Length < 2 || shot.Times[0] != 0 ||
+                !shot.Times.All(float.IsFinite) || shot.Times.Zip(shot.Times.Skip(1), (a,b) => b > a).Any(valid => !valid) ||
+                shot.Interpolation is not ("linear" or "smooth")))
+                throw new InvalidDataException("Invalid camera keyframe times");
             foreach (var point in shot.Points)
                 if (point.Position.Length != 3 || point.Rotation.Length != 4 || point.ScreenOffset.Length != 2 ||
                     !point.Position.Concat(point.Rotation).Concat(point.ScreenOffset).All(float.IsFinite) ||
-                    !float.IsFinite(point.FieldOfView) || point.FieldOfView is < 1 or > 170)
+                    !float.IsFinite(point.FieldOfView) || point.FieldOfView is <= 0 or >= 170)
                     throw new InvalidDataException("Invalid original camera point");
         }
         return bank;
@@ -123,12 +133,21 @@ internal sealed class StageCameraPath
         var shot = cut.Shot;
         var points = shot.Points;
         var fraction = shot.Control == "Pan" ? Smooth((float)Math.Clamp(age - 2, 0, 1)) : t;
-        var a = Resolve(points[0]);
-        var b = Resolve(points[^1]);
+        var first = 0;
+        var last = points.Length - 1;
+        if (shot.Control == "Keyframes")
+        {
+            first = Math.Clamp(StageTimeline.UpperBound(shot.Times, age, value => value) - 1, 0, points.Length - 2);
+            last = first + 1;
+            fraction = (float)Math.Clamp((age - shot.Times[first]) / (shot.Times[last] - shot.Times[first]), 0, 1);
+            if (shot.Interpolation == "smooth") fraction = Smooth(fraction);
+        }
+        var a = Resolve(points[first], shot.Control == "OrbitContinuous" ? OrbitPosition(shot, time) : null);
+        var b = points.Length == 1 ? a : Resolve(points[last]);
         var position = Vector3.Lerp(a.Position, b.Position, fraction);
         var rotation = Quaternion.Slerp(a.Rotation, b.Rotation, fraction);
         var fov = a.Fov + (b.Fov - a.Fov) * fraction;
-        if (points.Length > 2)
+        if (points.Length > 2 && shot.Control != "Keyframes")
         {
             var scaled = t * (points.Length - 1);
             var segment = Math.Min((int)scaled, points.Length - 2);
@@ -152,7 +171,7 @@ internal sealed class StageCameraPath
         }
         if (shot.Control == "SpecialStepMove" && age < shot.StepTime)
             position += Vector(shot.StepDirection) * MathF.Sin((float)(age / shot.StepTime) * shot.StepCount * 2 * MathF.PI);
-        if (shot.Control == "HandCam")
+        if (shot.Control == "HandCam" || shot.HandCam)
         {
             var random = cut.Seed % 101;
             var zoom = shot.Type == "longshot" ? random < 25 ? 62 : random > 95 ? 78 : a.Fov :
@@ -180,12 +199,13 @@ internal sealed class StageCameraPath
         }
         var selected = _mode == "auto" ? _selector : Named(_mode);
         var array = _bank!.Arrays.GetValueOrDefault(selected.Array, _bank.Arrays["cameras"]);
-        var node = Gh3Checksum.Of("z_budokan_trg_waypoint_guitarist_start");
+        var node = "guitarist_start";
         var walks = timeline.Track("walk", "guitarist");
         var walk = StageTimeline.UpperBound(walks, start, c => c.Time) - 1;
-        if (walk >= 0) node = Gh3Checksum.Of("z_budokan_trg_waypoint_" + walks[walk].Value);
+        if (walk >= 0) node = walks[walk].Value;
         var candidates = array.Where(s => s.Nodes.Length == 0 || s.Nodes.Contains(node)).ToArray();
-        if (candidates.Length == 0) candidates = array;
+        if (candidates.Length == 0) candidates = _bank.Arrays.GetValueOrDefault("cameras_wide", array).Where(s => s.Nodes.Length == 0).ToArray();
+        if (candidates.Length == 0) throw new InvalidDataException("Stage has no unrestricted camera");
         var filtered = candidates.Where(s => (selected.Name.Length == 0 || s.Name == selected.Name) &&
             (selected.Type.Length == 0 || s.Type == selected.Type)).ToArray();
         if (filtered.Length > 0) candidates = filtered;
@@ -208,10 +228,19 @@ internal sealed class StageCameraPath
         if (_next <= start) _next = start + 0.001;
     }
 
-    private (Vector3 Position, Quaternion Rotation, float Fov) Resolve(OriginalCameraPoint point)
+    private Vector3 OrbitPosition(OriginalCameraShot shot, double time)
+    {
+        var point = shot.Points[0];
+        var angle = (float)(time * shot.AngularSpeed % 360) * MathF.PI / 180;
+        var height = shot.HeightEase[1] + (shot.HeightEase[0] - shot.HeightEase[1]) * (float)Math.Exp(-time * shot.HeightEase[2]);
+        return Anchor(point.LockTo, point.LockBone).Position + Vector3.Transform(Vector(point.Position),
+            Quaternion.CreateFromAxisAngle(Vector3.UnitY, angle)) + Vector3.UnitY * height;
+    }
+
+    private (Vector3 Position, Quaternion Rotation, float Fov) Resolve(OriginalCameraPoint point, Vector3? orbit = null)
     {
         var anchor = Anchor(point.LockTo, point.LockBone);
-        var position = anchor.Position + Vector3.Transform(Vector(point.Position), anchor.Rotation);
+        var position = orbit ?? anchor.Position + Vector3.Transform(Vector(point.Position), anchor.Rotation);
         var q = point.Rotation;
         var rotation = Quaternion.Normalize(anchor.Rotation * new Quaternion(q[0], q[1], q[2], q[3]));
         if (point.LookAt.Length > 0)
@@ -247,7 +276,7 @@ internal sealed class StageCameraPath
 
     private static OriginalCameraSelector Named(string name) => name switch
     {
-        "wide" => new() { Array = "cameras", Type = "stage" },
+        "wide" => new() { Array = "cameras_wide", Type = "stage" },
         "guitarist" => new() { Array = "cameras_guitar_closeup" },
         _ => new() { Array = "cameras_" + name },
     };

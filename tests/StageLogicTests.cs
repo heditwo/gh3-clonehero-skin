@@ -74,7 +74,7 @@ internal static class StageLogicTests
             var sidecar = StageChartReader.Load(directory, "missing.mid");
             Check(sidecar.Effects[0].Time == 1, "sidecar offset aligns the original song to an audio edit");
             Check(sidecar.Lighting(0) == StageColor.Named("red"), "negative offset preserves earlier lighting state");
-            File.WriteAllText(Path.Combine(directory, "stage-events.json"), "{\"version\":2}");
+            File.WriteAllText(Path.Combine(directory, "stage-events.json"), "{\"version\":3}");
             Reject(() => StageChartReader.Load(directory, "missing.mid"), "unsupported sidecar version is rejected");
             File.Delete(Path.Combine(directory, "stage-events.json"));
             var library = Path.Combine(directory, "library");

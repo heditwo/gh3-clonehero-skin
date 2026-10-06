@@ -61,12 +61,13 @@ def write_clip(path, data, rig, source_rig=None):
     return {"duration": duration, "frames": frames, "rootDistance": distance}
 
 
-def convert(data_directory, output):
+def convert(data_directory, output, shared=False):
     source = Source(data_directory)
     scripts = source.scripts()
     output.mkdir(parents=True, exist_ok=True)
-    camera_bank = cameras(source, scripts)
-    (output / "cameras.json").write_text(json.dumps(camera_bank, separators=(",", ":")) + "\n")
+    if not shared:
+        camera_bank = cameras(source, scripts)
+        (output / "cameras.json").write_text(json.dumps(camera_bank, separators=(",", ":")) + "\n")
     global_entries = source.load("ZONES/global.pak.xen")
     rigs = {n: b for k, n, b in global_entries if k == key(".ske")}
     del global_entries
@@ -79,7 +80,7 @@ def convert(data_directory, output):
         ("short_strum_max_gem_length", 150), ("med_strum_max_gem_length", 600),
         ("strum_anim_lead_time", 250), ("drum_blend_time", 0.1), ("fret_blend_time", 0.1),
     ]}}
-    for kind, _, data in source.load("ZONES/z_budokan.pak.xen"):
+    for kind, _, data in ([] if shared else source.load("ZONES/z_budokan.pak.xen")):
         if len(data) < 28 or data[8:12] != bytes.fromhex("1c080204"): continue
         nodes = find_array(data, "z_budokan_NodeArray")
         if nodes is not None:

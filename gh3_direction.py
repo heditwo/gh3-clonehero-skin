@@ -5,7 +5,7 @@ import math
 from pathlib import Path
 import struct
 
-from gh3_formats import find_array, find_struct, key, pak_entries, values
+from gh3_formats import find_array, key, pak_entries, values
 
 
 ROLES = {key(name): role for name, role in [
@@ -80,10 +80,34 @@ def camera_point(data):
     }
 
 
+def camera_motion(control, points, params):
+    if control == "SplineMorph":
+        points = [camera_point(p) for p in params[key("keyframes")]]
+        if len(points) not in (3,4): raise ValueError("Unsupported source camera spline length")
+        return ("ThreePos" if len(points) == 3 else "FourPos"), points, {}
+    if control == "QuickZoom":
+        return "Keyframes", [points[0],points[0],points[1]], {"times": [0,2,2.75], "interpolation": "smooth"}
+    if control == "HandCamZoom2":
+        lens = [points[0]["fieldOfView"]]*2+[50,50,53,53,51]
+        return "Keyframes", [{**points[0], "fieldOfView": fov} for fov in lens], {
+            "times": [0,2,2.6,2.7,2.95,2.98,3.28], "interpolation": "smooth"}
+    if control == "NewIntro":
+        poses = [camera_point({key("Pos"): p, key("Quat"): q, key("FOV"): fov}) for p,q,fov in [
+            ([6.6424026,2.254917,24.026098],[0.006744,-0.99366295,0.092284],72),
+            ([6.38234,1.9634129,22.308147],[0.017372,-0.979427,0.17970501],72),
+            ([6.38239,1.9634119,22.308136],[0.009489,-0.99132794,0.09404301],72),
+            ([6.38239,1.9634119,22.308136],[0.0077960007,-0.99213994,0.064734],36),
+            ([6.38239,1.9634119,22.308136],[0.0077960007,-0.99213994,0.064734],38)]]
+        return "Keyframes", [poses[i] for i in [0,0,1,1,2,2,3,3,4]], {
+            "times": [0,0.3,3.1,3.45,4.15,4.95,5.45,5.55,5.85], "interpolation": "smooth"}
+    return control, points, {}
+
+
 def cameras(source, scripts, venue="z_budokan"):
     entries = source.load(f"ZONES/{venue}.pak.xen")
     data = next(b for k, n, b in entries if k == key(".qb") and n == key(f"zones\\{venue}\\{venue}_cameras.qb"))
-    controls = ["TwoCam", "HandCam", "Orbit", "OrbitAndMorphTwoCam", "Pan", "ThreePos", "FourPos", "SpecialStepMove"]
+    controls = ["TwoCam", "HandCam", "Orbit", "OrbitAndMorphTwoCam", "Pan", "ThreePos", "FourPos", "SpecialStepMove",
+                "QuickZoom", "HandCamZoom2", "SplineMorph", "NewIntro"]
     mapping = find_array(script(scripts, "guitar_cameras"), "CameraCuts_NoteMapping")
     selectors = {}
     prefixes = {"cameras", "cameras_intro", "cameras_fastintro", "cameras_pan", "cameras_dolly", "cameras_zoom_slow", "cameras_zoom_fast", "cameras_zoom_out"}
@@ -112,6 +136,7 @@ def cameras(source, scripts, venue="z_budokan"):
                 unsupported.append(f"{row.get(key('controlscript'), 0):08x}")
                 continue
             points = [camera_point(params[key(f"Cam{i}")]) for i in range(1, 5) if key(f"Cam{i}") in params]
+            control, points, motion = camera_motion(control, points or [camera_point(params)], params)
             angle = params.get(key("orbitangle"), 0)
             if angle > 0x7fffffff: angle -= 0x100000000
             nodes = row.get(key("includenodes"), params.get(key("includenodes"), []))
@@ -123,7 +148,7 @@ def cameras(source, scripts, venue="z_budokan"):
                           "stepDirection": vector(params.get(key("StepDir"), (0, 0, 0))),
                           "handCam": control == "HandCam" or key("UseHandCam") in params.get(0, []),
                           "disableOrbit1": key("DisableOrbit1") in params.get(0, []),
-                          "disableOrbit2": key("DisableOrbit2") in params.get(0, [])})
+                           "disableOrbit2": key("DisableOrbit2") in params.get(0, []), **motion})
         if shots: arrays[prefix] = shots
     return {"version": 1, "arrays": arrays, "notes": selectors, "unmappedControls": sorted(set(unsupported)), "sources": source.hashes.copy()}
 

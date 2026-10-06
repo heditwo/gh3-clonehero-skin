@@ -1,27 +1,19 @@
 # 3D stage and song effects
 
-The first supported venue is GH3's **Kaiju Megadome** (`z_budokan`). It uses the owner's original meshes, textures, band models, and performance animations. The camera moves between stage and performer views. The stage runs behind the highway during the supported single-player guitar mode.
+Build **0.8.112** supports all ten GH3 performance venues as ordinary stage packs and version 2 song-direction files. **Kaiju Megadome** (`gh3.budokan`) is the default. The camera moves between stage and performer views. The stage runs behind the highway during the supported single-player guitar mode.
 
-Latest preview: [smooth light housing movement with automatic cameras, 900p60 with audio](https://filebin.net/gh3-fixture-motion-566c6e5f701f/fixture-motion-preview.mp4), version **0.8.108**. The link expires on **2026-10-13**.
+See [STAGE-PACKS.md](STAGE-PACKS.md) for the venue list, common importer, and working custom-stage template. The [custom-content specification](CUSTOM-CONTENT.md) defines version 2 song direction and planned skin packs around the fixed GH3 rigs.
+
+Latest preview: [100-note streak hand fire with automatic cameras, 900p60 with audio](https://filebin.net/gh3-hand-fire-7390d10c14bb/hand-fire-preview.mp4), version **0.8.110**. The link expires on **2026-10-13**.
 
 ## Prepare and install
 
 The local GH3 source is `~/games/gh3-test-tools/game/DATA`. Change the input paths below if needed.
 
 ```bash
-MISE_QUIET=1 uv run --with pillow --with 'shapely>=2.1' python prepare-stage.py \
-  --pak "$HOME/games/gh3-test-tools/game/DATA/ZONES/z_budokan.pak.xen"
-MISE_QUIET=1 uv run --with pillow --with numpy --with 'shapely>=2.1' python prepare-band.py \
+MISE_QUIET=1 uv run --with pillow --with numpy --with 'shapely>=2.1' python prepare-library.py \
   --data "$HOME/games/gh3-test-tools/game/DATA"
-MISE_QUIET=1 uv run --with numpy python prepare-hair.py \
-  --data "$HOME/games/gh3-test-tools/game/DATA"
-MISE_QUIET=1 uv run --with pillow --with numpy python prepare-crowd.py \
-  --data "$HOME/games/gh3-test-tools/game/DATA"
-MISE_QUIET=1 uv run --with numpy python prepare-direction.py \
-  --data "$HOME/games/gh3-test-tools/game/DATA"
-MISE_QUIET=1 python3 prepare-lighting.py \
-  --data "$HOME/games/gh3-test-tools/game/DATA"
-MISE_QUIET=1 uv run --with pillow python prepare-fixtures.py \
+MISE_QUIET=1 uv run --with pillow --with numpy --with 'shapely>=2.1' python export-gh3-stages.py \
   --data "$HOME/games/gh3-test-tools/game/DATA"
 MISE_QUIET=1 python3 export-stage-events.py \
   "$HOME/games/gh3-test-tools/game/DATA" --library --output assets/stages/events
@@ -29,7 +21,7 @@ MISE_QUIET=1 bash install.sh
 MISE_QUIET=1 bash run-gh3-skin.sh
 ```
 
-The venue converter writes `assets/stages/budokan/`. The band, crowd, direction, and fixture converters write its `band/`, `crowd/`, `direction/`, and `fixtures/` subfolders. The lighting converter writes `lighting.json` in the venue folder. The library exporter writes `assets/stages/events/`. These generated files are local and are excluded from Git. The installer copies them into the isolated game. The current source copy supplies 74 song direction tracks with 529 pyro triggers. When upgrading an older stage conversion, rerun `prepare-stage.py` to add light groups, crowd material tags, and the atlas layout.
+The shared library is in `assets/libraries/gh3-band-v1/`. Editable source packs are in `assets/stage-packs/`; compiled packs are in `assets/stages/<id>/`. The song exporter writes `assets/stages/events/`. These generated files are local and are excluded from Git. The installer copies them into the isolated game. The source copy supplies 74 song direction tracks with 529 pyro triggers.
 
 Use `GH3_SKIN_STAGE=off` to use the stock background. A missing or invalid stage leaves the game running with its stock background and writes the cause to the loader log.
 
@@ -44,11 +36,20 @@ It has pyro at 6 and 8 seconds, sparks at 11 seconds, fireworks at 12 and 20 sec
 
 ## Where cues come from
 
-Cue priority:
+For a version 2 `stage-events.json`, the loader chooses a source for each channel when the song loads:
 
-1. `stage-events.json` in the current song folder. An empty `events` array also takes priority.
-2. Venue events in the current `notes.chart` or `notes.mid`. They replace matching channels in the original library. For example, a custom camera track replaces the original camera track and keeps the original lighting and band cues.
-3. The original GH3 direction library, matched by song title **and** artist. Matching ignores case, accents, spaces, and punctuation. Ambiguous matches are skipped.
+1. Events in the song file, or a matching `clearChannels` entry.
+2. Explicit direction events in `notes.chart` or `notes.mid`.
+3. The original GH3 song direction library, when `originalSongLookup` is `auto` (the default).
+4. Default stage and band behavior.
+
+A channel groups related commands. Camera commands form one channel. All lighting state commands form another. Each performer's stance, action, and body-clip commands form one body channel. Face, walking, arm control, strum style, strums, frets, drums, and each effect type have separate channels. The loader replaces the selected channel for the whole song, combines the retained events, and sorts them by time. Events at the same time retain their order within their source.
+
+Explicit file or chart strum cues take priority over gestures derived from Expert guitar/bass notes. Those note-driven gestures take priority over the original library. The playable chart's tempo map always takes priority over file or library timing. Without a chart tempo map, timing comes from the file, the original library, or the shared default tempo, in that order.
+
+An empty version 2 `events` array inherits available directions. `clearChannels` removes inherited cues from the named channels and selects their default behavior. It cannot include `timing`, and a file cannot both clear and supply the same channel. Set `originalSongLookup` to `off` to skip original-song matching. `offsetSeconds` shifts only events in this file.
+
+Version 1 files retain complete-timeline replacement, including an empty `events` array. Without a song file, the existing chart-over-library behavior is retained. Original library matching uses song title **and** artist. It ignores case, accents, spaces, and punctuation. Ambiguous matches are skipped.
 
 The library supplies the original GH3 cue times. Songs with edited audio or a different recording can need an offset. To make a song-specific copy:
 
@@ -60,7 +61,7 @@ MISE_QUIET=1 python3 export-stage-events.py \
 
 The command creates a new file. It does not replace an existing file. Set `offsetSeconds` in that file to shift all cues. A positive value runs cues later. Earlier lighting cues still establish the correct state when the offset is negative.
 
-Songs without venue cues use the venue's `Intro01` lighting state. They do not get made-up pyro events. The loader log gives the selected cue source and count. Older stage conversions without `lighting.json` use the earlier blue-light fallback.
+Songs without venue cues use the stage's initial lighting state. They do not get made-up pyro events. The loader log gives the selected cue source and count. For version 2, it also lists each supplied or cleared channel and its source. Packs without an authored lighting bank use the importer's basic fill lights.
 
 ## Supported events
 
@@ -105,6 +106,23 @@ These mappings were checked against `LightShow_NoteMapping` in the local GH3 `sc
 
 ### Event file
 
+Use this camera-only version 2 file to keep inherited lighting, band, and effect cues:
+
+```json
+{
+  "version": 2,
+  "library": "gh3-band-v1",
+  "events": [
+    { "time": 0, "type": "camera", "value": "wide", "duration": 8 },
+    { "time": 24, "type": "camera", "value": "guitarist", "duration": 4 }
+  ]
+}
+```
+
+Save it as `stage-events.json` beside the song's chart. See the [full channel list and event fields](CUSTOM-CONTENT.md#6-song-direction-version-2). The runtime checks authored action and clip references against the installed role profiles. A malformed file or conflicting channel produces a loader diagnostic and uses default stage behavior.
+
+The legacy version 1 format replaces all song direction:
+
 ```json
 {
   "version": 1,
@@ -120,17 +138,29 @@ These mappings were checked against `LightShow_NoteMapping` in the local GH3 `sc
 
 Times are seconds on the chart timeline. `duration` controls emission time for fountains and smoke, up to 30 seconds. Fireworks and flashes have fixed lifetimes. The exporter stores original note events as `gh3-note` with the MIDI note number in `value`.
 
+Chart/MIDI text direction also accepts `stage clip ROLE ID`, `stage arms ROLE MODE`, `stage strum-style ROLE STYLE`, and `stage strum ROLE MASK`. A text strum has zero sustain duration; use JSON `duration` for an authored sustain. `stage fret NOTE` and `stage drum NOTE` use the original animation-note maps. Playable `PART DRUMS` notes do not automatically become drum-animation cues.
+
 ## Rendering and timing
 
-The venue has 356 visible mesh parts and 75,566 vertices after drum alpha cutouts. The converter applies saved transforms to movable props and uses each node's `CreatedAtStart` flag. It converts GH3 coordinates and triangle order for Unity. Six crowd meshes contain 1,340 audience cards. Their textures update from the animated crowd atlas described below.
+Kaiju Megadome has 356 visible mesh parts and 73,957 referenced vertices after GLB import and drum alpha cutouts. The converter applies saved transforms to movable props and uses each node's `CreatedAtStart` flag. The importer converts glTF coordinates and triangle order for Unity. Six crowd meshes contain 1,340 audience cards. Their textures update from the animated crowd atlas described below.
 
 The stage camera uses its own layer. The player camera clears depth before it draws the highway. Stage setup saves camera masks and clear flags; teardown restores them. Scene changes release the stage meshes, textures, and materials. A song restart or practice seek reuses the stage geometry.
 
 Lights and particles use `GameManager.songTime`. Particle positions are calculated from each cue's age. They do not depend on accumulated frame time. Thus a held clock freezes effects, a backward seek reproduces them, and a forward seek does not fire every skipped cue. Particle capacity is limited to 2,048 glowing particles and 256 smoke particles.
 
+### Streak hand fire
+
+From **0.8.110**, a **100-note streak** starts flames and sparks on both hands of the stage guitarist. The effect uses the same live streak counter as the HUD. Star Power does not change its threshold. A miss or overstrum stops emission. Existing particles finish within 0.8 seconds, and a new 100-note streak starts the effect again.
+
+`prepare-hand-fire.py` exports `GP_4X_FingerFlames01` and `GP_4X_FingerSparks01` from `qb.pak.xen`, plus their original images from `global.pak.xen`. It preserves emission rates, lifetimes, speeds, sizes, colors, spread, and force. The flame texture has four frames in a 2 × 2 layout at 20 fps. Each hand emits 24 flames and 64 sparks per second from `Bone_Hand_Middle_Mid_L/R`. The right spark emitter uses the source script's reversed direction. Additive camera-facing quads use two reusable mesh buffers.
+
+GH3 starts this effect with `GuitarEvent_Multiplier4xOn`. This port uses the requested **100-note** trigger. Particles use the song clock and sampled hand poses. A pause freezes them. A song change or seek clears the old trails; a streak at or above 100 starts fresh particles at the new position. The translated particle motion approximates GH3's native particle controller.
+
+To upgrade, run `prepare-hand-fire.py` and `install.sh`. The export adds two PNG images and `hand-fire.json`. Missing hand-fire assets disable this effect and add a message to the loader log.
+
 ### Original venue lighting
 
-`prepare-lighting.py` reads Kaiju Megadome's light nodes, snapshot table, mood mapping, color overrides, and override exclusions from the owner's source files. The export has **30 scene lights**, **13 snapshots**, and **76 beam housings** per snapshot. Venue meshes retain their original light groups. Band, crowd, backdrop, neon signs, and stage geometry receive their own light settings.
+`prepare-lighting.py` reads venue light nodes, snapshot tables, mood mappings, color overrides, and override exclusions from the owner's source files. Kaiju Megadome's pack has **37 scene lights**, **13 snapshots**, and **76 beam housings** per snapshot. This includes seven lights that are absent from its first snapshot. Venue meshes retain their original light groups. Band, crowd, backdrop, neon signs, and stage geometry receive their own light settings.
 
 The player selects the original mood snapshots and follows song blend times. It cycles the mood's snapshot list on snapshot-change cues. Strobes follow note toggles and preserve beam positions. Color overrides leave the source's excluded fill lights unchanged. Snapshot selection uses the normal performance tier.
 
@@ -163,6 +193,12 @@ The band uses the original venue start positions. Mesh skinning runs in Unity. C
 
 The drum texture's orange corners have zero alpha in the source. Clone Hero's available particle shader does not discard them in cutout mode. `gh3_mesh_cutout.py` trims opaque drum meshes to the source alpha mask and cutoff during conversion. It preserves texture coordinates, surface normals, vertex colors, triangle order, and skin weights. The drums keep depth writes. For versions before 0.8.104, rerun `prepare-stage.py`, `prepare-band.py`, and `install.sh` with the dependencies shown above.
 
+### Drummer hand targets
+
+From **0.8.109**, `StageDrumHands` applies the drummer's two-bone arm IK after the body and hit layers. The original `drummer_static_tree` requires this step. It moves each wrist to `Bone_IK_Hand_Slave_L/R` and applies the target's palm rotation. The solver uses the original negative-Z elbow hinge and cosine limits of **−0.97 to 0.97**. Arm lengths stay fixed. If a mixed pose puts a target beyond the arm's reach, the stick keeps its animated offset from the reachable grip. Stick rotations and finger animations remain authored.
+
+The correction also applies to fallback drum animations. It uses the sampled song pose, so pauses and seeks reproduce the grip. Existing 0.8.108 assets work with the correction; run `install.sh` to update.
+
 ### Light housings and microphone base
 
 `prepare-fixtures.py` exports the solid surfaces of the venue's **71 light housings** from three original models. The runtime shares their meshes and materials. Each housing follows the matching lightshow position and rotation, including fades between snapshots. Housings remain visible when their light beams switch off. The two tank searchlights keep their fixed source positions. Nodes marked `GO_NoHousing01` have no visible housing. Native flare cards and reflective glass passes are not part of the solid-housing export.
@@ -185,7 +221,7 @@ To add hair motion to an existing installation, run `prepare-hair.py` and `insta
 
 For versions before **0.8.106**, rerun `prepare-band.py` and `install.sh` to enable hair sorting. Body and instrument surfaces retain depth writes. The stage root stays at the scene origin to preserve precision in bone transforms and small instrument parts. Camera layer masks separate the stage from the highway.
 
-The automatic camera uses Kaiju Megadome's original positions, rotations, lens values, target bones, screen offsets, and shot groups. It translates `CameraCuts_NoteMapping` and the two-camera, orbit, pan, spline, and stepped-motion controls. Camera notes can select a shot group, force a type or name, set its duration, or enable and disable automatic cuts. Without an explicit duration, cuts use the original 3–8 second range and advance to the next original lighting downbeat. Selection avoids the previous shot type where the source rule requires it. A fixed random seed makes seeks repeatable. The highway camera stays fixed.
+The automatic camera uses the selected venue's original positions, rotations, lens values, target bones, screen offsets, and shot groups. It translates `CameraCuts_NoteMapping` and the two-camera, orbit, pan, spline, and stepped-motion controls. Camera notes can select a shot group, force a type or name, set its duration, or enable and disable automatic cuts. Without an explicit duration, cuts use the original 3–8 second range and advance to the next original lighting downbeat. Selection avoids the previous shot type where the source rule requires it. A fixed random seed makes seeks repeatable. The highway camera stays fixed.
 
 The bundled `GH3 Stage Preview` chart has explicit camera cues. It shows all four performers and returns to a wide view for the first fireworks sequence.
 
@@ -446,3 +482,41 @@ During normal playback, a temporary probe compared all **71 housing transforms**
 The automatic-camera preview has **3,840 frames**, **64 seconds**, **1600 × 900 resolution**, and stereo audio at **60 fps**. During recording with the motion probe, 5,851 Unity update intervals had a **9.91 ms mean**, **13.86 ms 95th percentile**, and **31.54 ms maximum**. None exceeded 33.33 ms. Video timestamps are continuous. Nine of 3,539 highway frame pairs after five seconds were near-identical. The video manifest matches the installed binary and all stage assets. Temporary capture DLLs and processes were removed.
 
 The uploaded hash matches the local file: [smooth housing movement preview](https://filebin.net/gh3-fixture-motion-566c6e5f701f/fixture-motion-preview.mp4). The link expires on **2026-10-13**.
+
+## Drumstick grip checks on 2026-10-06 (0.8.109)
+
+The source `drummer_static_tree` applies `Drummer_IK_Params` after it combines body and drum-hit animations. The port omitted this arm adjustment. The hand targets and sticks followed the hit clips, while the palms could miss those targets by **0.535 metres**. This was a missing IK step. The guitar correction in 0.8.103 addressed the order of additive hand rotations.
+
+The correction uses the original hand targets, palm rotations, elbow hinge, and hinge limits. It preserves the arm lengths and the animated stick-to-grip offsets, including poses that exceed the arm's reach. C# checks covered **7,591 song poses** at 30 fps, fallback animations, reach limits, finger and body channels, held clocks, and backward seeks. The full direction, hair, lighting, and skin logic checks passed. The release build had no warnings or errors. All **1,316 stage assets** match 0.8.108.
+
+A separate 0.1-second full-song scan found a maximum error below **0.000001 metres** for both reachable hand targets and stick-to-grip offsets. Fixed-clock GPU comparisons checked both hands at **20, 37.2, 40, 53.2, and 84.8 seconds**. The ten in-game grip offsets also matched within **0.000001 metres**. Each pose was held across display frames before capture. The comparisons show the sticks held in the hands during drum hits.
+
+Evidence is in `/tmp/opencode/gh3-stage-research/drumsticks/`: `before-summary.json`, `after-summary.json`, `before-synchronized/`, `after-synchronized/`, `runtime-validation.json`, and `asset-validation.json`.
+
+[Drumstick grip comparison](https://filebin.net/gh3-drumsticks-fd388efe6ecb/drumsticks-comparison.png). The uploaded hash matches the local file. The link expires on **2026-10-13**.
+
+The normal-camera preview has **3,840 frames**, **64 seconds**, **1600 × 900 resolution**, and stereo audio at **60 fps**. During recording, 5,934 Unity update intervals had a **9.77 ms mean**, **13.73 ms 95th percentile**, and **27.66 ms maximum**. None exceeded 33.33 ms. Video timestamps are continuous; 23 of 3,539 highway frame pairs after five seconds were near-identical. The video manifest matches the installed binary and all stage assets. Temporary capture DLLs and processes were removed.
+
+The uploaded hash matches the local file: [corrected drumstick preview](https://filebin.net/gh3-drumsticks-fd388efe6ecb/drumsticks-preview.mp4). The link expires on **2026-10-13**.
+
+## Streak hand-fire checks on 2026-10-06 (0.8.110)
+
+The release build passed without warnings or errors. All **33 Python checks** passed, including the new QB pair/vector-array reader used by the particle exporter. The C# checks passed with the original assets. They cover the 99-to-100 boundary, both hand attachments, later milestones, streak breaks and recovery, particle expiry, pauses, song resets, forward and backward seeks, and matching particle motion at **30, 60, 120, and 144 fps**.
+
+A GPU run sampled the live game streak and hand-fire state **2,137 times**. The hands had no particles at **99 notes**. They became active at **100 notes**, at **20.912 seconds** in My Curse. Every sampled state matched the threshold. The largest sample had **108 particles**. Close-up captures show both hands with the original flame and spark images. The comparison hides the effect for the left image and shows it for the right image at the same pose.
+
+The installed binary matches the release build. All **1,319 stage files** match the local assets. The earlier 1,316 files are unchanged; this version adds the hand-fire definition and two textures. Evidence is in `/tmp/opencode/gh3-stage-research/hand-fire/`, including `runtime.json`, `runtime-summary.json`, `installed-validation.json`, and `closeups/`.
+
+[Hand-fire comparison](https://filebin.net/gh3-hand-fire-7390d10c14bb/hand-fire-comparison.png). The uploaded hash matches the local file. The link expires on **2026-10-13**.
+
+The normal-camera preview has **3,840 frames**, **64 seconds**, **1600 × 900 resolution**, and stereo audio at **60 fps**. During recording, 5,706 Unity update intervals had a **10.17 ms mean**, **14.16 ms 95th percentile**, and **29.03 ms maximum**. None exceeded 33.33 ms. Video timestamps are continuous; 16 of 3,539 highway frame pairs after five seconds were near-identical. The video manifest matches the installed binary and all stage assets. Temporary capture DLLs and processes were removed.
+
+The uploaded hash matches the local file: [100-note streak hand-fire preview](https://filebin.net/gh3-hand-fire-7390d10c14bb/hand-fire-preview.mp4). The link expires on **2026-10-13**.
+
+### Version 2 song direction checks
+
+Build **0.8.112** passed the channel-priority, clearing, role, action-reference, offset, equal-time ordering, chart/MIDI timing, and version 1 compatibility checks. The original-asset regression checks passed for 1,051 clips, hair, drum hands, hand fire, lighting, and all ten venue packs plus Studio.
+
+A GPU check used My Curse with a camera-only version 2 file. It loaded **6,962 cues**, including the original **10 guitar stance cues**, **2,916 drum cues**, **5 singer facial cues**, and **18 effects**. The source log confirmed that cameras came from the file, guitar strums came from the playable chart, and timing came from its tempo map. Three inspected frames showed the requested stage, guitar, and drummer shots with inherited lighting and band playback.
+
+A second GPU check added `clearChannels: ["pyro"]`. It loaded **6,944 cues** and **zero effects**, with the same inherited stance, drum, and face counts. The final installed binary matches this capture and the release build. The build had zero warnings and errors. Local evidence is in `assets/stage-packs/song-direction-v2-check.json` and `assets/stage-packs/.showcase/song-direction-v2*.mp4` with their manifests and logs.

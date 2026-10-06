@@ -84,7 +84,7 @@ internal sealed class BandAnimation
         return BandPose.Mix(current, SampleClip(next, nextTime, bone), sample.Blend);
     }
 
-    private BandPose SampleClip(BandClip clip, double time, int bone)
+    public BandPose SampleClip(BandClip clip, double time, int bone)
     {
         var frame = Math.Clamp(time / clip.Duration * (clip.Frames - 1), 0, clip.Frames - 1);
         var a = (int)frame;

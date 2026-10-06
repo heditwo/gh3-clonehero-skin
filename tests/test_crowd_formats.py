@@ -49,7 +49,7 @@ class CrowdFormatTests(unittest.TestCase):
     def test_faces_cannot_join_different_crowd_cells(self):
         data, indices = crowd_fixture()
         struct.pack_into(">H", data, indices + 4, 6)
-        with self.assertRaisesRegex(ValueError, "independent four-vertex"):
+        with self.assertRaisesRegex(ValueError, "independent crowd"):
             STAGE.scene(data)
 
 

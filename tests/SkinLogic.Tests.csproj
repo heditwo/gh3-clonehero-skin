@@ -18,13 +18,17 @@
     <Compile Include="../src/GemAnimation.cs" Link="GemAnimation.cs" />
     <Compile Include="../src/GameCompatibility.cs" Link="GameCompatibility.cs" />
     <Compile Include="../src/Stage/StageTimeline.cs" Link="StageTimeline.cs" />
+    <Compile Include="../src/Stage/StagePack.cs" Link="StagePack.cs" />
     <Compile Include="../src/Stage/StageCameraPath.cs" Link="StageCameraPath.cs" />
     <Compile Include="../src/Stage/BandAnimation.cs" Link="BandAnimation.cs" />
+    <Compile Include="../src/Stage/StageDrumHands.cs" Link="StageDrumHands.cs" />
+    <Compile Include="../src/Stage/StageHandFireState.cs" Link="StageHandFireState.cs" />
     <Compile Include="../src/Stage/StageHair.cs" Link="StageHair.cs" />
     <Compile Include="../src/Stage/StageTriangleOrder.cs" Link="StageTriangleOrder.cs" />
     <Compile Include="../src/Stage/StagePerformance.cs" Link="StagePerformance.cs" />
     <Compile Include="../src/Stage/StageLighting.cs" Link="StageLighting.cs" />
     <Compile Include="../src/Stage/StageBeamMotion.cs" Link="StageBeamMotion.cs" />
     <Compile Include="../src/Stage/StageChartReader.cs" Link="StageChartReader.cs" />
+    <Compile Include="../src/Stage/StageSongDirection.cs" Link="StageSongDirection.cs" />
   </ItemGroup>
 </Project>

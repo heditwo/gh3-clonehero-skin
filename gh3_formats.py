@@ -46,6 +46,8 @@ def qb_array(data, offset, depth=0):
     entries = values(data, start, f"{count}I")
     if kind in (0x10100, 0x10D00):
         return list(entries)
+    if kind in (0x10500, 0x10600):
+        return [values(data, entry + 4, "2f" if kind == 0x10500 else "3f") for entry in entries]
     if kind == 0x10C00:
         return [qb_array(data, entry, depth + 1) for entry in entries]
     if kind == 0x10A00:
@@ -95,7 +97,7 @@ def qb_struct(data, offset, depth=0):
 
 
 def find_array(data, name):
-    marker = struct.pack(">II", 0x00200C00, key(name))
+    marker = struct.pack(">II", 0x00200C00, key(name) if isinstance(name, str) else name)
     offset = data.find(marker, 28)
     if offset < 0:
         return None
@@ -105,7 +107,7 @@ def find_array(data, name):
 
 
 def find_struct(data, name):
-    marker = struct.pack(">II", 0x00200A00, key(name))
+    marker = struct.pack(">II", 0x00200A00, key(name) if isinstance(name, str) else name)
     offset = data.find(marker, 28)
     if offset < 0:
         return None

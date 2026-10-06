@@ -39,6 +39,7 @@ internal sealed class StageTimeline
     public StageCue[] Cameras { get; }
     public int CueCount { get; }
     public string Source { get; }
+    public IReadOnlyDictionary<string, string> ChannelSources { get; init; } = new Dictionary<string, string>();
     public StageCue[] Cues { get; }
     public double[] Beats { get; }
     private readonly Dictionary<string, StageCue[]> _tracks;
@@ -196,7 +197,7 @@ internal sealed class StageTimeline
         if (!value.StartsWith("stage ")) return null;
         var parts = value[6..].Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0) return null;
-        if (parts.Length == 2 && parts[0] is "stance" or "perform" or "face" or "walk")
+        if (parts.Length == 2 && parts[0] is "stance" or "perform" or "clip" or "face" or "walk" or "arms" or "strum-style" or "strum")
         {
             var arguments = parts[1].Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
             if (arguments.Length == 2 && arguments[0] is "guitarist" or "bassist" or "singer" or "drummer")
@@ -208,6 +209,7 @@ internal sealed class StageTimeline
             "blackout" or "strobe" => new(time, "lighting", parts[0]),
             "lights" when parts.Length == 2 => new(time, "lighting", parts[1]),
             "camera" when parts.Length == 2 => new(time, "camera", parts[1]),
+            "fret" or "drum" when parts.Length == 2 => new(time, parts[0], parts[1]),
             _ => null
         };
     }

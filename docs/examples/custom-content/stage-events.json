@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "library": "gh3-band-v1",
+  "offsetSeconds": 0,
+  "originalSongLookup": "auto",
+  "clearChannels": ["fireworks"],
+  "events": [
+    { "time": 0, "type": "camera", "value": "wide", "duration": 8 },
+    { "time": 0, "type": "lighting", "value": "intro" },
+    { "time": 0, "type": "stance", "role": "guitarist", "value": "stance_a", "immediate": true },
+    { "time": 24, "type": "camera", "value": "guitarist", "duration": 4 },
+    { "time": 24, "type": "lighting", "value": "chorus" },
+    { "time": 24, "type": "perform", "role": "guitarist", "value": "jump", "immediate": true, "loop": false, "count": 1 },
+    { "time": 28, "type": "camera", "value": "wide", "duration": 6 },
+    { "time": 28, "type": "pyro", "duration": 0.6 },
+    { "time": 32, "type": "walk", "role": "guitarist", "value": "guitarist_walk01" },
+    { "time": 40, "type": "walk", "role": "guitarist", "value": "guitarist_start" }
+  ]
+}

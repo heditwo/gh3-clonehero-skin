@@ -1,6 +1,6 @@
 # GH3 gameplay skin for Clone Hero
 
-This local mod uses art from the owner's BetterGH3 PC copy. It targets Linux Clone Hero **v1.1.0.6142-final** with **MelonLoader 0.7.3**. The local build is `0.8.108`.
+This local mod uses art from the owner's BetterGH3 PC copy. It targets Linux Clone Hero **v1.1.0.6142-final** with **MelonLoader 0.7.3**. The local build is `0.8.112`.
 
 ## Install and run
 
@@ -25,9 +25,11 @@ The installer builds the mod, copies the prepared assets and tuning file, and in
 - Active Star Power uses GH3's animated rail lightning and cyan glow. The stock highway effect is hidden. See [the source and checks](docs/STAR-POWER-HIGHWAY.md).
 - The ready banner runs for 126 frames at 60 fps when charge reaches 50%. Activation hides it. It can run again after the charge drops and refills.
 - The note-streak counter appears at 25 notes. Its measured entrance and reel animation use `counter-tuning.json`. Gray reel backgrounds extend behind the lower frame, with the numbers drawn separately.
+- At a 100-note streak, the stage guitarist gets GH3's original flames and sparks on both hands. They stay active while the streak continues and fade out when it breaks.
 - One five-fret guitar player is supported. Other player layouts use the stock display. Other game versions are rejected before obfuscated fields are read.
 - HUD images fit a centered 16:9 area. Rails and ready effects follow the actual game camera area and field of view. Portrait layout is not supported.
-- The original GH3 Kaiju Megadome venue renders behind the highway with an animated band and crowd, moving cameras, stage lights, and song-triggered pyro, sparks, fireworks, and smoke. The band uses GH3's default male singer, Axel, the bassist, and the drummer, with their instruments. Original song cues drive camera selection, stances, strums, drum strokes, and facial clips. Lighting uses the original venue snapshots, light groups, and fades; blackout states keep fill lights on. The crowd uses six original models and 12 cheering clips. See [3D stages and song cues](docs/STAGES.md) for asset preparation, supported cues, and translation limits.
+- All ten GH3 performance venues load as ordinary stage packs, with the same GLB importer and runtime loader as custom stages. The shared band uses GH3's default male singer, Axel, bassist, drummer, and their instruments. Original song cues drive cameras, stances, strums, drum strokes, facial clips, lighting, and effects. See [stage packs](docs/STAGE-PACKS.md) for the venue list and authoring tools, and [song cues](docs/STAGES.md) for playback details and translation limits.
+- Version 2 `stage-events.json` files replace selected song-direction channels. A camera-only file keeps inherited lighting and band cues. Playable chart notes supply strums, and the chart tempo map supplies timing. Version 1 files retain complete-timeline replacement.
 
 The game-state field map is in [docs/GAME-BINDINGS.md](docs/GAME-BINDINGS.md). Runtime check results are in [docs/VERIFICATION.md](docs/VERIFICATION.md). Later corrections are in [docs/STRIKE-LINES.md](docs/STRIKE-LINES.md) and [docs/METERS.md](docs/METERS.md). Previous GH3 comparisons are in [docs/VISUAL-HISTORY.md](docs/VISUAL-HISTORY.md).
 
@@ -60,7 +62,7 @@ Video capture reads the compositor output in the game window's region. This avoi
 | `GH3_SKIN_FORCE_POWER`, `GH3_SKIN_FORCE_ROCK` | Visual-only values from 0 to 1 |
 | `GH3_SKIN_FORCE_POWER_AT_COMBO` | Streak threshold for the visual charge override |
 | `GH3_SKIN_KEEP_STOCK_GEMS`, `GH3_SKIN_KEEP_STOCK_FLAMES` | Set to `1` for stock art comparisons |
-| `GH3_SKIN_STAGE` | Prepared venue folder; defaults to `budokan`. Use `off` for the stock background. |
+| `GH3_SKIN_STAGE` | Installed pack ID; defaults to `gh3.budokan`. For example, `gh3.hell` or `example.studio`. Use `off` for the stock background. |
 | `GH3_SKIN_CAMERA` | Defaults to `auto`. Use `fixed` for the original stage view, or a shot name from `docs/STAGES.md`. |
 
 `GH3_SKIN_PREVIEW_POWER` and `GH3_SKIN_PREVIEW_ROCK` apply only when screenshot capture is enabled. Forced values change the display only. The command-line bot does not earn Star Power in the unmodified game engine.
@@ -78,6 +80,8 @@ MISE_QUIET=1 uv run --with pillow --with numpy python compare-captures.py before
 Use `--times 2,4,6,8,10` for a shorter video. The tool aligns frames and writes complete side-by-side images, amplified differences, and per-region metrics. Encoded captures and separate game clocks can differ; inspect the images with the metrics.
 
 ## Assets and code
+
+The [custom-content specification](docs/CUSTOM-CONTENT.md) defines the implemented stage and song-direction formats and the planned fixed-rig skin interface. `create-stage-template.py` creates a working custom stage; `import-stage.py` uses the same compiler for that stage and every converted GH3 venue.
 
 `SkinMod` manages scene resets. `GameplayScene` caches the player and score manager. `GameplaySpriteRenderer` caches pooled objects and maps each note to the nearest local fret. `GameplayHud` assembles the components in `src/Hud/`; each component owns its local layout and animation. See [the component structure](docs/HUD-COMPONENTS.md). `SkinAssets` keeps GPU textures across scenes and releases their readable CPU copies. `GameplayStage` owns the stage camera and scene resources. `StageTimeline` evaluates cues against the song clock.
 

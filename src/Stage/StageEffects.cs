@@ -8,18 +8,20 @@ internal sealed class StageEffects
 {
     private readonly StageAssets _assets;
     private readonly Camera _camera;
-    private readonly Vector3[] _emitters;
+    private readonly Dictionary<string, (Vector3 Position, Quaternion Rotation)[]> _emitters;
     private readonly List<(Transform Transform, Material Material, Vector3 Origin, int Index)> _beams = new();
     private readonly ParticleBatch _sparks;
     private readonly ParticleBatch _smoke;
     private readonly StageLightingRenderer? _lighting;
     public int ActiveParticles { get; private set; }
 
-    public StageEffects(StageAssets assets, GameObject root, Camera camera, int layer, StageLighting? lighting = null, StageFixtures? fixtures = null)
+    public StageEffects(StageAssets assets, GameObject root, Camera camera, int layer, StageLighting? lighting = null, StageFixtures? fixtures = null,
+        IReadOnlyDictionary<string, StagePlacement[]>? emitters = null)
     {
         _assets = assets;
         _camera = camera;
-        _emitters = assets.Definition.PyroPositions.Select(StageAssets.Vector).ToArray();
+        _emitters = (emitters ?? new Dictionary<string, StagePlacement[]>()).ToDictionary(e => e.Key,
+            e => e.Value.Select(p => (StageAssets.Vector(p.Position), new Quaternion(p.Rotation[0], p.Rotation[1], p.Rotation[2], p.Rotation[3]))).ToArray());
         var texture = assets.Own(new Texture2D(32, 32, TextureFormat.RGBA32, false));
         var pixels = new Color32[32 * 32];
         for (var y = 0; y < 32; y++)
@@ -77,13 +79,14 @@ internal sealed class StageEffects
                 _sparks.Add(_camera.transform.position + _camera.transform.forward, height * _camera.aspect, height,
                     new Color(1, 1, 1, (1 - age / 0.35f) * 0.3f));
             }
-            for (var emitter = 0; emitter < _emitters.Length; emitter++)
+            var emitters = _emitters.GetValueOrDefault(cue.Type, Array.Empty<(Vector3, Quaternion)>());
+            for (var emitter = 0; emitter < emitters.Length; emitter++)
             {
-                var origin = _emitters[emitter];
+                var (origin, rotation) = emitters[emitter];
                 var seed = i * 7919 + emitter * 997;
-                if (cue.Type == "fireworks") Firework(origin, age, seed, emitter);
-                else if (cue.Type is "pyro" or "sparks") Fountain(origin, age, duration, seed, cue.Type == "pyro");
-                if (cue.Type is "smoke" or "pyro") Smoke(origin, age, duration, seed, cue.Type == "pyro");
+                if (cue.Type == "fireworks") Firework(origin, rotation, age, seed, emitter);
+                else if (cue.Type is "pyro" or "sparks") Fountain(origin, rotation, age, duration, seed, cue.Type == "pyro");
+                if (cue.Type is "smoke" or "pyro") Smoke(origin, rotation, age, duration, seed, cue.Type == "pyro");
             }
         }
         _lighting?.Update(time);
@@ -108,7 +111,7 @@ internal sealed class StageEffects
         ActiveParticles = _sparks.Count + _smoke.Count;
     }
 
-    private void Fountain(Vector3 origin, float age, float duration, int seed, bool flame)
+    private void Fountain(Vector3 origin, Quaternion rotation, float age, float duration, int seed, bool flame)
     {
         for (var i = 0; i < 80; i++)
         {
@@ -119,8 +122,9 @@ internal sealed class StageEffects
             var angle = Random(seed + i * 19) * MathF.PI * 2;
             var speed = 6 + Random(seed + i * 23) * 7;
             var spread = 0.3f + Random(seed + i * 29) * 1.5f;
-            var position = origin + new Vector3(MathF.Cos(angle) * spread * t, speed * t - 4.5f * t * t, MathF.Sin(angle) * spread * t);
-            if (position.y < origin.y) continue;
+            var offset = new Vector3(MathF.Cos(angle) * spread * t, speed * t - 4.5f * t * t, MathF.Sin(angle) * spread * t);
+            if (offset.y < 0) continue;
+            var position = origin + rotation * offset;
             var fade = 1 - t / life;
             _sparks.Add(position, 0.035f, 0.16f, new Color(1, 0.5f + fade * 0.5f, 0.15f + fade * 0.55f, fade));
         }
@@ -129,17 +133,17 @@ internal sealed class StageEffects
         {
             var t = age - i * duration / 28;
             if (t < 0 || t > 0.7f) continue;
-            var position = origin + new Vector3(MathF.Sin(seed + i) * t * 0.3f, t * 8, 0);
+            var position = origin + rotation * new Vector3(MathF.Sin(seed + i) * t * 0.3f, t * 8, 0);
             var fade = 1 - t / 0.7f;
             _sparks.Add(position, 0.25f + t * 0.2f, 0.8f, new Color(1, 0.25f + fade * 0.55f, fade * 0.15f, fade));
         }
     }
 
-    private void Firework(Vector3 origin, float age, int seed, int emitter)
+    private void Firework(Vector3 origin, Quaternion rotation, float age, int seed, int emitter)
     {
         if (age < 0.7f)
         {
-            _sparks.Add(origin + Vector3.up * (age * 16), 0.08f, 0.7f, new Color(1, 0.8f, 0.3f, 1));
+            _sparks.Add(origin + rotation * Vector3.up * (age * 16), 0.08f, 0.7f, new Color(1, 0.8f, 0.3f, 1));
             return;
         }
         var t = age - 0.7f;
@@ -151,20 +155,20 @@ internal sealed class StageEffects
             var vertical = 1 - 2 * (i + 0.5f) / 100;
             var horizontal = MathF.Sqrt(1 - vertical * vertical);
             var direction = new Vector3(MathF.Cos(azimuth) * horizontal, vertical, MathF.Sin(azimuth) * horizontal);
-            var position = origin + Vector3.up * 11.2f + direction * (5 * (1 - MathF.Exp(-t * 0.9f))) + Vector3.down * t * t * 1.2f;
+            var position = origin + rotation * (Vector3.up * 11.2f + direction * (5 * (1 - MathF.Exp(-t * 0.9f))) + Vector3.down * t * t * 1.2f);
             var fade = MathF.Pow(1 - t / 3, 1.5f);
             var size = 0.06f + Random(seed + i) * 0.03f;
             _sparks.Add(position, size, size * 2, new Color(color.R, color.G, color.B, fade));
         }
     }
 
-    private void Smoke(Vector3 origin, float age, float duration, int seed, bool aftermath)
+    private void Smoke(Vector3 origin, Quaternion rotation, float age, float duration, int seed, bool aftermath)
     {
         for (var i = 0; i < 12; i++)
         {
             var t = age - i * duration / 12 - (aftermath ? 0.3f : 0);
             if (t < 0 || t > 4) continue;
-            var position = origin + new Vector3((Random(seed + i * 31) - 0.5f) * t, t * 1.5f, t * 0.2f);
+            var position = origin + rotation * new Vector3((Random(seed + i * 31) - 0.5f) * t, t * 1.5f, t * 0.2f);
             var alpha = Math.Min(t * 2, 1) * (1 - t / 4) * 0.35f;
             _smoke.Add(position, 0.4f + t * 0.55f, 0.5f + t * 0.65f, new Color(0.35f, 0.4f, 0.5f, alpha));
         }
@@ -201,20 +205,24 @@ internal sealed class StageEffects
         return mesh;
     }
 
-    private sealed class ParticleBatch
+    internal sealed class ParticleBatch
     {
         private readonly Mesh _mesh;
         private readonly Il2CppStructArray<Vector3> _vertices;
         private readonly Il2CppStructArray<Color> _colors;
+        private readonly Il2CppStructArray<Vector2> _uv;
+        private readonly int _atlas;
         private readonly int _capacity;
         private Vector3 _right;
         private Vector3 _up;
         private int _previousCount;
         public int Count { get; private set; }
 
-        public ParticleBatch(StageAssets assets, GameObject root, int layer, Shader shader, Texture2D texture, bool additive, int capacity)
+        public ParticleBatch(StageAssets assets, GameObject root, int layer, Shader shader, Texture2D texture, bool additive, int capacity,
+            string? name = null, int atlas = 1)
         {
             _capacity = capacity;
+            _atlas = atlas;
             _vertices = new Il2CppStructArray<Vector3>(capacity * 4);
             _colors = new Il2CppStructArray<Color>(capacity * 4);
             var uv = new Vector2[capacity * 4];
@@ -228,11 +236,12 @@ internal sealed class StageEffects
                 uv[i * 4 + 3] = new Vector2(0, 1);
                 for (var j = 0; j < 6; j++) indices[i * 6 + j] = i * 4 + quad[j];
             }
-            _mesh = assets.Own(new Mesh { name = additive ? "GH3 Stage Sparks" : "GH3 Stage Smoke" });
+            _mesh = assets.Own(new Mesh { name = name ?? (additive ? "GH3 Stage Sparks" : "GH3 Stage Smoke") });
             _mesh.MarkDynamic();
             _mesh.vertices = _vertices;
             _mesh.colors = _colors;
-            _mesh.uv = new Il2CppStructArray<Vector2>(uv);
+            _uv = new Il2CppStructArray<Vector2>(uv);
+            _mesh.uv = _uv;
             _mesh.triangles = new Il2CppStructArray<int>(indices);
             _mesh.bounds = new Bounds(Vector3.zero, new Vector3(100, 100, 100));
             var material = assets.Own(StageAssets.MakeMaterial(shader, true, additive));
@@ -247,7 +256,7 @@ internal sealed class StageEffects
         }
 
         public void Begin(Vector3 right, Vector3 up) { Count = 0; _right = right; _up = up; }
-        public void Add(Vector3 position, float width, float height, Color color)
+        public void Add(Vector3 position, float width, float height, Color color, int frame = 0)
         {
             if (Count == _capacity) return;
             var start = Count++ * 4;
@@ -258,6 +267,16 @@ internal sealed class StageEffects
             _vertices[start + 2] = position + right + up;
             _vertices[start + 3] = position - right + up;
             for (var i = 0; i < 4; i++) _colors[start + i] = color;
+            if (_atlas > 1)
+            {
+                var size = 1f / _atlas;
+                var u = frame % _atlas * size;
+                var v = 1 - (frame / _atlas + 1) * size;
+                _uv[start] = new Vector2(u, v);
+                _uv[start + 1] = new Vector2(u + size, v);
+                _uv[start + 2] = new Vector2(u + size, v + size);
+                _uv[start + 3] = new Vector2(u, v + size);
+            }
         }
 
         public void End()
@@ -267,6 +286,7 @@ internal sealed class StageEffects
             {
                 _mesh.vertices = _vertices;
                 _mesh.colors = _colors;
+                if (_atlas > 1) _mesh.uv = _uv;
             }
             _previousCount = Count;
         }

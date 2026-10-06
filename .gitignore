@@ -9,3 +9,5 @@ __pycache__/
 /*.mp4.frames.json
 /*.png
 /assets/stages/
+/assets/stage-packs/
+/assets/libraries/

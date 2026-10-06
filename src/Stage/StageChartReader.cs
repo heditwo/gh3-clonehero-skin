@@ -8,9 +8,14 @@ namespace Gh3Skin;
 internal sealed class StageEventFile
 {
     public int Version { get; set; }
+    public string Library { get; set; } = "";
+    public string OriginalSongLookup { get; set; } = "auto";
+    public string[] ClearChannels { get; set; } = Array.Empty<string>();
     public double OffsetSeconds { get; set; }
     public StageCue[] Events { get; set; } = Array.Empty<StageCue>();
 }
+
+internal sealed record StageChartData(StageTimeline Timeline, StageCue[] Direction, StageCue[] Strums, StageCue[] Timing);
 
 internal sealed class StageEventIndex
 {
@@ -31,33 +36,29 @@ internal static class StageChartReader
     private sealed record Tempo(long Tick, double Microseconds);
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
-    public static StageTimeline Load(string songDirectory, string chartPath, string? library = null, string title = "", string artist = "")
+    public static StageTimeline Load(string songDirectory, string chartPath, string? library = null, string title = "", string artist = "",
+        StagePerformance? performance = null)
     {
         var sidecar = Path.Combine(songDirectory, "stage-events.json");
-        if (File.Exists(sidecar)) return ReadEventFile(sidecar);
-        var timeline = new StageTimeline(Array.Empty<StageCue>(), "no venue cues");
+        var file = File.Exists(sidecar) ? ReadEventFile(sidecar) : null;
+        if (file?.Version == 1) return EventTimeline(file, sidecar);
+        var chart = new StageChartData(new StageTimeline(Array.Empty<StageCue>(), "no venue cues"),
+            Array.Empty<StageCue>(), Array.Empty<StageCue>(), Array.Empty<StageCue>());
         if (File.Exists(chartPath))
         {
             CheckSize(chartPath);
-            timeline = Path.GetExtension(chartPath).ToLowerInvariant() switch
+            chart = Path.GetExtension(chartPath).ToLowerInvariant() switch
             {
-                ".chart" => ReadChart(File.ReadAllText(chartPath)),
-                ".mid" or ".midi" => ReadMidi(File.ReadAllBytes(chartPath)),
-                _ => timeline
+                ".chart" => ParseChart(File.ReadAllText(chartPath)),
+                ".mid" or ".midi" => ParseMidi(File.ReadAllBytes(chartPath)),
+                _ => chart
             };
         }
-        if (library == null || title.Length == 0 || artist.Length == 0) return timeline;
-        var indexPath = Path.Combine(library, "index.json");
-        if (!File.Exists(indexPath)) return timeline;
-        CheckSize(indexPath);
-        var index = JsonSerializer.Deserialize<StageEventIndex>(File.ReadAllText(indexPath), JsonOptions);
-        if (index?.Version != 1 || index.Songs == null) throw new InvalidDataException("Invalid GH3 cue library index");
-        var matches = index.Songs.Where(song => Normalize(song.Title) == Normalize(title) && Normalize(song.Artist) == Normalize(artist)).ToArray();
-        if (matches.Length != 1) return timeline;
-        var filename = matches[0].File;
-        if (filename.Length == 0 || Path.GetFileName(filename) != filename || !filename.EndsWith(".json", StringComparison.Ordinal))
-            throw new InvalidDataException("Invalid GH3 cue library filename");
-        var original = ReadEventFile(Path.Combine(library, filename));
+        var original = file?.OriginalSongLookup == "off" ? null : ReadOriginal(library, title, artist);
+        if (file != null)
+            return StageSongDirection.Resolve(file, EventTimeline(file, sidecar), chart, original, performance);
+        var timeline = chart.Timeline;
+        if (original == null) return timeline;
         var venue = timeline.Cues.Where(c => c.Type is not ("strum" or "beat" or "tempo")).ToArray();
         if (venue.Length == 0) return original;
         static string Channel(StageCue cue) => cue.Type switch
@@ -71,24 +72,64 @@ internal static class StageChartReader
         return new StageTimeline(original.Cues.Where(c => !overridden.Contains(Channel(c))).Concat(venue), original.Source + " + " + timeline.Source);
     }
 
+    private static StageTimeline? ReadOriginal(string? library, string title, string artist)
+    {
+        if (library == null || title.Length == 0 || artist.Length == 0) return null;
+        var indexPath = Path.Combine(library, "index.json");
+        if (!File.Exists(indexPath)) return null;
+        CheckSize(indexPath);
+        var index = JsonSerializer.Deserialize<StageEventIndex>(File.ReadAllText(indexPath), JsonOptions);
+        if (index?.Version != 1 || index.Songs == null) throw new InvalidDataException("Invalid GH3 cue library index");
+        var matches = index.Songs.Where(song => Normalize(song.Title) == Normalize(title) && Normalize(song.Artist) == Normalize(artist)).ToArray();
+        if (matches.Length != 1) return null;
+        var filename = matches[0].File;
+        if (filename.Length == 0 || Path.GetFileName(filename) != filename || !filename.EndsWith(".json", StringComparison.Ordinal))
+            throw new InvalidDataException("Invalid GH3 cue library filename");
+        var path = Path.Combine(library, filename);
+        var file = ReadEventFile(path);
+        if (file.Version != 1) throw new InvalidDataException("The original song library requires version 1 event files");
+        return EventTimeline(file, path);
+    }
+
     private static string Normalize(string value) => new(value.Normalize(NormalizationForm.FormD)
         .Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
 
-    private static StageTimeline ReadEventFile(string path)
+    private static StageEventFile ReadEventFile(string path)
     {
         CheckSize(path);
-        var file = JsonSerializer.Deserialize<StageEventFile>(File.ReadAllText(path), JsonOptions);
-        if (file == null || file.Version != 1 || !double.IsFinite(file.OffsetSeconds) || file.Events == null || file.Events.Any(cue => cue == null))
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            var file = document.RootElement.Deserialize<StageEventFile>(JsonOptions);
+            ValidateEventFile(file);
+            if (file!.Version == 2) StageSongDirection.Validate(file, document.RootElement);
+            return file;
+        }
+        catch (Exception error) when (error is JsonException or InvalidDataException)
+        {
+            throw new InvalidDataException($"{path}: {error.Message}", error);
+        }
+    }
+
+    private static void ValidateEventFile(StageEventFile? file)
+    {
+        if (file == null || file.Version is not (1 or 2) || !double.IsFinite(file.OffsetSeconds) || file.Events == null ||
+            file.Events.Length > 100000 || file.Events.Any(cue => cue == null))
             throw new InvalidDataException("Invalid stage event file");
         var types = new HashSet<string> { "pyro", "sparks", "fireworks", "smoke", "flash", "lighting", "color", "blend", "snapshot", "strobe-toggle", "gh3-note", "camera",
             "gh3-camera", "fret", "drum", "vocal", "crowd", "stance", "perform", "face", "clip", "walk", "strum-style", "arms", "strum", "beat", "tempo" };
-        if (file.Events.Any(cue => !types.Contains(cue.Type) || cue.Value == null ||
+        if (file.Events.Any(cue => !types.Contains(cue.Type) || cue.Value == null || cue.Role == null ||
                 cue.Type == "gh3-note" && (!int.TryParse(cue.Value, out var note) || note < 0 || note > 127) ||
                 cue.Type == "arms" && cue.Value is not ("0" or "1" or "2")))
         {
             throw new InvalidDataException("Invalid stage cue type or value");
         }
-        return new StageTimeline(file.Events.Select(cue => cue with { Time = cue.Time + file.OffsetSeconds }), Path.GetFileName(path));
+    }
+
+    private static StageTimeline EventTimeline(StageEventFile file, string path)
+    {
+        try { return new(file.Events.Select(cue => cue with { Time = cue.Time + file.OffsetSeconds }), Path.GetFileName(path)); }
+        catch (InvalidDataException error) { throw new InvalidDataException($"{path}: {error.Message}", error); }
     }
 
     private static void CheckSize(string path)
@@ -96,7 +137,9 @@ internal static class StageChartReader
         if (new FileInfo(path).Length > 32 * 1024 * 1024) throw new InvalidDataException("Stage chart is too large");
     }
 
-    public static StageTimeline ReadChart(string text)
+    public static StageTimeline ReadChart(string text) => ParseChart(text).Timeline;
+
+    private static StageChartData ParseChart(string text)
     {
         var section = "";
         var resolution = 192;
@@ -136,7 +179,9 @@ internal static class StageChartReader
         return ConvertTicks(cues, tempos, resolution, offset, "notes.chart");
     }
 
-    public static StageTimeline ReadMidi(byte[] data)
+    public static StageTimeline ReadMidi(byte[] data) => ParseMidi(data).Timeline;
+
+    private static StageChartData ParseMidi(byte[] data)
     {
         var cursor = new MidiCursor(data, 0, data.Length);
         if (cursor.Ascii(4) != "MThd") throw new InvalidDataException("Missing MIDI header");
@@ -230,7 +275,7 @@ internal static class StageChartReader
         return ConvertTicks(cues, tempos, resolution, 0, "notes.mid");
     }
 
-    private static StageTimeline ConvertTicks(List<TickCue> cues, List<Tempo> tempos, int resolution, double offset, string source)
+    private static StageChartData ConvertTicks(List<TickCue> cues, List<Tempo> tempos, int resolution, double offset, string source)
     {
         if (resolution <= 0 || !double.IsFinite(offset) || tempos.Any(t => !double.IsFinite(t.Microseconds) || t.Microseconds <= 0))
             throw new InvalidDataException("Invalid chart timing");
@@ -240,6 +285,7 @@ internal static class StageChartReader
         var seconds = offset;
         var rate = 500000.0;
         var output = new List<StageCue>();
+        var noteStrums = new List<StageCue>();
         double Seconds(long tick)
         {
             long previous = 0;
@@ -254,8 +300,8 @@ internal static class StageChartReader
             }
             return elapsed + (tick - previous) * tempo / (resolution * 1000000.0);
         }
-        foreach (var tempo in changes)
-            output.Add(new StageCue(Seconds(tempo.Tick), "tempo", (60000000 / tempo.Microseconds).ToString(CultureInfo.InvariantCulture)));
+        var timing = changes.Select(tempo => new StageCue(Seconds(tempo.Tick), "tempo",
+            (60000000 / tempo.Microseconds).ToString(CultureInfo.InvariantCulture))).ToArray();
         foreach (var cue in cues.OrderBy(c => c.Tick))
         {
             while (index < changes.Length && changes[index].Tick <= cue.Tick)
@@ -268,11 +314,14 @@ internal static class StageChartReader
             var time = seconds + (cue.Tick - lastTick) * rate / (resolution * 1000000.0);
             var converted = cue.Type.Length > 0 && cue.Note >= 0 ? new StageCue(time, cue.Type, cue.Note.ToString(), Seconds(checked(cue.Tick + cue.Length)) - time, cue.Role) :
                 cue.Note >= 0 ? StageTimeline.FromGh3Note(time, cue.Note) : StageTimeline.FromText(time, cue.Text);
-            if (converted != null) output.Add(converted);
+            if (converted != null) (cue.Type == "strum" ? noteStrums : output).Add(converted);
         }
-        var chords = output.Where(c => c.Type == "strum").GroupBy(c => (c.Time, c.Role)).Select(g =>
-            new StageCue(g.Key.Time, "strum", g.Aggregate(0, (mask, c) => mask | int.Parse(c.Value)).ToString(), g.Max(c => c.Duration), g.Key.Role));
-        return new StageTimeline(output.Where(c => c.Type != "strum").Concat(chords), source);
+        var chords = noteStrums.GroupBy(c => (c.Time, c.Role)).Select(g =>
+            new StageCue(g.Key.Time, "strum", g.Aggregate(0, (mask, c) => mask | int.Parse(c.Value)).ToString(), g.Max(c => c.Duration), g.Key.Role)).ToArray();
+        var timeline = new StageTimeline(timing.Concat(output).Concat(chords), source);
+        if (changes.Length > 0 && changes[0].Tick > 0)
+            timing = new[] { new StageCue(offset, "tempo", "120") }.Concat(timing).ToArray();
+        return new(timeline, output.ToArray(), chords, timing);
     }
 
     private sealed class MidiCursor

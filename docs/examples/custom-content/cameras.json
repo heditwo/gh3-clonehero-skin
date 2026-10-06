@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "shots": {
+    "club-wide": {
+      "type": "stage",
+      "control": "TwoCam",
+      "points": [
+        {
+          "position": [0, 2.2, -8],
+          "rotation": [0, 0, 0, 1],
+          "horizontalFov": 72,
+          "anchor": "world",
+          "lookAt": "singer.root"
+        }
+      ]
+    },
+    "guitar-close": {
+      "type": "closeup",
+      "control": "TwoCam",
+      "points": [
+        {
+          "position": [-0.6, 1.5, -2.1],
+          "horizontalFov": 60,
+          "anchor": "guitarist.root",
+          "lookAt": "guitarist.head",
+          "screenOffset": [0.3, 0]
+        },
+        {
+          "position": [0.5, 1.4, -1.8],
+          "horizontalFov": 55,
+          "anchor": "guitarist.root",
+          "lookAt": "guitarist.head",
+          "screenOffset": [0.3, 0]
+        }
+      ]
+    }
+  },
+  "groups": {
+    "wide": ["club-wide"],
+    "guitarist": ["guitar-close"]
+  }
+}
