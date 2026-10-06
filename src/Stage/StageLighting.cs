@@ -142,14 +142,21 @@ internal readonly record struct StageBeamValue(Vector3 Position, Quaternion Rota
 }
 
 internal sealed record StageLightingValues(StageLightValue[] Lights, StageBeamValue[] Beams);
-internal sealed record StageLightingFrame(double Time, double Blend, StageLightingValues From, StageLightingValues To, string Snapshot)
+internal sealed record StageLightingFrame(double Time, double Blend, StageLightingValues From, StageLightingValues To, string Snapshot,
+    StageBeamMotion[] Motion)
 {
     public float Amount(double time) => Blend <= 0 ? 1 : (float)Math.Clamp((time - Time) / Blend, 0, 1);
+    public StageBeamValue SampleBeam(int index, double time)
+    {
+        var pose = Motion[index].Sample(time);
+        return StageBeamValue.Mix(From.Beams[index], To.Beams[index], Amount(time)) with { Position = pose.Position, Rotation = pose.Rotation };
+    }
+
     public StageLightingValues Sample(double time)
     {
         var t = Amount(time);
         return new(From.Lights.Zip(To.Lights, (a, b) => StageLightValue.Mix(a, b, t)).ToArray(),
-            From.Beams.Zip(To.Beams, (a, b) => StageBeamValue.Mix(a, b, t)).ToArray());
+            Enumerable.Range(0, To.Beams.Length).Select(i => SampleBeam(i, time)).ToArray());
     }
 }
 
@@ -171,7 +178,8 @@ internal sealed class StageLighting
         var blend = 0.3;
         var strobeOn = false;
         var initial = Values(snapshot, color);
-        var frames = new List<StageLightingFrame> { new(double.NegativeInfinity, 0, initial, initial, snapshot) };
+        var motion = initial.Beams.Select(b => new StageBeamMotion(b)).ToArray();
+        var frames = new List<StageLightingFrame> { new(double.NegativeInfinity, 0, initial, initial, snapshot, motion) };
         string NextSnapshot(string current)
         {
             var choices = bank.Moods[current];
@@ -222,7 +230,9 @@ internal sealed class StageLighting
                 for (var i = 0; i < target.Beams.Length; i++)
                     target.Beams[i] = target.Beams[i] with { Position = from.Beams[i].Position, Rotation = from.Beams[i].Rotation };
             var duration = mood == "strobe" ? 0 : cue.Type == "color" ? 0.4 : blend;
-            frames.Add(new(cue.Time, duration, from, target, snapshot));
+            if (mood != "strobe" && cue.Type != "color" && !(original.Type == "gh3-note" && original.Value == "57"))
+                motion = motion.Select((m, i) => m.Retarget(cue.Time, duration, target.Beams[i])).ToArray();
+            frames.Add(new(cue.Time, duration, from, target, snapshot, motion));
         }
         _frames = frames.ToArray();
     }

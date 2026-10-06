@@ -24,6 +24,7 @@
     <Compile Include="../src/Stage/StageTriangleOrder.cs" Link="StageTriangleOrder.cs" />
     <Compile Include="../src/Stage/StagePerformance.cs" Link="StagePerformance.cs" />
     <Compile Include="../src/Stage/StageLighting.cs" Link="StageLighting.cs" />
+    <Compile Include="../src/Stage/StageBeamMotion.cs" Link="StageBeamMotion.cs" />
     <Compile Include="../src/Stage/StageChartReader.cs" Link="StageChartReader.cs" />
   </ItemGroup>
 </Project>

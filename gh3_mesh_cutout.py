@@ -1,4 +1,4 @@
-"""Trim opaque drum meshes to the original texture alpha mask."""
+"""Trim opaque prop meshes to the original texture alpha mask."""
 
 from itertools import groupby
 import math
@@ -8,7 +8,7 @@ import struct
 from PIL import Image
 
 
-DRUM_TEMPLATES = {"4d7335f8", "f4e6db51"}
+CUTOUT_TEMPLATES = {"4d7335f8", "f4e6db51"}
 
 
 def alpha_region(image, cutoff):
@@ -110,13 +110,13 @@ def trim_mesh(mesh, image, cutoff, region=None):
     return material, len(packed), b"".join(packed), result
 
 
-def trim_drum_cutouts(meshes, materials, texture_directory):
+def trim_prop_cutouts(meshes, materials, texture_directory):
     masks = {}
     output = []
     for mesh in meshes:
         material = materials[mesh[0]]
         texture, cutoff = material["texture"], material["cutoff"]
-        if material["template"] in DRUM_TEMPLATES and material["blend"] == 0 and cutoff > 0 and texture:
+        if material["template"] in CUTOUT_TEMPLATES and material["blend"] == 0 and cutoff > 0 and texture:
             key = texture, cutoff
             if key not in masks:
                 with Image.open(Path(texture_directory) / f"{texture}.png") as source:

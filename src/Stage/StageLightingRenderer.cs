@@ -29,6 +29,7 @@ internal sealed class StageLightingRenderer
         public Il2CppStructArray<Color> Colors = null!;
     }
     private readonly StageLighting _lighting;
+    private readonly StageFixtures? _fixtures;
     private readonly List<Surface> _surfaces = new();
     private readonly List<BandSurface> _bandMeshes = new();
     private readonly int[] _bandLights;
@@ -39,9 +40,10 @@ internal sealed class StageLightingRenderer
     private float _amount = -1;
     private readonly string _band = Gh3Checksum.Of("Band");
 
-    public StageLightingRenderer(StageLighting lighting, StageAssets assets, GameObject root, int layer)
+    public StageLightingRenderer(StageLighting lighting, StageAssets assets, GameObject root, int layer, StageFixtures? fixtures = null)
     {
         _lighting = lighting;
+        _fixtures = fixtures;
         foreach (var source in assets.LitMeshes)
         {
             var count = source.Positions.Length;
@@ -112,8 +114,9 @@ internal sealed class StageLightingRenderer
     {
         var frame = _lighting.At(time);
         var amount = frame.Amount(time);
-        ShadeBand(frame.Sample(time));
-        if (_frame == frame && _amount == amount) return;
+        var state = frame.Sample(time);
+        ShadeBand(state);
+        var lightChanged = _frame != frame || _amount != amount;
         if (_frame != frame)
         {
             foreach (var surface in _surfaces)
@@ -122,7 +125,7 @@ internal sealed class StageLightingRenderer
                 Shade(surface, frame.To, surface.To);
             }
         }
-        foreach (var surface in _surfaces)
+        if (lightChanged) foreach (var surface in _surfaces)
         {
             var colors = surface.Colors.AsSpan();
             for (var v = 0; v < colors.Length; v++)
@@ -134,13 +137,15 @@ internal sealed class StageLightingRenderer
         }
         for (var i = 0; i < _beams.Count; i++)
         {
-            var value = StageBeamValue.Mix(frame.From.Beams[i], frame.To.Beams[i], amount);
+            var value = state.Beams[i];
+            _fixtures?.Update(_lighting.BeamIds[i], value);
             var beam = _beams[i];
-            beam.Object.SetActive(value.Density > 0.001f);
+            if (lightChanged) beam.Object.SetActive(value.Density > 0.001f);
             if (value.Density <= 0.001f) continue;
             beam.Object.transform.localPosition = Unity(value.Position);
             var q = value.Rotation;
             beam.Object.transform.localRotation = new(q.X, q.Y, q.Z, q.W);
+            if (!lightChanged) continue;
             for (var side = 0; side < 12; side++)
             {
                 var angle = side * MathF.PI / 6;

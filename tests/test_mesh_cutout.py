@@ -1,9 +1,11 @@
 import math
 import struct
+import tempfile
+from pathlib import Path
 import unittest
 
 from PIL import Image
-from gh3_mesh_cutout import trim_mesh
+from gh3_mesh_cutout import trim_mesh, trim_prop_cutouts
 
 
 def square(skinned=False, uv_offset=0):
@@ -26,6 +28,21 @@ def area(mesh):
 
 
 class MeshCutoutTests(unittest.TestCase):
+    def test_prop_cutout_preserves_blended_materials(self):
+        with tempfile.TemporaryDirectory() as folder:
+            image = Image.new("RGBA", (2, 1), (255, 255, 255, 0))
+            image.putpixel((1, 0), (255, 255, 255, 255))
+            image.save(Path(folder) / "12345678.png")
+            opaque = square(skinned=True)
+            blended = ("hair", *opaque[1:])
+            materials = {"drum": {"template": "f4e6db51", "blend": 0, "cutoff": 0.25, "texture": "12345678"},
+                         "hair": {"template": "6f3f03f3", "blend": 3, "cutoff": 0.25, "texture": "12345678"}}
+            result = trim_prop_cutouts([opaque, blended], materials, folder)
+            self.assertAlmostEqual(area(result[0]), 0.5)
+            self.assertEqual(result[1], blended)
+            self.assertTrue(materials["drum"]["geometryCutout"])
+            self.assertNotIn("geometryCutout", materials["hair"])
+
     def test_mask_hole_preserves_winding_and_opaque_area(self):
         image = Image.new("RGBA", (4, 4), (255, 128, 0, 255))
         for x in (1, 2):

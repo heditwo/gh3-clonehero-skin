@@ -15,7 +15,7 @@ internal sealed class StageEffects
     private readonly StageLightingRenderer? _lighting;
     public int ActiveParticles { get; private set; }
 
-    public StageEffects(StageAssets assets, GameObject root, Camera camera, int layer, StageLighting? lighting = null)
+    public StageEffects(StageAssets assets, GameObject root, Camera camera, int layer, StageLighting? lighting = null, StageFixtures? fixtures = null)
     {
         _assets = assets;
         _camera = camera;
@@ -37,7 +37,7 @@ internal sealed class StageEffects
         _smoke = new ParticleBatch(assets, root, layer, shader, texture, false, 256);
         if (lighting != null)
         {
-            _lighting = new StageLightingRenderer(lighting, assets, root, layer);
+            _lighting = new StageLightingRenderer(lighting, assets, root, layer, fixtures);
             return;
         }
         var cone = assets.Own(CreateCone());

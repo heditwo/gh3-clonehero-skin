@@ -17,6 +17,7 @@ internal sealed class GameplayStage
     private StageTimeline? _timeline;
     private StageBand? _band;
     private StageCrowd? _crowd;
+    private StageFixtures? _fixtures;
     private StageCameraPath? _cameraPath;
     private double _lastTime = double.NaN;
     private Camera? _playerCamera;
@@ -46,6 +47,8 @@ internal sealed class GameplayStage
         _band = null;
         _crowd?.Dispose();
         _crowd = null;
+        _fixtures?.Dispose();
+        _fixtures = null;
         _cameraPath = null;
         _assets?.Dispose();
         _assets = null;
@@ -104,6 +107,8 @@ internal sealed class GameplayStage
             _assets.Load(_directory, _root, Layer, lighting: lighting != null);
             _band = new StageBand();
             _band.Load(Path.Combine(_directory, "band"), _assets, _root, Layer, lighting != null);
+            _fixtures = new StageFixtures();
+            _fixtures.Load(Path.Combine(_directory, "fixtures"), _root, Layer);
             var definition = _assets.Definition;
             _cameraPath = new StageCameraPath(new StageCameraPose(
                 new System.Numerics.Vector3(definition.CameraPosition[0], definition.CameraPosition[1], definition.CameraPosition[2]),
@@ -148,7 +153,7 @@ internal sealed class GameplayStage
             }
             _band.SetTimeline(Path.Combine(_directory, "direction"), _timeline);
             _effects = new StageEffects(_assets, _root, _camera, Layer,
-                lighting == null ? null : new StageLighting(lighting, _timeline));
+                lighting == null ? null : new StageLighting(lighting, _timeline), _fixtures);
             MelonLogger.Msg($"GH3 stage loaded: {_assets.Definition.Name}");
             MelonLogger.Msg($"GH3 stage cues: {_timeline.CueCount} from {_timeline.Source}; {_timeline.Effects.Length} effects");
         }

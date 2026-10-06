@@ -12,7 +12,7 @@ import struct
 
 from PIL import Image
 from gh3_formats import find_array, key, pak_entries, values, word
-from gh3_mesh_cutout import trim_drum_cutouts
+from gh3_mesh_cutout import trim_prop_cutouts
 
 
 def textures(data):
@@ -221,7 +221,7 @@ def convert(pak_path, destination):
             material["cutoff"] = 0.3
             material["blend"] = 3
             material["crowd"] = True
-    meshes = trim_drum_cutouts(meshes, materials, texture_dir)
+    meshes = trim_prop_cutouts(meshes, materials, texture_dir)
     with (destination / "meshes.bin").open("wb") as output:
         output.write(b"GH3STG01" + struct.pack("<I", len(meshes)))
         for material, count, vertices, faces in meshes:

@@ -11,7 +11,7 @@ import struct
 import numpy as np
 from gh3_band_formats import animation, multiply_quaternions, sample_animation, sample_track, skeleton, solve_guitar_arms
 from gh3_formats import find_array, key, pak_entries
-from gh3_mesh_cutout import trim_drum_cutouts
+from gh3_mesh_cutout import trim_prop_cutouts
 from gh3_hair_mesh import combine_hair
 
 spec = importlib.util.spec_from_file_location("prepare_stage", Path(__file__).with_name("prepare-stage.py"))
@@ -70,8 +70,8 @@ def convert(data_dir, output):
                         available.add(name)
         for mat in materials.values():
             mat["texture"] = stage.diffuse_texture(mat, available)
-        if role == "drummer":
-            meshes = trim_drum_cutouts(meshes, materials, directory / "textures")
+        if role in ("singer", "drummer"):
+            meshes = trim_prop_cutouts(meshes, materials, directory / "textures")
         meshes = combine_hair(meshes, materials, directory / "textures")
         with (directory / "meshes.bin").open("wb") as stream:
             stream.write(b"GH3BND01" + struct.pack("<I", len(meshes)))

@@ -2,7 +2,7 @@
 
 The first supported venue is GH3's **Kaiju Megadome** (`z_budokan`). It uses the owner's original meshes, textures, band models, and performance animations. The camera moves between stage and performer views. The stage runs behind the highway during the supported single-player guitar mode.
 
-Latest preview: [corrected hair layers with automatic cameras, 900p60 with audio](https://filebin.net/gh3-hair-sorting-d1c0de7fe0b2/hair-sorting-preview.mp4), version **0.8.106**. The link expires on **2026-10-13**.
+Latest preview: [smooth light housing movement with automatic cameras, 900p60 with audio](https://filebin.net/gh3-fixture-motion-566c6e5f701f/fixture-motion-preview.mp4), version **0.8.108**. The link expires on **2026-10-13**.
 
 ## Prepare and install
 
@@ -21,13 +21,15 @@ MISE_QUIET=1 uv run --with numpy python prepare-direction.py \
   --data "$HOME/games/gh3-test-tools/game/DATA"
 MISE_QUIET=1 python3 prepare-lighting.py \
   --data "$HOME/games/gh3-test-tools/game/DATA"
+MISE_QUIET=1 uv run --with pillow python prepare-fixtures.py \
+  --data "$HOME/games/gh3-test-tools/game/DATA"
 MISE_QUIET=1 python3 export-stage-events.py \
   "$HOME/games/gh3-test-tools/game/DATA" --library --output assets/stages/events
 MISE_QUIET=1 bash install.sh
 MISE_QUIET=1 bash run-gh3-skin.sh
 ```
 
-The venue converter writes `assets/stages/budokan/`. The band, crowd, and direction converters write its `band/`, `crowd/`, and `direction/` subfolders. The lighting converter writes `lighting.json` in the venue folder. The library exporter writes `assets/stages/events/`. These generated files are local and are excluded from Git. The installer copies them into the isolated game. The current source copy supplies 74 song direction tracks with 529 pyro triggers. When upgrading an older stage conversion, rerun `prepare-stage.py` to add light groups, crowd material tags, and the atlas layout.
+The venue converter writes `assets/stages/budokan/`. The band, crowd, direction, and fixture converters write its `band/`, `crowd/`, `direction/`, and `fixtures/` subfolders. The lighting converter writes `lighting.json` in the venue folder. The library exporter writes `assets/stages/events/`. These generated files are local and are excluded from Git. The installer copies them into the isolated game. The current source copy supplies 74 song direction tracks with 529 pyro triggers. When upgrading an older stage conversion, rerun `prepare-stage.py` to add light groups, crowd material tags, and the atlas layout.
 
 Use `GH3_SKIN_STAGE=off` to use the stock background. A missing or invalid stage leaves the game running with its stock background and writes the cause to the loader log.
 
@@ -149,7 +151,7 @@ The band has four performers:
 | Bassist | `Bassist` | Tobias bass (`tobB4`) |
 | Drummer | `Drummer` | Animated drum parts and sticks (`Drum_Set001`), with the venue's fixed drum kit |
 
-The converter reads the original skeletons from `global.pak.xen` and its PAB file. It checks each skeleton against its inverse bind matrices. It converts 35 skinned mesh parts with 33,277 vertices after drum alpha cutouts and 471 bones. It selects color textures by material template, so normal maps are not used as visible color textures.
+The converter reads the original skeletons from `global.pak.xen` and its PAB file. It checks each skeleton against its inverse bind matrices. It converts 29 skinned mesh parts with 33,371 vertices after prop alpha cutouts and hair merging, with 471 bones. It selects color textures by material template, so normal maps are not used as visible color textures.
 
 `prepare-direction.py` reads the original character state tables and exports 1,051 body, hand, drum, walking, and facial clips. Body selection uses the current stance, queued action, and song tempo. Stance changes normally wait for the current clip; `no_wait` commands interrupt it. The player supports original transitions, repeat counts, cycle flags, and commands that disable automatic arms. Body changes blend over 0.2 seconds. The converter samples poses at 30 fps; Unity interpolates them at the display rate.
 
@@ -160,6 +162,14 @@ The exporter removes unavailable clip references and records them in `missingCli
 The band uses the original venue start positions. Mesh skinning runs in Unity. Clone Hero strips the managed `BoneWeight1` type, so the loader sends validated weight buffers through the available `Mesh.InternalSetBoneWeights` entry point. The band, camera, and effects all read the song clock. A held clock keeps the same pose and camera view. A seek samples the new time directly.
 
 The drum texture's orange corners have zero alpha in the source. Clone Hero's available particle shader does not discard them in cutout mode. `gh3_mesh_cutout.py` trims opaque drum meshes to the source alpha mask and cutoff during conversion. It preserves texture coordinates, surface normals, vertex colors, triangle order, and skin weights. The drums keep depth writes. For versions before 0.8.104, rerun `prepare-stage.py`, `prepare-band.py`, and `install.sh` with the dependencies shown above.
+
+### Light housings and microphone base
+
+`prepare-fixtures.py` exports the solid surfaces of the venue's **71 light housings** from three original models. The runtime shares their meshes and materials. Each housing follows the matching lightshow position and rotation, including fades between snapshots. Housings remain visible when their light beams switch off. The two tank searchlights keep their fixed source positions. Nodes marked `GO_NoHousing01` have no visible housing. Native flare cards and reflective glass passes are not part of the solid-housing export.
+
+From **0.8.108**, housing movement has its own timing. Instant light fades can no longer cause instant turns. Position and rotation use cubic curves that preserve velocity when a new cue interrupts a move. Rotation curves are normalized. Moves take at least 0.3 seconds; large turns and longer authored fades take more time. Beams and housings use the same pose. Color cues, strobes, and note 57 continue the current move. Off snapshots supply authored aim angles, rather than a default rotation. Their housings move smoothly while dark. Song-time sampling makes pauses and seeks repeatable. This movement curve is a port approximation; it is not GH3's native fixture controller. Run `install.sh` to update from 0.8.107.
+
+The microphone stand's underside uses a circular texture mask. In **0.8.107**, `prepare-band.py` applies the same source-mask geometry conversion used for the drums. This removes the opaque corners that were visible when the singer lifted or tilted the stand. To update an existing installation, run `prepare-fixtures.py`, `prepare-band.py`, and `install.sh`.
 
 ### Hair motion
 
@@ -407,3 +417,32 @@ Uploaded hashes match the local files. These links expire on **2026-10-13**:
 
 - [Hair layer preview with audio](https://filebin.net/gh3-hair-sorting-d1c0de7fe0b2/hair-sorting-preview.mp4)
 - [Hair layers before and after](https://filebin.net/gh3-hair-sorting-d1c0de7fe0b2/hair-sorting-comparison.png)
+
+## Light housing and microphone checks on 2026-10-06 (0.8.107)
+
+The venue's light housings are separate `.mdl` assets in `global.pak.xen`. The previous port drew the beams but did not load these models. The new fixture export contains **71 housings** from three shared models. All housing IDs have matching entries in every lighting snapshot. Runtime checks confirmed that all 71 housings load.
+
+The microphone stand's bottom face used an opaque square where the source texture specifies a circular alpha mask. The correction trims this face to that mask and keeps its original skin weights. Fixed-clock GPU comparisons show the housing at **40 seconds** and the lifted microphone base at **44.5 seconds**. The latter makes the square-to-circle correction visible. Files are in `/tmp/opencode/gh3-stage-research/fixtures/`.
+
+All **32 Python checks** passed, including fixture selection, fixed housing positions, and opaque prop masks. C# checks passed, including the original hair and lighting checks. The release build had no warnings or errors. Asset comparison found changes only in the singer's microphone-stand mesh among the existing band meshes. The installed binary and all **1,316 stage files** match the local build.
+
+The normal-camera video has **3,840 frames**, **64 seconds**, **1600 × 900 resolution**, and stereo audio at **60 fps**. During recording, 5,618 Unity update intervals had a **10.32 ms mean**, **15.21 ms 95th percentile**, and **38.72 ms maximum**. Two intervals exceeded 33.33 ms. Video timestamps are continuous; 31 of 3,539 highway frame pairs after five seconds were near-identical. The video manifest matches the installed binary and all stage assets. Temporary capture DLLs and processes were removed.
+
+Uploaded hashes match the local files. These links expire on **2026-10-13**:
+
+- [Light housing and microphone preview](https://filebin.net/gh3-fixtures-b9a049600801/fixtures-preview.mp4)
+- [Before-and-after comparison](https://filebin.net/gh3-fixtures-b9a049600801/fixtures-comparison.png)
+
+## Light housing movement checks on 2026-10-06 (0.8.108)
+
+Some My Curse cues set the light fade to zero. In 0.8.107, housings used that fade and could turn **80 degrees in one update**. Blackout and flare snapshots also have different authored aim angles. The source scripts use those angles; the defect was instant movement, rather than a reset to a default rotation.
+
+The movement curve now has separate timing. A full-song comparison covered **980 lighting changes** and **76 beam tracks**. The largest rotation discontinuity fell below **0.00001 degrees**. At 60 fps, the largest sampled turn was **2.93 degrees per frame**, with a peak speed below **176 degrees per second**. All light energy, color, beam density, size, and range samples matched the previous lighting logic.
+
+The C# checks passed, including interrupted movement, zero-time fades, dark movement, strobe timing, equivalent quaternion signs, pauses, frame rates, and backward seeks. The release build passed with no warnings or errors. All **1,316 stage assets** are unchanged from 0.8.107, and the installed assets and binary match the local build.
+
+During normal playback, a temporary probe compared all **71 housing transforms** and their active beams against the motion tracks at **1,531 times**. The largest position error was below **0.000001 units**; the largest quaternion error was below **0.000001**. It also confirmed movement while the lights were dark. Evidence is in `/tmp/opencode/gh3-stage-research/fixture-motion/`: `after-motion.json`, `runtime-motion.json`, `runtime-summary.json`, and `installed-validation.json`.
+
+The automatic-camera preview has **3,840 frames**, **64 seconds**, **1600 × 900 resolution**, and stereo audio at **60 fps**. During recording with the motion probe, 5,851 Unity update intervals had a **9.91 ms mean**, **13.86 ms 95th percentile**, and **31.54 ms maximum**. None exceeded 33.33 ms. Video timestamps are continuous. Nine of 3,539 highway frame pairs after five seconds were near-identical. The video manifest matches the installed binary and all stage assets. Temporary capture DLLs and processes were removed.
+
+The uploaded hash matches the local file: [smooth housing movement preview](https://filebin.net/gh3-fixture-motion-566c6e5f701f/fixture-motion-preview.mp4). The link expires on **2026-10-13**.
