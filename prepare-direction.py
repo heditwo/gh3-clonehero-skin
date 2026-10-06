@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""Convert the owner's original GH3 camera and performance libraries."""
+
+import argparse
+import gzip
+import json
+from pathlib import Path
+import struct
+
+import numpy as np
+from gh3_band_formats import animation, multiply_quaternions, sample_animation, skeleton
+from gh3_direction import Source, cameras, name, script, scalar
+from gh3_formats import find_array, find_struct, key, values
+
+
+MEMBERS = [
+    ("guitarist", "GH3_guitarist_axel", "axel_1_anims", "guitar_animation_data_axel", "axel_animations"),
+    ("bassist", "GH3_bassist", "Bassist_anims", "guitar_animation_data_bassist", "bassist_animations"),
+    ("singer", "GH3_singer_male", "Singer_Male_Anims", "guitar_animation_data_singer_male", "singer_male_animations"),
+    ("drummer", "GH3_drummer", "Drummer_anims", "guitar_animation_data", "drummer_animations"),
+]
+
+
+def flatten(data, prefix=""):
+    result = {}
+    for field, value in data.items():
+        if field == 0:
+            continue
+        path = prefix + name(field)
+        if isinstance(value, dict): result.update(flatten(value, path + "/"))
+        elif isinstance(value, list): result[path] = [f"{v:08x}" for v in value if isinstance(v, int)]
+        elif isinstance(value, int): result[path] = [f"{value:08x}"]
+    return result
+
+
+def write_clip(path, data, rig, source_rig=None):
+    names, parents, positions, rotations = rig
+    source_names, _, source_positions, source_rotations = source_rig or rig
+    clip = animation(data, len(source_names))
+    duration = max(clip[0], 1 / 60)
+    frames = max(2, round(duration * 30) + 1)
+    p, q = sample_animation(clip, source_positions, source_rotations, np.linspace(0, duration, frames))
+    mapping = [(i, names.index(source_names[i])) for i in sorted(clip[1].keys() | clip[2].keys()) if source_names[i] in names]
+    if not mapping:
+        raise ValueError("Animation has no matching bones")
+    source_indices = [a for a, _ in mapping]
+    distance = float(np.linalg.norm(p[-1, 0, [0, 2]] - p[0, 0, [0, 2]]))
+    if source_rig is not None:
+        for source_index, target in mapping:
+            p[:, source_index] += positions[target] - source_positions[source_index]
+            inverse = source_rotations[source_index] * [-1, -1, -1, 1]
+            q[:, source_index] = multiply_quaternions(multiply_quaternions(q[:, source_index], inverse), rotations[target])
+    packed = np.concatenate((p[:, source_indices] * [1, 1, -1], q[:, source_indices] * [1, 1, -1, 1]), axis=2)
+    if not np.isfinite(packed).all(): raise ValueError("Non-finite direction clip")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("wb") as raw, gzip.GzipFile(fileobj=raw, mode="wb", mtime=0, compresslevel=3) as stream:
+        stream.write(b"GH3CLP01" + struct.pack("<IIIf", len(names), frames, len(mapping), duration))
+        for source_index, target in mapping:
+            stream.write(struct.pack("<II", target, (1 if source_index in clip[2] else 0) | (2 if source_index in clip[1] else 0)))
+        stream.write(packed.astype("<f4").tobytes())
+    return {"duration": duration, "frames": frames, "rootDistance": distance}
+
+
+def convert(data_directory, output):
+    source = Source(data_directory)
+    scripts = source.scripts()
+    output.mkdir(parents=True, exist_ok=True)
+    camera_bank = cameras(source, scripts)
+    (output / "cameras.json").write_text(json.dumps(camera_bank, separators=(",", ":")) + "\n")
+    global_entries = source.load("ZONES/global.pak.xen")
+    rigs = {n: b for k, n, b in global_entries if k == key(".ske")}
+    del global_entries
+    hands = {n: b for k, n, b in source.load("PAK/perm_anims.pak.xen") if k == key(".ska")}
+    walking = {n: b for k, n, b in source.load("PAK/Judy_1_anims.pak.xen") if k == key(".ska")}
+    walking_rig = skeleton(rigs[key("GH3_guitarist_judy")])
+    common = script(scripts, "guitar_animation_data")
+    definition = {"version": 1, "members": {}, "constants": {n: scalar(common, n, d) for n, d in [
+        ("slow_tempo", 75), ("med_tempo", 115), ("fast_tempo", 145),
+        ("short_strum_max_gem_length", 150), ("med_strum_max_gem_length", 600),
+        ("strum_anim_lead_time", 250), ("drum_blend_time", 0.1), ("fret_blend_time", 0.1),
+    ]}}
+    for kind, _, data in source.load("ZONES/z_budokan.pak.xen"):
+        if len(data) < 28 or data[8:12] != bytes.fromhex("1c080204"): continue
+        nodes = find_array(data, "z_budokan_NodeArray")
+        if nodes is not None:
+            definition["waypoints"] = {f"{node[key('Name')]:08x}": [*np.asarray(node[key('Pos')]) * [1, 1, -1],
+                -node.get(key("Angles"), [0, 0, 0])[1] * 180 / np.pi] for node in nodes if key("Name") in node and key("Pos") in node}
+    member_rigs = {}
+    for role, rig_name, pak, qb, group in MEMBERS:
+        rig = skeleton(rigs[key(rig_name)])
+        member_rigs[role] = rig
+        body = find_struct(script(scripts, qb), group)
+        groups = flatten(body)
+        if role in ("guitarist", "bassist"):
+            groups.update(flatten(find_struct(common, "normal_walk_data"), "walk/"))
+        layers = {}
+        if role in ("guitarist", "bassist"):
+            for style, group_name in [("normal", "Normal_Strums" if role == "guitarist" else "Bass_Pick_Strums"), ("mute", "Mute_Strums")]:
+                for field, refs in flatten(find_struct(common, group_name)).items(): layers[f"strum/{style}/{field}"] = refs
+            fingers = find_struct(script(scripts, qb), "guitarist_finger_anims_" + ("Axel" if role == "guitarist" else "Bassist"))
+            for mask in range(32):
+                chord = "_".join(color for i, color in enumerate(["green", "red", "yellow", "blue", "orange"]) if mask & (1 << i)) or "none"
+                ref = fingers.get(key(chord), fingers.get(key("none")))
+                if ref: layers[f"chord/{mask}"] = [f"{ref:08x}"]
+            frets = find_struct(common, "fret_anims_med")
+            for pitch in range(101, 128):
+                if key(f"track_{pitch}") in frets: layers[f"fret/{pitch}"] = [f"{frets[key(f'track_{pitch}')]:08x}"]
+        if role == "drummer":
+            drums = find_struct(common, "drummer_anims")
+            for pitch in range(36, 58):
+                refs = drums.get(key(f"track_{pitch}"))
+                if refs: layers[f"drum/{pitch}"] = [f"{ref:08x}" for ref in refs]
+            for field in ["sticktap_l", "sticktap_r", "stickdown_l", "stickdown_r"]:
+                layers[field] = [f"{drums[key(field)]:08x}"]
+            for i, ref in enumerate(find_array(common, "cymbal_anims")):
+                layers[f"cymbal/{i}"] = [f"{ref:08x}"]
+        bank = {n: b for k, n, b in source.load(f"PAK/{pak}.pak.xen") if k == key(".ska")}
+        bank.update({n: b for n, b in hands.items() if values(b, 44, "H")[0] == len(rig[0])})
+        missing = []
+        needed = {ref for refs in [*groups.values(), *layers.values()] for ref in refs}
+        clips = {}
+        for ref in sorted(needed):
+            if int(ref, 16) not in bank and ref in {r for k, refs in groups.items() if k.startswith("walk/") for r in refs} and int(ref, 16) in walking:
+                clips[ref] = write_clip(output / role / f"{ref}.bin.gz", walking[int(ref, 16)], rig, walking_rig)
+            elif int(ref, 16) not in bank:
+                missing.append(ref)
+            else:
+                clips[ref] = write_clip(output / role / f"{ref}.bin.gz", bank[int(ref, 16)], rig)
+        for table in [groups, layers]:
+            for field in list(table):
+                table[field] = [ref for ref in table[field] if ref in clips]
+                if not table[field]: del table[field]
+        definition["members"][role] = {"bones": [f"{n:08x}" for n in rig[0]], "groups": groups, "layers": layers, "clips": clips, "missingClips": missing}
+        print(f"{role}: {len(clips)} original clips, {len(groups)} state groups, {len(layers)} layers; {len(missing)} unavailable references")
+    for pak in sorted((source.directory / "SONGS").glob("*_song.pak.xen")):
+        song_id = pak.name.split("_song.")[0]
+        entries = source.load(f"SONGS/{pak.name}")
+        clips = {n: b for k, n, b in entries if k == key(".ska")}
+        if not clips: continue
+        for kind, _, data in entries:
+            if kind != key(".qb"): continue
+            for row in find_array(data, song_id + "_performance") or []:
+                if row.get(key("scr")) != key("Band_PlayFacialAnim"): continue
+                params = row.get(key("params"), {})
+                ref = params.get(key("anim"))
+                role = "singer" if params.get(key("Name")) == key("vocalist") else "guitarist"
+                if ref not in clips: continue
+                member = definition["members"][role]
+                ref_name = f"{ref:08x}"
+                member["clips"][ref_name] = write_clip(output / role / f"{ref_name}.bin.gz", clips[ref], member_rigs[role], member_rigs["singer"])
+    definition["sources"] = source.hashes
+    (output / "performance.json").write_text(json.dumps(definition, separators=(",", ":")) + "\n")
+    print(f"Converted {sum(len(v['clips']) for v in definition['members'].values())} clips including song facial performances")
+    print(output)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--data", type=Path, default=Path.home() / "games/gh3-test-tools/game/DATA")
+    parser.add_argument("--output", type=Path, default=Path(__file__).parent / "assets/stages/budokan/direction")
+    args = parser.parse_args()
+    convert(args.data, args.output)

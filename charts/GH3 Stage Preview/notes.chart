@@ -1,0 +1,91 @@
+[Song]
+{
+  Name = "GH3 Stage Preview"
+  Artist = "Stage Test"
+  Charter = "GH3 Skin Project"
+  Resolution = 192
+}
+[SyncTrack]
+{
+  0 = TS 4
+  0 = B 120000
+}
+[Events]
+{
+  0 = E "section Lights"
+  0 = E "stage lights blue"
+  0 = E "stage camera wide"
+  768 = E "stage camera singer"
+  1536 = E "stage lights purple"
+  2304 = E "section Pyro"
+  2304 = E "stage pyro"
+  2688 = E "stage camera guitarist"
+  3072 = E "stage pyro"
+  3840 = E "stage lights chorus"
+  4224 = E "stage sparks"
+  4224 = E "stage camera wide"
+  4608 = E "section Fireworks"
+  4608 = E "stage fireworks"
+  5376 = E "stage camera drummer"
+  5760 = E "stage smoke"
+  6144 = E "section Blackout"
+  6144 = E "stage blackout"
+  6528 = E "stage lights red"
+  6912 = E "section Strobe"
+  6912 = E "stage strobe"
+  6912 = E "stage camera bassist"
+  7296 = E "stage lights cyan"
+  7680 = E "stage fireworks"
+  8448 = E "stage camera orbit"
+  9216 = E "section End"
+  9600 = E "stage camera wide"
+}
+[ExpertSingle]
+{
+  384 = N 0 0
+  576 = N 1 0
+  768 = N 2 0
+  960 = N 3 0
+  1152 = N 4 0
+  1344 = N 0 0
+  1536 = N 1 0
+  1728 = N 2 0
+  1920 = N 3 0
+  2112 = N 4 0
+  2304 = N 0 0
+  2496 = N 1 0
+  2688 = N 2 0
+  2880 = N 3 0
+  3072 = N 4 0
+  3264 = N 0 0
+  3456 = N 1 0
+  3648 = N 2 0
+  3840 = N 3 0
+  4032 = N 4 0
+  4224 = N 0 0
+  4416 = N 1 0
+  4608 = N 2 0
+  4800 = N 3 0
+  4992 = N 4 0
+  5184 = N 0 0
+  5376 = N 1 0
+  5568 = N 2 0
+  5760 = N 3 0
+  5952 = N 4 0
+  6144 = N 0 0
+  6336 = N 1 0
+  6528 = N 2 0
+  6720 = N 3 0
+  6912 = N 4 0
+  7104 = N 0 0
+  7296 = N 1 0
+  7488 = N 2 0
+  7680 = N 3 0
+  7872 = N 4 0
+  8064 = N 0 0
+  8256 = N 1 0
+  8448 = N 2 0
+  8640 = N 3 0
+  8832 = N 4 0
+  9216 = N 0 0
+}

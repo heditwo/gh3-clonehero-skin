@@ -1,6 +1,6 @@
 # GH3 gameplay skin for Clone Hero
 
-This local mod uses art from the owner's BetterGH3 PC copy. It targets Linux Clone Hero **v1.1.0.6142-final** with **MelonLoader 0.7.3**. The source version remains `0.8.98`; the local fixes are not a new release.
+This local mod uses art from the owner's BetterGH3 PC copy. It targets Linux Clone Hero **v1.1.0.6142-final** with **MelonLoader 0.7.3**. The local build is `0.8.106`.
 
 ## Install and run
 
@@ -27,6 +27,7 @@ The installer builds the mod, copies the prepared assets and tuning file, and in
 - The note-streak counter appears at 25 notes. Its measured entrance and reel animation use `counter-tuning.json`. Gray reel backgrounds extend behind the lower frame, with the numbers drawn separately.
 - One five-fret guitar player is supported. Other player layouts use the stock display. Other game versions are rejected before obfuscated fields are read.
 - HUD images fit a centered 16:9 area. Rails and ready effects follow the actual game camera area and field of view. Portrait layout is not supported.
+- The original GH3 Kaiju Megadome venue renders behind the highway with an animated band and crowd, moving cameras, stage lights, and song-triggered pyro, sparks, fireworks, and smoke. The band uses GH3's default male singer, Axel, the bassist, and the drummer, with their instruments. Original song cues drive camera selection, stances, strums, drum strokes, and facial clips. Lighting uses the original venue snapshots, light groups, and fades; blackout states keep fill lights on. The crowd uses six original models and 12 cheering clips. See [3D stages and song cues](docs/STAGES.md) for asset preparation, supported cues, and translation limits.
 
 The game-state field map is in [docs/GAME-BINDINGS.md](docs/GAME-BINDINGS.md). Runtime check results are in [docs/VERIFICATION.md](docs/VERIFICATION.md). Later corrections are in [docs/STRIKE-LINES.md](docs/STRIKE-LINES.md) and [docs/METERS.md](docs/METERS.md). Previous GH3 comparisons are in [docs/VISUAL-HISTORY.md](docs/VISUAL-HISTORY.md).
 
@@ -34,7 +35,7 @@ The game-state field map is in [docs/GAME-BINDINGS.md](docs/GAME-BINDINGS.md). R
 
 ```bash
 MISE_QUIET=1 dotnet run --project tests/SkinLogic.Tests.csproj -c Release
-MISE_QUIET=1 python3 -m unittest discover -s tests -p 'test_*.py'
+MISE_QUIET=1 uv run --with pillow --with numpy --with 'shapely>=2.1' python -m unittest discover -s tests -p 'test_*.py'
 MISE_QUIET=1 bash ./capture-preview.sh
 MISE_QUIET=1 bash ./record-preview.sh
 MISE_QUIET=1 bash ./compare-gems.sh
@@ -55,9 +56,12 @@ Video capture reads the compositor output in the game window's region. This avoi
 | `GH3_SKIN_VIDEO` | Video output path |
 | `GH3_SKIN_VIDEO_SECONDS`, `GH3_SKIN_VIDEO_TRIM` | Recording and output durations |
 | `GH3_SKIN_VIDEO_FPS` | Recording rate; defaults to 60 |
+| `GH3_SKIN_VIDEO_X`, `GH3_SKIN_VIDEO_Y` | Capture window position; defaults to 32, 64. Keep the whole window inside the screen. |
 | `GH3_SKIN_FORCE_POWER`, `GH3_SKIN_FORCE_ROCK` | Visual-only values from 0 to 1 |
 | `GH3_SKIN_FORCE_POWER_AT_COMBO` | Streak threshold for the visual charge override |
 | `GH3_SKIN_KEEP_STOCK_GEMS`, `GH3_SKIN_KEEP_STOCK_FLAMES` | Set to `1` for stock art comparisons |
+| `GH3_SKIN_STAGE` | Prepared venue folder; defaults to `budokan`. Use `off` for the stock background. |
+| `GH3_SKIN_CAMERA` | Defaults to `auto`. Use `fixed` for the original stage view, or a shot name from `docs/STAGES.md`. |
 
 `GH3_SKIN_PREVIEW_POWER` and `GH3_SKIN_PREVIEW_ROCK` apply only when screenshot capture is enabled. Forced values change the display only. The command-line bot does not earn Star Power in the unmodified game engine.
 
@@ -75,6 +79,6 @@ Use `--times 2,4,6,8,10` for a shorter video. The tool aligns frames and writes 
 
 ## Assets and code
 
-`SkinMod` manages scene resets. `GameplayScene` caches the player and score manager. `GameplaySpriteRenderer` caches pooled objects and maps each note to the nearest local fret. `GameplayHud` assembles the components in `src/Hud/`; each component owns its local layout and animation. See [the component structure](docs/HUD-COMPONENTS.md). `SkinAssets` keeps GPU textures across scenes and releases their readable CPU copies.
+`SkinMod` manages scene resets. `GameplayScene` caches the player and score manager. `GameplaySpriteRenderer` caches pooled objects and maps each note to the nearest local fret. `GameplayHud` assembles the components in `src/Hud/`; each component owns its local layout and animation. See [the component structure](docs/HUD-COMPONENTS.md). `SkinAssets` keeps GPU textures across scenes and releases their readable CPU copies. `GameplayStage` owns the stage camera and scene resources. `StageTimeline` evaluates cues against the song clock.
 
 Prepared assets are in `assets/`. To regenerate them, use `uv run --with pillow prepare-assets.py`. To regenerate the ready animation, put the owner's `gh3-long-star-power-1600x900.mp4` in the project root and run `uv run --with pillow --with numpy prepare-ready-animation.py`. These steps need the local source art and recordings. `counter-lab.py --measure` checks reel placement against the stored reference frames.

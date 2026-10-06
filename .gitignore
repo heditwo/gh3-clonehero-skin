@@ -6,4 +6,6 @@ __pycache__/
 /*.mp4
 /*.mp4.log
 /*.mp4.json
+/*.mp4.frames.json
 /*.png
+/assets/stages/

@@ -81,7 +81,7 @@ if [[ -z "$address" ]]; then
 fi
 hyprctl -i "$instance" dispatch "hl.dsp.window.float({ action = 'on', window = 'address:$address' })" >/dev/null
 hyprctl -i "$instance" dispatch "hl.dsp.window.resize({ x = $width, y = $height, window = 'address:$address' })" >/dev/null
-hyprctl -i "$instance" dispatch "hl.dsp.window.move({ x = 32, y = 64, window = 'address:$address' })" >/dev/null
+hyprctl -i "$instance" dispatch "hl.dsp.window.move({ x = ${GH3_SKIN_VIDEO_X:-32}, y = ${GH3_SKIN_VIDEO_Y:-64}, window = 'address:$address' })" >/dev/null
 for ((attempt = 0; attempt < 30; attempt++)); do
   geometry="$(DISPLAY=":$display_number" xrandr --query 2>/dev/null | awk '/^Screen / { gsub(",", "", $10); print $8 "x" $10 }')"
   [[ "$geometry" != "${width}x${height}" ]] || break

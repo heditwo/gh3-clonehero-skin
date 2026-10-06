@@ -1,0 +1,226 @@
+using System.Text.Json;
+using MelonLoader;
+using UnityEngine;
+
+namespace Gh3Skin;
+
+internal sealed class BandDefinition
+{
+    public int Version { get; set; }
+    public BandMember[] Members { get; set; } = Array.Empty<BandMember>();
+}
+
+internal sealed class BandMember
+{
+    public string Role { get; set; } = "";
+    public float[] Position { get; set; } = Array.Empty<float>();
+    public float Yaw { get; set; }
+}
+
+internal sealed class StageBand : IDisposable
+{
+    private sealed class Performer
+    {
+        public string Role = "";
+        public Transform Root = null!;
+        public Transform[] Bones = Array.Empty<Transform>();
+        public BandAnimation Animation = null!;
+        public PerformancePlayer? Performance;
+        public PerformanceMember? Definition;
+        public StageHair? Hair;
+        public BandPose[] Pose = Array.Empty<BandPose>();
+        public Vector3 Start;
+        public Quaternion Rotation;
+        public List<Walk> Walks = new();
+    }
+    private sealed record Walk(double Time, double Duration, Vector3 From, Vector3 To, Quaternion Rotation);
+    private readonly List<StageAssets> _assets = new();
+    private readonly List<Performer> _players = new();
+    private StagePerformance? _performance;
+    public Dictionary<string, Vector3> Positions { get; } = new();
+
+    public void Load(string directory, StageAssets stage, GameObject root, int layer, bool lighting = false)
+    {
+        var path = Path.Combine(directory, "band.json");
+        if (!File.Exists(path))
+        {
+            MelonLogger.Warning("GH3 band assets are missing. Run prepare-band.py and install.sh.");
+            return;
+        }
+        var definition = JsonSerializer.Deserialize<BandDefinition>(File.ReadAllText(path),
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        if (definition?.Version != 1 || definition.Members.Length is < 1 or > 4 ||
+            definition.Members.Select(m => m.Role).Distinct().Count() != definition.Members.Length)
+            throw new InvalidDataException("Invalid band definition");
+        var hair = HairBank.Load(Path.Combine(directory, "hair.json"));
+        foreach (var member in definition.Members)
+        {
+            if (member.Role is not ("singer" or "guitarist" or "bassist" or "drummer") ||
+                member.Position.Length != 3 || !member.Position.All(float.IsFinite) || !float.IsFinite(member.Yaw))
+                throw new InvalidDataException("Invalid band member");
+            var folder = Path.Combine(directory, member.Role);
+            using var reader = new BinaryReader(File.OpenRead(Path.Combine(folder, "animation.bin")));
+            var animation = new BandAnimation(reader);
+            var performer = new GameObject("GH3 Band " + member.Role) { layer = layer };
+            performer.transform.SetParent(root.transform, false);
+            performer.transform.localPosition = StageAssets.Vector(member.Position);
+            performer.transform.localRotation = Quaternion.Euler(0, member.Yaw, 0);
+            Positions.Add(member.Role, performer.transform.localPosition);
+            var bones = new Transform[animation.Parents.Length];
+            for (var i = 0; i < bones.Length; i++)
+                bones[i] = new GameObject($"GH3 {member.Role} Bone {i}") { layer = layer }.transform;
+            for (var i = 0; i < bones.Length; i++)
+            {
+                bones[i].SetParent(animation.Parents[i] < 0 ? performer.transform : bones[animation.Parents[i]], false);
+                Apply(bones[i], animation.BindPose[i]);
+            }
+            var assets = new StageAssets();
+            _assets.Add(assets);
+            assets.Load(folder, performer, layer, bones, lighting);
+            stage.SurfaceMaterials.AddRange(assets.SurfaceMaterials);
+            stage.BandMeshes.AddRange(assets.BandMeshes);
+            stage.TransparentMeshes.AddRange(assets.TransparentMeshes);
+            var player = new Performer { Role = member.Role, Root = performer.transform, Bones = bones, Animation = animation,
+                Start = performer.transform.localPosition, Rotation = performer.transform.localRotation, Pose = new BandPose[bones.Length] };
+            if (hair != null && hair.Members.TryGetValue(member.Role, out var hairDefinition))
+                player.Hair = new StageHair(hairDefinition, animation.Parents, (time, pose) => SamplePose(player, time, pose));
+            _players.Add(player);
+        }
+        MelonLogger.Msg($"GH3 band loaded: {_players.Count} performers; default male singer; original GH3 animations");
+        if (hair != null) MelonLogger.Msg($"GH3 hair physics: {hair.Members.Values.Sum(m => m.Joints.Length)} original joints");
+    }
+
+    public void SetTimeline(string directory, StageTimeline timeline)
+    {
+        _performance = StagePerformance.Load(Path.Combine(directory, "performance.json"));
+        if (_performance == null)
+        {
+            MelonLogger.Warning("GH3 direction assets are missing. Run prepare-direction.py and install.sh.");
+            return;
+        }
+        foreach (var player in _players)
+        {
+            if (!_performance.Members.TryGetValue(player.Role, out var definition)) continue;
+            player.Definition = definition;
+            player.Performance = new PerformancePlayer(player.Role, directory, definition, player.Animation.BindPose, timeline);
+            player.Performance.Prepare();
+            var position = player.Start;
+            var speed = 1.0;
+            if (definition.Groups.TryGetValue("walk/cycle_anim/med", out var cycle))
+            {
+                var clip = definition.Clips[cycle[0]];
+                speed = Math.Max(0.1, clip.RootDistance / clip.Duration);
+            }
+            foreach (var cue in timeline.Track("walk", player.Role))
+            {
+                if (!_performance.Waypoints.TryGetValue(Gh3Checksum.Of("z_budokan_trg_waypoint_" + cue.Value), out var waypoint)) continue;
+                var target = StageAssets.Vector(waypoint.Take(3).ToArray());
+                player.Walks.Add(new Walk(cue.Time, Math.Max(0.01, Vector3.Distance(position, target) / speed), position, target, Quaternion.Euler(0, waypoint[3], 0)));
+                position = target;
+            }
+        }
+        MelonLogger.Msg($"GH3 original performance: {timeline.Track("stance", "guitarist").Length} guitar stance cues; " +
+            $"{timeline.Track("drum").Length} drum cues; {timeline.Track("face", "singer").Length} singer facial cues");
+    }
+
+    public BandPose? Anchor(string role, string bone)
+    {
+        var player = _players.FirstOrDefault(p => p.Role == role);
+        if (player == null) return null;
+        var index = player.Definition == null ? -1 : Array.IndexOf(player.Definition.Bones, bone);
+        var transform = index < 0 ? player.Root : player.Bones[index];
+        var p = transform.position;
+        var q = transform.rotation;
+        return new BandPose(new(p.x, p.y, p.z), new(q.x, q.y, q.z, q.w));
+    }
+
+    public void Update(double time)
+    {
+        foreach (var player in _players)
+        {
+            player.Hair?.Sample(time);
+            var root = SamplePose(player, time, player.Pose);
+            Apply(player.Root, root);
+            player.Hair?.Apply(player.Pose);
+            for (var i = 0; i < player.Bones.Length; i++) Apply(player.Bones[i], player.Pose[i]);
+            if (player.Role is "guitarist" or "bassist" && player.Performance?.ArmsEnabled == true)
+                SolveArms(player.Bones, player.Performance.StrumEnabled);
+        }
+    }
+
+    private static BandPose SamplePose(Performer player, double time, BandPose[] pose)
+    {
+        var position = player.Start;
+        var rotation = player.Rotation;
+        if (player.Performance != null)
+        {
+            var walkIndex = StageTimeline.UpperBound(player.Walks, time, w => w.Time) - 1;
+            var walkAge = -1.0;
+            var walkWeight = 1f;
+            if (walkIndex >= 0)
+            {
+                var walk = player.Walks[walkIndex];
+                var age = time - walk.Time;
+                position = Vector3.Lerp(walk.From, walk.To, (float)Math.Clamp(age / walk.Duration, 0, 1));
+                rotation = walk.Rotation;
+                if (age < walk.Duration)
+                {
+                    walkAge = age;
+                    walkWeight = (float)Math.Clamp(Math.Min(age, walk.Duration - age) / 0.2, 0, 1);
+                    var facing = Quaternion.LookRotation(walk.From - walk.To, Vector3.up);
+                    rotation = Quaternion.Slerp(walk.Rotation, facing, walkWeight);
+                }
+            }
+            player.Performance.Sample(time, walkAge, walkWeight);
+            Array.Copy(player.Performance.Pose, pose, pose.Length);
+        }
+        else
+        {
+            var sample = player.Animation.At(time);
+            for (var i = 0; i < pose.Length; i++) pose[i] = player.Animation.Sample(sample, i);
+        }
+        return new(new(position.x, position.y, position.z), new(rotation.x, rotation.y, rotation.z, rotation.w));
+    }
+
+    private static void SolveArms(Transform[] bones, bool strum)
+    {
+        foreach (var (upper, lower, hand, target, side) in new[] { (11, 12, 13, 122, 1), (15, 16, 17, 124, -1) })
+        {
+            if (bones.Length <= target) continue;
+            if (side == -1 && !strum) continue;
+            var a = bones[upper].position;
+            var b = bones[lower].position;
+            var c = bones[hand].position;
+            var goal = bones[target].position;
+            var first = Vector3.Distance(a, b);
+            var second = Vector3.Distance(b, c);
+            var distance = Vector3.Distance(a, goal);
+            if (distance < 0.0001f || first < 0.0001f || second < 0.0001f) continue;
+            var direction = (goal - a).normalized;
+            distance = Mathf.Clamp(distance, Mathf.Abs(first - second) + 0.0001f, first + second - 0.0001f);
+            var along = (first * first - second * second + distance * distance) / (2 * distance);
+            var height = Mathf.Sqrt(Mathf.Max(0, first * first - along * along));
+            var pole = bones[0].parent.TransformDirection(new Vector3(side * 0.5f, -1, -0.1f));
+            pole -= direction * Vector3.Dot(pole, direction);
+            var elbow = a + direction * along + pole.normalized * height;
+            bones[upper].rotation = Quaternion.FromToRotation(b - a, elbow - a) * bones[upper].rotation;
+            bones[lower].rotation = Quaternion.FromToRotation(bones[hand].position - bones[lower].position, goal - bones[lower].position) * bones[lower].rotation;
+            bones[hand].rotation = bones[target].rotation;
+        }
+    }
+
+    private static void Apply(Transform bone, BandPose pose)
+    {
+        bone.localPosition = new Vector3(pose.Position.X, pose.Position.Y, pose.Position.Z);
+        bone.localRotation = new Quaternion(pose.Rotation.X, pose.Rotation.Y, pose.Rotation.Z, pose.Rotation.W);
+    }
+
+    public void Dispose()
+    {
+        foreach (var assets in _assets) assets.Dispose();
+        _assets.Clear();
+        _players.Clear();
+        _performance = null;
+        Positions.Clear();
+    }
+}

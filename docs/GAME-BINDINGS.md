@@ -27,3 +27,9 @@ The bot's native charge-award routine (`0x5556510`) returns without an award for
 The native hit/miss health routine is `Method_Protected_Void_Boolean_0` at `0x5558de0`. A hit adds `0x74`, or `0x7c` while Star Power is active; a miss subtracts `0x78` from rock at `0x70`. The miss routine `Method_Public_Virtual_New_Void_Boolean_Boolean_0` at `0x5558c80` also resets the streak and calls this health routine. The temporary meter test uses this miss routine. The skin does not call it.
 
 Scene changes clear cached Unity objects and destroy the old HUD. A backward song-time jump resets the HUD and renderer state for a restart or practice seek. The mod finds the game manager during setup, then uses its player and score references. Renderer discovery runs on setup and when the player's pool size changes.
+
+## Stage bindings
+
+`GameplayStage` uses `GameManager.songTime` in seconds. It does not apply a second song-speed factor. The cue reader gets `folderPath`, `ChartPath`, `Name_StrippedTags`, and `Artist_StrippedTags` from `GlobalVariables.instance.currentSongEntry`. A live test matched **My Curse / Killswitch Engage** to the imported original lightshow through these fields.
+
+The stage camera draws before `BasePlayer.mainCamera`. Stage setup saves the player's camera clear flags and sets them to `Depth`. This stops the stage depth buffer from hiding the highway. Teardown restores the saved flags and camera layer masks. See [stage checks](STAGES.md#checks-on-2026-10-05) for the clock and scene tests.

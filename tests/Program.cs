@@ -9,6 +9,11 @@ static void Equal<T>(T expected, T actual, string name)
 }
 
 var animation = new ReadyAnimationTrigger();
+StageLogicTests.Run();
+BandLogicTests.Run();
+HairLogicTests.Run();
+DirectionLogicTests.Run();
+LightingLogicTests.Run();
 Equal(-1, animation.Frame(0, 126), "inactive before threshold");
 animation.Update(0.49f, 10);
 Equal(-1, animation.Frame(10, 126), "inactive below threshold");
