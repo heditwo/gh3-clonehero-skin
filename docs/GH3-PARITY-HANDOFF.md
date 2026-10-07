@@ -34,6 +34,13 @@ Original GH3 PC now runs headless under Wine on a private Xvfb display, and its 
 4. Normal and specular maps for `D_N_S_*` venue templates.
 5. Shadow maps (`SetShadowDirFromLight`, `c178.w` already carries the key-light shadow amount).
 
+### Installation state
+
+- Version `0.9.0` is installed in `~/games/clonehero-gh3-melon` with all ten re-exported venues and the regenerated band library. DLL SHA-256: `0607237e921e88cb354bff1f1b46977a6750ad4ad776fd2fd113bf49b84b4dc5`.
+- The previous `0.8.115` install (DLL and `Mods/GH3Skin`) is backed up in `~/.cache/gh3-install-backup-0.8.115`.
+- Verification for this build: logic tests, asset-driven venue script checks, Python tests, and the 33-set regression pass. Headless captures of all ten venues load and render; with network isolation, Video and Budokan passed three of three runs each. Captures end by timeout, so they do not establish a clean process exit.
+- Evidence (not in Git): `~/.cache/gh3ref/` holds the GH3 Slow Ride recording (`gh3-slowride.mp4`), the Dive constant trace (`dive-slowride-ps-constants.log.zst`), matched frames, and comparison sheets.
+
 ### Matched capture workflow
 
 1. Record GH3 with `tools/gh3-reference/` (`start-gh3.sh <display> [trace-regex]`, `keys.py <shot> keys...`, `stop-gh3.sh`; work files go to `~/.cache/gh3ref`). Verify each menu step with its screenshot. The menu path is (Return, Return, Down+Return, Down Down Return, Up Return, Return). Record with `ffmpeg -f x11grab`. Set the start script's trace filter to log `wined3d` shader constants.
