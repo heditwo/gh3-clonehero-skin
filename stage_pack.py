@@ -241,6 +241,9 @@ def import_materials(glb, folder):
             if lightmap not in images:
                 images[lightmap] = glb.image(info["index"]); images[lightmap].save(texture_dir/(lightmap+".png"))
         materials[name]["lightmap"] = lightmap
+        scale = extras.get("gh3ColorScale", 1)
+        if type(scale) not in (int, float) or not math.isfinite(scale) or not 1 <= scale <= 1000: raise ValueError("Invalid material color scale")
+        materials[name]["colorScale"] = float(scale)
         source_material = extras.get("gh3SourceMaterial", material.get("name", "material-"+str(i)))
         if not isinstance(source_material, str) or not source_material or len(source_material) > 256: raise ValueError("Invalid material identity")
         materials[name]["source"] = source_material

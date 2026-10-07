@@ -90,8 +90,10 @@ class GlbWriter:
         texture = definition.get("texture", "")
         if texture:
             row["pbrMetallicRoughness"]["baseColorTexture"] = {"index": self.texture(textures[texture])}
-        if definition.get("color") and definition["color"] != [1, 1, 1, 1]:
-            row["pbrMetallicRoughness"]["baseColorFactor"] = [float(v) for v in definition["color"]]
+        color = [float(v) for v in definition.get("color") or [1, 1, 1, 1]]
+        scale = max(1.0, *color[:3])
+        if color != [1, 1, 1, 1]:
+            row["pbrMetallicRoughness"]["baseColorFactor"] = [v/scale for v in color[:3]] + [min(1.0, color[3])]
         if definition.get("lightmap"):
             row["occlusionTexture"] = {"index": self.texture(textures[definition["lightmap"]]), "texCoord": 1}
         blend = definition.get("blend", 0)
@@ -107,6 +109,7 @@ class GlbWriter:
         if definition.get("crowd"): extras["gh3CrowdAtlas"] = True
         if definition.get("sortedTransparency"): extras["gh3SortedTransparency"] = True
         if definition.get("shading"): extras["gh3Shading"] = definition["shading"]
+        if scale > 1: extras["gh3ColorScale"] = scale
         if extras: row["extras"] = extras
         index = len(self.data["materials"])
         self.data["materials"].append(row); self.materials[name] = index

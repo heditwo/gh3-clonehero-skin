@@ -54,11 +54,12 @@ void main()
         vec3 lightmap = _Gh3Surface.z > 0.0 ? texture(_Gh3Lightmap, surfaceLightmapUv).rgb : vec3(1.0);
         vec3 ambient = _Gh3SH0.xyz + _Gh3SH1.xyz * normal.x + _Gh3SH2.xyz * normal.y + _Gh3SH3.xyz * normal.z;
         float facing = clamp(dot(normal, -_Gh3LightDirection.xyz), 0.0, 1.0);
-        vec3 light = ambient * mix(vec3(1.0), lightmap, _Gh3Surface.w)
+        vec3 light = ambient * lightmap
             + _Gh3LightColor.xyz * facing * mix(vec3(1.0), lightmap, _Gh3LightColor.w) + _Gh3Ambient.xyz;
         color.rgb *= light;
     }
     else if (_Gh3Surface.x > 0.5) color.rgb *= _Gh3Ambient.xyz;
+    color.rgb *= _Gh3Surface.w;
     SV_Target0 = color;
 }
 #endif

@@ -1,6 +1,51 @@
 # GH3 parity handoff
 
-Status checked: **2026-10-07**.
+## Update — 2026-10-07 (later session)
+
+This section supersedes the priorities in sections 1, 5, and 6. The older sections remain as history.
+
+### Direction change: measure against real GH3 output
+
+Original GH3 PC now runs headless under Wine on a private Xvfb display, and its frames and shader constants can be recorded. Use matched captures, not isolated command emulation, to choose the next work. See [the matched capture workflow](#matched-capture-workflow).
+
+### Findings that change the roadmap
+
+- **Model-light commands are not used by gameplay content.** A byte search of every original PAK and script archive found `SetModelLightsFadeTime` only in `scripts\engine\tod_manager.qb`, `MoveLight` and `SetLightGroupIntensity` only in the debug `lighttool.qb`, and `EnableLightGroup` only in `menu_store.qb`. `SetLightGroup`, `UpdateFxLighting`, `RemoveCurLightGroup`, `PushWorldLights`, `PopWorldLights`, and `KillLight` are called nowhere. Section 6 is therefore low priority.
+- **Venue scripts reach very few unresolved commands.** The asset-driven script check (`GH3_PACK_ASSETS=assets`) reports only shadow-map rendering (Art Deco and Soundcheck call `SetShadowDirFromLight` at setup) and two light-node trigger scripts that call an undefined `Shadow` name. A Neversoft release build ignores an unknown name, so those trigger scripts are effectively no-ops.
+- **The largest visual gap was surface shading, not commands.** The converter discarded each venue's baked lightmap atlas, the second UV set, material diffuse constants, and the unlit/ambient template types. This is now fixed; see below.
+
+### Implemented in this session
+
+- `gh3_materials.py` classifies all 389 templates in `MaterialLibrary.bin.xen` from their pixel shaders: shading mode (`lit`, `ambient`, `unlit`), diffuse-constant register, and lightmap sampler (`*ChkBox*` templates; last sampler, or second-to-last for `Env_*`).
+- Static scenery uses `GH3STG02` (44-byte vertices with a lightmap UV). The GLB carries the lightmap as `occlusionTexture` with `texCoord: 1`, the shading mode as `extras.gh3Shading`, and overbright material colors as `extras.gh3ColorScale` (29 venue materials use 1.5–10×, mostly neon and glow cards).
+- `src/Stage/Shaders/Stage.glsl` implements the `D_*` core: `albedo × vertex color × (SH(n) × lightmap + key × sat(N·L) × lerp(1, lightmap, c178.w) + c176)`. `StageLightingRenderer.ShadeSurfaces` binds per-object constants from `StageLightScene.Sample`, the same selection that particles use. Band meshes use the same path with the `Band` group.
+- Traced GH3 constants: `c137 = (1,1,1,1)`, `c138 = (0, 40, 30, 0.1)` (normal-map fade distance). For Dive, the mod's selection reproduces the traced ambient, key color, key direction, and SH values exactly.
+
+### Crash findings
+
+- `rtmidi_get_port_count` dereferences null when ALSA sequencer access is denied (no logged-in seat). The isolated test game now uses `tools/rtmidi-stub.c` as its `libRtMidi.so`. This is a test-environment fix only.
+- MelonLoader's bHaptics client retries a WebSocket to `127.0.0.1:15881` on a timer; one socket disposal raised an access violation inside CoreCLR. The mod now calls `bHapticsManager.Disconnect()` in `OnEarlyInitializeMelon` (opt out with `GH3_SKIN_KEEP_BHAPTICS=1`). Earlier crash logs also show access violations on other socket and `SslStream` threads. The root cause is still unknown.
+
+### Remaining visible gaps found by matched captures (Dive, Slow Ride)
+
+1. `*_Pass1` decal layers (second diffuse UV set, mask, grime, logos): about 3% of venue geometry. Needs two more UV sets in the export.
+2. The mural behind the Dive drummer is still missing; its source is not yet identified (not a `Pass1` decal in Dive).
+3. `SkinShader`/`HairShader` specifics: normal maps, skin color ramp, rim tint, specular, and the projected shadow map (`s13`).
+4. Normal and specular maps for `D_N_S_*` venue templates.
+5. Shadow maps (`SetShadowDirFromLight`, `c178.w` already carries the key-light shadow amount).
+
+### Matched capture workflow
+
+1. Record GH3 with `tools/gh3-reference/` (`start-gh3.sh <display> [trace-regex]`, `keys.py <shot> keys...`, `stop-gh3.sh`; work files go to `~/.cache/gh3ref`). Verify each menu step with its screenshot. The menu path is (Return, Return, Down+Return, Down Down Return, Up Return, Return). Record with `ffmpeg -f x11grab`. Set the start script's trace filter to log `wined3d` shader constants.
+2. Align: camera cuts in the GH3 video match the exported `gh3-camera` event times; Slow Ride had song time = video time − 14.76 s.
+3. Capture the mod: `tools/capture-stage.sh <stage> <out> <chart> <song times> <seconds>` with a chart whose title and artist match the original song (no authored events). `GH3_SKIN_CAPTURE_CLOCK=song` is the default there.
+4. GH3 chooses shots within a camera group at random. Sweep candidates with `GH3_SKIN_CAMERA_SHOT=<shot name>` and pick the one matching GH3's framing. Combine frames with `tools/compare-sheet.py`.
+
+The isolated test game's `Mods/GH3Skin/assets/stages` is a **symlink to this repository's `assets/stages`**. Never delete through it.
+
+---
+
+Status checked: **2026-10-07** (earlier session).
 
 ## 1. Goal and immediate direction
 

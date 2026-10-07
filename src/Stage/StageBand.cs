@@ -40,7 +40,7 @@ internal sealed class StageBand : IDisposable
     public Dictionary<string, Vector3> Positions { get; } = new();
 
     public void Load(string directory, StageAssets stage, GameObject root, int layer, bool lighting = false,
-        IReadOnlyDictionary<string, StagePlacement>? placements = null)
+        IReadOnlyDictionary<string, StagePlacement>? placements = null, Shader? surfaceShader = null)
     {
         var path = Path.Combine(directory, "band.json");
         if (!File.Exists(path))
@@ -84,8 +84,9 @@ internal sealed class StageBand : IDisposable
             }
             var assets = new StageAssets();
             _assets.Add(assets);
-            assets.Load(folder, performer, layer, bones, lighting);
+            assets.Load(folder, performer, layer, bones, lighting, surfaceShader: surfaceShader);
             stage.SurfaceMaterials.AddRange(assets.SurfaceMaterials);
+            stage.ShadedSurfaces.AddRange(assets.ShadedSurfaces);
             stage.BandMeshes.AddRange(assets.BandMeshes);
             stage.TransparentMeshes.AddRange(assets.TransparentMeshes);
             var player = new Performer { Role = member.Role, Root = performer.transform, Bones = bones, Animation = animation,

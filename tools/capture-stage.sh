@@ -43,12 +43,15 @@ trap cleanup EXIT
 sleep 2
 
 sha256sum "$game/Mods/Gh3Skin.dll" "$project/assets/libraries/gh3-band-v1/render/"*.bundle > "$output/build.sha256"
+# MelonLoader downloads debug symbols over HTTPS; its socket threads have crashed the CLR. Set GH3_CAPTURE_NETWORK=1 to allow network access.
+isolate=(unshare -rn)
+[[ -n "${GH3_CAPTURE_NETWORK:-}" ]] && isolate=()
 set +e
 DISPLAY="$display" WAYLAND_DISPLAY='' LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=8 \
   XDG_CONFIG_HOME="$game/../config" GH3_CLONE_HERO_DIR="$game" GH3_SKIN_PREVIEW_SONG="$song" \
   GH3_SKIN_PREVIEW_WIDTH="$width" GH3_SKIN_PREVIEW_HEIGHT="$height" GH3_SKIN_STAGE="$stage" \
   GH3_SKIN_CAMERA_SHOT="${GH3_SKIN_CAMERA_SHOT:-}" GH3_SKIN_CAPTURE_TIMES="$times" GH3_SKIN_CAPTURE_DIR="$output" GH3_SKIN_CAPTURE_CLOCK="${GH3_SKIN_CAPTURE_CLOCK:-song}" \
-  timeout -k 5 "$seconds" dbus-run-session -- bash "$audio" bash "$project/run-gh3-skin.sh" --preview \
+  timeout -k 5 "$seconds" "${isolate[@]}" dbus-run-session -- bash "$audio" bash "$project/run-gh3-skin.sh" --preview \
   --melonloader.agfoffline -force-glcore -logFile "$output/unity.log" > "$output/player.log" 2>&1
 status=$?
 set -e

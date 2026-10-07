@@ -165,9 +165,10 @@ internal sealed class GameplayStage
             _root = new GameObject("GH3 Stage") { layer = Layer };
             var lighting = StageLightingBank.Load(_directory);
             _assets = new StageAssets();
-            _assets.Load(_directory, _root, Layer, lighting: lighting != null, surfaceShader: LoadSurfaceShader(library));
+            var surfaceShader = LoadSurfaceShader(library);
+            _assets.Load(_directory, _root, Layer, lighting: lighting != null, surfaceShader: surfaceShader);
             _band = new StageBand();
-            _band.Load(Path.Combine(library, "band"), _assets, _root, Layer, lighting != null, pack.Band);
+            _band.Load(Path.Combine(library, "band"), _assets, _root, Layer, lighting != null, pack.Band, surfaceShader);
             _fixtures = new StageFixtures();
             _fixtures.Load(Path.Combine(_directory, "fixtures"), _root, Layer);
             _actors = new StageActors();

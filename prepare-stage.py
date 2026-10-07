@@ -111,7 +111,7 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
             slot = gh3_materials.lightmap_slot(template, sample_count)
             materials[name]["shading"] = template["shading"]
             if template["diffuseConstant"] is not None and template["diffuseConstant"] < len(constants):
-                materials[name]["color"] = [min(1.0, max(0.0, v)) for v in constants[template["diffuseConstant"]]]
+                materials[name]["color"] = [max(0.0, v) for v in constants[template["diffuseConstant"]]]
             if slot is not None:
                 materials[name]["lightmap"] = materials[name]["textures"][slot]
         if materials[name]["template"] == "f76185ad":

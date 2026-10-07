@@ -34,6 +34,7 @@ internal sealed class StageMaterial
     public bool SortedTransparency { get; set; }
     public string Shading { get; set; } = "";
     public string Lightmap { get; set; } = "";
+    public float ColorScale { get; set; } = 1;
     public int ShadingMode => Shading switch { "unlit" => 0, "ambient" => 1, "lit" => 2, "" => -1, _ => throw new InvalidDataException("Unknown stage shading mode") };
 }
 
@@ -103,7 +104,8 @@ internal sealed class StageAssets : IDisposable
         material.SetInt("_ZWrite", transparent ? 0 : 1);
         material.SetInt("_Cull", (int)CullMode.Off);
         var cutout = source.Cutoff > 0 && !source.SortedTransparency;
-        material.SetVector("_Gh3Surface", new(source.ShadingMode, cutout ? source.Cutoff : 0, source.Lightmap.Length > 0 ? 1 : 0, 1));
+        if (!float.IsFinite(source.ColorScale) || source.ColorScale is < 1 or > 1000) throw new InvalidDataException("Invalid material color scale");
+        material.SetVector("_Gh3Surface", new(source.ShadingMode, cutout ? source.Cutoff : 0, source.Lightmap.Length > 0 ? 1 : 0, source.ColorScale));
         material.SetColor("_Color", Color.white);
         material.renderQueue = transparent ? 3000 : cutout ? 2450 : 2000;
         return material;
@@ -137,7 +139,7 @@ internal sealed class StageAssets : IDisposable
         var materials = new Dictionary<uint, Material>();
         foreach (var (key, source) in Definition.Materials)
         {
-            var shaded = surfaceShader != null && bones == null && source.ShadingMode >= 0;
+            var shaded = surfaceShader != null && source.ShadingMode >= 0;
             var material = shaded ? MakeSurfaceMaterial(surfaceShader!, source) : Own(MakeMaterial(shader, source.Blend != 0, source.Blend == 1));
             material.name = "GH3 Stage " + key;
             if (!shaded && source.Cutoff > 0 && !source.SortedTransparency)
@@ -246,7 +248,7 @@ internal sealed class StageAssets : IDisposable
                     bone.worldToLocalMatrix * root.transform.localToWorldMatrix).ToArray());
             }
             mesh.RecalculateBounds();
-            var shadedMode = surfaceShader != null && bones == null ? Definition.Materials[materialId.ToString("x8")].ShadingMode : -1;
+            var shadedMode = surfaceShader != null ? Definition.Materials[materialId.ToString("x8")].ShadingMode : -1;
             var dynamicColors = lighting && shadedMode < 0 && (bones != null || Definition.LightGroups.Length > 0);
             if (dynamicColors || sorted) mesh.MarkDynamic();
             mesh.UploadMeshData(!dynamicColors && !sorted);
@@ -276,11 +278,12 @@ internal sealed class StageAssets : IDisposable
                 skin.updateWhenOffscreen = true;
                 skin.localBounds = new Bounds(mesh.bounds.center, mesh.bounds.size * 2 + new Vector3(8, 6, 8));
                 renderer = skin;
-                if (lighting) BandMeshes.Add(new(skin, colors, lightGroup ?? Gh3Checksum.Of("Band")));
+                if (lighting && shadedMode < 0) BandMeshes.Add(new(skin, colors, lightGroup ?? Gh3Checksum.Of("Band")));
                 if (sorted) TransparentMeshes.Add(new(this, skin, vertexCount, indices));
             }
             renderer.sharedMaterial = material;
-            if (shadedMode > 0) ShadedSurfaces.Add(new(renderer, shadedMode, Definition.LightGroups.Length == 0 ? "" : Definition.LightGroups[part]));
+            if (shadedMode > 0) ShadedSurfaces.Add(new(renderer, shadedMode, bones != null ? lightGroup ?? Gh3Checksum.Of("Band") :
+                Definition.LightGroups.Length == 0 ? "" : Definition.LightGroups[part]));
             var sourceMaterial = Definition.Materials[materialId.ToString("x8")].Source;
             if (objectId.Length > 0 && sourceMaterial.Length > 0)
                 MaterialSurfaces.Add((Convert.ToUInt32(objectId, 16), Gh3QbText.Key(sourceMaterial), renderer, Definition.Materials[materialId.ToString("x8")]));

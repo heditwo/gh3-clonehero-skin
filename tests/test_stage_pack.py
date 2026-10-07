@@ -69,18 +69,20 @@ class StagePackTests(unittest.TestCase):
             vertices["normal"] = [0, 0, 1]; vertices["color"] = 255
             vertices["lightmap"] = [[.25, .75], [.5, .75], [.25, .5]]
             images = {"diffuse": Image.new("RGBA", (4, 4), (200, 100, 50, 255)), "baked": Image.new("RGBA", (4, 4), (40, 80, 120, 255))}
-            materials = {"lit": {"blend": 0, "texture": "diffuse", "lightmap": "baked", "shading": "lit", "color": [.5, .5, .5, 1]}}
+            materials = {"lit": {"blend": 0, "texture": "diffuse", "lightmap": "baked", "shading": "lit", "color": [2, 1, 1, 1]}}
             writer = GlbWriter(); writer.data = glb.data; writer.binary = bytearray(glb.binary)
             writer.node("lit-surface", writer.mesh("lit-surface", [("lit", 3, vertices.tobytes(), [(0, 1, 2)])], materials, images))
             writer.save(source/"stage.glb")
             row = next(m for m in GlbReader(source/"stage.glb").data["materials"] if m["name"] == "lit")
             self.assertEqual(row["occlusionTexture"]["texCoord"], 1)
             self.assertEqual(row["extras"]["gh3Shading"], "lit")
-            self.assertEqual(row["pbrMetallicRoughness"]["baseColorFactor"], [.5, .5, .5, 1])
+            self.assertEqual(row["pbrMetallicRoughness"]["baseColorFactor"], [1, .5, .5, 1])
+            self.assertEqual(row["extras"]["gh3ColorScale"], 2)
             compile_stage(source, output)
             definition = load_json(output/"stage.json")
             lit = [m for m in definition["materials"].values() if m["shading"] == "lit"]
             self.assertEqual(len(lit), 1)
+            self.assertEqual(lit[0]["colorScale"], 2)
             self.assertTrue((output/"textures"/(lit[0]["lightmap"]+".png")).exists())
             data = (output/"meshes.bin").read_bytes()
             self.assertEqual(data[:8], b"GH3STG02")
@@ -90,7 +92,7 @@ class StagePackTests(unittest.TestCase):
                 rows = np.frombuffer(data, STATIC_VERTEX, count, offset); offset += count*44 + indices*4
                 if f"{material:08x}" in definition["materials"] and definition["materials"][f"{material:08x}"]["shading"] == "lit": found = rows
             np.testing.assert_allclose(sorted(map(tuple, found["lightmap"])), sorted(map(tuple, vertices["lightmap"])), atol=1e-6)
-            self.assertTrue(np.all(found["color"][:, :3] == 128))
+            self.assertTrue(np.all(found["color"][:, 0] == 255) and np.all(found["color"][:, 1:3] == 128))
 
     def test_material_templates_classify_original_pixel_shaders(self):
         import gh3_materials
