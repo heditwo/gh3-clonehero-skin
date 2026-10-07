@@ -47,7 +47,8 @@ sha256sum "$game/Mods/Gh3Skin.dll" "$project/assets/libraries/gh3-band-v1/render
 isolate=(unshare -rn)
 [[ -n "${GH3_CAPTURE_NETWORK:-}" ]] && isolate=()
 set +e
-DISPLAY="$display" WAYLAND_DISPLAY='' LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=8 \
+# Xvfb has no GPU access; use record-preview.sh from a desktop session for full-speed video.
+env LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS="${GH3_CAPTURE_THREADS:-8}" DISPLAY="$display" WAYLAND_DISPLAY='' \
   XDG_CONFIG_HOME="$game/../config" GH3_CLONE_HERO_DIR="$game" GH3_SKIN_PREVIEW_SONG="$song" \
   GH3_SKIN_PREVIEW_WIDTH="$width" GH3_SKIN_PREVIEW_HEIGHT="$height" GH3_SKIN_STAGE="$stage" \
   GH3_SKIN_CAMERA_SHOT="${GH3_SKIN_CAMERA_SHOT:-}" GH3_SKIN_CAPTURE_TIMES="$times" GH3_SKIN_CAPTURE_DIR="$output" GH3_SKIN_CAPTURE_CLOCK="${GH3_SKIN_CAPTURE_CLOCK:-song}" \
