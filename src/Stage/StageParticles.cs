@@ -4,6 +4,12 @@ namespace Gh3Skin;
 
 internal sealed class StageParticles : IDisposable
 {
+    private static readonly int CameraForwardId = Shader.PropertyToID("_Gh3CameraForward");
+    private static readonly uint TextureRibbonTrailKey = Gh3Checksum.Value("TextureRibbonTrail");
+    private static readonly uint FlatRibbonTrailKey = Gh3Checksum.Value("FlatRibbonTrail");
+    private static readonly uint VTypeKey = Gh3Checksum.Value("v");
+    private static readonly uint XTypeKey = Gh3Checksum.Value("x");
+
     private readonly StageScripts _scripts;
     private readonly StageAssets _assets;
     private readonly GameObject _root;
@@ -58,11 +64,11 @@ internal sealed class StageParticles : IDisposable
         _lighting.Clear();
         var bound = new HashSet<Material>();
         var forward = _camera.transform.forward;
-        foreach (var material in _materials) material.SetVector("_Gh3CameraForward", new(forward.x, forward.y, forward.z, 0));
+        var cameraForward = new Vector4 { x = forward.x, y = forward.y, z = forward.z };
+        foreach (var material in _materials) material.SetVector(CameraForwardId, cameraForward);
         foreach (var batch in _batches.Values.SelectMany(batches => batches)) batch.Begin(_camera.transform.right, _camera.transform.up);
-        var samples = _scripts.State.Particles.Sample(time).ToArray();
-        var active = samples.Select(particle => particle.Emitter).ToHashSet();
-        RenderedEmitters = StageParticleRenderList.Select(_scripts.State.Particles.Emitters.Keys, _ => true, active.Contains).ToArray();
+        var emitters = _scripts.State.Particles.Emitters;
+        RenderedEmitters = StageParticleRenderList.Select(emitters.Keys, _ => true, id => emitters[id].Live.Count > 0).ToArray();
         RenderKeys.Clear();
         var eye = Numeric(_root.transform.InverseTransformPoint(_camera.transform.position));
         var distanceScale = StageParticleRenderOrder.DistanceScale(_camera.nearClipPlane, _camera.farClipPlane);
@@ -74,57 +80,61 @@ internal sealed class StageParticles : IDisposable
                 material.RenderBlend != 0 || (technique.Flags & 0x800) != 0, technique.SortId, _scripts.State.Particles.Position(id, time), eye, distanceScale));
         }
         DrawOrder = StageParticleRenderOrder.Sort(RenderedEmitters.Select(id => RenderKeys[id]).ToArray()).Select(index => RenderedEmitters[index]).ToArray();
-        var particlesByEmitter = samples.ToLookup(particle => particle.Emitter);
+
         var submission = new List<StageEffects.ParticleBatch>();
+        var current = new Dictionary<(uint Emitter, uint Texture, bool Lit), StageEffects.ParticleBatch>();
         var submitted = new HashSet<StageEffects.ParticleBatch>();
-        foreach (var particle in DrawOrder.SelectMany(id => particlesByEmitter[id]))
+        StageEffects.ParticleBatch ParticleBatch(uint texture, in StageParticleSample particle, StageParticleAxes lighting, bool allowLighting = true)
         {
+            var definition = particle.Definition;
+            var lit = definition.Material.Lighting && allowLighting;
+            if (!current.TryGetValue((particle.Emitter, texture, lit), out var batch) || batch.Full)
+                current[(particle.Emitter, texture, lit)] = batch = Batch(particle.Emitter, texture, definition, lit);
+            if (submitted.Add(batch)) submission.Add(batch);
+            if (lit && bound.Add(batch.Material))
+            {
+                if (!_lighting.TryGetValue(particle.Emitter, out var lights))
+                {
+                    var emitter = _scripts.State.Particles.Emitters[particle.Emitter];
+                    lights = _scripts.State.LightScene.Sample(Reflect(_scripts.State.Particles.Position(emitter.Id, time)), emitter.LightGroup).Lighting;
+                    _lighting.Add(emitter.Id, lights);
+                }
+                BindLighting(batch.Material, lights);
+            }
+            batch.SoftEdgeWidth = particle.Size.X;
+            batch.LightNormal = (Reflect(lighting.Depth));
+            batch.LightTangent = (Reflect(lighting.Right));
+            batch.LightBitangent = (Reflect(lighting.Up));
+            return batch;
+        }
+        foreach (var source in DrawOrder.SelectMany(id => emitters[id].Live))
+        {
+            var particle = StageParticleState.Sample(source);
             var definition = particle.Definition;
             var p = particle.Position;
             var c = particle.Color;
             var lighting = StageParticleGeometry.FlatLighting(Reflect(particle.Velocity), Reflect(right), Reflect(up), definition.AlignWithPath,
                 definition.PathFollowTime, particle.Angle, definition.Rotate3d && definition.RotationSpeed != System.Numerics.Vector2.Zero,
                 particle.RandomIndex, particle.ColorMix, definition.AlignTo);
-            StageEffects.ParticleBatch ParticleBatch(uint texture, bool allowLighting = true)
-            {
-                var lit = definition.Material.Lighting && allowLighting;
-                var batch = Batch(particle.Emitter, texture, definition, lit);
-                if (submitted.Add(batch)) submission.Add(batch);
-                if (lit && bound.Add(batch.Material))
-                {
-                    if (!_lighting.TryGetValue(particle.Emitter, out var lights))
-                    {
-                        var emitter = _scripts.State.Particles.Emitters[particle.Emitter];
-                        lights = _scripts.State.LightScene.Sample(Reflect(_scripts.State.Particles.Position(emitter.Id, time)), emitter.LightGroup).Lighting;
-                        _lighting.Add(emitter.Id, lights);
-                    }
-                    BindLighting(batch.Material, lights);
-                }
-                batch.SoftEdgeWidth = particle.Size.X;
-                batch.LightNormal = Unity(Reflect(lighting.Depth));
-                batch.LightTangent = Unity(Reflect(lighting.Right));
-                batch.LightBitangent = Unity(Reflect(lighting.Up));
-                return batch;
-            }
             ActiveParticles++;
-            if (definition.Type == Gh3Checksum.Value("TextureRibbonTrail"))
+            if (definition.Type == TextureRibbonTrailKey)
             {
                 foreach (var quad in StageParticleGeometry.Ribbon(particle.Position, particle.Size.X, particle.History, particle.HistoryIndex,
                     right, up, definition.AtlasColumns, definition.AtlasRows, particle.Frame, -Reflect(definition.AlignTo)))
                 {
                     lighting = new(Reflect(quad.Lighting.Right), Reflect(quad.Lighting.Up), -Reflect(quad.Lighting.Depth));
-                    ParticleBatch(definition.Texture).AddQuadVertices(Unity(quad.A), Unity(quad.B), Unity(quad.C), Unity(quad.D), new(c.X, c.Y, c.Z, c.W), new(quad.Uv.X, quad.Uv.W, quad.Uv.Z, quad.Uv.Y));
+                    ParticleBatch(definition.Texture, particle, lighting).AddQuadVertices((quad.A), (quad.B), (quad.C), (quad.D), new(c.X, c.Y, c.Z, c.W), new(quad.Uv.X, quad.Uv.W, quad.Uv.Z, quad.Uv.Y));
                 }
                 continue;
             }
-            if (definition.Type == Gh3Checksum.Value("FlatRibbonTrail"))
+            if (definition.Type == FlatRibbonTrailKey)
                 foreach (var quad in StageParticleGeometry.FlatRibbon(particle.Position, particle.Size.X, particle.History, particle.HistoryIndex, right, up, -Reflect(definition.AlignTo)))
-                    ParticleBatch(0, false).AddQuadVertices(Unity(quad.A), Unity(quad.B), Unity(quad.C), Unity(quad.D),
+                    ParticleBatch(0, particle, lighting, false).AddQuadVertices((quad.A), (quad.B), (quad.C), (quad.D),
                         new(c.X, c.Y, c.Z, StageParticleGeometry.TrailAlpha(c.W, quad.StartAlpha)),
                         new(c.X, c.Y, c.Z, StageParticleGeometry.TrailAlpha(c.W, quad.EndAlpha)), new(quad.Uv.X, quad.Uv.W, quad.Uv.Z, quad.Uv.Y));
-            if (definition.Type == Gh3Checksum.Value("v") || definition.Type == Gh3Checksum.Value("x"))
+            if (definition.Type == VTypeKey || definition.Type == XTypeKey)
             {
-                var split = definition.Type == Gh3Checksum.Value("x");
+                var split = definition.Type == XTypeKey;
                 var axes = StageParticleGeometry.CrossBasis(new(particle.Size.X, particle.Size.Y, particle.Depth), Reflect(particle.Velocity),
                     Reflect(right), Reflect(up), definition.AlignWithPath, particle.Angle, split,
                     definition.Rotate3d && definition.RotationSpeed != System.Numerics.Vector2.Zero, particle.RandomIndex, particle.ColorMix, definition.AlignTo);
@@ -137,7 +147,7 @@ internal sealed class StageParticles : IDisposable
                          StageParticleGeometry.TextureBounds(definition.AtlasColumns, definition.AtlasRows, particle.Frame)))
                     {
                         lighting = StageParticleGeometry.CrossLighting(lightAxes, split, side++);
-                        ParticleBatch(definition.Texture).AddQuadVertices(Unity(Reflect(quad.A)), Unity(Reflect(quad.B)), Unity(Reflect(quad.C)), Unity(Reflect(quad.D)),
+                        ParticleBatch(definition.Texture, particle, lighting).AddQuadVertices((Reflect(quad.A)), (Reflect(quad.B)), (Reflect(quad.C)), (Reflect(quad.D)),
                             new(c.X, c.Y, c.Z, c.W), new(quad.Uv.X, quad.Uv.W, quad.Uv.Z, quad.Uv.Y));
                     }
                 }
@@ -152,7 +162,7 @@ internal sealed class StageParticles : IDisposable
             }
             if (!basis.Visible) continue;
             var uv = StageParticleGeometry.TextureBounds(definition.AtlasColumns, definition.AtlasRows, particle.Frame);
-            ParticleBatch(definition.Texture).AddQuad(new(p.X, p.Y, p.Z), Unity(basis.Right), Unity(basis.Up), new(c.X, c.Y, c.Z, c.W), new(uv.X, uv.Y, uv.Z, uv.W));
+            ParticleBatch(definition.Texture, particle, lighting).AddQuad(p, basis.Right, basis.Up, c, uv);
         }
         foreach (var batch in _batches.Values.SelectMany(batches => batches)) batch.End();
         for (var index = 0; index < submission.Count; index++) submission[index].SortingOrder = index;
@@ -163,8 +173,8 @@ internal sealed class StageParticles : IDisposable
     private StageEffects.ParticleBatch Batch(uint emitter, uint textureId, StageParticleDefinition particle, bool lit)
     {
         var definition = particle.Material;
-        var quads = particle.Type == Gh3Checksum.Value("TextureRibbonTrail") || particle.Type == Gh3Checksum.Value("FlatRibbonTrail") ? particle.History + 1 :
-            particle.Type == Gh3Checksum.Value("x") ? 4 : particle.Type == Gh3Checksum.Value("v") ? 2 : 1;
+        var quads = particle.Type == TextureRibbonTrailKey || particle.Type == FlatRibbonTrailKey ? particle.History + 1 :
+            particle.Type == XTypeKey ? 4 : particle.Type == VTypeKey ? 2 : 1;
         var capacity = (int)Math.Clamp((long)particle.Maximum * quads, 1, 8192);
         var key = (emitter, textureId, definition, lit);
         if (!_batches.TryGetValue(key, out var batches))

@@ -19,6 +19,7 @@ internal sealed class StageLightScene
     private readonly bool[] _transformChanged;
     private readonly Gh3ScriptRuntime? _runtime;
     private bool _scheduled;
+    private int _version;
     public IReadOnlyList<StageLightNative> Lights { get; }
     public IReadOnlyDictionary<uint, StageLightGroup> Groups => _groups;
 
@@ -127,7 +128,29 @@ internal sealed class StageLightScene
         return value with { Intensity = value.Intensity * weight, Specular = value.Specular * weight };
     }
 
+    public long Signature()
+    {
+        var hash = new HashCode();
+        hash.Add(_version);
+        for (var i = 0; i < _transitions.Length; i++)
+        {
+            hash.Add(_transitions[i].Value);
+            hash.Add(_transforms[i]);
+            hash.Add(_flags[i]);
+            hash.Add(_lightGroups[i]);
+        }
+        foreach (var (id, group) in _groups) { hash.Add(id); hash.Add(group.Flags); hash.Add(group.Weight); }
+        return hash.ToHashCode();
+    }
+
     public Gh3ScriptCallResult? Execute(uint command, Gh3QbValue parameters, uint milliseconds = 0)
+    {
+        var result = ExecuteCommand(command, parameters, milliseconds);
+        if (result != null) _version++;
+        return result;
+    }
+
+    private Gh3ScriptCallResult? ExecuteCommand(uint command, Gh3QbValue parameters, uint milliseconds)
     {
         bool Is(string name) => command == Gh3Checksum.Value(name);
         if (Is("CompactIntervals")) { _spatial.Compact(); return new(true); }

@@ -49,6 +49,8 @@ internal static class StageAudioBackend
     }
 
     public static void Free(uint handle) => Check(FreeStream(handle));
+    // At application quit Clone Hero may already have released BASS and every stream handle.
+    public static void Release(uint handle) { if (!FreeStream(handle) && Error() != 5) Check(false); }
     public static void Play(uint handle) => Check(PlayChannel(handle, false));
     public static void Pause(uint handle) { if (State(handle) == 1) Check(PauseChannel(handle)); }
     public static void Volume(uint handle, float volume) => Check(Attribute(handle, 2, volume));

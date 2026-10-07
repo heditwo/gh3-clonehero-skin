@@ -50,7 +50,7 @@ internal sealed class StageLightingRenderer
     private string[] _lightGroups;
     private StageLightPose?[] _lightPoses;
     private readonly GameObject _root;
-    private readonly List<(StageAssets.ShadedSurface Surface, MaterialPropertyBlock Properties)> _shaded;
+    private readonly List<(StageAssets.ShadedSurface Surface, MaterialPropertyBlock Properties, Vec Center)> _shaded;
     private readonly Dictionary<string, uint> _nativeGroups = new();
 
     public StageLightingRenderer(StageLighting lighting, StageAssets assets, GameObject root, int layer, StageFixtures? fixtures = null)
@@ -58,7 +58,7 @@ internal sealed class StageLightingRenderer
         _lighting = lighting;
         _fixtures = fixtures;
         _root = root;
-        _shaded = assets.ShadedSurfaces.Select(surface => (surface, new MaterialPropertyBlock())).ToList();
+        _shaded = assets.ShadedSurfaces.Select(surface => (surface, new MaterialPropertyBlock(), new Vec(float.NaN))).ToList();
         _lightGroups = lighting.Bank.Lights.Select(light => light.Group).ToArray();
         _lightPoses = new StageLightPose?[lighting.Bank.Lights.Length];
         foreach (var source in assets.LitMeshes)
@@ -317,30 +317,62 @@ internal sealed class StageLightingRenderer
         return StageParticleLights.Select(lights, new(position, 1));
     }
 
+    private static readonly int AmbientId = Shader.PropertyToID("_Gh3Ambient");
+    private static readonly int DirectionId = Shader.PropertyToID("_Gh3LightDirection");
+    private static readonly int ColorId = Shader.PropertyToID("_Gh3LightColor");
+    private static readonly int[] HarmonicIds = { Shader.PropertyToID("_Gh3SH0"), Shader.PropertyToID("_Gh3SH1"), Shader.PropertyToID("_Gh3SH2"), Shader.PropertyToID("_Gh3SH3") };
+    private long _lightSignature = long.MinValue;
+
+    // Unity struct constructors are native calls in this game; field initialization avoids them.
+    private static Vector4 Unity4(float x, float y, float z, float w) => new() { x = x, y = y, z = z, w = w };
+
+    private long LightSignature(StageLightingValues state, StageLightScene? scene)
+    {
+        if (scene != null) return scene.Signature();
+        var hash = new HashCode();
+        foreach (var light in state.Lights) hash.Add(light);
+        foreach (var visible in _lightVisibility) hash.Add(visible);
+        foreach (var pose in _lightPoses) hash.Add(pose);
+        return hash.ToHashCode();
+    }
+
     private void ShadeSurfaces(StageLightingValues state, StageLightScene? scene)
     {
-        Vector3 Direction(float x, float y, float z, bool native) => _root.transform.TransformDirection(new(x, y, native ? -z : z));
-        foreach (var (surface, properties) in _shaded)
+        if (_shaded.Count == 0) return;
+        var signature = LightSignature(state, scene);
+        var lightsChanged = signature != _lightSignature;
+        _lightSignature = signature;
+        var root = _root.transform;
+        var q = root.rotation;
+        var rotation = new System.Numerics.Quaternion(q.x, q.y, q.z, q.w);
+        var origin = root.position;
+        var inverse = System.Numerics.Quaternion.Inverse(rotation);
+        var native = scene != null;
+        Vec Direction(float x, float y, float z) => Vec.Transform(new Vec(x, y, native ? -z : z), rotation);
+        for (var i = 0; i < _shaded.Count; i++)
         {
-            var center = _root.transform.InverseTransformPoint(surface.Renderer.bounds.center);
-            var lights = scene != null ? scene.Sample(new(center.x, center.y, -center.z), NativeGroup(scene, surface.Group)).Lighting :
-                PackLights(state, Numeric(center), surface.Group);
-            var native = scene != null;
+            var (surface, properties, center) = _shaded[i];
+            var world = surface.Renderer.bounds.center;
+            var local = Vec.Transform(new Vec(world.x - origin.x, world.y - origin.y, world.z - origin.z), inverse);
+            if (!lightsChanged && local == center) continue;
+            _shaded[i] = (surface, properties, local);
+            var lights = native ? scene!.Sample(new(local.X, local.Y, -local.Z), NativeGroup(scene, surface.Group)).Lighting :
+                PackLights(state, local, surface.Group);
             surface.Renderer.GetPropertyBlock(properties);
-            properties.SetVector("_Gh3Ambient", new(lights.Ambient.X, lights.Ambient.Y, lights.Ambient.Z, lights.Ambient.W));
+            properties.SetVector(AmbientId, Unity4(lights.Ambient.X, lights.Ambient.Y, lights.Ambient.Z, lights.Ambient.W));
             if (surface.Mode == 2)
             {
-                var direction = Direction(lights.Direction.X, lights.Direction.Y, lights.Direction.Z, native);
-                properties.SetVector("_Gh3LightDirection", new(direction.x, direction.y, direction.z, 0));
-                properties.SetVector("_Gh3LightColor", new(lights.Color.X, lights.Color.Y, lights.Color.Z, lights.Color.W));
+                var direction = Direction(lights.Direction.X, lights.Direction.Y, lights.Direction.Z);
+                properties.SetVector(DirectionId, Unity4(direction.X, direction.Y, direction.Z, 0));
+                properties.SetVector(ColorId, Unity4(lights.Color.X, lights.Color.Y, lights.Color.Z, lights.Color.W));
                 var h = lights.Harmonics;
-                properties.SetVector("_Gh3SH0", new(h[0].X, h[0].Y, h[0].Z, h[0].W));
-                var red = Direction(h[1].X, h[2].X, h[3].X, native);
-                var green = Direction(h[1].Y, h[2].Y, h[3].Y, native);
-                var blue = Direction(h[1].Z, h[2].Z, h[3].Z, native);
-                properties.SetVector("_Gh3SH1", new(red.x, green.x, blue.x, 0));
-                properties.SetVector("_Gh3SH2", new(red.y, green.y, blue.y, 0));
-                properties.SetVector("_Gh3SH3", new(red.z, green.z, blue.z, 0));
+                properties.SetVector(HarmonicIds[0], Unity4(h[0].X, h[0].Y, h[0].Z, h[0].W));
+                var red = Direction(h[1].X, h[2].X, h[3].X);
+                var green = Direction(h[1].Y, h[2].Y, h[3].Y);
+                var blue = Direction(h[1].Z, h[2].Z, h[3].Z);
+                properties.SetVector(HarmonicIds[1], Unity4(red.X, green.X, blue.X, 0));
+                properties.SetVector(HarmonicIds[2], Unity4(red.Y, green.Y, blue.Y, 0));
+                properties.SetVector(HarmonicIds[3], Unity4(red.Z, green.Z, blue.Z, 0));
             }
             surface.Renderer.SetPropertyBlock(properties);
         }

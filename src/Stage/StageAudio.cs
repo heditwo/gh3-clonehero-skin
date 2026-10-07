@@ -105,7 +105,7 @@ internal sealed class StageAudio : IDisposable
 
     private void Clear()
     {
-        foreach (var source in _sources.Values) StageAudioBackend.Free(source);
+        foreach (var source in _sources.Values) StageAudioBackend.Release(source);
         _sources.Clear();
     }
 

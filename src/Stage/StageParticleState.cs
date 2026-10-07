@@ -47,6 +47,7 @@ internal sealed class StageParticleEmitter
     public Vector3 PathPosition { get; set; }
     public int HistoryIndex { get; set; } = 1;
     public Vector4[][] Histories { get; init; } = Array.Empty<Vector4[]>();
+    public List<StageParticle> Live { get; } = new();
 }
 
 internal sealed record StageParticle(StageParticleEmitter Emitter, double Birth, float Life, Vector3 Origin, Vector3 Velocity,
@@ -76,10 +77,12 @@ internal sealed class StageParticleState
     private readonly Action<string> _gap;
     private readonly Dictionary<uint, Gh3QbValue> _nodes = new();
     private readonly Dictionary<uint, StageParticleEmitter> _emitters = new();
-    private readonly List<StageParticle> _particles = new();
+    private readonly List<StageParticleEmitter> _order = new();
+    private int _liveCount;
     private int _unique;
     public IReadOnlyDictionary<uint, StageParticleEmitter> Emitters => _emitters;
-    public IReadOnlyList<StageParticle> Particles => _particles;
+    public IReadOnlyList<StageParticle> Particles => _order.SelectMany(emitter => emitter.Live).ToList();
+    public int Count => _liveCount;
     public StageWindState Wind { get; }
 
     public StageParticleState(StageScriptBank bank, Gh3ScriptRuntime runtime, Func<uint, bool> objectExists,
@@ -144,6 +147,7 @@ internal sealed class StageParticleState
             Shape = definition.CreateShape(), RotationSpeeds = rotationSpeeds, TextureIndex = textureIndex, Histories = new Vector4[definition.Maximum][], Independent = definition.EmitterIndependent,
             Lod = new(definition.Source, lodFrame), Seed = seed, LightGroup = definition.LightGroup };
         _emitters.Add(id, emitter);
+        _order.Add(emitter);
         if (definition.UpdateScript != 0) emitter.UpdateScript = _runtime.CreateComponent(definition.UpdateScript, definition.ScriptParameters, id);
         if (definition.BounceCallback != 0) emitter.BounceScript = _runtime.CreateComponent(definition.BounceCallback, null, id);
         emitter.PreviousPosition = Pose(emitter, _runtime.Time).Position;
@@ -196,7 +200,7 @@ internal sealed class StageParticleState
             }
             if (emitter.UpdateScript is { } update) _runtime.UpdateComponent(update);
             if (!Current(emitter)) return;
-            if (emitter.Emission.Time != 0 && _particles.Any(particle => ReferenceEquals(particle.Emitter, emitter)))
+            if (emitter.Emission.Time != 0 && emitter.Live.Count > 0)
             {
                 emitter.Bounds.Update(emitter.Width, emitter.Height);
                 emitter.Visibility.Register(emitter.Bounds.Center, emitter.Bounds.Radius);
@@ -207,7 +211,7 @@ internal sealed class StageParticleState
             {
                 emitter.Seed = _runtime.NextRandom(65536);
                 emitter.Wind = Wind.Target;
-                var selected = _particles.Any(particle => ReferenceEquals(particle.Emitter, emitter)) ?
+                var selected = emitter.Live.Count > 0 ?
                     Wind.SelectSphere(Reflect(emitter.Bounds.Center), emitter.Bounds.Radius) : Wind.Select(Reflect(position));
                 emitter.LocalWind = selected is { Id: not 0 } ? selected with { } : null;
             }
@@ -224,15 +228,14 @@ internal sealed class StageParticleState
                 emitter.DestroyWhenEmpty = true;
                 emitter.Rate = 0;
             }
-            if (_particles.FirstOrDefault(particle => ReferenceEquals(particle.Emitter, emitter)) is { } firstParticle)
+            if (emitter.Live.Count > 0 && emitter.Live[0] is var firstParticle)
             {
                 AdvanceHistory(emitter);
                 emitter.Bounds.Begin(firstParticle.Motion.Position);
             }
-            for (var index = 0; index < _particles.Count; index++)
+            for (var index = 0; index < emitter.Live.Count; index++)
             {
-                var particle = _particles[index];
-                if (!ReferenceEquals(particle.Emitter, emitter)) continue;
+                var particle = emitter.Live[index];
                 if (particle.Age > particle.Life) { RemoveParticle(emitter, index--); continue; }
                 var definition = emitter.Definition;
                 var particleForce = force;
@@ -280,7 +283,7 @@ internal sealed class StageParticleState
         if (count != 0)
         {
             for (var index = 0; index < Math.Min(count, emitter.Definition.Maximum); index++) Emit(emitter);
-            foreach (var particle in _particles.Where(particle => ReferenceEquals(particle.Emitter, emitter)))
+            foreach (var particle in emitter.Live)
             {
                 if (particle.Age == 0)
                     particle.Age = particle.Life * Math.Min(duration / particle.Life, 1) * (_runtime.NextCrtRandom() * 3.0518509447574615e-05f);
@@ -292,7 +295,7 @@ internal sealed class StageParticleState
             }
         }
         AdvanceHistory(emitter);
-        foreach (var particle in _particles.Where(particle => ReferenceEquals(particle.Emitter, emitter)))
+        foreach (var particle in emitter.Live)
         {
             particle.Motion = particle.Motion.Step(particle.Age, emitter.Force, false, 0, 0);
             RecordHistory(particle, particle.Motion.Velocity * particle.Age);
@@ -314,9 +317,9 @@ internal sealed class StageParticleState
     {
         var d = emitter.Definition;
         if (emitter.EmissionStopped) return;
-        var slot = _particles.Count(particle => ReferenceEquals(particle.Emitter, emitter));
+        var slot = emitter.Live.Count;
         if (slot >= d.Maximum) return;
-        if (_particles.Count >= 100000) throw new InvalidDataException("Too many live particles");
+        if (_liveCount >= 100000) throw new InvalidDataException("Too many live particles");
         var pose = Pose(emitter, _runtime.Time);
         var path = emitter.PathPosition - pose.Position;
         var pathLength = path.Y * path.Y + path.Z * path.Z + path.X * path.X;
@@ -330,52 +333,54 @@ internal sealed class StageParticleState
             };
         emitter.TextureIndex = (emitter.TextureIndex + 1) & 63;
         particle.Color = new(0, 0, d.ColorAt(0, particle.ColorMix));
-        _particles.Add(particle);
+        emitter.Live.Add(particle);
+        _liveCount++;
         emitter.Emitted++;
     }
 
     private void Clean(StageParticleEmitter emitter)
     {
-        if (emitter.DestroyWhenEmpty && emitter.Rate == 0 && !emitter.BurstPending && !_particles.Any(particle => ReferenceEquals(particle.Emitter, emitter))) Remove(emitter);
+        if (emitter.DestroyWhenEmpty && emitter.Rate == 0 && !emitter.BurstPending && emitter.Live.Count == 0) Remove(emitter);
     }
 
     private void Remove(StageParticleEmitter emitter)
     {
         _emitters.Remove(emitter.Id);
-        _particles.RemoveAll(particle => ReferenceEquals(particle.Emitter, emitter));
+        _order.Remove(emitter);
+        Empty(emitter);
         _runtime.RemoveObject(emitter.Id);
+    }
+
+    private void Empty(StageParticleEmitter emitter)
+    {
+        _liveCount -= emitter.Live.Count;
+        emitter.Live.Clear();
     }
 
     private void RemoveParticle(StageParticleEmitter emitter, int index, bool copyHistory = true)
     {
-        var last = _particles.FindLastIndex(particle => ReferenceEquals(particle.Emitter, emitter));
-        if (emitter.RotationSpeeds.Length > 0)
-        {
-            var slot = 0;
-            for (var i = 0; i < index; i++) if (ReferenceEquals(_particles[i].Emitter, emitter)) slot++;
-            emitter.RotationSpeeds[slot] = _particles[last].RotationSpeed;
-        }
-        var history = _particles[index].History;
-        if (copyHistory) _particles[last].History.CopyTo(history, 0);
-        _particles[index] = _particles[last] with { History = history };
-        _particles.RemoveAt(last);
+        var live = emitter.Live;
+        var last = live.Count - 1;
+        if (emitter.RotationSpeeds.Length > 0) emitter.RotationSpeeds[index] = live[last].RotationSpeed;
+        var history = live[index].History;
+        if (copyHistory) live[last].History.CopyTo(history, 0);
+        live[index] = live[last] with { History = history };
+        live.RemoveAt(last);
+        _liveCount--;
     }
 
-    public IEnumerable<StageParticleSample> Sample(double time)
+    public IEnumerable<StageParticleSample> Sample(double time) => _order.SelectMany(emitter => emitter.Live).Select(Sample);
+
+    public static StageParticleSample Sample(StageParticle particle)
     {
-        foreach (var particle in _particles)
-        {
-            var age = particle.Age;
-            var d = particle.Emitter.Definition;
-            var emitter = particle.Emitter;
-            var phase = particle.Life > 0 ? age / particle.Life : 1;
-            var color = particle.Color.Value;
-            var position = particle.Motion.Position;
-            yield return new(particle.Emitter.Id, d, position, new Vector2(emitter.Width.X + (emitter.Width.Y - emitter.Width.X) * phase,
-                emitter.Height.X + (emitter.Height.Y - emitter.Height.X) * phase),
-                  color, emitter.RotationSpeeds.Length == 0 ? 0 : particle.CurrentRotation, particle.Frame + (int)(age * (float)d.Fps), particle.Motion.Velocity, particle.History, emitter.HistoryIndex,
-                  emitter.Depth.X + (emitter.Depth.Y - emitter.Depth.X) * phase, particle.RandomIndex, particle.ColorMix);
-        }
+        var age = particle.Age;
+        var emitter = particle.Emitter;
+        var d = emitter.Definition;
+        var phase = particle.Life > 0 ? age / particle.Life : 1;
+        return new(emitter.Id, d, particle.Motion.Position, new Vector2(emitter.Width.X + (emitter.Width.Y - emitter.Width.X) * phase,
+            emitter.Height.X + (emitter.Height.Y - emitter.Height.X) * phase),
+            particle.Color.Value, emitter.RotationSpeeds.Length == 0 ? 0 : particle.CurrentRotation, particle.Frame + (int)(age * (float)d.Fps), particle.Motion.Velocity,
+            particle.History, emitter.HistoryIndex, emitter.Depth.X + (emitter.Depth.Y - emitter.Depth.X) * phase, particle.RandomIndex, particle.ColorMix);
     }
 
     public Gh3ScriptCallResult? Execute(Gh3ScriptContext context, uint command, Gh3QbValue parameters)
@@ -468,9 +473,9 @@ internal sealed class StageParticleState
         {
             if (parameters.Field("time") == null) return new(true);
             var maximumAge = Number("time");
-            for (var index = 0; index < _particles.Count; index++)
+            for (var index = 0; index < emitter.Live.Count; index++)
             {
-                if (!ReferenceEquals(_particles[index].Emitter, emitter) || _particles[index].Age <= maximumAge) continue;
+                if (emitter.Live[index].Age <= maximumAge) continue;
                 // The native loop skips the last particle that it moves into this slot.
                 RemoveParticle(emitter, index, false);
             }
@@ -494,7 +499,7 @@ internal sealed class StageParticleState
         }
         if (Is("EmptySystem"))
         {
-            _particles.RemoveAll(particle => ReferenceEquals(particle.Emitter, emitter));
+            Empty(emitter);
             Clean(emitter);
             return new(true);
         }

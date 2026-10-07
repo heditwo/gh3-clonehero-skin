@@ -1,4 +1,8 @@
+using System.Runtime.InteropServices;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
+using N2 = System.Numerics.Vector2;
+using N3 = System.Numerics.Vector3;
+using N4 = System.Numerics.Vector4;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -209,23 +213,31 @@ internal sealed class StageEffects
 
     internal sealed class ParticleBatch
     {
+        // Vertex math stays in System.Numerics: Unity struct operators and constructors are native calls in this game.
         private readonly Mesh _mesh;
-        private readonly Il2CppStructArray<Vector3> _vertices;
-        private readonly Il2CppStructArray<Color> _colors;
-        private readonly Il2CppStructArray<Vector2> _uv;
-        private readonly Il2CppStructArray<Vector2>? _particleData;
-        private readonly Il2CppStructArray<Vector3>? _normals;
-        private readonly Il2CppStructArray<Vector4>? _tangents;
-        private readonly Il2CppStructArray<Vector2>? _bitangents;
+        private readonly N3[] _vertices;
+        private readonly N4[] _colors;
+        private readonly N2[] _uv;
+        private readonly N2[]? _particleData;
+        private readonly N3[]? _normals;
+        private readonly N4[]? _tangents;
+        private readonly N2[]? _bitangents;
+        private readonly Il2CppStructArray<Vector3> _vertexBuffer;
+        private readonly Il2CppStructArray<Color> _colorBuffer;
+        private readonly Il2CppStructArray<Vector2> _uvBuffer;
+        private readonly Il2CppStructArray<Vector2>? _particleDataBuffer;
+        private readonly Il2CppStructArray<Vector3>? _normalBuffer;
+        private readonly Il2CppStructArray<Vector4>? _tangentBuffer;
+        private readonly Il2CppStructArray<Vector2>? _bitangentBuffer;
         public float SoftEdgeWidth { get; set; }
-        public Vector3 LightNormal { get; set; }
-        public Vector3 LightTangent { get; set; }
-        public Vector3 LightBitangent { get; set; }
+        public N3 LightNormal { get; set; }
+        public N3 LightTangent { get; set; }
+        public N3 LightBitangent { get; set; }
         private readonly int[] _indices;
         private readonly int _atlas;
         private readonly int _capacity;
-        private Vector3 _right;
-        private Vector3 _up;
+        private N3 _right;
+        private N3 _up;
         private int _previousCount;
         private bool _customUv;
         public int Count { get; private set; }
@@ -240,35 +252,42 @@ internal sealed class StageEffects
         {
             _capacity = capacity;
             _atlas = atlas;
-            _vertices = new Il2CppStructArray<Vector3>(capacity * 4);
-            _colors = new Il2CppStructArray<Color>(capacity * 4);
-            var uv = new Vector2[capacity * 4];
+            _vertices = new N3[capacity * 4];
+            _colors = new N4[capacity * 4];
+            _uv = new N2[capacity * 4];
+            _vertexBuffer = new Il2CppStructArray<Vector3>(capacity * 4);
+            _colorBuffer = new Il2CppStructArray<Color>(capacity * 4);
+            _uvBuffer = new Il2CppStructArray<Vector2>(capacity * 4);
             var indices = new int[capacity * 6];
             var quad = sourceMaterial == null ? new[] { 0, 1, 2, 0, 2, 3 } : new[] { 0, 2, 1, 0, 3, 2 };
             for (var i = 0; i < capacity; i++)
             {
-                uv[i * 4] = new Vector2(0, 0);
-                uv[i * 4 + 1] = new Vector2(1, 0);
-                uv[i * 4 + 2] = new Vector2(1, 1);
-                uv[i * 4 + 3] = new Vector2(0, 1);
+                _uv[i * 4] = new(0, 0);
+                _uv[i * 4 + 1] = new(1, 0);
+                _uv[i * 4 + 2] = new(1, 1);
+                _uv[i * 4 + 3] = new(0, 1);
                 for (var j = 0; j < 6; j++) indices[i * 6 + j] = i * 4 + quad[j];
             }
+            Upload(_uv, _uvBuffer, _uv.Length);
             _mesh = assets.Own(new Mesh { name = name ?? (additive ? "GH3 Stage Sparks" : "GH3 Stage Smoke") });
             _mesh.MarkDynamic();
-            _mesh.vertices = _vertices;
-            _mesh.colors = _colors;
-            _uv = new Il2CppStructArray<Vector2>(uv);
-            _mesh.uv = _uv;
+            _mesh.vertices = _vertexBuffer;
+            _mesh.colors = _colorBuffer;
+            _mesh.uv = _uvBuffer;
             if (sourceMaterial != null)
             {
-                _particleData = new Il2CppStructArray<Vector2>(capacity * 4);
-                _mesh.uv2 = _particleData;
-                _normals = new Il2CppStructArray<Vector3>(capacity * 4);
-                _mesh.normals = _normals;
-                _tangents = new Il2CppStructArray<Vector4>(capacity * 4);
-                _mesh.tangents = _tangents;
-                _bitangents = new Il2CppStructArray<Vector2>(capacity * 4);
-                _mesh.uv3 = _bitangents;
+                _particleData = new N2[capacity * 4];
+                _particleDataBuffer = new Il2CppStructArray<Vector2>(capacity * 4);
+                _mesh.uv2 = _particleDataBuffer;
+                _normals = new N3[capacity * 4];
+                _normalBuffer = new Il2CppStructArray<Vector3>(capacity * 4);
+                _mesh.normals = _normalBuffer;
+                _tangents = new N4[capacity * 4];
+                _tangentBuffer = new Il2CppStructArray<Vector4>(capacity * 4);
+                _mesh.tangents = _tangentBuffer;
+                _bitangents = new N2[capacity * 4];
+                _bitangentBuffer = new Il2CppStructArray<Vector2>(capacity * 4);
+                _mesh.uv3 = _bitangentBuffer;
             }
             _indices = indices;
             _mesh.triangles = new Il2CppStructArray<int>(Array.Empty<int>());
@@ -286,7 +305,15 @@ internal sealed class StageEffects
             renderer.receiveShadows = false;
         }
 
-        public void Begin(Vector3 right, Vector3 up) { Count = 0; _right = right; _up = up; }
+        private static N3 Numeric(Vector3 value) => new(value.x, value.y, value.z);
+
+        private static void Upload<TSource, TTarget>(TSource[] source, Il2CppStructArray<TTarget> target, int length)
+            where TSource : unmanaged where TTarget : unmanaged =>
+            MemoryMarshal.Cast<TSource, TTarget>(source.AsSpan(0, length)).CopyTo(target.AsSpan());
+
+        public void Begin(Vector3 right, Vector3 up) => Begin(Numeric(right), Numeric(up));
+        public void Begin(N3 right, N3 up) { Count = 0; _right = right; _up = up; }
+
         public void Add(Vector3 position, float width, float height, Color color, int frame = 0, float angle = 0)
         {
             if (Count == _capacity) return;
@@ -295,47 +322,51 @@ internal sealed class StageEffects
             var sine = MathF.Sin(angle);
             var right = (_right * cosine + _up * sine) * width;
             var up = (_up * cosine - _right * sine) * height;
-            _vertices[start] = position - right - up;
-            _vertices[start + 1] = position + right - up;
-            _vertices[start + 2] = position + right + up;
-            _vertices[start + 3] = position - right + up;
-            for (var i = 0; i < 4; i++) _colors[start + i] = color;
+            var center = Numeric(position);
+            _vertices[start] = center - right - up;
+            _vertices[start + 1] = center + right - up;
+            _vertices[start + 2] = center + right + up;
+            _vertices[start + 3] = center - right + up;
+            var tint = new N4(color.r, color.g, color.b, color.a);
+            for (var i = 0; i < 4; i++) _colors[start + i] = tint;
             if (_atlas > 1)
             {
                 var size = 1f / _atlas;
                 var u = frame % _atlas * size;
                 var v = 1 - (frame / _atlas + 1) * size;
-                _uv[start] = new Vector2(u, v);
-                _uv[start + 1] = new Vector2(u + size, v);
-                _uv[start + 2] = new Vector2(u + size, v + size);
-                _uv[start + 3] = new Vector2(u, v + size);
+                _uv[start] = new(u, v);
+                _uv[start + 1] = new(u + size, v);
+                _uv[start + 2] = new(u + size, v + size);
+                _uv[start + 3] = new(u, v + size);
             }
         }
 
         public void End()
         {
             if (Count != _previousCount) _mesh.triangles = new Il2CppStructArray<int>(_indices[..(Count * 6)]);
-            for (var i = Count * 4; i < _previousCount * 4; i++) _colors[i] = Color.clear;
+            for (var i = Count * 4; i < _previousCount * 4; i++) _colors[i] = N4.Zero;
             if (Count != 0 || _previousCount != 0)
             {
-                _mesh.vertices = _vertices;
-                _mesh.colors = _colors;
-                if (_atlas > 1 || _customUv) _mesh.uv = _uv;
-                if (_particleData != null) _mesh.uv2 = _particleData;
-                if (_normals != null) _mesh.normals = _normals;
-                if (_tangents != null) _mesh.tangents = _tangents;
-                if (_bitangents != null) _mesh.uv3 = _bitangents;
+                var used = Math.Max(Count, _previousCount) * 4;
+                Upload(_vertices, _vertexBuffer, used);
+                Upload(_colors, _colorBuffer, used);
+                _mesh.vertices = _vertexBuffer;
+                _mesh.colors = _colorBuffer;
+                if (_atlas > 1 || _customUv) { Upload(_uv, _uvBuffer, used); _mesh.uv = _uvBuffer; }
+                if (_particleData != null) { Upload(_particleData, _particleDataBuffer!, used); _mesh.uv2 = _particleDataBuffer; }
+                if (_normals != null) { Upload(_normals, _normalBuffer!, used); _mesh.normals = _normalBuffer; }
+                if (_tangents != null) { Upload(_tangents, _tangentBuffer!, used); _mesh.tangents = _tangentBuffer; }
+                if (_bitangents != null) { Upload(_bitangents, _bitangentBuffer!, used); _mesh.uv3 = _bitangentBuffer; }
             }
             _previousCount = Count;
         }
 
-        public void AddQuad(Vector3 position, Vector3 right, Vector3 up, Color color, Vector4 uv)
-            => AddQuadVertices(position - right - up, position + right - up, position + right + up, position - right + up, color, uv);
+        public void AddQuad(N3 position, N3 right, N3 up, N4 color, N4 uv)
+            => AddQuadVertices(position - right - up, position + right - up, position + right + up, position - right + up, color, color, uv);
 
-        public void AddQuadVertices(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Color color, Vector4 uv)
-            => AddQuadVertices(a, b, c, d, color, color, uv);
+        public void AddQuadVertices(N3 a, N3 b, N3 c, N3 d, N4 color, N4 uv) => AddQuadVertices(a, b, c, d, color, color, uv);
 
-        public void AddQuadVertices(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Color startColor, Color endColor, Vector4 uv)
+        public void AddQuadVertices(N3 a, N3 b, N3 c, N3 d, N4 startColor, N4 endColor, N4 uv)
         {
             if (Count == _capacity) return;
             var start = Count++ * 4;
@@ -344,32 +375,36 @@ internal sealed class StageEffects
             _vertices[start + 2] = c;
             _vertices[start + 3] = d;
             if (_particleData != null)
-                for (var i = 0; i < 4; i++) _particleData[start + i] = new(SoftEdgeWidth, LightBitangent.x);
+                for (var i = 0; i < 4; i++) _particleData[start + i] = new(SoftEdgeWidth, LightBitangent.X);
             if (_normals != null)
                 for (var i = 0; i < 4; i++) _normals[start + i] = LightNormal;
             if (_tangents != null)
-                for (var i = 0; i < 4; i++) _tangents[start + i] = new(LightTangent.x, LightTangent.y, LightTangent.z, 0);
+                for (var i = 0; i < 4; i++) _tangents[start + i] = new(LightTangent, 0);
             if (_bitangents != null)
-                for (var i = 0; i < 4; i++) _bitangents[start + i] = new(LightBitangent.y, LightBitangent.z);
+                for (var i = 0; i < 4; i++) _bitangents[start + i] = new(LightBitangent.Y, LightBitangent.Z);
             _colors[start] = _colors[start + 1] = startColor;
             _colors[start + 2] = _colors[start + 3] = endColor;
-            _uv[start] = new(uv.z, 1 - uv.w);
-            _uv[start + 1] = new(uv.x, 1 - uv.w);
-            _uv[start + 2] = new(uv.x, 1 - uv.y);
-            _uv[start + 3] = new(uv.z, 1 - uv.y);
+            _uv[start] = new(uv.Z, 1 - uv.W);
+            _uv[start + 1] = new(uv.X, 1 - uv.W);
+            _uv[start + 2] = new(uv.X, 1 - uv.Y);
+            _uv[start + 3] = new(uv.Z, 1 - uv.Y);
             _customUv = true;
         }
 
         public void AddSegment(Vector3 from, Vector3 to, float width, Color color)
         {
             if (Count == _capacity) return;
-            var side = Vector3.Cross(to - from, Vector3.Cross(_right, _up)).normalized * (width * .5f);
-            var start = Count++ * 4;
-            _vertices[start] = from - side;
-            _vertices[start + 1] = from + side;
-            _vertices[start + 2] = to + side;
-            _vertices[start + 3] = to - side;
-            for (var i = 0; i < 4; i++) _colors[start + i] = color;
+            var start = Numeric(from);
+            var end = Numeric(to);
+            var side = N3.Cross(end - start, N3.Cross(_right, _up));
+            side = side.LengthSquared() > 0 ? N3.Normalize(side) * (width * .5f) : N3.Zero;
+            var index = Count++ * 4;
+            _vertices[index] = start - side;
+            _vertices[index + 1] = start + side;
+            _vertices[index + 2] = end + side;
+            _vertices[index + 3] = end - side;
+            var tint = new N4(color.r, color.g, color.b, color.a);
+            for (var i = 0; i < 4; i++) _colors[index + i] = tint;
         }
     }
 }

@@ -93,6 +93,43 @@ internal sealed class GameplayStage
         _attempted = false;
     }
 
+    private static readonly bool Profile = Environment.GetEnvironmentVariable("GH3_SKIN_PROFILE") == "1";
+    private readonly Dictionary<string, double> _profile = new();
+    private readonly System.Diagnostics.Stopwatch _profileClock = new();
+    private int _profileFrames;
+    private double _profileStart = double.NaN;
+    private int _lastCollections;
+    private long _lastAllocated;
+
+    private void Measure(string name, Action action)
+    {
+        if (!Profile) { action(); return; }
+        var start = System.Diagnostics.Stopwatch.GetTimestamp();
+        action();
+        _profile[name] = _profile.GetValueOrDefault(name) + (System.Diagnostics.Stopwatch.GetTimestamp() - start) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+    }
+
+    private void ReportProfile(double time)
+    {
+        if (!Profile) return;
+        _profileFrames++;
+        if (double.IsNaN(_profileStart)) { _profileStart = time; _profileClock.Restart(); }
+        if (_profileClock.Elapsed.TotalSeconds < 1) return;
+        var collections = GC.CollectionCount(0);
+        var allocated = GC.GetTotalAllocatedBytes();
+        _profile["gc.gen0"] = (collections - _lastCollections) * (double)_profileFrames;
+        _profile["gc.mb"] = (allocated - _lastAllocated) / 1048576.0 * _profileFrames;
+        _lastCollections = collections;
+        _lastAllocated = allocated;
+        var seconds = _profileClock.Elapsed.TotalSeconds;
+        MelonLogger.Msg($"GH3 profile song {_profileStart:0.0}s: {_profileFrames / seconds:0} fps; ms/frame " +
+            string.Join(", ", _profile.OrderByDescending(pair => pair.Value).Select(pair => $"{pair.Key} {pair.Value / _profileFrames:0.00}")) +
+            $"; particles {_particles?.ActiveParticles ?? 0}");
+        _profile.Clear();
+        _profileFrames = 0;
+        _profileStart = double.NaN;
+    }
+
     public void Update(BasePlayer player, int combo, float rock)
     {
         if (!_attempted) Create(player);
@@ -105,10 +142,10 @@ internal sealed class GameplayStage
             _lastTime = time;
             _lastCombo = combo;
             _lastRock = rock;
-            _band?.Update(time);
-            _scripts?.Update(time, rock, _noteHits.Update(player, time));
-            _actors?.Update(time);
-            _crowd?.Update(time, rock);
+            Measure("band", () => _band?.Update(time));
+            Measure("scripts", () => _scripts?.Update(time, rock, _noteHits.Update(player, time)));
+            Measure("actors", () => _actors?.Update(time));
+            Measure("crowd", () => _crowd?.Update(time, rock));
             if (_cameraPath != null && _camera != null && _root != null)
             {
                 var pose = _cameraPath.Sample(_timeline, time);
@@ -117,14 +154,18 @@ internal sealed class GameplayStage
                 else _camera.transform.LookAt(_root.transform.position + new Vector3(pose.Target.X, pose.Target.Y, pose.Target.Z));
                 _camera.fieldOfView = pose.FieldOfView;
             }
-            _effects.Update(_timeline, time);
-            _particles?.Update(time);
-            _movies?.Update(time);
-            _screenEffects?.Update(time);
-            _outlines?.Update(time);
-            _handFire?.Update(time, combo);
-            if (_camera != null && _assets != null)
-                foreach (var mesh in _assets.TransparentMeshes) mesh.Update(_camera);
+            Measure("effects", () => _effects.Update(_timeline, time));
+            Measure("particles", () => _particles?.Update(time));
+            Measure("movies", () => _movies?.Update(time));
+            Measure("screen", () => _screenEffects?.Update(time));
+            Measure("outlines", () => _outlines?.Update(time));
+            Measure("handfire", () => _handFire?.Update(time, combo));
+            Measure("transparency", () =>
+            {
+                if (_camera != null && _assets != null)
+                    foreach (var mesh in _assets.TransparentMeshes) mesh.Update(_camera);
+            });
+            ReportProfile(time);
         }
         catch (Exception error)
         {

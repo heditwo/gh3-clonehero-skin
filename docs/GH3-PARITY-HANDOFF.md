@@ -34,9 +34,24 @@ Original GH3 PC now runs headless under Wine on a private Xvfb display, and its 
 4. Normal and specular maps for `D_N_S_*` venue templates.
 5. Shadow maps (`SetShadowDirFromLight`, `c178.w` already carries the key-light shadow amount).
 
+### Performance findings
+
+Measured with `GH3_SKIN_PROFILE=1`, which logs per-subsystem milliseconds per frame once a second. The test case is My Curse in Kaiju Megadome: about 14,000 live pyro particles at 48–51 s.
+
+| Cause | Fix | Effect at peak |
+| --- | --- | --- |
+| One shared particle list scanned by every emitter operation (quadratic) | Per-emitter `Live` lists with the same swap-remove order | Simulation 1,484 → 4–6 ms |
+| Unity `Vector3`/`Vector2`/`Color` constructors, operators, and `Il2CppStructArray` indexers are native calls in this game | Particle batches compute in `System.Numerics` and upload once per frame | Quad writes 20 → 0.7 ms |
+| Per-frame sample array, per-emitter lookup, and per-particle closures | Iterate emitter lists directly; hoist the batch helper | Allocation 480 → about 130 MB/s |
+| Per-surface light selection and about 11 native calls per surface every frame | Recompute only when `StageLightScene.Signature()` or the surface position changes; cached property IDs | Baseline 115 → about 155 fps |
+
+Worst-case frame rate in that section went from 1 to about 43 fps on the RTX 3060 laptop. The laptop also throttles after heavy sections, roughly doubling all subsystem times. Rule for future code: avoid Unity struct constructors and operators in per-frame loops; use field initializers (`new Vector4 { x = ... }`) and `System.Numerics`.
+
+MelonLoader's assembly generator contacted `api.melonloader.com` on every launch, and the leftover HTTPS connection crashed the CLR later. The installed game now has `force_offline_generation = true` in `UserData/Loader.cfg`; the original file is backed up as `~/.cache/gh3-install-backup-0.8.115/Loader.cfg.bak`.
+
 ### Installation state
 
-- Version `0.9.0` is installed in `~/games/clonehero-gh3-melon` with all ten re-exported venues and the regenerated band library. DLL SHA-256: `0607237e921e88cb354bff1f1b46977a6750ad4ad776fd2fd113bf49b84b4dc5`.
+- Version `0.9.0` is installed in `~/games/clonehero-gh3-melon` with all ten re-exported venues and the regenerated band library. DLL SHA-256 after the performance fixes: `7ab9abcc42c740f0ce377a42e9bf81d4b3f1b7f759ccde06ffa0e7c68aa98b16`.
 - The previous `0.8.115` install (DLL and `Mods/GH3Skin`) is backed up in `~/.cache/gh3-install-backup-0.8.115`.
 - Verification for this build: logic tests, asset-driven venue script checks, Python tests, and the 33-set regression pass. Headless captures of all ten venues load and render; with network isolation, Video and Budokan passed three of three runs each. Captures end by timeout, so they do not establish a clean process exit.
 - Evidence (not in Git): `~/.cache/gh3ref/` holds the GH3 Slow Ride recording (`gh3-slowride.mp4`), the Dive constant trace (`dive-slowride-ps-constants.log.zst`), matched frames, and comparison sheets.
