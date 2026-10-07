@@ -11,6 +11,7 @@ from pathlib import Path
 import struct
 
 from PIL import Image
+import gh3_materials
 from gh3_formats import find_array, key, pak_entries, values, word
 from gh3_mesh_cutout import trim_prop_cutouts
 
@@ -103,6 +104,16 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
             "blend": word(data, offset + 216),
             "cutoff": data[offset + 232] / 255,
         }
+        template = gh3_materials.templates().get(materials[name]["template"])
+        if template is not None:
+            constant_count, constant_offset = values(data, offset + 176, "II")
+            constants = [values(data, offset + constant_offset + i*16, "4f") for i in range(min(constant_count, 16))]
+            slot = gh3_materials.lightmap_slot(template, sample_count)
+            materials[name]["shading"] = template["shading"]
+            if template["diffuseConstant"] is not None and template["diffuseConstant"] < len(constants):
+                materials[name]["color"] = [min(1.0, max(0.0, v)) for v in constants[template["diffuseConstant"]]]
+            if slot is not None:
+                materials[name]["lightmap"] = materials[name]["textures"][slot]
         if materials[name]["template"] == "f76185ad":
             constant_count, constant_offset = values(data, offset + 168, "II")
             if constant_count != 4: raise ValueError("Animated texture has an invalid vertex constant bank")
@@ -127,6 +138,7 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
             for mesh in range(word(data, geom + 72), word(data, geom + 72) + word(data, geom + 76)):
                 placements[mesh] = node
     meshes = []
+    unlightmapped = set()
     for index in range(mesh_count):
         node = placements.get(index)
         if node is not None and key("CreatedAtStart") not in node[0] and node.get(key("Name")) not in include_nodes:
@@ -190,27 +202,35 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
                 cursor += 4
             cursor += 4 if flags & 0x4000 and not weighted else 0
             uv = values(data, cursor, "2f") if uv_count else (0, 0)
-            expected = cursor + uv_count * 8 + (8 if flags & 0x0C000000 else 0) + (8 if flags & 0x03000000 else 0)
+            extra = cursor + uv_count * 8
+            lightmap = values(data, extra, "2f") if flags & 0x0F000000 else (0, 0)
+            expected = extra + (8 if flags & 0x0C000000 else 0) + (8 if flags & 0x03000000 else 0)
             if expected != start + stride:
                 raise ValueError(f"Unsupported vertex layout {flags:08x}: {expected - start} != {stride}")
             floats = (*position[:2], -position[2], *normal[:2], -normal[2], uv[0], 1 - uv[1])
-            if not all(math.isfinite(value) for value in floats):
+            if not all(math.isfinite(value) for value in floats + lightmap):
                 raise ValueError("Non-finite vertex")
             vertex_data.extend(struct.pack("<8f4B", *floats, *color))
+            if not skinned:
+                vertex_data.extend(struct.pack("<2f", lightmap[0], 1 - lightmap[1]))
             if skinned:
                 vertex_data.extend(weights[vertex] if weighted else struct.pack("<4B4f", 0, 0, 0, 0, 1, 0, 0, 0))
         faces = triangles(values(data, indices_at, f"{index_count}H"), kind)
         if any(max(face) >= vertex_count for face in faces):
             raise ValueError("Triangle index outside vertex buffer")
         if crowd_cards and materials[material]["template"] == "a17d40ed":
-            crowd_uvs(vertex_data, vertex_count, faces, index, 56 if skinned else 36)
+            crowd_uvs(vertex_data, vertex_count, faces, index, 56 if skinned else 44)
         if material not in materials:
             raise ValueError("Mesh has no material")
+        if skinned or not flags & 0x0F000000:
+            unlightmapped.add(material)
         meshes.append((material, vertex_count, vertex_data, faces))
         if mesh_nodes is not None:
             mesh_nodes.append(node)
         if light_groups is not None:
             light_groups.append(f"{(node or {}).get(key('LightGroup'), key('None')):08x}")
+    for material in unlightmapped:
+        materials[material].pop("lightmap", None)
     return materials, meshes
 
 
@@ -245,7 +265,7 @@ def convert(pak_path, destination):
             material["crowd"] = True
     meshes = trim_prop_cutouts(meshes, materials, texture_dir)
     with (destination / "meshes.bin").open("wb") as output:
-        output.write(b"GH3STG01" + struct.pack("<I", len(meshes)))
+        output.write(b"GH3STG02" + struct.pack("<I", len(meshes)))
         for material, count, vertices, faces in meshes:
             output.write(struct.pack("<III", int(material, 16), count, len(faces) * 3))
             output.write(vertices)

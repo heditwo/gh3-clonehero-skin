@@ -60,11 +60,14 @@ def decode_textures(materials, texture_blobs):
         texture = stage.diffuse_texture(material, texture_blobs)
         material["texture"] = texture
         if material["template"] == "a17d40ed":
-            material.update(crowd=True, blend=3, cutoff=0.3)
+            material.update(crowd=True, blend=3, cutoff=0.3, shading="")
+            material.pop("lightmap", None)
         if material["template"] in {"4d7335f8", "f4e6db51"} and material["blend"] == 0 and material["cutoff"]:
             material["geometryCutout"] = True
-        if texture and texture not in images:
-            images[texture] = Image.open(BytesIO(texture_blobs[texture])).convert("RGBA")
+        if material.get("lightmap") not in texture_blobs: material.pop("lightmap", None)
+        for name in (texture, material.get("lightmap")):
+            if name and name not in images:
+                images[name] = Image.open(BytesIO(texture_blobs[name])).convert("RGBA")
     return images
 
 

@@ -57,6 +57,12 @@ internal static class StageScriptAssetTests
             }, actors, lighting);
             state.Update(0, .1f);
             state.Update(1, .1f);
+            if (Environment.GetEnvironmentVariable("GH3_LIGHT_DUMP") == venue)
+                foreach (var position in new System.Numerics.Vector3[] { new(0, 1, 0), new(3, 1, 2), new(-3, 1, 4), new(0, 4, 8), new(0, 0, -5) })
+                {
+                    var set = state.LightScene.Sample(position, Gh3Checksum.Value("None")).Lighting;
+                    Console.WriteLine($"{venue} {position}: ambient {set.Ambient} key {set.Color} dir {set.Direction} sh0 {set.Harmonics[0]} sh1 {set.Harmonics[1]}");
+                }
             state.Update(3, .9f);
             if (venue == "gh3.prison")
             {

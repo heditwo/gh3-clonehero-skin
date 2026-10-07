@@ -80,6 +80,11 @@ internal static class LightShowSourceTests
         staticRuntime.Advance(1);
         Check(staticShow.Cue(new(1, "lighting", "verse")) && staticLights.At(1).Snapshot == "static" && staticRuntime.Pending == 0,
             "A mood absent from the source mapping must stop its processor and retain static lighting instead of treating the mood as a color.");
+        var gaps = new List<string>();
+        var colorShow = new StageLightShowState(soundcheckBank, staticRuntime, staticLights, "z_soundcheck", gaps.Add);
+        var unknown = colorShow.Execute(Key("LightShow_OverrideColor"), Params(("color", Gh3ScriptRuntime.Key("cyan"))));
+        Check(unknown is { Success: false } && gaps.Count == 1 && colorShow.Execute(Key("LightShow_OverrideColor"), Params(("color", Gh3ScriptRuntime.Key("red")))) is { Success: true },
+            "An authored color absent from the venue must report a gap and leave later lighting commands working.");
         Console.WriteLine("Original lightshow processors, prior-performance payloads, snapshot events, strobe exits, and active-state checks passed.");
     }
 

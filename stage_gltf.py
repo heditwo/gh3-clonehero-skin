@@ -11,6 +11,8 @@ from PIL import Image
 
 REFLECTION = np.diag([1, 1, -1, 1])
 VERTEX = np.dtype([("position", "<f4", 3), ("normal", "<f4", 3), ("uv", "<f4", 2), ("color", "u1", 4)])
+STATIC_VERTEX = np.dtype(VERTEX.descr + [("lightmap", "<f4", 2)])
+SHADING = ("lit", "ambient", "unlit")
 
 
 def quaternion_matrix(q):
@@ -73,19 +75,25 @@ class GlbWriter:
         self.data["accessors"].append(row)
         return index
 
+    def texture(self, image):
+        raw = BytesIO(); image.save(raw, format="PNG"); blob = raw.getvalue()
+        if blob not in self.textures:
+            i = len(self.data["images"])
+            self.data["images"].append({"bufferView": self.view(blob), "mimeType": "image/png"})
+            self.data["textures"].append({"source": i})
+            self.textures[blob] = i
+        return self.textures[blob]
+
     def material(self, name, definition, textures):
         if name in self.materials: return self.materials[name]
         row = {"name": name, "pbrMetallicRoughness": {"metallicFactor": 0, "roughnessFactor": 1}, "doubleSided": True}
         texture = definition.get("texture", "")
         if texture:
-            image = textures[texture]
-            raw = BytesIO(); image.save(raw, format="PNG"); blob = raw.getvalue()
-            if blob not in self.textures:
-                i = len(self.data["images"])
-                self.data["images"].append({"bufferView": self.view(blob), "mimeType": "image/png"})
-                self.data["textures"].append({"source": i})
-                self.textures[blob] = i
-            row["pbrMetallicRoughness"]["baseColorTexture"] = {"index": self.textures[blob]}
+            row["pbrMetallicRoughness"]["baseColorTexture"] = {"index": self.texture(textures[texture])}
+        if definition.get("color") and definition["color"] != [1, 1, 1, 1]:
+            row["pbrMetallicRoughness"]["baseColorFactor"] = [float(v) for v in definition["color"]]
+        if definition.get("lightmap"):
+            row["occlusionTexture"] = {"index": self.texture(textures[definition["lightmap"]]), "texCoord": 1}
         blend = definition.get("blend", 0)
         row["alphaMode"] = "BLEND" if blend else "OPAQUE"
         if definition.get("geometryCutout"):
@@ -98,6 +106,7 @@ class GlbWriter:
         if blend == 1: extras["gh3Additive"] = True
         if definition.get("crowd"): extras["gh3CrowdAtlas"] = True
         if definition.get("sortedTransparency"): extras["gh3SortedTransparency"] = True
+        if definition.get("shading"): extras["gh3Shading"] = definition["shading"]
         if extras: row["extras"] = extras
         index = len(self.data["materials"])
         self.data["materials"].append(row); self.materials[name] = index
@@ -108,12 +117,15 @@ class GlbWriter:
         for material, count, packed, faces in parts:
             if not faces: continue
             stride = len(packed) // count
-            dtype = VERTEX if stride == 36 else np.dtype(VERTEX.descr + [("joints", "u1", 4), ("weights", "<f4", 4)])
+            dtype = {36: VERTEX, 44: STATIC_VERTEX}.get(stride) or np.dtype(VERTEX.descr + [("joints", "u1", 4), ("weights", "<f4", 4)])
             vertices = np.frombuffer(packed, dtype=dtype)
             p = vertices["position"] * [1, 1, -1]; n = vertices["normal"] * [1, 1, -1]
             uv = vertices["uv"].copy(); uv[:, 1] = 1-uv[:, 1]
             attrs = {"POSITION": self.accessor(p, "VEC3"), "NORMAL": self.accessor(n, "VEC3"),
                      "TEXCOORD_0": self.accessor(uv, "VEC2"), "COLOR_0": self.accessor(vertices["color"], "VEC4", 5121, True)}
+            if stride == 44 and materials[material].get("lightmap"):
+                lightmap = vertices["lightmap"].copy(); lightmap[:, 1] = 1-lightmap[:, 1]
+                attrs["TEXCOORD_1"] = self.accessor(lightmap, "VEC2")
             if stride == 56:
                 attrs.update(JOINTS_0=self.accessor(vertices["joints"], "VEC4", 5121), WEIGHTS_0=self.accessor(vertices["weights"], "VEC4"))
             indices = np.asarray(faces)[:, [0, 2, 1]].reshape(-1)
@@ -239,17 +251,19 @@ class GlbReader:
         normals = normals @ np.linalg.inv(transform[:3, :3])
         lengths = np.linalg.norm(normals, axis=1); normals /= np.maximum(lengths, 1e-10)[:, None]
         uv = self.accessor(attrs["TEXCOORD_0"]) if "TEXCOORD_0" in attrs else np.zeros((count, 2))
+        lightmap = self.accessor(attrs["TEXCOORD_1"]) if "TEXCOORD_1" in attrs else np.zeros((count, 2))
         color = self.accessor(attrs["COLOR_0"]) if "COLOR_0" in attrs else np.ones((count, 4))
         if color.shape == (count, 3): color = np.column_stack((color, np.ones(count)))
-        if uv.shape != (count, 2) or color.shape != (count, 4): raise ValueError("Invalid glTF UV or color count")
+        if uv.shape != (count, 2) or lightmap.shape != (count, 2) or color.shape != (count, 4): raise ValueError("Invalid glTF UV or color count")
         indices = self.accessor(primitive["indices"]).reshape(-1) if "indices" in primitive else np.arange(count)
         if indices.dtype.kind not in "ui" or len(indices) % 3 or np.any(indices < 0) or np.any(indices >= count): raise ValueError("Invalid glTF triangles")
         faces = indices.reshape(-1, 3)
         if np.linalg.det(transform[:3, :3]) < 0: faces = faces[:, [0, 2, 1]]
         material = self.data.get("materials", [])[primitive["material"]] if "material" in primitive else {}
         color = color * material.get("pbrMetallicRoughness", {}).get("baseColorFactor", [1, 1, 1, 1])
-        packed = np.zeros(count, dtype=VERTEX)
+        packed = np.zeros(count, dtype=STATIC_VERTEX)
         packed["position"] = positions; packed["normal"] = normals
         packed["uv"] = uv; packed["uv"][:, 1] = 1-uv[:, 1]
+        packed["lightmap"] = lightmap; packed["lightmap"][:, 1] = 1-lightmap[:, 1]
         packed["color"] = np.round(np.clip(color, 0, 1)*255).astype("u1")
         return packed, faces

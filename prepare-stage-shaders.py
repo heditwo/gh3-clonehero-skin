@@ -47,19 +47,26 @@ def convert(game, output, kind='screen-color'):
     outline = kind == 'outline'
     particle = kind == 'particle'
     tesla = kind == 'tesla'
-    shader_name = 'Outline' if outline else 'Particle' if particle else 'Tesla' if tesla else 'ScreenColor'
+    surface = kind == 'stage'
+    shader_name = 'Outline' if outline else 'Particle' if particle else 'Tesla' if tesla else 'Stage' if surface else 'ScreenColor'
     code = (Path(__file__).parent/f'src/Stage/Shaders/{shader_name}.glsl').read_bytes()
     program = program[:28] + struct.pack('<I', len(code)) + code + bytes((-len(code)) % 4) + program[(32+length+3)&~3:]
-    if outline or particle or tesla:
-        program = program[:-8] + struct.pack('<2I', 127 if particle else 3, 0)
+    if outline or particle or tesla or surface:
+        # Vertex channel mask: position, normal, tangent, color, and texture coordinate bits.
+        program = program[:-8] + struct.pack('<2I', 127 if particle else 59 if surface else 3, 0)
     names = ('_Gh3Outline', '_Gh3Color', '_Gh3ViewZ', '_Gh3Clock') if outline else (
         '_Gh3Particle', '_Gh3SoftEdge', '_Gh3CameraForward', '_Gh3Lighting', '_Gh3AmbientWeights', '_Gh3LightDirection', '_Gh3LightColor',
         '_Gh3SH0', '_Gh3SH1', '_Gh3SH2', '_Gh3SH3', '_Gh3Maps', '_Gh3Eye') if particle else (
-        '_Gh3TeslaAnimation', '_Gh3TeslaShape', '_Gh3TeslaColor') if tesla else ('_Gh3Red', '_Gh3Green', '_Gh3Blue')
+        '_Gh3TeslaAnimation', '_Gh3TeslaShape', '_Gh3TeslaColor') if tesla else (
+        '_Color', '_Gh3Surface', '_Gh3Ambient', '_Gh3LightDirection', '_Gh3LightColor', '_Gh3SH0', '_Gh3SH1', '_Gh3SH2', '_Gh3SH3') if surface else (
+        '_Gh3Red', '_Gh3Green', '_Gh3Blue')
     variables = b''.join(aligned(name) + parameters[0x38:0x4c] + struct.pack('<I', index * 16) for index, name in enumerate(names))
-    if particle:
-        textures = b''.join(aligned(name) + struct.pack('<4I', 0, index, index, 4) for index, name in enumerate(('_CameraDepthTexture', '_Gh3NormalTex', '_Gh3SpecularTex'), 1))
-        parameters = parameters[:0xa8] + struct.pack('<I', 5) + parameters[0xac:0xc8] + textures + parameters[0xc8:]
+    if surface:
+        parameters = parameters[:0x74] + struct.pack('<I', 16 * len(names)) + parameters[0x78:0xa0] + struct.pack('<I', 16 * len(names) + 16) + parameters[0xa4:]
+    if particle or surface:
+        extra = ('_CameraDepthTexture', '_Gh3NormalTex', '_Gh3SpecularTex') if particle else ('_Gh3Lightmap',)
+        textures = b''.join(aligned(name) + struct.pack('<4I', 0, index, index, 4) for index, name in enumerate(extra, 1))
+        parameters = parameters[:0xa8] + struct.pack('<I', 2 + len(extra)) + parameters[0xac:0xc8] + textures + parameters[0xc8:]
     parameters = parameters[:0x24] + struct.pack('<2I', 16 * len(names), len(names) + 2) + variables + parameters[0x50:]
     raw = struct.pack('<I', 2) + struct.pack('<3I', 28, len(parameters), 0) + struct.pack('<3I', 28+len(parameters), len(program), 0) + parameters + program
     blob = lz4.block.compress(raw, store_size=False)
@@ -68,9 +75,9 @@ def convert(game, output, kind='screen-color'):
     form['m_Name'] = 'GH3/' + shader_name
     properties = form['m_PropInfo']['m_Props']
     color = properties.pop()
-    if particle:
+    if particle or surface:
         texture_property = next(prop for prop in properties if prop['m_Name'] == '_MainTex')
-        for name in ('_Gh3NormalTex', '_Gh3SpecularTex'):
+        for name in ('_Gh3NormalTex', '_Gh3SpecularTex') if particle else ('_Gh3Lightmap',):
             prop = deepcopy(texture_property)
             prop['m_Name'] = prop['m_Description'] = name
             properties.append(prop)
@@ -79,11 +86,12 @@ def convert(game, output, kind='screen-color'):
         prop['m_Name'] = prop['m_Description'] = name
         prop['m_Type'] = 1
         for channel in range(4):
-            prop[f'm_DefValue[{channel}]'] = 0.0 if outline or particle or tesla else float(index == channel)
+            prop[f'm_DefValue[{channel}]'] = float(name == '_Color') if surface else 0.0 if outline or particle or tesla else float(index == channel)
         properties.append(prop)
-    if outline or particle or tesla:
+    if outline or particle or tesla or surface:
         blend_properties = [('_SrcBlend', 5), ('_DstBlend', 10)]
         if particle or tesla: blend_properties += [('_SrcBlendAlpha', 5), ('_DstBlendAlpha', 10), ('_BlendOp', 0), ('_BlendOpAlpha', 0), ('_Cull', 0)]
+        if surface: blend_properties = [('_SrcBlend', 1), ('_DstBlend', 0), ('_ZWrite', 1), ('_Cull', 0)]
         for name, value in blend_properties:
             prop = deepcopy(color)
             prop.update(m_Name=name, m_Description=name, m_Type=2)
@@ -116,6 +124,14 @@ def convert(game, output, kind='screen-color'):
                     state['rtBlend0']['srcBlend'].update(val=5, name='_SrcBlend')
                     state['rtBlend0']['destBlend'].update(val=10, name='_DstBlend')
                 sub['m_Passes'].append(shader_pass)
+        if surface:
+            for shader_pass in sub['m_Passes']:
+                state = shader_pass['m_State']
+                state['zTest']['val'] = 4
+                state['zWrite'].update(val=1, name='_ZWrite')
+                state['culling'].update(val=0, name='_Cull')
+                state['rtBlend0']['srcBlend'].update(val=1, name='_SrcBlend')
+                state['rtBlend0']['destBlend'].update(val=0, name='_DstBlend')
         if particle or tesla:
             for shader_pass in sub['m_Passes']:
                 state = shader_pass['m_State']
@@ -172,8 +188,10 @@ if __name__ == '__main__':
     parser.add_argument('--outline-output', type=Path, default=Path('assets/libraries/gh3-band-v1/render/outline.bundle'))
     parser.add_argument('--particle-output', type=Path, default=Path('assets/libraries/gh3-band-v1/render/particle.bundle'))
     parser.add_argument('--tesla-output', type=Path, default=Path('assets/libraries/gh3-band-v1/render/tesla.bundle'))
+    parser.add_argument('--stage-output', type=Path, default=Path('assets/libraries/gh3-band-v1/render/stage.bundle'))
     args = parser.parse_args()
     convert(args.game, args.output)
     convert(args.game, args.outline_output, 'outline')
     convert(args.game, args.particle_output, 'particle')
     convert(args.game, args.tesla_output, 'tesla')
+    convert(args.game, args.stage_output, 'stage')

@@ -13,6 +13,7 @@ internal sealed class SkinOptions
     public IReadOnlyList<float> CaptureTimes { get; private init; } = Array.Empty<float>();
     public string CaptureDirectory { get; private init; } = "";
     public string ScreenshotPath { get; private init; } = "";
+    public bool CaptureSongClock { get; private init; }
 
     public static SkinOptions FromEnvironment()
     {
@@ -41,6 +42,7 @@ internal sealed class SkinOptions
                 ? Math.Max(0, combo) : 0,
             CaptureAfter = captureAfter,
             CaptureTimes = captureTimes,
+            CaptureSongClock = Environment.GetEnvironmentVariable("GH3_SKIN_CAPTURE_CLOCK") == "song",
             CaptureDirectory = Path.GetFullPath(Environment.GetEnvironmentVariable("GH3_SKIN_CAPTURE_DIR") ??
                 Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Captures", "GH3Skin")),
             ScreenshotPath = Path.GetFullPath(Environment.GetEnvironmentVariable("GH3_SKIN_SCREENSHOT") ??

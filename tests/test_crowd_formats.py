@@ -41,7 +41,7 @@ class CrowdFormatTests(unittest.TestCase):
         _, meshes = STAGE.scene(crowd_fixture()[0])
         vertices = meshes[0][2]
         for person, left, top in [(0, 0, 1), (7, 7 / 8, 1), (8, 0, 2 / 3), (23, 7 / 8, 1 / 3), (24, 0, 1)]:
-            uv = [struct.unpack_from("<2f", vertices, (person * 4 + i) * 36 + 24) for i in range(4)]
+            uv = [struct.unpack_from("<2f", vertices, (person * 4 + i) * 44 + 24) for i in range(4)]
             for actual, expected in zip(uv, [(left, top), (left, top - 1 / 3), (left + 1 / 8, top), (left + 1 / 8, top - 1 / 3)]):
                 self.assertAlmostEqual(actual[0], expected[0], places=6)
                 self.assertAlmostEqual(actual[1], expected[1], places=6)

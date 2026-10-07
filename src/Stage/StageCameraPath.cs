@@ -97,6 +97,7 @@ internal sealed class StageCameraPath
     private int _cueIndex;
     private double _next;
     private uint _random = 0x47334833;
+    private readonly string _forcedShot = Environment.GetEnvironmentVariable("GH3_SKIN_CAMERA_SHOT") ?? "";
     public float Aspect { get; set; } = 16f / 9;
 
     public StageCameraPath(StageCameraPose fixedPose, IReadOnlyDictionary<string, Vector3> band, string mode = "auto",
@@ -214,6 +215,7 @@ internal sealed class StageCameraPath
             filtered = candidates.Where(s => s.Type != _cuts[^1].Shot.Type).ToArray();
             if (filtered.Length > 0) candidates = filtered;
         }
+        if (_forcedShot.Length > 0 && candidates.Any(s => s.Name == _forcedShot)) candidates = candidates.Where(s => s.Name == _forcedShot).ToArray();
         var seed = Random();
         var shot = candidates[seed % candidates.Length];
         if (duration <= 0)

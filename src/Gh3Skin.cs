@@ -17,6 +17,22 @@ public sealed class SkinMod : MelonMod
     private bool _gameplay;
     private double _lastSongTime = double.NegativeInfinity;
 
+    public override void OnEarlyInitializeMelon()
+    {
+        // MelonLoader retries a bHaptics WebSocket on a timer; disposing those sockets has crashed the CLR in this game.
+        if (Environment.GetEnvironmentVariable("GH3_SKIN_KEEP_BHAPTICS") == "1") return;
+        try
+        {
+            var manager = Type.GetType("bHapticsLib.bHapticsManager, bHapticsLib");
+            var disconnected = manager?.GetMethod("Disconnect", Type.EmptyTypes)?.Invoke(null, null);
+            MelonLogger.Msg($"MelonLoader bHaptics connection stopped: {disconnected ?? "unavailable"}");
+        }
+        catch (Exception error)
+        {
+            MelonLogger.Warning($"MelonLoader bHaptics connection could not stop: {error.Message}");
+        }
+    }
+
     public override void OnInitializeMelon()
     {
         if (!GameCompatibility.Supports(Application.version))
@@ -66,7 +82,7 @@ public sealed class SkinMod : MelonMod
         _renderer.Update(player, score, state.StarPowerActive);
         _stage?.Update(player, state.Combo, state.Rock);
         _hud.Update(state, player.mainCamera);
-        _capture.Update();
+        _capture.Update(songTime);
     }
 
     public override void OnApplicationQuit() => CloseStage();

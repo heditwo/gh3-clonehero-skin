@@ -15,7 +15,7 @@ from PIL import Image
 
 from gh3_formats import key
 from gh3_mesh_cutout import alpha_region, trim_mesh
-from stage_gltf import GlbReader, VERTEX, matrix_quaternion
+from stage_gltf import GlbReader, SHADING, STATIC_VERTEX, matrix_quaternion
 
 
 ROLES = {"guitarist", "bassist", "singer", "drummer"}
@@ -202,7 +202,7 @@ def split_mesh(material, packed, faces):
 def write_meshes(folder, meshes, materials, groups=None, skinned=False):
     folder.mkdir(parents=True, exist_ok=True)
     with (folder/"meshes.bin").open("wb") as stream:
-        stream.write((b"GH3BND01" if skinned else b"GH3STG01") + struct.pack("<I", len(meshes)))
+        stream.write((b"GH3BND01" if skinned else b"GH3STG02") + struct.pack("<I", len(meshes)))
         for material, count, vertices, faces in meshes:
             stream.write(struct.pack("<III", int(material, 16), count, len(faces)*3)); stream.write(vertices)
             stream.write(np.asarray(faces, dtype="<u4").tobytes())
@@ -230,6 +230,17 @@ def import_materials(glb, folder):
         materials[name] = {"texture": texture, "blend": 1 if extras.get("gh3Additive") else 2 if mode == "BLEND" else 0,
                            "cutoff": float(material.get("alphaCutoff", 0.5)) if mode == "MASK" else 0,
                             "crowd": bool(extras.get("gh3CrowdAtlas")), "sortedTransparency": bool(extras.get("gh3SortedTransparency"))}
+        shading = extras.get("gh3Shading", "")
+        if shading not in ("", *SHADING): raise ValueError("Unknown material shading mode")
+        materials[name]["shading"] = shading
+        lightmap = ""
+        if "occlusionTexture" in material:
+            info = material["occlusionTexture"]
+            if info.get("texCoord", 0) != 1: raise ValueError("Stage lightmaps use TEXCOORD_1")
+            lightmap = f"{key('texture-'+str(info['index'])):08x}"
+            if lightmap not in images:
+                images[lightmap] = glb.image(info["index"]); images[lightmap].save(texture_dir/(lightmap+".png"))
+        materials[name]["lightmap"] = lightmap
         source_material = extras.get("gh3SourceMaterial", material.get("name", "material-"+str(i)))
         if not isinstance(source_material, str) or not source_material or len(source_material) > 256: raise ValueError("Invalid material identity")
         materials[name]["source"] = source_material
@@ -348,7 +359,7 @@ def compile_stage(source, destination):
                         pair = mat["texture"], mat["cutoff"]
                         if pair not in masks: masks[pair] = alpha_region(images[pair[0]], pair[1])
                         part = trim_mesh(part, images[pair[0]], pair[1], masks[pair])
-                    if part[3]: local_meshes.extend(split_mesh(part[0], np.frombuffer(part[2],dtype=VERTEX), np.asarray(part[3])))
+                    if part[3]: local_meshes.extend(split_mesh(part[0], np.frombuffer(part[2],dtype=STATIC_VERTEX), np.asarray(part[3])))
             if fixture:
                 id = f"{key(fixture):08x}"
                 if id not in next(iter(lighting["snapshots"].values()))["beams"]: raise ValueError(f"Fixture has no lighting beam: {fixture}")

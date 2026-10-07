@@ -28,6 +28,7 @@ internal sealed class GameplayStage
     private StageMovies? _movies;
     private StageScreenEffects? _screenEffects;
     private StageOutlines? _outlines;
+    private AssetBundle? _surfaceBundle;
     private StageCameraPath? _cameraPath;
     private double _lastTime = double.NaN;
     private int _lastCombo = -1;
@@ -79,6 +80,8 @@ internal sealed class GameplayStage
         _cameraPath = null;
         _assets?.Dispose();
         _assets = null;
+        _surfaceBundle?.Unload(true);
+        _surfaceBundle = null;
         _effects = null;
         _handFire = null;
         _timeline = null;
@@ -131,6 +134,21 @@ internal sealed class GameplayStage
         }
     }
 
+    private Shader? LoadSurfaceShader(string library)
+    {
+        var path = Path.Combine(library, "render", "stage.bundle");
+        if (!File.Exists(path))
+        {
+            MelonLogger.Warning("GH3 stage surface shader is missing. Run prepare-stage-shaders.py.");
+            return null;
+        }
+        _surfaceBundle = AssetBundle.LoadFromFile(path) ?? throw new InvalidDataException("Stage surface shader bundle did not load");
+        var shader = _surfaceBundle.mainAsset?.Cast<Shader>() ?? throw new InvalidDataException("Stage surface shader is missing");
+        shader.hideFlags |= HideFlags.DontUnloadUnusedAsset;
+        if (!shader.isSupported) throw new InvalidDataException("Stage surface shader is not supported by this graphics API");
+        return shader;
+    }
+
     private void Create(BasePlayer player)
     {
         _attempted = true;
@@ -147,7 +165,7 @@ internal sealed class GameplayStage
             _root = new GameObject("GH3 Stage") { layer = Layer };
             var lighting = StageLightingBank.Load(_directory);
             _assets = new StageAssets();
-            _assets.Load(_directory, _root, Layer, lighting: lighting != null);
+            _assets.Load(_directory, _root, Layer, lighting: lighting != null, surfaceShader: LoadSurfaceShader(library));
             _band = new StageBand();
             _band.Load(Path.Combine(library, "band"), _assets, _root, Layer, lighting != null, pack.Band);
             _fixtures = new StageFixtures();

@@ -179,7 +179,16 @@ internal sealed class StageLightShowState
         if (Is("LightShow_OverrideColor"))
         {
             if (parameters.Flag("off")) _color = null;
-            else if (parameters.Field("color") is { } color) _color = _lighting.Bank.Colors.Keys.FirstOrDefault(name => Key(name) == color.Integer) ?? throw new InvalidDataException("Unknown lightshow color");
+            else if (parameters.Field("color") is { } color)
+            {
+                var name = _lighting.Bank.Colors.Keys.FirstOrDefault(name => Key(name) == color.Integer);
+                if (name == null)
+                {
+                    _gap("This venue has no lightshow color " + Gh3QbText.Key(color.Integer));
+                    return new(false);
+                }
+                _color = name;
+            }
             return new(true);
         }
         if (Is("LightShow_WaitForNextEvent")) return new(true, Events: parameters.Field("events")?.Items.Select(value => Event(value.Integer)).ToArray() ?? throw new InvalidDataException("Lightshow event list is missing"));

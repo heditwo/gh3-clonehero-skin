@@ -32,12 +32,16 @@ internal sealed class StageMaterial
     public float Cutoff { get; set; }
     public bool Crowd { get; set; }
     public bool SortedTransparency { get; set; }
+    public string Shading { get; set; } = "";
+    public string Lightmap { get; set; } = "";
+    public int ShadingMode => Shading switch { "unlit" => 0, "ambient" => 1, "lit" => 2, "" => -1, _ => throw new InvalidDataException("Unknown stage shading mode") };
 }
 
 internal sealed class StageAssets : IDisposable
 {
     internal sealed record LitMesh(Mesh Mesh, string Group, Vector3[] Positions, Vector3[] Normals, Color32[] Colors, Transform Transform);
     internal sealed record LitBandMesh(SkinnedMeshRenderer Renderer, Color32[] Colors, string Group);
+    internal sealed record ShadedSurface(Renderer Renderer, int Mode, string Group);
     [StructLayout(LayoutKind.Sequential)]
     private struct SkinWeight
     {
@@ -50,6 +54,7 @@ internal sealed class StageAssets : IDisposable
     public List<Material> CrowdMaterials { get; } = new();
     public List<LitMesh> LitMeshes { get; } = new();
     public List<LitBandMesh> BandMeshes { get; } = new();
+    public List<ShadedSurface> ShadedSurfaces { get; } = new();
     public List<StageTransparency> TransparentMeshes { get; } = new();
     private readonly Dictionary<string, List<Renderer>> _visibility = new();
     public Dictionary<string, Transform> Objects { get; } = new();
@@ -89,7 +94,22 @@ internal sealed class StageAssets : IDisposable
         return material;
     }
 
-    public void Load(string directory, GameObject root, int layer, Transform[]? bones = null, bool lighting = false, string? lightGroup = null)
+    private Material MakeSurfaceMaterial(Shader shader, StageMaterial source)
+    {
+        var transparent = source.Blend != 0;
+        var material = Own(new Material(shader));
+        material.SetInt("_SrcBlend", (int)(transparent ? BlendMode.SrcAlpha : BlendMode.One));
+        material.SetInt("_DstBlend", (int)(source.Blend == 1 ? BlendMode.One : transparent ? BlendMode.OneMinusSrcAlpha : BlendMode.Zero));
+        material.SetInt("_ZWrite", transparent ? 0 : 1);
+        material.SetInt("_Cull", (int)CullMode.Off);
+        var cutout = source.Cutoff > 0 && !source.SortedTransparency;
+        material.SetVector("_Gh3Surface", new(source.ShadingMode, cutout ? source.Cutoff : 0, source.Lightmap.Length > 0 ? 1 : 0, 1));
+        material.SetColor("_Color", Color.white);
+        material.renderQueue = transparent ? 3000 : cutout ? 2450 : 2000;
+        return material;
+    }
+
+    public void Load(string directory, GameObject root, int layer, Transform[]? bones = null, bool lighting = false, string? lightGroup = null, Shader? surfaceShader = null)
     {
         Definition = JsonSerializer.Deserialize<StageDefinition>(File.ReadAllText(Path.Combine(directory, "stage.json")),
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? throw new InvalidDataException("Missing stage definition");
@@ -102,12 +122,25 @@ internal sealed class StageAssets : IDisposable
         var shader = Shader.Find("Particles/Standard Unlit");
         if (shader == null) throw new InvalidOperationException("The stage shader is not available");
         var textures = new Dictionary<string, Texture2D>();
+        Texture2D LoadTexture(string name, TextureWrapMode wrap)
+        {
+            if (name.Length != 8 || !name.All(Uri.IsHexDigit)) throw new InvalidDataException("Invalid stage texture name");
+            if (textures.TryGetValue(name, out var texture)) return texture;
+            texture = Own(new Texture2D(2, 2, TextureFormat.RGBA32, true));
+            if (!texture.LoadImage(new Il2CppStructArray<byte>(File.ReadAllBytes(Path.Combine(directory, "textures", name + ".png"))), true))
+                throw new InvalidDataException("Invalid stage texture");
+            texture.wrapMode = wrap;
+            texture.filterMode = FilterMode.Trilinear;
+            textures.Add(name, texture);
+            return texture;
+        }
         var materials = new Dictionary<uint, Material>();
         foreach (var (key, source) in Definition.Materials)
         {
-            var material = Own(MakeMaterial(shader, source.Blend != 0, source.Blend == 1));
+            var shaded = surfaceShader != null && bones == null && source.ShadingMode >= 0;
+            var material = shaded ? MakeSurfaceMaterial(surfaceShader!, source) : Own(MakeMaterial(shader, source.Blend != 0, source.Blend == 1));
             material.name = "GH3 Stage " + key;
-            if (source.Cutoff > 0 && !source.SortedTransparency)
+            if (!shaded && source.Cutoff > 0 && !source.SortedTransparency)
             {
                 material.SetFloat("_Cutoff", source.Cutoff);
                 material.EnableKeyword("_ALPHATEST_ON");
@@ -119,22 +152,8 @@ internal sealed class StageAssets : IDisposable
                 material.SetInt("_ZWrite", 1);
                 material.renderQueue = 3000;
             }
-            if (source.Texture.Length > 0)
-            {
-                if (source.Texture.Length != 8 || !source.Texture.All(Uri.IsHexDigit))
-                    throw new InvalidDataException("Invalid stage texture name");
-                if (!textures.TryGetValue(source.Texture, out var texture))
-                {
-                    texture = Own(new Texture2D(2, 2, TextureFormat.RGBA32, true));
-                    if (!texture.LoadImage(new Il2CppStructArray<byte>(File.ReadAllBytes(
-                            Path.Combine(directory, "textures", source.Texture + ".png"))), true))
-                        throw new InvalidDataException("Invalid stage texture");
-                    texture.wrapMode = TextureWrapMode.Repeat;
-                    texture.filterMode = FilterMode.Trilinear;
-                    textures.Add(source.Texture, texture);
-                }
-                material.mainTexture = texture;
-            }
+            if (source.Texture.Length > 0) material.mainTexture = LoadTexture(source.Texture, TextureWrapMode.Repeat);
+            if (shaded && source.Lightmap.Length > 0) material.SetTexture("_Gh3Lightmap", LoadTexture(source.Lightmap, TextureWrapMode.Clamp));
             materials.Add(Convert.ToUInt32(key, 16), material);
             SurfaceMaterials.Add(material);
             if (source.Crowd) CrowdMaterials.Add(material);
@@ -142,8 +161,10 @@ internal sealed class StageAssets : IDisposable
             if (source.MovieSlot >= 0) MovieSurfaces.Add((source.MovieSlot, material, material.mainTexture));
         }
         using var reader = new BinaryReader(File.OpenRead(Path.Combine(directory, "meshes.bin")));
-        if (System.Text.Encoding.ASCII.GetString(reader.ReadBytes(8)) != (bones == null ? "GH3STG01" : "GH3BND01"))
+        var header = System.Text.Encoding.ASCII.GetString(reader.ReadBytes(8));
+        if (bones == null ? header is not ("GH3STG01" or "GH3STG02") : header != "GH3BND01")
             throw new InvalidDataException("Invalid stage mesh header");
+        var lightmapped = header == "GH3STG02";
         var meshCount = reader.ReadInt32();
         if (meshCount < 1 || meshCount > 10000) throw new InvalidDataException("Invalid stage mesh count");
         if (Definition.LightGroups.Length != 0 && Definition.LightGroups.Length != meshCount)
@@ -180,6 +201,7 @@ internal sealed class StageAssets : IDisposable
             var vertices = new Vector3[vertexCount];
             var normals = new Vector3[vertexCount];
             var uv = new Vector2[vertexCount];
+            var lightmapUv = lightmapped ? new Vector2[vertexCount] : null;
             var colors = new Color32[vertexCount];
             var weights = bones == null ? null : new List<SkinWeight>(vertexCount * 3);
             var boneCounts = bones == null ? null : new byte[vertexCount];
@@ -189,6 +211,7 @@ internal sealed class StageAssets : IDisposable
                 normals[v] = ReadVector(reader);
                 uv[v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
                 colors[v] = new Color32(reader.ReadByte(), reader.ReadByte(), reader.ReadByte(), reader.ReadByte());
+                if (lightmapUv != null) lightmapUv[v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
                 if (weights != null && bones != null)
                 {
                     var indicesForVertex = reader.ReadBytes(4);
@@ -213,6 +236,7 @@ internal sealed class StageAssets : IDisposable
             mesh.vertices = new Il2CppStructArray<Vector3>(vertices);
             mesh.normals = new Il2CppStructArray<Vector3>(normals);
             mesh.uv = new Il2CppStructArray<Vector2>(uv);
+            if (lightmapUv != null) mesh.uv2 = new Il2CppStructArray<Vector2>(lightmapUv);
             mesh.colors32 = new Il2CppStructArray<Color32>(colors);
             mesh.triangles = new Il2CppStructArray<int>(indices);
             if (weights != null && bones != null)
@@ -222,7 +246,8 @@ internal sealed class StageAssets : IDisposable
                     bone.worldToLocalMatrix * root.transform.localToWorldMatrix).ToArray());
             }
             mesh.RecalculateBounds();
-            var dynamicColors = lighting && (bones != null || Definition.LightGroups.Length > 0);
+            var shadedMode = surfaceShader != null && bones == null ? Definition.Materials[materialId.ToString("x8")].ShadingMode : -1;
+            var dynamicColors = lighting && shadedMode < 0 && (bones != null || Definition.LightGroups.Length > 0);
             if (dynamicColors || sorted) mesh.MarkDynamic();
             mesh.UploadMeshData(!dynamicColors && !sorted);
             var item = new GameObject(mesh.name) { layer = layer };
@@ -255,6 +280,7 @@ internal sealed class StageAssets : IDisposable
                 if (sorted) TransparentMeshes.Add(new(this, skin, vertexCount, indices));
             }
             renderer.sharedMaterial = material;
+            if (shadedMode > 0) ShadedSurfaces.Add(new(renderer, shadedMode, Definition.LightGroups.Length == 0 ? "" : Definition.LightGroups[part]));
             var sourceMaterial = Definition.Materials[materialId.ToString("x8")].Source;
             if (objectId.Length > 0 && sourceMaterial.Length > 0)
                 MaterialSurfaces.Add((Convert.ToUInt32(objectId, 16), Gh3QbText.Key(sourceMaterial), renderer, Definition.Materials[materialId.ToString("x8")]));
@@ -313,6 +339,7 @@ internal sealed class StageAssets : IDisposable
         MaterialSurfaces.Clear();
         MovieSurfaces.Clear();
         BandMeshes.Clear();
+        ShadedSurfaces.Clear();
         TransparentMeshes.Clear();
         _visibility.Clear();
     }

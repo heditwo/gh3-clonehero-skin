@@ -26,8 +26,9 @@ internal sealed class PreviewCapture
         _captureIndex = 0;
     }
 
-    public void Update()
+    public void Update(double songTime)
     {
+        var elapsed = _options.CaptureSongClock ? songTime : Time.time - _gameplayStart;
         if (_options.CaptureAfter > 0 && !_captured && Time.time - _gameplayStart > _options.CaptureAfter)
         {
             var screenshot = _options.ScreenshotPath;
@@ -35,12 +36,11 @@ internal sealed class PreviewCapture
             MelonLogger.Msg($"Captured {screenshot}");
             _captured = true;
         }
-        if (_captureIndex < _options.CaptureTimes.Count &&
-            Time.time - _gameplayStart > _options.CaptureTimes[_captureIndex])
+        if (_captureIndex < _options.CaptureTimes.Count && elapsed >= _options.CaptureTimes[_captureIndex])
         {
             var screenshot = Path.Combine(_options.CaptureDirectory, $"frame-{_captureIndex:00}.png");
             ScreenCapture.CaptureScreenshot(screenshot);
-            MelonLogger.Msg($"Captured {screenshot} at {_options.CaptureTimes[_captureIndex]}");
+            MelonLogger.Msg($"Captured {screenshot} at {_options.CaptureTimes[_captureIndex]} (song time {songTime:0.000})");
             _captureIndex++;
         }
     }

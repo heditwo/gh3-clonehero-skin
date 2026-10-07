@@ -49,11 +49,16 @@ internal sealed class StageLightingRenderer
     private StageLightValue[] _lightValues = Array.Empty<StageLightValue>();
     private string[] _lightGroups;
     private StageLightPose?[] _lightPoses;
+    private readonly GameObject _root;
+    private readonly List<(StageAssets.ShadedSurface Surface, MaterialPropertyBlock Properties)> _shaded;
+    private readonly Dictionary<string, uint> _nativeGroups = new();
 
     public StageLightingRenderer(StageLighting lighting, StageAssets assets, GameObject root, int layer, StageFixtures? fixtures = null)
     {
         _lighting = lighting;
         _fixtures = fixtures;
+        _root = root;
+        _shaded = assets.ShadedSurfaces.Select(surface => (surface, new MaterialPropertyBlock())).ToList();
         _lightGroups = lighting.Bank.Lights.Select(light => light.Group).ToArray();
         _lightPoses = new StageLightPose?[lighting.Bank.Lights.Length];
         foreach (var source in assets.LitMeshes)
@@ -167,6 +172,7 @@ internal sealed class StageLightingRenderer
             if (!visibility[i]) state.Lights[i] = state.Lights[i] with { Intensity = 0, Specular = 0 };
         }
         ShadeBand(state);
+        ShadeSurfaces(state, scene);
         var lightChanged = _frame != frame || _amount != amount || visibilityChanged || groupsChanged || posesChanged || !state.Lights.SequenceEqual(_lightValues);
         _lightValues = state.Lights;
         foreach (var surface in _surfaces)
@@ -277,6 +283,66 @@ internal sealed class StageLightingRenderer
             }
             var vertex = surface.Source.Colors[v];
             output[v] = color * new Vec(vertex.r / 255f, vertex.g / 255f, vertex.b / 255f);
+        }
+    }
+
+    private uint NativeGroup(StageLightScene scene, string label)
+    {
+        if (_nativeGroups.Count == 0)
+            foreach (var group in scene.Groups.Keys.Append(Gh3Checksum.Value("None")))
+            {
+                var name = group == Gh3Checksum.Value("None") ? "Stage" : group == Gh3Checksum.Value("Band") ? "Band" :
+                    group == Gh3Checksum.Value("Crowd") ? "Crowd" : $"group-{group:x8}";
+                _nativeGroups[Gh3Checksum.Of(name)] = group;
+            }
+        return _nativeGroups.TryGetValue(label, out var native) ? native : Gh3Checksum.Value("None");
+    }
+
+    private StageParticleLightSet PackLights(StageLightingValues state, Vec position, string group)
+    {
+        var lights = new List<StageParticleLight>();
+        for (var i = 0; i < state.Lights.Length; i++)
+        {
+            var definition = _lighting.Bank.Lights[i];
+            if (definition.Group != group || !_lightVisibility[i]) continue;
+            var value = state.Lights[i];
+            var pose = _lightPoses[i];
+            var location = pose?.Position ?? definition.Location;
+            var forward = pose?.Forward ?? definition.Forward;
+            var far = value.Far > 0 ? value.Far : 1000;
+            lights.Add(new(definition.Type switch { "Ambient" => 5, "Dir" => 1, _ => 2 }, new(value.Color, 1), new(location, 1), new(forward, 0),
+                value.Intensity, 1, 1, far * far, 1 / (far * far - value.Near * value.Near + .0001f), 2, new System.Numerics.Vector4[9]));
+            if (lights.Count == 32) break;
+        }
+        return StageParticleLights.Select(lights, new(position, 1));
+    }
+
+    private void ShadeSurfaces(StageLightingValues state, StageLightScene? scene)
+    {
+        Vector3 Direction(float x, float y, float z, bool native) => _root.transform.TransformDirection(new(x, y, native ? -z : z));
+        foreach (var (surface, properties) in _shaded)
+        {
+            var center = _root.transform.InverseTransformPoint(surface.Renderer.bounds.center);
+            var lights = scene != null ? scene.Sample(new(center.x, center.y, -center.z), NativeGroup(scene, surface.Group)).Lighting :
+                PackLights(state, Numeric(center), surface.Group);
+            var native = scene != null;
+            surface.Renderer.GetPropertyBlock(properties);
+            properties.SetVector("_Gh3Ambient", new(lights.Ambient.X, lights.Ambient.Y, lights.Ambient.Z, lights.Ambient.W));
+            if (surface.Mode == 2)
+            {
+                var direction = Direction(lights.Direction.X, lights.Direction.Y, lights.Direction.Z, native);
+                properties.SetVector("_Gh3LightDirection", new(direction.x, direction.y, direction.z, 0));
+                properties.SetVector("_Gh3LightColor", new(lights.Color.X, lights.Color.Y, lights.Color.Z, lights.Color.W));
+                var h = lights.Harmonics;
+                properties.SetVector("_Gh3SH0", new(h[0].X, h[0].Y, h[0].Z, h[0].W));
+                var red = Direction(h[1].X, h[2].X, h[3].X, native);
+                var green = Direction(h[1].Y, h[2].Y, h[3].Y, native);
+                var blue = Direction(h[1].Z, h[2].Z, h[3].Z, native);
+                properties.SetVector("_Gh3SH1", new(red.x, green.x, blue.x, 0));
+                properties.SetVector("_Gh3SH2", new(red.y, green.y, blue.y, 0));
+                properties.SetVector("_Gh3SH3", new(red.z, green.z, blue.z, 0));
+            }
+            surface.Renderer.SetPropertyBlock(properties);
         }
     }
 

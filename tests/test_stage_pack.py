@@ -57,6 +57,53 @@ class StagePackTests(unittest.TestCase):
             np.testing.assert_allclose(packed["uv"],vertices["uv"])
             np.testing.assert_array_equal(faces,[[0,2,1]])
 
+    def test_lightmap_shading_and_second_uv_survive_import(self):
+        from PIL import Image
+        from stage_gltf import STATIC_VERTEX
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); source = root/"source"; output = root/"cache"
+            TEMPLATE.create(source)
+            glb = GlbReader(source/"stage.glb")
+            vertices = np.zeros(3, dtype=STATIC_VERTEX)
+            vertices["position"] = [[0, 0, 0], [1, 0, 0], [0, 1, 0]]
+            vertices["normal"] = [0, 0, 1]; vertices["color"] = 255
+            vertices["lightmap"] = [[.25, .75], [.5, .75], [.25, .5]]
+            images = {"diffuse": Image.new("RGBA", (4, 4), (200, 100, 50, 255)), "baked": Image.new("RGBA", (4, 4), (40, 80, 120, 255))}
+            materials = {"lit": {"blend": 0, "texture": "diffuse", "lightmap": "baked", "shading": "lit", "color": [.5, .5, .5, 1]}}
+            writer = GlbWriter(); writer.data = glb.data; writer.binary = bytearray(glb.binary)
+            writer.node("lit-surface", writer.mesh("lit-surface", [("lit", 3, vertices.tobytes(), [(0, 1, 2)])], materials, images))
+            writer.save(source/"stage.glb")
+            row = next(m for m in GlbReader(source/"stage.glb").data["materials"] if m["name"] == "lit")
+            self.assertEqual(row["occlusionTexture"]["texCoord"], 1)
+            self.assertEqual(row["extras"]["gh3Shading"], "lit")
+            self.assertEqual(row["pbrMetallicRoughness"]["baseColorFactor"], [.5, .5, .5, 1])
+            compile_stage(source, output)
+            definition = load_json(output/"stage.json")
+            lit = [m for m in definition["materials"].values() if m["shading"] == "lit"]
+            self.assertEqual(len(lit), 1)
+            self.assertTrue((output/"textures"/(lit[0]["lightmap"]+".png")).exists())
+            data = (output/"meshes.bin").read_bytes()
+            self.assertEqual(data[:8], b"GH3STG02")
+            offset = 12; found = []
+            for _ in range(struct.unpack_from("<I", data, 8)[0]):
+                material, count, indices = struct.unpack_from("<III", data, offset); offset += 12
+                rows = np.frombuffer(data, STATIC_VERTEX, count, offset); offset += count*44 + indices*4
+                if f"{material:08x}" in definition["materials"] and definition["materials"][f"{material:08x}"]["shading"] == "lit": found = rows
+            np.testing.assert_allclose(sorted(map(tuple, found["lightmap"])), sorted(map(tuple, vertices["lightmap"])), atol=1e-6)
+            self.assertTrue(np.all(found["color"][:, :3] == 128))
+
+    def test_material_templates_classify_original_pixel_shaders(self):
+        import gh3_materials
+        if not gh3_materials.LIBRARY.exists(): self.skipTest("Original GH3 material library is not installed")
+        named = {value["name"]: value for value in gh3_materials.templates().values()}
+        self.assertEqual((named["D_3ChkBox_Pass0"]["shading"], named["D_3ChkBox_Pass0"]["diffuseConstant"]), ("lit", 0))
+        self.assertEqual((named["D_N_S_4ChkBox"]["shading"], named["D_N_S_4ChkBox"]["diffuseConstant"]), ("lit", 1))
+        self.assertEqual(named["D_1VertexColorOnly"]["shading"], "unlit")
+        self.assertEqual(named["D_1VertexColorAmbientLit"]["shading"], "ambient")
+        self.assertEqual(gh3_materials.lightmap_slot(named["D_N_S_4ChkBox"], 4), 3)
+        self.assertEqual(gh3_materials.lightmap_slot(named["Env_D_N_S_Decal_3ChkBox"], 5), 3)
+        self.assertIsNone(gh3_materials.lightmap_slot(named["D_1VertexColorOnly"], 1))
+
     def test_scenery_visibility_survives_import_and_invalid_edits_preserve_cache(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); source = root/"source"; output = root/"cache"
