@@ -114,7 +114,25 @@ fi
 sleep 0.5
 read -r x y < <(hyprctl -i "$instance" clients -j | jq -r --arg address "$address" '.[] | select(.address == $address) | "\(.at[0]) \(.at[1])"')
 
-gpu-screen-recorder -w region -region "${width}x${height}+${x}+${y}" \
+audio=()
+case "${GH3_SKIN_VIDEO_AUDIO:-}" in
+  "") ;;
+  game)
+    application=""
+    for ((attempt = 0; attempt < 50; attempt++)); do
+      application="$(gpu-screen-recorder --list-application-audio 2>/dev/null | rg -i -m1 'clone ?hero' || true)"
+      [[ -z "$application" ]] || break
+      sleep 0.2
+    done
+    if [[ -z "$application" ]]; then
+      printf 'Clone Hero audio stream not found\n' >&2
+      exit 1
+    fi
+    audio=(-a "app:$application")
+    ;;
+  *) audio=(-a "$GH3_SKIN_VIDEO_AUDIO") ;;
+esac
+gpu-screen-recorder -w region -region "${width}x${height}+${x}+${y}" "${audio[@]}" \
   -f "$framerate" -fm cfr -cursor no -k h264 -q very_high -o "$raw" > "$log.recorder" 2>&1 &
 recorder_pid=$!
 sleep "$seconds"
@@ -127,7 +145,7 @@ if [[ ! -s "$raw" ]]; then
   exit 1
 fi
 ffmpeg -hide_banner -loglevel error -nostdin -y -i "$raw" -t "$trim" \
-  -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -movflags +faststart "$clean"
+  -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "$clean"
 mv -- "$clean" "$output"
 cp -- "$game_dir/MelonLoader/Latest.log" "$output.log"
 GH3_SKIN_VIDEO_BACKEND=gpu-screen-recorder GH3_SKIN_VIDEO_REGION="${width}x${height}+${x}+${y}" \
