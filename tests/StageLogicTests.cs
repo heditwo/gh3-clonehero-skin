@@ -61,6 +61,7 @@ internal static class StageLogicTests
         Reject(() => StageChartReader.ReadMidi(smpte), "SMPTE does not silently use PPQN timing");
         Reject(() => StageChartReader.ReadChart("[Song]\nResolution = 0"), "zero chart resolution is rejected");
         Reject(() => new StageTimeline(new[] { new StageCue(double.NaN, "pyro") }, "test"), "non-finite JSON event time is rejected");
+        CheckDirectionTracks();
 
         var directory = Path.Combine(Path.GetTempPath(), "opencode", "gh3-stage-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
@@ -108,6 +109,86 @@ internal static class StageLogicTests
     private static void Check(bool valid, string message)
     {
         if (!valid) throw new Exception(message);
+    }
+
+    private static void CheckDirectionTracks()
+    {
+        const string source = """
+            [Song]
+            {
+              Resolution = 480
+              Offset = 0.125
+            }
+            [SyncTrack]
+            {
+              0 = B 120000
+              480 = B 60000
+            }
+            [CAMERAS]
+            {
+              240 = N 89 480
+              480 = N 85 240
+            }
+            [LIGHTSHOW]
+            {
+              240 = N 56 480
+              240 = N 120 0
+            }
+            [ANIMS]
+            {
+              0 = N 125 240
+            }
+            [DRUMS]
+            {
+              0 = N 70 480
+              240 = N 70 480
+            }
+            [CROWD]
+            {
+              0 = N 72 480
+            }
+            [ExpertDrums]
+            {
+              0 = N 1 0
+            }
+            """;
+        var chart = StageChartReader.ReadChart(source);
+        using var output = new MemoryStream();
+        output.Write(Encoding.ASCII.GetBytes("MThd"));
+        output.Write(new byte[] { 0, 0, 0, 6, 0, 1, 0, 7, 1, 224 });
+        void Track(string name, byte[] events)
+        {
+            using var data = new MemoryStream();
+            data.Write(new byte[] { 0, 255, 3, (byte)name.Length });
+            data.Write(Encoding.ASCII.GetBytes(name));
+            data.Write(events);
+            data.Write(new byte[] { 0, 255, 47, 0 });
+            WriteTrack(output, data.ToArray());
+        }
+        Track("TEMPO", new byte[] { 0, 255, 81, 3, 7, 161, 32, 131, 96, 255, 81, 3, 15, 66, 64 });
+        Track("CAMERAS", new byte[] { 129, 112, 144, 89, 100, 129, 112, 85, 100, 129, 112, 128, 89, 0, 0, 85, 0 });
+        Track("LIGHTSHOW", new byte[] { 129, 112, 144, 56, 92, 0, 120, 63, 0, 128, 120, 0, 131, 96, 56, 0 });
+        Track("ANIMS", new byte[] { 0, 144, 125, 80, 129, 112, 128, 125, 0 });
+        Track("DRUMS", new byte[] { 0, 144, 70, 75, 129, 112, 145, 70, 42, 129, 112, 128, 70, 0, 129, 112, 129, 70, 0 });
+        Track("CROWD", new byte[] { 0, 144, 72, 90, 131, 96, 128, 72, 0 });
+        Track("PART DRUMS", new byte[] { 0, 144, 96, 100, 0, 128, 96, 0 });
+        var midi = StageChartReader.ReadMidi(output.ToArray());
+        Check(chart.Cues.SequenceEqual(midi.Cues.Select(c => c with { Time = c.Time + 0.125, Velocity = null })),
+            "Standard direction tracks use the same note IDs and tempo conversion in chart and MIDI files");
+        Check(chart.Cameras[0] == new StageCue(0.375, "gh3-camera", "89", 0.75),
+            "Camera sustain crosses a tempo change and uses the chart offset");
+        Check(midi.Track("drum").Select(c => (c.Time, c.Duration, c.Velocity)).SequenceEqual(new[] { (0.0, 0.5, (int?)75), (0.25, 0.75, (int?)42) }),
+            "Overlapping drum notes on separate MIDI channels retain their own lengths and velocities");
+        Check(chart.Track("gh3-note").Any(c => c.Value == "120") && midi.Track("gh3-note").Any(c => c.Value == "120" && c.Velocity == 63),
+            "An unmapped light note remains available in the runtime timeline");
+        Check(midi.Track("gh3-note").Single(c => c.Value == "56") is { Duration: 0.75, Velocity: 92 },
+            "Lightshow source cues retain duration and velocity before playback mapping");
+        Check(chart.Track("fret").Single().Value == "125" && chart.Track("drum").Length == 2,
+            "ANIMS uses the existing GH tool track name and playable drums are separate");
+        Check(StageChartReader.ReadChart("[LIGHTSHOW]\n192 = E bonusfx").Effects.Single().Time == 0.5,
+            "Track-local events accept Moonscraper's unquoted chart syntax");
+        Reject(() => StageChartReader.ReadChart("[CAMERAS]\n0 = N 128 12"), "Out-of-range camera note is rejected");
+        Reject(() => StageChartReader.ReadChart("[DRUMS]\n0 = N 70 12 75"), "Extra chart note fields cannot silently discard velocity");
     }
 
     private static void Reject(Action action, string message)

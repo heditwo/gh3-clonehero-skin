@@ -24,6 +24,9 @@ def song_fixture():
     data[68:92] = words(0x00010100, 3, 80, 45274, 56, 55)
     data[92:112] = words(0x00010100, 3, 104, 46000, 72)
     data.extend(words(43))
+    data.extend(words(0x00200C00, key("fixture_fretbars"), 0, 136, 0))
+    data.extend(words(0x00010000, 0, 0))
+    data[4:8] = words(len(data))
     pak = words(key(".qb"), 64, len(data), 0, key("fixture"), 0, 0, 0)
     pak += words(key(".last"), 32 + len(data), 4, 0, 0, 0, 0, 0)
     return pak + data + bytes(4)
@@ -32,14 +35,14 @@ def song_fixture():
 class StageFormatTests(unittest.TestCase):
     def test_original_lightshow_export_preserves_pyro_time(self):
         result = EXPORT.extract(song_fixture(), "fixture")
-        self.assertEqual(result["events"], [
-            {"time": 45.274, "type": "gh3-note", "value": "56"},
-            {"time": 46.0, "type": "gh3-note", "value": "72"},
+        self.assertEqual([(e["time"], e["type"], e["value"], e["duration"], e["velocity"]) for e in result["events"]], [
+            (45.274, "gh3-note", "56", 0.055, None),
+            (46.0, "gh3-note", "72", 0.043, None),
         ])
-        self.assertEqual(result["unmappedLightshowScripts"], {})
+        self.assertEqual(result["playback"], [])
 
     def test_wrong_song_id_is_not_silently_exported(self):
-        with self.assertRaisesRegex(ValueError, "No lightshow"):
+        with self.assertRaisesRegex(ValueError, "Expected one native chart"):
             EXPORT.extract(song_fixture(), "another_song")
 
     def test_truncated_pak_entry_is_rejected(self):
@@ -60,7 +63,7 @@ class StageFormatTests(unittest.TestCase):
     def test_unknown_note_pitch_is_rejected(self):
         pak = bytearray(song_fixture())
         pak[64 + 84:64 + 88] = words(256)
-        with self.assertRaisesRegex(ValueError, "note values"):
+        with self.assertRaisesRegex(ValueError, "Invalid native lightshow note"):
             EXPORT.extract(pak, "fixture")
 
 

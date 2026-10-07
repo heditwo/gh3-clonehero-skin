@@ -13,10 +13,10 @@ internal sealed class StageLightingRenderer
         public int[] Lights = Array.Empty<int>();
         public Vec[] Positions = Array.Empty<Vec>();
         public Vec[] Normals = Array.Empty<Vec>();
-        public Vec[] From = Array.Empty<Vec>();
-        public Vec[] To = Array.Empty<Vec>();
+        public Vec[] Lighting = Array.Empty<Vec>();
         public float[]?[] Weights = Array.Empty<float[]?>();
         public Il2CppStructArray<Color> Colors = null!;
+        public Matrix4x4 Matrix;
     }
     private sealed class BandSurface
     {
@@ -44,18 +44,25 @@ internal sealed class StageLightingRenderer
     private readonly List<(GameObject Object, Mesh Mesh, Material Material, Il2CppStructArray<Vector3> Vertices)> _beams = new();
     private StageLightingFrame? _frame;
     private float _amount = -1;
+    private readonly Dictionary<int, StageBeamValue> _beamValues = new();
+    private bool[] _lightVisibility = Array.Empty<bool>();
+    private StageLightValue[] _lightValues = Array.Empty<StageLightValue>();
+    private string[] _lightGroups;
+    private StageLightPose?[] _lightPoses;
 
     public StageLightingRenderer(StageLighting lighting, StageAssets assets, GameObject root, int layer, StageFixtures? fixtures = null)
     {
         _lighting = lighting;
         _fixtures = fixtures;
+        _lightGroups = lighting.Bank.Lights.Select(light => light.Group).ToArray();
+        _lightPoses = new StageLightPose?[lighting.Bank.Lights.Length];
         foreach (var source in assets.LitMeshes)
         {
             var count = source.Positions.Length;
             var surface = new Surface { Source = source,
                 Lights = Enumerable.Range(0, lighting.Bank.Lights.Length).Where(i => lighting.Bank.Lights[i].Group == source.Group).ToArray(),
                 Positions = source.Positions.Select(Numeric).ToArray(), Normals = source.Normals.Select(n => n.sqrMagnitude > 0.000001f ? Vec.Normalize(Numeric(n)) : Vec.UnitY).ToArray(),
-                From = new Vec[count], To = new Vec[count], Colors = new Il2CppStructArray<Color>(count) };
+                Lighting = new Vec[count], Colors = new Il2CppStructArray<Color>(count), Matrix = source.Transform.localToWorldMatrix };
             surface.Weights = new float[]?[surface.Lights.Length];
             for (var slot = 0; slot < surface.Lights.Length; slot++)
             {
@@ -119,40 +126,87 @@ internal sealed class StageLightingRenderer
 
     public void Update(double time)
     {
+        var scene = _fixtures?.Scripts?.LightScene;
+        var poses = _lighting.Bank.Lights.Select(light => light.Object.Length > 0 ? scene?.RenderPose(Gh3QbText.Key(light.Object)) : null).ToArray();
+        var posesChanged = !poses.SequenceEqual(_lightPoses);
+        if (posesChanged)
+        {
+            _lightPoses = poses;
+            foreach (var surface in _surfaces) Array.Clear(surface.Weights, 0, surface.Weights.Length);
+        }
+        var groups = _lighting.Bank.Lights.Select(light => scene != null && light.Object.Length > 0 && scene.Contains(Gh3QbText.Key(light.Object)) ?
+            scene.Group(Gh3QbText.Key(light.Object)).ToString("x8") : light.Group).ToArray();
+        var groupsChanged = !groups.SequenceEqual(_lightGroups);
+        if (groupsChanged)
+        {
+            _lightGroups = groups;
+            foreach (var surface in _surfaces)
+            {
+                surface.Lights = Enumerable.Range(0, groups.Length).Where(index => groups[index] == surface.Source.Group).ToArray();
+                surface.Weights = new float[]?[surface.Lights.Length];
+            }
+            foreach (var (group, actorLights) in _actorLights)
+            {
+                var indices = Enumerable.Range(0, groups.Length).Where(index => groups[index] == group).ToArray();
+                actorLights.Ambient = indices.Where(index => _lighting.Bank.Lights[index].Type == "Ambient").ToArray();
+                actorLights.Directional = indices.Where(index => _lighting.Bank.Lights[index].Type != "Ambient").ToArray();
+                actorLights.Samples = new StageLightSample[indices.Length];
+            }
+        }
         var frame = _lighting.At(time);
         var amount = frame.Amount(time);
         var state = frame.Sample(time);
-        ShadeBand(state);
-        var lightChanged = _frame != frame || _amount != amount;
-        if (_frame != frame)
+        var visibility = _lighting.Bank.Lights.Select(light => light.Object.Length == 0 || _fixtures?.Scripts is not { } scripts ||
+            !scripts.Objects.TryGetValue(Gh3QbText.Key(light.Object), out var obj) || obj.Exists && obj.Visible).ToArray();
+        var visibilityChanged = !visibility.SequenceEqual(_lightVisibility);
+        _lightVisibility = visibility;
+        for (var i = 0; i < state.Lights.Length; i++)
         {
-            foreach (var surface in _surfaces)
-            {
-                Shade(surface, frame.From, surface.From);
-                Shade(surface, frame.To, surface.To);
-            }
+            if (scene != null && _lighting.Bank.Lights[i].Object is { Length: > 0 } id)
+                state.Lights[i] = scene.Apply(Gh3QbText.Key(id), state.Lights[i]);
+            if (!visibility[i]) state.Lights[i] = state.Lights[i] with { Intensity = 0, Specular = 0 };
         }
-        if (lightChanged) foreach (var surface in _surfaces)
+        ShadeBand(state);
+        var lightChanged = _frame != frame || _amount != amount || visibilityChanged || groupsChanged || posesChanged || !state.Lights.SequenceEqual(_lightValues);
+        _lightValues = state.Lights;
+        foreach (var surface in _surfaces)
         {
+            var matrix = surface.Source.Transform.localToWorldMatrix;
+            var moved = matrix != surface.Matrix;
+            if (moved)
+            {
+                surface.Matrix = matrix;
+                var normalMatrix = matrix.inverse.transpose;
+                for (var v = 0; v < surface.Positions.Length; v++)
+                {
+                    surface.Positions[v] = Numeric(matrix.MultiplyPoint3x4(surface.Source.Positions[v]));
+                    var normal = Numeric(normalMatrix.MultiplyVector(surface.Source.Normals[v]));
+                    surface.Normals[v] = normal.LengthSquared() > 0.000001f ? Vec.Normalize(normal) : Vec.UnitY;
+                }
+                Array.Clear(surface.Weights, 0, surface.Weights.Length);
+            }
+            if (!lightChanged && !moved) continue;
+            Shade(surface, state, surface.Lighting);
             var colors = surface.Colors.AsSpan();
             for (var v = 0; v < colors.Length; v++)
             {
-                var rgb = Vec.Lerp(surface.From[v], surface.To[v], amount);
+                var rgb = surface.Lighting[v];
                 colors[v] = new Color(rgb.X, rgb.Y, rgb.Z, surface.Source.Colors[v].a / 255f);
             }
             surface.Source.Mesh.colors = surface.Colors;
         }
         for (var i = 0; i < _beams.Count; i++)
         {
-            var value = state.Beams[i];
+            var value = _fixtures?.Resolve(_lighting.BeamIds[i], state.Beams[i], time) ?? state.Beams[i];
             _fixtures?.Update(_lighting.BeamIds[i], value);
             var beam = _beams[i];
-            if (lightChanged) beam.Object.SetActive(value.Density > 0.001f);
+            beam.Object.SetActive(value.Density > 0.001f);
             if (value.Density <= 0.001f) continue;
             beam.Object.transform.localPosition = Unity(value.Position);
             var q = value.Rotation;
             beam.Object.transform.localRotation = new(q.X, q.Y, q.Z, q.W);
-            if (!lightChanged) continue;
+            if (_beamValues.TryGetValue(i, out var previousBeam) && previousBeam == value) continue;
+            _beamValues[i] = value;
             for (var side = 0; side < 12; side++)
             {
                 var angle = side * MathF.PI / 6;
@@ -177,7 +231,7 @@ internal sealed class StageLightingRenderer
             group.Count = 0;
             foreach (var i in group.Directional)
                 if (state.Lights[i].Energy != Vec.Zero)
-                    group.Samples[group.Count++] = new(_lighting.Bank.Lights[i], state.Lights[i]);
+                    group.Samples[group.Count++] = new(_lighting.Bank.Lights[i], state.Lights[i], _lightPoses[i]);
         }
         foreach (var surface in _bandMeshes)
         {
@@ -216,8 +270,9 @@ internal sealed class StageLightingRenderer
             for (var slot = 0; slot < surface.Lights.Length; slot++)
             {
                 var i = surface.Lights[slot];
+                if (!_lightVisibility[i]) continue;
                 var weight = surface.Weights[slot] is { } weights ? weights[v] :
-                    StageLighting.Weight(_lighting.Bank.Lights[i], state.Lights[i], surface.Positions[v], surface.Normals[v]);
+                    StageLighting.Weight(_lighting.Bank.Lights[i], state.Lights[i], surface.Positions[v], surface.Normals[v], _lightPoses[i]);
                 color += state.Lights[i].Energy * weight;
             }
             var vertex = surface.Source.Colors[v];

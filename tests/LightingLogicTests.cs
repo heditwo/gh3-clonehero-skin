@@ -21,11 +21,11 @@ internal static class LightingLogicTests
             new StageCue(4.137, "gh3-note", "60") }, "test"));
         var dark = lighting.At(1.5).Sample(1.5);
         Check(dark.Lights[0].Energy.X == 0.25f && Math.Abs(dark.Lights[1].Energy.X - 0.2f) < 0.00001f, "blackout keeps authored fill and direct lights");
-        var half = lighting.At(1.15).Sample(1.15);
-        Check(Math.Abs(half.Lights[1].Energy.X - 0.6f) < 0.0001f, "blackout follows the light blend time");
+        var half = lighting.At(1.075).Sample(1.075);
+        Check(lighting.At(1).Blend == 0.15 && Math.Abs(half.Lights[1].Energy.X - 0.6f) < 0.0001f, "blackout follows the original 0.15-second default blend time");
         var red = lighting.At(2.5).Sample(2.5);
         Check(red.Lights[0].Energy == dark.Lights[0].Energy && red.Lights[1].Energy.Y == 0, "color overrides preserve excluded fill lights");
-        Check(lighting.At(4.05).Sample(4.05).Lights[1].Energy.X == 0.2f, "strobe starts with the authored blackout snapshot");
+        Check(Math.Abs(lighting.At(4.05).Sample(4.05).Lights[1].Energy.X - 0.2f) < .000001f, "strobe starts with the authored blackout snapshot");
         var on = lighting.At(4.15).Sample(4.15);
         Check(on.Lights[1].Energy.X == 1 && lighting.At(4.3).Sample(4.3).Lights[1].Energy == on.Lights[1].Energy,
             "strobe follows note toggles instead of a free-running timer");
@@ -41,6 +41,24 @@ internal static class LightingLogicTests
         Check(StageLighting.Weight(direct, dark.Lights[1], Vector3.Zero, -Vector3.UnitZ) == 1 &&
             StageLighting.Weight(direct, dark.Lights[1], Vector3.Zero, Vector3.UnitZ) == 0, "directional illumination follows the surface normal");
         CheckMotion(bank);
+        var source = new StageLighting(bank, new StageTimeline(Array.Empty<StageCue>(), "independent source fades"));
+        source.BeginScriptControl();
+        var empty = Gh3ScriptRuntime.Structure(Array.Empty<Gh3QbField>());
+        source.PlaySnapshot("verse", 1, 2, null, empty, true);
+        var preserved = source.At(1);
+        bank.Snapshots["dark"].Lights[1].Inherit = true;
+        bank.Snapshots["dark"].Beams["beam"].Inherit = true;
+        source.PlaySnapshot("dark", 1.5, .15, null, Gh3ScriptRuntime.Structure(new[] {
+            new Gh3QbField(Gh3Checksum.Value("intensity"), Gh3ScriptRuntime.Number(.3)) }), true);
+        Check(source.At(2).Sample(2).Lights[1] == preserved.Sample(2).Lights[1] && source.At(3).SampleBeam(0, 3) == preserved.SampleBeam(0, 3),
+            "Absent source rows must keep their running light fade and housing movement when another snapshot appends intensity.");
+        Check(Math.Abs(source.At(1.65).Sample(1.65).Lights[0].Energy.X - .3f) < .000001f,
+            "Snapshot append parameters must apply only to the source rows that are present.");
+        source.SetBeam(0, 2, source.At(2).SampleBeam(0, 2) with { Density = .75f });
+        Check(source.At(2).SampleBeam(0, 2).Density == .75f && source.At(2.5).Sample(2.5).Lights[1] == preserved.Sample(2.5).Lights[1],
+            "A source volume update must change its component without interrupting other light fades.");
+        source.PlaySnapshot("verse", 3, 0, null, empty, false);
+        Check(source.At(3).SampleBeam(0, 3).Density == .8f, "A later source snapshot must replace a prior scripted volume parameter.");
         if (Environment.GetEnvironmentVariable("GH3_LIGHTING_ASSETS") is { } directory)
         {
             var original = StageLightingBank.Load(directory)!;

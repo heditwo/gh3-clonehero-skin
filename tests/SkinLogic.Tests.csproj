@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../src/Native/*.cs" Link="Native/%(Filename)%(Extension)" />
     <Compile Include="../src/SkinOptions.cs" Link="SkinOptions.cs" />
     <Compile Include="../src/HudTuning.cs" Link="HudTuning.cs" />
     <Compile Include="../src/ReadyAnimationTrigger.cs" Link="ReadyAnimationTrigger.cs" />
@@ -18,6 +19,44 @@
     <Compile Include="../src/GemAnimation.cs" Link="GemAnimation.cs" />
     <Compile Include="../src/GameCompatibility.cs" Link="GameCompatibility.cs" />
     <Compile Include="../src/Stage/StageTimeline.cs" Link="StageTimeline.cs" />
+    <Compile Include="../src/Stage/StageCue.cs" Link="StageCue.cs" />
+    <Compile Include="../src/Stage/StageGh3Events.cs" Link="StageGh3Events.cs" />
+    <Compile Include="../src/Stage/StageCrowdState.cs" Link="StageCrowdState.cs" />
+    <Compile Include="../src/Stage/StageActorState.cs" Link="StageActorState.cs" />
+    <Compile Include="../src/Stage/StageSoundBank.cs" Link="StageSoundBank.cs" />
+    <Compile Include="../src/Stage/StageAudioState.cs" Link="StageAudioState.cs" />
+    <Compile Include="../src/Stage/StageScriptBank.cs" Link="StageScriptBank.cs" />
+    <Compile Include="../src/Stage/StageScriptState.cs" Link="StageScriptState.cs" />
+    <Compile Include="../src/Stage/StageScriptActorState.cs" Link="StageScriptActorState.cs" />
+    <Compile Include="../src/Stage/StageObjectState.cs" Link="StageObjectState.cs" />
+    <Compile Include="../src/Stage/StageParticleDefinition.cs" Link="StageParticleDefinition.cs" />
+    <Compile Include="../src/Stage/StageParticleMaterial.cs" Link="StageParticleMaterial.cs" />
+    <Compile Include="../src/Stage/StageParticleRenderOrder.cs" Link="StageParticleRenderOrder.cs" />
+    <Compile Include="../src/Stage/StageParticleRenderList.cs" Link="StageParticleRenderList.cs" />
+    <Compile Include="../src/Stage/StageParticleTechniques.cs" Link="StageParticleTechniques.cs" />
+    <Compile Include="../src/Stage/StageParticleLights.cs" Link="StageParticleLights.cs" />
+    <Compile Include="../src/Stage/StageLightSpatial.cs" Link="StageLightSpatial.cs" />
+    <Compile Include="../src/Stage/StageLightNative.cs" Link="StageLightNative.cs" />
+    <Compile Include="../src/Stage/StageLightScene.cs" Link="StageLightScene.cs" />
+    <Compile Include="../src/Stage/StageLightTransition.cs" Link="StageLightTransition.cs" />
+    <Compile Include="../src/Stage/StageParticleEmission.cs" Link="StageParticleEmission.cs" />
+    <Compile Include="../src/Stage/StageParticleMotion.cs" Link="StageParticleMotion.cs" />
+    <Compile Include="../src/Stage/StageParticleLod.cs" Link="StageParticleLod.cs" />
+    <Compile Include="../src/Stage/StageParticleBounds.cs" Link="StageParticleBounds.cs" />
+    <Compile Include="../src/Stage/StageParticleVisibility.cs" Link="StageParticleVisibility.cs" />
+    <Compile Include="../src/Stage/StageParticleShape.cs" Link="StageParticleShape.cs" />
+    <Compile Include="../src/Stage/StageParticleGeometry.cs" Link="StageParticleGeometry.cs" />
+    <Compile Include="../src/Stage/StageParticleState.cs" Link="StageParticleState.cs" />
+    <Compile Include="../src/Stage/StageWindState.cs" Link="StageWindState.cs" />
+    <Compile Include="../src/Stage/StageTeslaState.cs" Link="StageTeslaState.cs" />
+    <Compile Include="../src/Stage/StageTeslaRender.cs" Link="StageTeslaRender.cs" />
+    <Compile Include="../src/Stage/StageMaterialState.cs" Link="StageMaterialState.cs" />
+    <Compile Include="../src/Stage/StageRenderControlState.cs" Link="StageRenderControlState.cs" />
+    <Compile Include="../src/Stage/StageScreenColor.cs" Link="StageScreenColor.cs" />
+    <Compile Include="../src/Stage/StageTextureAnimation.cs" Link="StageTextureAnimation.cs" />
+    <Compile Include="../src/Stage/StageMovieClip.cs" Link="StageMovieClip.cs" />
+    <Compile Include="../src/Stage/StageMovieState.cs" Link="StageMovieState.cs" />
+    <Compile Include="../src/Stage/StageCrowdPerformance.cs" Link="StageCrowdPerformance.cs" />
     <Compile Include="../src/Stage/StagePack.cs" Link="StagePack.cs" />
     <Compile Include="../src/Stage/StageCameraPath.cs" Link="StageCameraPath.cs" />
     <Compile Include="../src/Stage/BandAnimation.cs" Link="BandAnimation.cs" />
@@ -27,8 +66,10 @@
     <Compile Include="../src/Stage/StageTriangleOrder.cs" Link="StageTriangleOrder.cs" />
     <Compile Include="../src/Stage/StagePerformance.cs" Link="StagePerformance.cs" />
     <Compile Include="../src/Stage/StageLighting.cs" Link="StageLighting.cs" />
+    <Compile Include="../src/Stage/StageLightShowState.cs" Link="StageLightShowState.cs" />
     <Compile Include="../src/Stage/StageBeamMotion.cs" Link="StageBeamMotion.cs" />
     <Compile Include="../src/Stage/StageChartReader.cs" Link="StageChartReader.cs" />
+    <Compile Include="../src/Stage/StageNativeSong.cs" Link="StageNativeSong.cs" />
     <Compile Include="../src/Stage/StageSongDirection.cs" Link="StageSongDirection.cs" />
   </ItemGroup>
 </Project>

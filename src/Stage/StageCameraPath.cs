@@ -284,17 +284,3 @@ internal sealed class StageCameraPath
     private static Vector3 Vector(float[] value) => new(value[0], value[1], value[2]);
     public static bool ValidShot(string shot) => shot is "wide" or "singer" or "guitarist" or "bassist" or "drummer" or "orbit";
 }
-
-internal static class Gh3Checksum
-{
-    public static string Of(string text)
-    {
-        uint crc = uint.MaxValue;
-        foreach (var value in System.Text.Encoding.UTF8.GetBytes(text.ToLowerInvariant()))
-        {
-            crc ^= value;
-            for (var bit = 0; bit < 8; bit++) crc = crc >> 1 ^ ((crc & 1) != 0 ? 0xedb88320u : 0);
-        }
-        return crc.ToString("x8");
-    }
-}

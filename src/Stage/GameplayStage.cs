@@ -6,6 +6,7 @@ namespace Gh3Skin;
 
 internal sealed class GameplayStage
 {
+    private readonly StageNoteHits _noteHits = new();
     private const int Layer = 30;
     private readonly string _directory;
     private readonly string _library;
@@ -21,9 +22,16 @@ internal sealed class GameplayStage
     private StageCrowd? _crowd;
     private StageFixtures? _fixtures;
     private StageActors? _actors;
+    private StageAudio? _audio;
+    private StageScripts? _scripts;
+    private StageParticles? _particles;
+    private StageMovies? _movies;
+    private StageScreenEffects? _screenEffects;
+    private StageOutlines? _outlines;
     private StageCameraPath? _cameraPath;
     private double _lastTime = double.NaN;
     private int _lastCombo = -1;
+    private float _lastRock = float.NaN;
     private Camera? _playerCamera;
     private CameraClearFlags _playerClearFlags;
     private bool _attempted;
@@ -38,6 +46,11 @@ internal sealed class GameplayStage
 
     public void Reset()
     {
+        _outlines?.Dispose();
+        _outlines = null;
+        _screenEffects?.Dispose();
+        _screenEffects = null;
+        _noteHits.Reset();
         if (_playerCamera != null) _playerCamera.clearFlags = _playerClearFlags;
         _playerCamera = null;
         foreach (var (camera, mask) in _cameras)
@@ -56,6 +69,13 @@ internal sealed class GameplayStage
         _fixtures = null;
         _actors?.Dispose();
         _actors = null;
+        _audio?.Dispose();
+        _audio = null;
+        _scripts?.Dispose();
+        _scripts = null;
+        _particles?.Dispose();
+        _particles = null;
+        _movies = null;
         _cameraPath = null;
         _assets?.Dispose();
         _assets = null;
@@ -64,23 +84,28 @@ internal sealed class GameplayStage
         _timeline = null;
         _lastTime = double.NaN;
         _lastCombo = -1;
+        _lastRock = float.NaN;
         _camera = null;
         _root = null;
         _attempted = false;
     }
 
-    public void Update(BasePlayer player, int combo)
+    public void Update(BasePlayer player, int combo, float rock)
     {
         if (!_attempted) Create(player);
         var time = player.gameManager.songTime;
-        if (_effects == null || _timeline == null || !double.IsFinite(time) || time == _lastTime && combo == _lastCombo) return;
-        _lastTime = time;
-        _lastCombo = combo;
+        if (_effects == null || _timeline == null || !double.IsFinite(time)) return;
         try
         {
+            _audio?.Update(time, rock, time == _lastTime);
+            if (time == _lastTime && combo == _lastCombo && rock == _lastRock) return;
+            _lastTime = time;
+            _lastCombo = combo;
+            _lastRock = rock;
             _band?.Update(time);
+            _scripts?.Update(time, rock, _noteHits.Update(player, time));
             _actors?.Update(time);
-            _crowd?.Update(time);
+            _crowd?.Update(time, rock);
             if (_cameraPath != null && _camera != null && _root != null)
             {
                 var pose = _cameraPath.Sample(_timeline, time);
@@ -90,6 +115,10 @@ internal sealed class GameplayStage
                 _camera.fieldOfView = pose.FieldOfView;
             }
             _effects.Update(_timeline, time);
+            _particles?.Update(time);
+            _movies?.Update(time);
+            _screenEffects?.Update(time);
+            _outlines?.Update(time);
             _handFire?.Update(time, combo);
             if (_camera != null && _assets != null)
                 foreach (var mesh in _assets.TransparentMeshes) mesh.Update(_camera);
@@ -155,7 +184,7 @@ internal sealed class GameplayStage
             _camera.transform.localPosition = StageAssets.Vector(_assets.Definition.CameraPosition);
             _camera.transform.LookAt(_root.transform.position + StageAssets.Vector(_assets.Definition.CameraTarget));
             _crowd = new StageCrowd();
-            _crowd.Load(Path.Combine(library, "crowd"), _assets, _root, _camera);
+            _crowd.Load(Path.Combine(library, "crowd"), _assets, _root, _camera, pack.Crowd);
             var performance = StagePerformance.Load(Path.Combine(library, "direction", "performance.json"));
             var entry = GlobalVariables.instance?.currentSongEntry;
             try
@@ -169,17 +198,41 @@ internal sealed class GameplayStage
                 MelonLogger.Warning($"GH3 stage cues could not load: {error.Message}");
             }
             _band.SetTimeline(Path.Combine(library, "direction"), _timeline, pack.Waypoints, performance);
+            _actors.SetTimeline(_timeline);
+            _audio = StageAudio.Load(Path.Combine(library, "audio"), _timeline, pack.Id, GlobalVariables.instance?.isPracticeEnabled == true);
+            var stageLighting = lighting == null ? null : new StageLighting(lighting, _timeline);
+            _scripts = StageScripts.Load(_directory, library, _assets, _fixtures, _actors, stageLighting, _timeline, pack.Id);
+            if (_scripts != null)
+            {
+                _scripts.State.ParticleView = (position, visibility, time) =>
+                {
+                    var prior = _cameraPath.Sample(_timeline, time - 1.0 / 60);
+                    var planes = StageParticleVisibility.Planes(prior, _cameraPath.Aspect, _camera.nearClipPlane, _camera.farClipPlane);
+                    return (System.Numerics.Vector3.Distance(position, _cameraPath.Sample(_timeline, time).Position), visibility.Test(planes));
+                };
+                _particles = new(_scripts, _assets, _root, _camera, Layer, Path.Combine(library, "render", "particle.bundle"));
+                _movies = new(_assets, _scripts);
+                var shaders = Path.Combine(library, "render", "screen-color.bundle");
+                if (File.Exists(shaders)) _screenEffects = new(_scripts, _camera, shaders);
+                else MelonLogger.Warning("GH3 stage screen shaders are missing. Run prepare-stage-shaders.py.");
+                var outlines = Path.Combine(library, "render", "outline.bundle");
+                if (File.Exists(outlines)) _outlines = new(_scripts, _camera, _assets, _actors, outlines);
+            }
+            _crowd.SetTimeline(_timeline);
             _effects = new StageEffects(_assets, _root, _camera, Layer,
-                lighting == null ? null : new StageLighting(lighting, _timeline), _fixtures, pack.Effects);
+                stageLighting, _fixtures, pack.Effects) { SourcePyro = _scripts?.State.SourcePyro == true };
             _handFire = StageHandFire.Load(Path.Combine(library, "hand-fire"), _assets, _root, _camera, Layer, _band);
             MelonLogger.Msg($"GH3 stage loaded: {_assets.Definition.Name}");
             MelonLogger.Msg($"GH3 stage cues: {_timeline.CueCount} from {_timeline.Source}; {_timeline.Effects.Length} effects");
+            foreach (var diagnostic in _timeline.Diagnostics) MelonLogger.Msg(diagnostic);
+            if (_timeline.NativeSong is { } nativeSong)
+                MelonLogger.Msg($"GH3 native cameras (first 8): {string.Join(", ", nativeSong.Notes("cameras").Take(8).Select(note => $"{note.Time}:{note.Note}:{note.Length}"))}");
         }
         catch (Exception error)
         {
             Reset();
             _attempted = true;
-            MelonLogger.Warning($"GH3 stage could not load: {error.Message}");
+            MelonLogger.Warning($"GH3 stage could not load: {error}");
         }
     }
 }

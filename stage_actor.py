@@ -1,8 +1,11 @@
 """Compile ordinary glTF skeletons and looping stage-prop animations."""
 
 import struct
+import json
+import re
 
 import numpy as np
+from gh3_formats import key
 
 from stage_gltf import GlbReader, REFLECTION, VERTEX, matrix_quaternion, transform_matrix
 from gh3_mesh_cutout import alpha_region, trim_mesh
@@ -60,8 +63,15 @@ def compile_actor(path, folder, material_import, mesh_write, mesh_split):
     meshes = trimmed
     if not meshes: raise ValueError("Actor alpha masks remove all geometry")
     mesh_write(folder, meshes, materials, skinned=True)
+    bones = {}
+    for index, joint in enumerate(joints):
+        name = glb.data["nodes"][joint].get("name", f"joint-{index}")
+        checksum = int(name[5:], 16) if re.fullmatch(r"bone-[0-9a-f]{8}", name) else key(name)
+        if f"{checksum:08x}" in bones: raise ValueError("Actor bone names have the same checksum")
+        bones[f"{checksum:08x}"] = index
+    (folder/"bones.json").write_text(json.dumps(bones, indent=2)+"\n")
     animations = glb.data.get("animations", [])
-    if len(animations) > 16: raise ValueError("Actor has too many animation clips")
+    if len(animations) > 256: raise ValueError("Actor has too many animation clips")
     names = [a.get("name", f"clip-{i}") for i,a in enumerate(animations)]
     if len(set(names)) != len(names): raise ValueError("Duplicate actor animation names")
     sampled = []

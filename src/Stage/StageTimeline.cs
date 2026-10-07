@@ -25,8 +25,6 @@ internal readonly record struct StageColor(float R, float G, float B)
     };
 }
 
-internal sealed record StageCue(double Time, string Type, string Value = "", double Duration = 0,
-    string Role = "", bool Immediate = false, bool Loop = false, int Count = 1, int DisableArms = 0);
 internal readonly record struct StageLightFrame(double Time, StageColor From, StageColor To, double Blend, bool Strobe, bool Lit)
 {
     public StageColor Sample(double time) => StageColor.Mix(From, To, Blend <= 0 ? 1 : (time - Time) / Blend);
@@ -39,20 +37,63 @@ internal sealed class StageTimeline
     public StageCue[] Cameras { get; }
     public int CueCount { get; }
     public string Source { get; }
+    public Gh3Song? NativeSong { get; init; }
+    public string SourceSong { get; init; } = "";
+    public string Countoff { get; init; } = "";
+    private readonly string[] _commandDiagnostics;
+    private IReadOnlyList<string> _diagnostics = Array.Empty<string>();
+    public IReadOnlyList<string> Diagnostics
+    {
+        get => _commandDiagnostics.Concat(_diagnostics).Distinct().ToArray();
+        init => _diagnostics = value;
+    }
     public IReadOnlyDictionary<string, string> ChannelSources { get; init; } = new Dictionary<string, string>();
     public StageCue[] Cues { get; }
+    public StageCue[] PlaybackCues { get; }
     public double[] Beats { get; }
     private readonly Dictionary<string, StageCue[]> _tracks;
 
     public StageTimeline(IEnumerable<StageCue> cues, string source)
     {
         Source = source;
-        var ordered = cues.OrderBy(cue => cue.Time).ToArray();
-        if (ordered.Length > 100000 || ordered.Any(cue => !double.IsFinite(cue.Time) || Math.Abs(cue.Time) > 86400 ||
-                !double.IsFinite(cue.Duration) || cue.Duration < 0 || cue.Duration > 86400 || cue.Count is < 1 or > 100 || cue.DisableArms is < 0 or > 2))
+        var authored = cues.OrderBy(cue => cue.Time).ToArray();
+        var diagnostics = new Dictionary<string, int>();
+        void Report(string message) => diagnostics[message] = diagnostics.GetValueOrDefault(message) + 1;
+        var playback = new List<StageCue>();
+        foreach (var cue in authored)
+        {
+            if (cue.Type != "gh3-script")
+            {
+                playback.Add(cue);
+                if (AudioNote(cue) is { } audio)
+                {
+                    playback.Add(audio);
+                    continue;
+                }
+                if (cue.Type is "vocal" or "crowd" or "gh3-scripts-note" or "gh3-triggers-note" ||
+                    cue.Type == "gh3-note" && (!int.TryParse(cue.Value, out var light) || FromGh3Note(cue.Time, light) == null) ||
+                    cue.Type == "fret" && (!int.TryParse(cue.Value, out var fret) || fret is not (>= 101 and <= 110) and not (>= 118 and <= 127)) ||
+                    cue.Type == "drum" && (!int.TryParse(cue.Value, out var drum) || drum is not (>= 36 and <= 45) and not (>= 48 and <= 57)))
+                    Report($"GH3 {cue.Type} note {cue.Value}: no playback handler");
+                continue;
+            }
+            var call = Gh3ScriptEvent.Decode(cue.Value);
+            var result = Gh3CommandDispatch.Resolve(call);
+            if (result.Status != "implemented")
+                Report($"GH3 {call.Track} {result.Name}: {result.Status}; {string.Join(" ", result.Gaps)}");
+            if (result.Type.Length > 0)
+                playback.Add(new(cue.Time, result.Type, result.Value, Role: result.Role, Immediate: result.Immediate,
+                    Loop: result.Loop, Count: result.Count, DisableArms: result.DisableArms));
+        }
+        _commandDiagnostics = diagnostics.Select(item => $"{item.Key} ({item.Value} events; source data retained).").ToArray();
+        var ordered = playback.ToArray();
+        if (authored.Length > 100000 || authored.Concat(ordered).Any(cue => !double.IsFinite(cue.Time) || Math.Abs(cue.Time) > 86400 ||
+                !double.IsFinite(cue.Duration) || cue.Duration < 0 || cue.Duration > 86400 || cue.Count is < 1 or > 100 ||
+                cue.DisableArms is < 0 or > 2 || cue.Velocity is < 0 or > 127))
             throw new InvalidDataException("Invalid stage cue time or count");
-        CueCount = ordered.Length;
-        Cues = ordered;
+        CueCount = authored.Length;
+        Cues = authored;
+        PlaybackCues = ordered;
         Beats = ordered.Where(cue => cue.Type == "beat").Select(cue => cue.Time).Distinct().ToArray();
         _tracks = ordered.GroupBy(cue => cue.Type + "/" + cue.Role).ToDictionary(g => g.Key, g => g.ToArray());
         Cameras = ordered.Where(cue => cue.Type is "camera" or "gh3-camera").ToArray();
@@ -63,7 +104,7 @@ internal sealed class StageTimeline
         var lights = new List<StageLightFrame>();
         var mood = "intro";
         string? colorOverride = null;
-        var blend = 0.3;
+        var blend = Gh3CommandDispatch.DefaultLightBlend;
         var snapshot = 0;
         var strobe = false;
         var lit = true;
@@ -108,6 +149,28 @@ internal sealed class StageTimeline
     }
 
     public StageCue[] Track(string type, string role = "") => _tracks.GetValueOrDefault(type + "/" + role, Array.Empty<StageCue>());
+
+    public static StageCue? AudioNote(StageCue cue)
+    {
+        if (!int.TryParse(cue.Value, out var note)) return null;
+        string command;
+        var parameters = new List<Gh3QbField>();
+        if (cue.Type == "drum" && note == 70) command = "Countoff_NoteMap";
+        else if (cue.Type == "crowd" && note is >= 72 and <= 80)
+        {
+            command = "GH3_Crowd_Event_Listener";
+            parameters.Add(new(Gh3Checksum.Value("event_type"), new(13, -1, Gh3Checksum.Value(new[] { "applause", "surge_fast", "surge_slow" }[(note - 72) % 3]))));
+            if (note is <= 74 or >= 78) parameters.Add(new(Gh3Checksum.Value("override_state"), new(1, -1, 1u)));
+        }
+        else return null;
+        parameters.Add(new(Gh3Checksum.Value("velocity"), new(1, -1, (uint)(cue.Velocity ?? 100))));
+        parameters.Add(new(Gh3Checksum.Value("length"), new(1, -1, (uint)Math.Round(cue.Duration * 1000))));
+        var call = new Gh3ScriptEvent(cue.Type == "drum" ? "drums" : "crowd", new(10, -1, new[] {
+            new Gh3QbField(Gh3Checksum.Value("time"), new(1, -1, unchecked((uint)(int)Math.Round(cue.Time * 1000)))),
+            new Gh3QbField(Gh3Checksum.Value("scr"), new(13, -1, Gh3Checksum.Value(command))),
+            new Gh3QbField(Gh3Checksum.Value("params"), new(10, -1, parameters)) }));
+        return new(cue.Time, "gh3-audio", call.Encode());
+    }
 
     public static int UpperBound<T>(IReadOnlyList<T> values, double time, Func<T, double> getTime)
     {
@@ -184,12 +247,16 @@ internal sealed class StageTimeline
         60 => new(time, "strobe-toggle"),
         >= 61 and <= 69 => new(time, "color", new[] { "purple", "orange", "off", "magenta", "white", "yellow", "blue", "red", "green" }[note - 61]),
         >= 70 and <= 76 => new(time, "lighting", new[] { "strobe", "flare", "blackout", "solo", "chorus", "verse", "intro" }[note - 70]),
-        >= 39 and <= 53 => new(time, "blend", new[] { "0.3", "0", "0.05", "0.1", "0.15", "0.2", "0.25", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1" }[note - 39]),
+        >= 39 and <= 53 => new(time, "blend", new[] { "0.15", "0", "0.05", "0.1", "0.15", "0.2", "0.25", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1" }[note - 39]),
         _ => null
     };
 
     public static StageCue? FromText(double time, string text)
     {
+        var exact = text.Trim();
+        if (exact.StartsWith('[') && exact.EndsWith(']')) exact = exact[1..^1].Trim();
+        if (exact.StartsWith("gh3 ", StringComparison.OrdinalIgnoreCase))
+            return new(time, "gh3-script", Gh3ScriptEvent.Decode(exact[4..]).Encode());
         var value = text.Trim().Trim('[', ']').Trim().ToLowerInvariant();
         if (value is "bonusfx" or "bonusfx_optional") return new(time, "pyro");
         if (value.StartsWith("lighting (") && value.EndsWith(")"))

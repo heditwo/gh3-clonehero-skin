@@ -13,6 +13,8 @@ internal sealed class StageEventFile
     public string[] ClearChannels { get; set; } = Array.Empty<string>();
     public double OffsetSeconds { get; set; }
     public StageCue[] Events { get; set; } = Array.Empty<StageCue>();
+    public string SourceSong { get; set; } = "";
+    public string Countoff { get; set; } = "";
 }
 
 internal sealed record StageChartData(StageTimeline Timeline, StageCue[] Direction, StageCue[] Strums, StageCue[] Timing);
@@ -32,13 +34,17 @@ internal sealed class StageSongEntry
 
 internal static class StageChartReader
 {
-    private sealed record TickCue(long Tick, string Text, int Note = -1, string Type = "", string Role = "", long Length = 0);
+    private sealed record TickCue(long Tick, string Text, int Note = -1, string Type = "", string Role = "", long Length = 0, int? Velocity = null);
     private sealed record Tempo(long Tick, double Microseconds);
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     public static StageTimeline Load(string songDirectory, string chartPath, string? library = null, string title = "", string artist = "",
         StagePerformance? performance = null)
     {
+        var native = Directory.Exists(songDirectory) ? Directory.EnumerateFiles(songDirectory)
+            .Where(path => path.EndsWith("_song.pak.xen", StringComparison.OrdinalIgnoreCase)).ToArray() : Array.Empty<string>();
+        if (native.Length > 1) throw new InvalidDataException("The song folder contains more than one native GH3 song PAK.");
+        if (native.Length == 1) return StageNativeSong.Load(native[0]);
         var sidecar = Path.Combine(songDirectory, "stage-events.json");
         var file = File.Exists(sidecar) ? ReadEventFile(sidecar) : null;
         if (file?.Version == 1) return EventTimeline(file, sidecar);
@@ -61,15 +67,10 @@ internal static class StageChartReader
         if (original == null) return timeline;
         var venue = timeline.Cues.Where(c => c.Type is not ("strum" or "beat" or "tempo")).ToArray();
         if (venue.Length == 0) return original;
-        static string Channel(StageCue cue) => cue.Type switch
-        {
-            "camera" or "gh3-camera" => "camera",
-            "lighting" or "color" or "blend" or "snapshot" or "strobe-toggle" => "lighting",
-            "gh3-note" => cue.Value == "56" ? "pyro/" : "lighting",
-            _ => cue.Type + "/" + cue.Role
-        };
+        static string Channel(StageCue cue) => StageSongDirection.Channel(cue) ?? cue.Type + "/" + cue.Role;
         var overridden = venue.Select(Channel).ToHashSet();
-        return new StageTimeline(original.Cues.Where(c => !overridden.Contains(Channel(c))).Concat(venue), original.Source + " + " + timeline.Source);
+        return new StageTimeline(original.Cues.Where(c => !overridden.Contains(Channel(c))).Concat(venue), original.Source + " + " + timeline.Source)
+            { SourceSong = original.SourceSong, Countoff = original.Countoff };
     }
 
     private static StageTimeline? ReadOriginal(string? library, string title, string artist)
@@ -114,10 +115,12 @@ internal static class StageChartReader
     private static void ValidateEventFile(StageEventFile? file)
     {
         if (file == null || file.Version is not (1 or 2) || !double.IsFinite(file.OffsetSeconds) || file.Events == null ||
+            file.SourceSong == null || file.SourceSong.Length > 128 || file.Countoff == null || file.Countoff.Length > 128 ||
             file.Events.Length > 100000 || file.Events.Any(cue => cue == null))
             throw new InvalidDataException("Invalid stage event file");
         var types = new HashSet<string> { "pyro", "sparks", "fireworks", "smoke", "flash", "lighting", "color", "blend", "snapshot", "strobe-toggle", "gh3-note", "camera",
-            "gh3-camera", "fret", "drum", "vocal", "crowd", "stance", "perform", "face", "clip", "walk", "strum-style", "arms", "strum", "beat", "tempo" };
+            "gh3-camera", "gh3-script", "gh3-scripts-note", "gh3-triggers-note", "fret", "drum", "vocal", "crowd", "stance", "perform", "face", "clip", "walk", "strum-style", "arms", "strum", "beat", "tempo",
+            "stage-diver", "actor-play", "actor-hide", "actor-show", "crowd-lighters", "crowd-animation", "crowd-hand", "gh3-audio" };
         if (file.Events.Any(cue => !types.Contains(cue.Type) || cue.Value == null || cue.Role == null ||
                 cue.Type == "gh3-note" && (!int.TryParse(cue.Value, out var note) || note < 0 || note > 127) ||
                 cue.Type == "arms" && cue.Value is not ("0" or "1" or "2")))
@@ -128,7 +131,7 @@ internal static class StageChartReader
 
     private static StageTimeline EventTimeline(StageEventFile file, string path)
     {
-        try { return new(file.Events.Select(cue => cue with { Time = cue.Time + file.OffsetSeconds }), Path.GetFileName(path)); }
+        try { return new(file.Events.Select(cue => cue with { Time = cue.Time + file.OffsetSeconds }), Path.GetFileName(path)) { SourceSong = file.SourceSong, Countoff = file.Countoff }; }
         catch (InvalidDataException error) { throw new InvalidDataException($"{path}: {error.Message}", error); }
     }
 
@@ -166,8 +169,20 @@ internal static class StageChartReader
                 var bpm = double.Parse(right[2..], CultureInfo.InvariantCulture);
                 tempos.Add(new Tempo(tick, 60000000000 / bpm));
             }
-            else if (section == "Events" && right.StartsWith("E \"") && right.EndsWith('"'))
-                cues.Add(new TickCue(tick, right[3..^1]));
+            else if (right.StartsWith("E "))
+            {
+                var value = right[2..].Trim();
+                if (value.StartsWith('"') && value.EndsWith('"') && value.Length >= 2) value = value[1..^1];
+                if (section == "Events" || DirectionTrack(section).Length > 0 || Gh3Text(value)) cues.Add(new TickCue(tick, value));
+            }
+            else if (DirectionTrack(section) is { Length: > 0 } direction && right.StartsWith("N "))
+            {
+                var fields = right.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (fields.Length != 3 || !int.TryParse(fields[1], out var note) || note is < 0 or > 127 ||
+                    !long.TryParse(fields[2], out var length) || length < 0)
+                    throw new InvalidDataException($"Invalid {section} direction note at tick {tick}");
+                cues.Add(new TickCue(tick, "", note, direction, Length: length));
+            }
             else if (section is "ExpertSingle" or "ExpertDoubleBass" or "ExpertDoubleRhythm" && right.StartsWith("N "))
             {
                 var fields = right.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -180,6 +195,25 @@ internal static class StageChartReader
     }
 
     public static StageTimeline ReadMidi(byte[] data) => ParseMidi(data).Timeline;
+
+    private static string DirectionTrack(string name)
+    {
+        name = name.Trim().ToUpperInvariant();
+        if (name == "GH3 VENUE") return "gh3-note";
+        if (name.StartsWith("GH3 ", StringComparison.Ordinal)) name = name[4..];
+        return name switch
+        {
+            "LIGHTSHOW" => "gh3-note",
+            "CAMERAS" => "gh3-camera",
+            "ANIMS" or "ANIM" => "fret",
+            "DRUMS" => "drum",
+            "PERFORMANCE" => "vocal",
+            "CROWD" => "crowd",
+            "SCRIPTS" => "gh3-scripts-note",
+            "TRIGGERS" => "gh3-triggers-note",
+            _ => ""
+        };
+    }
 
     private static StageChartData ParseMidi(byte[] data)
     {
@@ -245,7 +279,7 @@ internal static class StageChartReader
                     {
                         if (!active.TryGetValue(noteKey, out var starts)) active[noteKey] = starts = new();
                         starts.Enqueue(trackCues.Count);
-                        trackCues.Add(new TickCue(tick, "", first));
+                        trackCues.Add(new TickCue(tick, "", first, Velocity: second));
                     }
                     else if ((status & 0xF0) == 0x80 || (status & 0xF0) == 0x90 && second == 0)
                     {
@@ -258,14 +292,10 @@ internal static class StageChartReader
                 }
                 else throw new InvalidDataException("Unsupported MIDI status");
             }
-            var gh3 = trackName is "LIGHTSHOW" or "GH3 VENUE";
-            var venue = gh3 || trackName is "VENUE" or "EVENTS";
-            if (venue) cues.AddRange(trackCues.Where(cue => cue.Note < 0 || gh3));
-            var direction = trackName.Replace("GH3 ", "") switch
-            {
-                "CAMERAS" => "gh3-camera", "ANIM" => "fret", "DRUMS" => "drum", "PERFORMANCE" => "vocal", "CROWD" => "crowd", _ => ""
-            };
+            if (trackName is "VENUE" or "EVENTS") cues.AddRange(trackCues.Where(cue => cue.Note < 0));
+            var direction = DirectionTrack(trackName);
             if (direction.Length > 0) cues.AddRange(trackCues.Select(c => c with { Type = direction }));
+            else if (trackName is not ("VENUE" or "EVENTS")) cues.AddRange(trackCues.Where(c => c.Note < 0 && Gh3Text(c.Text)));
             if (trackName is "PART GUITAR" or "PART BASS" or "PART RHYTHM")
                 cues.AddRange(trackCues.Where(c => c.Note is >= 96 and <= 100).Select(c => c with
                 {
@@ -274,6 +304,8 @@ internal static class StageChartReader
         }
         return ConvertTicks(cues, tempos, resolution, 0, "notes.mid");
     }
+
+    private static bool Gh3Text(string text) => text.Trim().TrimStart('[').TrimStart().StartsWith("gh3 ", StringComparison.OrdinalIgnoreCase);
 
     private static StageChartData ConvertTicks(List<TickCue> cues, List<Tempo> tempos, int resolution, double offset, string source)
     {
@@ -312,7 +344,8 @@ internal static class StageChartReader
                 rate = change.Microseconds;
             }
             var time = seconds + (cue.Tick - lastTick) * rate / (resolution * 1000000.0);
-            var converted = cue.Type.Length > 0 && cue.Note >= 0 ? new StageCue(time, cue.Type, cue.Note.ToString(), Seconds(checked(cue.Tick + cue.Length)) - time, cue.Role) :
+            var converted = cue.Type.Length > 0 && cue.Note >= 0 ? new StageCue(time, cue.Type, cue.Note.ToString(CultureInfo.InvariantCulture),
+                Seconds(checked(cue.Tick + cue.Length)) - time, cue.Role, Velocity: cue.Velocity) :
                 cue.Note >= 0 ? StageTimeline.FromGh3Note(time, cue.Note) : StageTimeline.FromText(time, cue.Text);
             if (converted != null) (cue.Type == "strum" ? noteStrums : output).Add(converted);
         }

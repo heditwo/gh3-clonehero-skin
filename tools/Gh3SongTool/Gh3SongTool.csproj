@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/Native/*.cs" Link="Native/%(Filename)%(Extension)" />
+    <Compile Include="../../src/Stage/StageCue.cs" Link="StageCue.cs" />
+    <Compile Include="../../src/Stage/StageGh3Events.cs" Link="StageGh3Events.cs" />
+  </ItemGroup>
+</Project>

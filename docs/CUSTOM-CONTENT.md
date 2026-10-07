@@ -2,9 +2,13 @@
 
 ## Status
 
+The authoring target is Moonscraper's chart workflow with complete GH3 data and behavior. Native archive files are reference inputs and a possible export target; authors do not need to edit or distribute PAK files. See [MOONSCRAPER.md](MOONSCRAPER.md) for the format audit and remaining work.
+
+Build **0.8.113** reads standard direction-note tracks from `.chart` and MIDI. It also includes an optional native-PAK reader and a byte-preserving camera edit tool for compatibility checks. See [NATIVE-GH3.md](NATIVE-GH3.md). The formats below describe the existing converted-content implementation, not a complete GH3 authoring contract.
+
 Build **0.8.112** implements the stage-pack importer, common loader, and version 2 song direction. All ten GH3 performance venues use the common loader. See [STAGE-PACKS.md](STAGE-PACKS.md) for installation, authoring tools, supported GLB features, and public scenery extensions. Skin-pack import still requires implementation. Playback uses the shared default skins and supports both song-event versions described in [STAGES.md](STAGES.md).
 
-The fixed standard is **the original GH3 skeletons and animation library**. A custom character is a skin for one of those rigs. Stages supply the setting and camera shots. Charts select the performance through timed cues.
+The current library uses **four original GH3 skeletons and their animations**. Those profiles are the implemented subset. Full character compatibility must also cover native profile choices, instrument packages, and their animation references. Stages supply the setting and camera shots. Charts select the performance through timed cues.
 
 ## 1. Data ownership
 
@@ -95,6 +99,7 @@ The manifest is `stage-pack.json`. Example: [stage-pack.json](examples/custom-co
 | `lighting` | No | Relative path to a lighting bank; omission selects the shared basic fill-light preset |
 | `effects` | No | Effect name to a list of emitter transforms; default `{}` |
 | `actors` | No | Named animated scenery models; see [STAGE-PACKS.md](STAGE-PACKS.md#animated-scenery); default `{}` |
+| `crowd` | No | Crowd profile, model, and yaw entries; see [crowd and scenery visibility](STAGE-PACKS.md#crowd-and-scenery-visibility); default shared assignments |
 
 A transform has `position` and `rotation`. Performer placement has unit scale. A performer's root, instrument, and moving props use the same placement transform. The drummer's fixed kit reference uses the drummer placement. The scenery contains any matching static kit geometry.
 
@@ -182,8 +187,13 @@ The event fields remain `time`, `type`, `value`, `duration`, `role`, `immediate`
 | `color`, `blend`, `snapshot`, `strobe-toggle` | Existing GH3 lightshow values where applicable | Change lightshow state |
 | `pyro`, `sparks`, `fireworks`, `smoke`, `flash` | Effect type; optional `duration` | Trigger the shared effect at stage locations |
 | `tempo`, `beat` | BPM in `value` for `tempo` | Supply timing when the chart has no timing data |
+| `crowd-lighters` | `start`, `stop`, `on`, or `off` in `value` | Start/stop the performance monitor, or directly change lighter-mesh visibility |
+| `crowd-animation` | `idle`, `special`, or `starpower` in `value`; optional crowd `role` | Replace the selected crowd animation loop; an empty role calls all eight profiles with source frame waits |
+| `crowd-hand` | `left/clap`, `right/lighter`, or another side/type pair; optional crowd `role` | Select `clap`, `lighter`, `rock`, or `fist`; an empty role changes all members |
 
 Original numeric `gh3-camera` and `gh3-note` cues remain import-compatible. They resolve through the shared GH3 note mappings into the same channels as named cues. The drum-animation map is distinct from a Clone Hero `PART DRUMS` gameplay chart. Conversion of gameplay drum notes must use an explicit mapping.
+
+Crowd roles are `crowd1` through `crowd8`; they are separate from band roles. Crowd controls require build 0.8.115 and the version 2 crowd library. A `gh3-script` value can retain an entire original command row instead of using these convenience cue types. See [event coverage](GH3-EVENT-COVERAGE.md) for the typed text format and playback limits.
 
 The library supplies a catalog of valid stances, actions, styles, and clip IDs for each profile. The initial profiles have different capabilities: for example, the drummer has idle groups rather than guitarist jump groups. A cue must select an action from the target role's catalog. If the current stance has no variation for a valid action, the shared GH3 fallback rules select an idle. The importer reports unresolved original clip references.
 
@@ -214,6 +224,7 @@ A source with events for a channel replaces that channel for the whole song. It 
 | `lighting` | All lightshow state cues, including lighting `gh3-note` values |
 | `pyro`, `sparks`, `fireworks`, `smoke`, `flash` | The matching effect; GH3 note 56 belongs to `pyro` |
 | `timing` | `tempo`, `beat` |
+| `crowd-control` | `crowd-lighters`, `crowd-animation`, `crowd-hand`, and handled original crowd commands |
 
 Two channels have source rules that preserve the playable chart:
 

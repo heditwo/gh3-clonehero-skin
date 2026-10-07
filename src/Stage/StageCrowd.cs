@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using MelonLoader;
 using UnityEngine;
@@ -6,27 +5,38 @@ using UnityEngine.Rendering;
 
 namespace Gh3Skin;
 
-internal sealed class CrowdDefinition
-{
-    public int Version { get; set; }
-    public string[] Models { get; set; } = Array.Empty<string>();
-}
-
 internal sealed class StageCrowd : IDisposable
 {
+    private sealed class Player
+    {
+        public string Role = "";
+        public Transform[] Bones = Array.Empty<Transform>();
+        public BandAnimation Animation = null!;
+        public double Phase;
+        public BandPose[] Pose = Array.Empty<BandPose>();
+        public BandPose[] Previous = Array.Empty<BandPose>();
+        public CrowdAnimationPlayer? Performance;
+        public Dictionary<string, GameObject> Hands = new();
+    }
     public const int Layer = 29;
     private const int Columns = 8;
     private const int Rows = 3;
     private const float CellWidth = 1.4f;
     private const float CellHeight = 2.4f;
     private readonly List<StageAssets> _assets = new();
-    private readonly List<(Transform[] Bones, BandAnimation Animation, double Phase)> _players = new();
+    private readonly List<Player> _players = new();
+    private readonly Dictionary<string, PerformanceClip> _clips = new();
+    private StageCrowdState? _state;
+    private CrowdDefinition? _definition;
+    private StageAssets? _stage;
+    private string _directory = "";
     private GameObject? _root;
     private RenderTexture? _atlas;
     private Camera? _camera;
 
-    public void Load(string directory, StageAssets stage, GameObject root, Camera stageCamera)
+    public void Load(string directory, StageAssets stage, GameObject root, Camera stageCamera, StageCrowdMember[] members)
     {
+        _stage = stage;
         var path = Path.Combine(directory, "crowd.json");
         if (stage.CrowdMaterials.Count == 0) return;
         if (!File.Exists(path))
@@ -34,12 +44,9 @@ internal sealed class StageCrowd : IDisposable
             MelonLogger.Warning("GH3 crowd animations are missing. Run prepare-crowd.py and install.sh.");
             return;
         }
-        var definition = JsonSerializer.Deserialize<CrowdDefinition>(File.ReadAllText(path),
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-        if (definition?.Version != 1 || definition.Models.Length is < 1 or > 8 ||
-            definition.Models.Distinct().Count() != definition.Models.Length ||
-            definition.Models.Any(name => name.Length is < 1 or > 64 || name.Any(c => !char.IsLetterOrDigit(c) && c != '_')))
-            throw new InvalidDataException("Invalid crowd definition");
+        var definition = CrowdDefinition.Load(path);
+        _definition = definition;
+        _directory = directory;
         _root = new GameObject("GH3 Crowd Atlas") { layer = Layer };
         _root.transform.SetParent(root.transform, false);
         _root.transform.localPosition = new Vector3(0, 256, 0);
@@ -53,12 +60,16 @@ internal sealed class StageCrowd : IDisposable
         }
         for (var cell = 0; cell < Columns * Rows; cell++)
         {
-            var model = definition.Models[cell % definition.Models.Length];
+            var member = members.Length == 0 ? null : members[cell % members.Length];
+            var role = member?.Role ?? "crowd" + (cell % 8 + 1);
+            var model = definition.Version == 2 ? member?.Model ?? definition.Members[role].Model : definition.Models[cell % definition.Models.Length];
+            if (!animations.ContainsKey(model)) throw new InvalidDataException($"The crowd library has no model '{model}'. Run prepare-crowd.py.");
             var animation = animations[model];
             var person = new GameObject($"GH3 Crowd {cell}") { layer = Layer };
             person.transform.SetParent(_root.transform, false);
             person.transform.localPosition = new Vector3((cell % Columns - (Columns - 1) * 0.5f) * CellWidth,
                 (Rows - 1 - cell / Columns) * CellHeight + 0.1f, 0);
+            person.transform.localRotation = Quaternion.Euler(0, member?.Yaw ?? 0, 0);
             var bones = new Transform[animation.Parents.Length];
             for (var i = 0; i < bones.Length; i++)
                 bones[i] = new GameObject($"GH3 Crowd {cell} Bone {i}") { layer = Layer }.transform;
@@ -70,17 +81,34 @@ internal sealed class StageCrowd : IDisposable
             var assets = new StageAssets();
             _assets.Add(assets);
             assets.Load(Path.Combine(directory, model), person, Layer, bones);
-            foreach (var skin in person.GetComponentsInChildren<SkinnedMeshRenderer>())
+            void Alpha(StageAssets owner, GameObject target)
             {
-                // The particle shader writes RGB only; this pass supplies the atlas silhouette.
-                var alpha = assets.Own(new Material(alphaShader));
-                alpha.mainTexture = skin.sharedMaterial.mainTexture;
-                alpha.SetInt("_ColorMask", (int)ColorWriteMask.Alpha);
-                alpha.SetInt("unity_GUIZTestMode", (int)CompareFunction.LessEqual);
-                alpha.renderQueue = 3100;
-                skin.sharedMaterials = new Il2CppReferenceArray<Material>(new[] { skin.sharedMaterial, alpha });
+                foreach (var skin in target.GetComponentsInChildren<SkinnedMeshRenderer>())
+                {
+                    // The particle shader writes RGB only; this pass supplies the atlas silhouette.
+                    var alpha = owner.Own(new Material(alphaShader));
+                    alpha.mainTexture = skin.sharedMaterial.mainTexture;
+                    alpha.SetInt("_ColorMask", (int)ColorWriteMask.Alpha);
+                    alpha.SetInt("unity_GUIZTestMode", (int)CompareFunction.LessEqual);
+                    alpha.renderQueue = 3100;
+                    skin.sharedMaterials = new Il2CppReferenceArray<Material>(new[] { skin.sharedMaterial, alpha });
+                }
             }
-            _players.Add((bones, animation, cell * 0.371));
+            Alpha(assets, person);
+            var player = new Player { Role = role, Bones = bones, Animation = animation, Phase = cell * 0.371,
+                Pose = new BandPose[bones.Length], Previous = new BandPose[bones.Length] };
+            foreach (var hand in definition.Hands)
+            {
+                var item = new GameObject("GH3 Crowd " + hand) { layer = Layer };
+                item.transform.SetParent(person.transform, false);
+                var handAssets = new StageAssets();
+                _assets.Add(handAssets);
+                handAssets.Load(Path.Combine(directory, "hands", hand), item, Layer, bones);
+                Alpha(handAssets, item);
+                item.SetActive(hand.EndsWith("-clap", StringComparison.Ordinal));
+                player.Hands.Add(hand, item);
+            }
+            _players.Add(player);
         }
         _atlas = new RenderTexture(Columns * 128, Rows * 256, 24, RenderTextureFormat.ARGB32)
         {
@@ -112,17 +140,60 @@ internal sealed class StageCrowd : IDisposable
             // The atlas already contains alpha-blended color against a transparent background.
             material.SetInt("_SrcBlend", (int)BlendMode.One);
         }
-        Update(0);
+        Update(0, 0.5f);
         MelonLogger.Msg($"GH3 crowd loaded: {definition.Models.Length} models; {_players.Count} animation groups; original GH3 clips");
     }
 
-    public void Update(double time)
+    public void SetTimeline(StageTimeline timeline)
     {
-        foreach (var (bones, animation, phase) in _players)
+        _state = new StageCrowdState(timeline);
+        if (_definition?.Version != 2)
         {
-            var sample = animation.At(Math.Max(0, time) + phase);
-            for (var i = 0; i < bones.Length; i++) Apply(bones[i], animation.Sample(sample, i));
+            if (timeline.PlaybackCues.Any(cue => cue.Type.StartsWith("crowd-", StringComparison.Ordinal)))
+                MelonLogger.Warning("Crowd direction needs the version 2 crowd library. Run prepare-crowd.py and install.sh.");
+            return;
         }
+        for (var index = 0; index < _players.Count; index++)
+        {
+            var player = _players[index];
+            if (player.Bones.Length != _definition.Bones.Length) throw new InvalidDataException("Crowd skeleton does not match the animation library.");
+            player.Performance = new CrowdAnimationPlayer(_definition, player.Role, index, timeline, _state);
+        }
+    }
+
+    public void Update(double time, float rock)
+    {
+        _state?.Update(time, rock);
+        _stage?.SetVisible("crowd-lighters", _state?.VisibleAt(time));
+        foreach (var player in _players)
+        {
+            if (player.Performance != null && _state != null)
+            {
+                player.Performance.Sample(time, player.Pose, player.Previous, player.Animation.BindPose, Clip);
+                for (var bone = 0; bone < player.Bones.Length; bone++) Apply(player.Bones[bone], player.Pose[bone]);
+                var index = StageCrowdState.Member(player.Role);
+                var left = "left-" + _state.HandAt(index, false, time);
+                var right = "right-" + _state.HandAt(index, true, time);
+                foreach (var (hand, item) in player.Hands)
+                {
+                    var active = hand == left || hand == right;
+                    if (item.activeSelf != active) item.SetActive(active);
+                }
+            }
+            else
+            {
+                var sample = player.Animation.At(Math.Max(0, time) + player.Phase);
+                for (var bone = 0; bone < player.Bones.Length; bone++) Apply(player.Bones[bone], player.Animation.Sample(sample, bone));
+            }
+        }
+    }
+
+    private PerformanceClip Clip(string id)
+    {
+        if (_clips.TryGetValue(id, out var clip)) return clip;
+        using var stream = File.OpenRead(Path.Combine(_directory, "clips", id + ".bin.gz"));
+        _clips.Add(id, clip = new PerformanceClip(stream, _definition!.Bones.Length));
+        return clip;
     }
 
     private static void Apply(Transform bone, BandPose pose)
@@ -147,6 +218,10 @@ internal sealed class StageCrowd : IDisposable
         foreach (var assets in _assets) assets.Dispose();
         _assets.Clear();
         _players.Clear();
+        _clips.Clear();
+        _state = null;
+        _definition = null;
+        _stage = null;
         _root = null;
         _camera = null;
         _atlas = null;

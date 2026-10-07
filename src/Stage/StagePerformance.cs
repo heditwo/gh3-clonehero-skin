@@ -140,7 +140,7 @@ internal sealed class PerformancePlayer
         _previous = new BandPose[bind.Length];
         if (member.Bones.Length != bind.Length) throw new InvalidDataException("Performance skeleton mismatch");
         _seed = Convert.ToUInt32(Gh3Checksum.Of(role), 16);
-        _commands = timeline.Cues.Where(c => c.Role == role && c.Type is "stance" or "perform" or "clip").ToArray();
+        _commands = timeline.PlaybackCues.Where(c => c.Role == role && c.Type is "stance" or "perform" or "clip").ToArray();
         _frets = timeline.Track("fret").Where(c => int.TryParse(c.Value, out var note) &&
             (role == "guitarist" ? note is >= 118 and <= 127 : note is >= 101 and <= 110)).ToArray();
         var drums = timeline.Track("drum");

@@ -10,8 +10,9 @@ import numpy as np
 from stage_gltf import GlbReader, GlbWriter, VERTEX
 from stage_pack import compile_stage, load_json, write_json
 from gh3_venue_scripts import literal_positions, script_bytes
-from gh3_formats import key
+from gh3_formats import key, node_prefixes
 from gh3_direction import camera_motion, camera_point
+from gh3_band_formats import remap_animation
 from stage_pack import compile_cameras
 
 
@@ -56,6 +57,67 @@ class StagePackTests(unittest.TestCase):
             np.testing.assert_allclose(packed["uv"],vertices["uv"])
             np.testing.assert_array_equal(faces,[[0,2,1]])
 
+    def test_scenery_visibility_survives_import_and_invalid_edits_preserve_cache(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); source = root/"source"; output = root/"cache"
+            TEMPLATE.create(source)
+            glb = GlbReader(source/"stage.glb")
+            scenery = [node for node in glb.data["nodes"] if "mesh" in node and not node.get("extras", {}).get("gh3FixtureId")]
+            scenery[0].setdefault("extras", {}).update(gh3VisibilityGroup="crowd-lighters", gh3InitiallyVisible=False)
+            def save():
+                writer = GlbWriter(); writer.data = glb.data; writer.binary = bytearray(glb.binary); writer.save(source/"stage.glb")
+            save(); compile_stage(source, output)
+            definition = load_json(output/"stage.json")
+            mesh_count = struct.unpack_from("<I", (output/"meshes.bin").read_bytes(), 8)[0]
+            self.assertEqual(len(definition["visibilityGroups"]), mesh_count)
+            self.assertIn("crowd-lighters", definition["visibilityGroups"])
+            self.assertEqual(definition["hiddenGroups"], ["crowd-lighters"])
+            before = (output/"pack.json").read_bytes()
+            for changes in ({"gh3InitiallyVisible": "false"}, {"gh3VisibilityGroup": ""}, {"gh3VisibilityGroup": 3}):
+                scenery[0]["extras"].update(gh3VisibilityGroup="crowd-lighters", gh3InitiallyVisible=False)
+                scenery[0]["extras"].update(changes)
+                save()
+                with self.assertRaises(ValueError): compile_stage(source, output)
+                self.assertEqual((output/"pack.json").read_bytes(), before)
+
+    def test_stage_crowd_cast_preserves_model_profile_and_orientation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)/"source"; output = Path(temporary)/"cache"
+            TEMPLATE.create(source)
+            manifest = load_json(source/"stage-pack.json")
+            member = {"role": "crowd3", "model": "crowd_prison_01", "yaw": -90}
+            manifest["crowd"] = [member]
+            write_json(source/"stage-pack.json", manifest); compile_stage(source, output)
+            self.assertEqual(load_json(output/"pack.json")["crowd"], [member])
+            for invalid in ([member, member], [{**member, "model": "../crowd"}], [{**member, "role": "guitarist"}], [{**member, "yaw": 4294967206}]):
+                manifest["crowd"] = invalid
+                write_json(source/"stage-pack.json", manifest)
+                with self.assertRaises(ValueError): compile_stage(source, output)
+                self.assertEqual(load_json(output/"pack.json")["crowd"], [member])
+
+    def test_scenery_object_pivots_and_script_data_survive_import(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)/"source"; output = Path(temporary)/"cache"
+            TEMPLATE.create(source)
+            glb = GlbReader(source/"stage.glb")
+            scenery = [node for node in glb.data["nodes"] if "mesh" in node and not node.get("extras", {}).get("gh3FixtureId")]
+            for node in scenery[:2]: node.setdefault("extras", {}).update(gh3Object="moving-sign", gh3ObjectPivot=[1, 2, 3])
+            def save():
+                writer = GlbWriter(); writer.data = glb.data; writer.binary = bytearray(glb.binary); writer.save(source/"stage.glb")
+            save()
+            bank = {"version": 1, "definitions": {f"{key('answer'):08x}": [1, 42]}, "startup": []}
+            write_json(source/"scripts.json", bank)
+            manifest = load_json(source/"stage-pack.json"); manifest["scripts"] = "scripts.json"
+            write_json(source/"stage-pack.json", manifest); compile_stage(source, output)
+            definition = load_json(output/"stage.json")
+            self.assertEqual(definition["objects"], {f"{key('moving-sign'):08x}": {"position": [1, 2, 3], "rotation": [0, 0, 0, 1], "created": True, "script": ""}})
+            self.assertEqual(len(definition["objectIds"]), len(definition["lightGroups"]))
+            self.assertEqual(load_json(output/"scripts.json"), bank)
+            before = (output/"stage.json").read_bytes()
+            scenery[1]["extras"]["gh3ObjectPivot"] = [4, 5, 6]; save()
+            with self.assertRaisesRegex(ValueError, "one pivot"): compile_stage(source, output)
+            self.assertEqual((output/"stage.json").read_bytes(), before)
+
     def test_actor_armature_container_is_baked_into_root_motion(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); source = root/"source"; output = root/"cache"
@@ -70,6 +132,81 @@ class StagePackTests(unittest.TestCase):
             animation = (output/"actors"/actor["id"]/"animation.bin").read_bytes()
             np.testing.assert_allclose(struct.unpack_from("<3f",animation,20),[3,0,-2])
             np.testing.assert_allclose(struct.unpack_from("<3f",animation,56),[3,0,-2])
+
+    def test_actor_actions_and_visibility_keep_clip_references(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)/"source"; output = Path(temporary)/"cache"
+            TEMPLATE.create(source)
+            manifest = load_json(source/"stage-pack.json")
+            actor = next(iter(manifest["actors"].values()))
+            clip = GlbReader(source/actor["model"]).data["animations"][0]["name"]
+            actor.update(role="stage-diver/1", initiallyVisible=False, actions={"jump": [clip, clip]})
+            write_json(source/"stage-pack.json", manifest); compile_stage(source, output)
+            result = load_json(output/"actors.json")["actors"][0]
+            self.assertEqual(result["actions"], {"jump": [0, 0]})
+            self.assertEqual(result["clips"], {clip: 0})
+            self.assertFalse(result["initiallyVisible"])
+            self.assertEqual(result["role"], "stage-diver/1")
+            before = (output/"pack.json").read_bytes()
+            actor["actions"]["jump"] = ["missing"]
+            write_json(source/"stage-pack.json", manifest)
+            with self.assertRaises(ValueError): compile_stage(source, output)
+            self.assertEqual((output/"pack.json").read_bytes(), before)
+
+    def test_scripted_actor_bindings_and_meshless_pivots_survive_compilation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)/"source"; output = Path(temporary)/"cache"
+            TEMPLATE.create(source)
+            manifest = load_json(source/"stage-pack.json")
+            actor = next(iter(manifest["actors"].values()))
+            actor.update(object="dancer", script="dancer_start", created=False, animationEvents="dancer_events", scale=[2, 3, 4])
+            write_json(source/"stage-pack.json", manifest)
+            glb = GlbReader(source/"stage.glb")
+            glb.data["scenes"][0]["nodes"].append(len(glb.data["nodes"]))
+            glb.data["nodes"].append({"name": "pivot", "extras": {"gh3Object": "pivot", "gh3ObjectPivot": [2, 4, 6]}})
+            writer = GlbWriter(); writer.data = glb.data; writer.binary = bytearray(glb.binary); writer.save(source/"stage.glb")
+            compile_stage(source, output)
+            result = load_json(output/"actors.json")["actors"][0]
+            for field in ("object", "script", "created", "animationEvents", "scale"): self.assertEqual(result[field], actor[field])
+            self.assertEqual(load_json(output/"stage.json")["objects"][f"{key('pivot'):08x}"]["position"], [2, 4, 6])
+            before = (output/"actors.json").read_bytes()
+            actor["scale"] = [1, -1, 1]; write_json(source/"stage-pack.json", manifest)
+            with self.assertRaises(ValueError): compile_stage(source, output)
+            self.assertEqual((output/"actors.json").read_bytes(), before)
+
+    def test_script_particle_resources_are_public_and_transactional(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)/"source"; output = Path(temporary)/"cache"
+            TEMPLATE.create(source)
+            (source/"particles").mkdir()
+            Image.new("RGBA", (4, 4), (255, 80, 20, 255)).save(source/"particles/fire.png")
+            bank = {"version": 1, "definitions": {f"{key('nodes'):08x}": [12, []]}, "nodes": ["nodes"], "textures": {"fire": "particles/fire.png"}}
+            write_json(source/"scripts.json", bank)
+            manifest = load_json(source/"stage-pack.json"); manifest["scripts"] = "scripts.json"; write_json(source/"stage-pack.json", manifest)
+            compile_stage(source, output)
+            self.assertEqual((output/"particles/fire.png").read_bytes(), (source/"particles/fire.png").read_bytes())
+            self.assertEqual(load_json(output/"scripts.json"), bank)
+            before = (output/"pack.json").read_bytes()
+            bank["textures"]["fire"] = "../outside.png"; write_json(source/"scripts.json", bank)
+            with self.assertRaises(ValueError): compile_stage(source, output)
+            self.assertEqual((output/"pack.json").read_bytes(), before)
+
+    def test_animation_remapping_matches_names_and_keeps_unanimated_bones(self):
+        rotation = [(0, (0, 0, 0, 1)), (1, (0, 0, 1, 0))]
+        translation = [(0, (1, 2, 3))]
+        clip = (1, {0: rotation, 2: rotation}, {1: translation}, 7)
+        result = remap_animation(clip, [11, 22, 33], [22, 44, 11])
+        self.assertEqual(result, (1, {2: rotation}, {0: translation}, 7))
+        with self.assertRaises(ValueError): remap_animation(clip, [11, 11, 33], [11])
+
+    def test_source_node_prefix_indices_retain_source_order(self):
+        nodes = [{key("Name"): key(name)} for name in ["fan02", "fan04", "fan01", "fan03"]]
+        data = struct.pack(">2I3I4H", key("nodes"), 1, key("fan"), 0, 4, 1, 3, 0, 2)
+        self.assertEqual(node_prefixes(data, {key("nodes"): nodes}), {key("fan"): [key(name) for name in ["fan04", "fan03", "fan02", "fan01"]]})
+        with self.assertRaises(ValueError): node_prefixes(data[:-1], {key("nodes"): nodes})
+        with self.assertRaises(ValueError): node_prefixes(data, {key("nodes"): nodes[:3]})
+        with self.assertRaises(ValueError): node_prefixes(data, {})
 
     def test_manifest_camera_and_fixture_failures_preserve_cache(self):
         with tempfile.TemporaryDirectory() as temporary:

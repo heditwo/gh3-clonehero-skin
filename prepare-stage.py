@@ -88,7 +88,7 @@ def crowd_uvs(vertices, count, faces, seed, stride):
         struct.pack_into("<2f", vertices, vertex*stride+24, (tile % 8+u)/8, 1-(tile//8+1-v)/3)
 
 
-def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, crowd_cards=True):
+def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, crowd_cards=True, include_nodes=()):
     count = values(data, 34, "H")[0]
     end = 32 + word(data, 36)
     offset = 48
@@ -103,6 +103,11 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
             "blend": word(data, offset + 216),
             "cutoff": data[offset + 232] / 255,
         }
+        if materials[name]["template"] == "f76185ad":
+            constant_count, constant_offset = values(data, offset + 168, "II")
+            if constant_count != 4: raise ValueError("Animated texture has an invalid vertex constant bank")
+            columns, rows, fps, frame_offset = [values(data, offset + constant_offset + i*16, "f")[0] for i in range(4)]
+            materials[name]["textureAnimation"] = {"columns": int(columns), "rows": int(rows), "fps": fps, "offset": frame_offset}
         size = word(data, offset + 196)
         if size < 256:
             raise ValueError("Invalid material size")
@@ -124,7 +129,7 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
     meshes = []
     for index in range(mesh_count):
         node = placements.get(index)
-        if node is not None and key("CreatedAtStart") not in node[0]:
+        if node is not None and key("CreatedAtStart") not in node[0] and node.get(key("Name")) not in include_nodes:
             continue
         header = mesh_table + 128 * index
         material = f"{word(data, header + 20):08x}"

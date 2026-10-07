@@ -8,12 +8,12 @@ From build **0.8.111**, all ten GH3 performance venues use the public stage-pack
 | --- | --- | ---: | ---: | ---: |
 | `gh3.party` | Backyard Bash | 186 | 0 | 0 |
 | `gh3.dive` | Mitch's Moose Lounge | 276 | 20 | 0 |
-| `gh3.video` | Video Shoot | 288 | 12 | 0 |
+| `gh3.video` | Video Shoot | 293 | 12 | 0 |
 | `gh3.artdeco` | Ye Olde Royal Odeon | 233 | 17 | 3 |
-| `gh3.prison` | Shanker's Island | 280 | 19 | 1 |
-| `gh3.wikker` | Desert Rock Tour | 314 | 18 | 0 |
-| `gh3.budokan` | Kaiju Megadome | 356 | 71 | 0 |
-| `gh3.hell` | Lou's Inferno | 286 | 19 | 2 |
+| `gh3.prison` | Shanker's Island | 283 | 19 | 1 |
+| `gh3.wikker` | Desert Rock Tour | 317 | 18 | 0 |
+| `gh3.budokan` | Kaiju Megadome | 360 | 71 | 0 |
+| `gh3.hell` | Lou's Inferno | 289 | 19 | 2 |
 | `gh3.soundcheck` | Soundcheck | 194 | 13 | 0 |
 | `gh3.credits` | Credits | 82 | 0 | 0 |
 
@@ -39,7 +39,7 @@ MISE_QUIET=1 python3 export-stage-events.py \
 MISE_QUIET=1 bash install.sh
 ```
 
-To reuse the complete band export from 0.8.110, supply `--existing assets/stages/budokan` to `prepare-library.py`. It copies shared assets, removes venue waypoints and camera data, and resets library placements to the origin.
+To reuse the complete band export from 0.8.110, supply `--existing assets/stages/budokan` to `prepare-library.py`. It copies band, direction, and hand-fire assets, removes venue waypoints and camera data, and resets library placements to the origin. It rebuilds the crowd from the original data.
 
 The paths are:
 
@@ -93,6 +93,28 @@ Additional public material properties are in glTF `extras`:
 
 Fixture mesh nodes set `extras.gh3FixtureId` to a lighting beam ID. Local positive Z is the beam axis. The importer bakes mesh scale. `extras.gh3FixtureFixedPosition: true` keeps the authored housing position while the controller changes its rotation. Other housings follow both position and rotation.
 
+### Crowd and scenery visibility
+
+Build 0.8.115 adds these optional scenery-node properties:
+
+| Property | Meaning |
+| --- | --- |
+| `gh3VisibilityGroup` | Named group controlled by the runtime; `crowd-lighters` receives crowd lighter commands |
+| `gh3InitiallyVisible` | Boolean startup state; default `true`; use `false` for hidden lighter geometry |
+
+All meshes in one group must have the same startup state. These properties apply to scenery, not light fixtures. A stage with no group receives no geometry change. The shared crowd still changes its hands and animation.
+
+The optional `crowd` array in `stage-pack.json` selects up to eight unique profiles for the crowd atlas. Each entry has `role` (`crowd1` through `crowd8`), `model` (a name in the shared crowd library), and `yaw` (degrees in the public stage coordinate system). Atlas cells repeat this list in row order. For example:
+
+```json
+"crowd": [
+  {"role": "crowd1", "model": "crowd_prison_01", "yaw": 0},
+  {"role": "crowd2", "model": "crowd_prison_02", "yaw": 0}
+]
+```
+
+Without the array, the runtime uses the shared profile-to-model assignments. GH3 export supplies the original venue assignments, including prison and biker models and Video Shoot rotations. Art Deco's startup exception is encoded in the exported meshes and visibility state. See [event coverage](GH3-EVENT-COVERAGE.md#crowd-commands-in-08115) for command behavior and remaining fidelity checks.
+
 ### Animated scenery
 
 The optional `actors` object in `stage-pack.json` maps stage-local names to these fields:
@@ -104,10 +126,32 @@ The optional `actors` object in `stage-pack.json` maps stage-local names to thes
 | `clip` | No | Named GLB animation; default is the first clip |
 | `playback` | No | `loop`, or `hold` to retain its first pose; default `loop` |
 | `lightGroup` | No | Stage-local group; default `Stage` |
+| `role` | No | Cue target, such as `stage-diver/1` |
+| `initiallyVisible` | No | Initial visibility for direct actor cues; default `true` |
+| `actions` | No | Action names mapped to ordered lists of GLB clip names |
+| `object` | No | Script object name or hexadecimal checksum |
+| `script` | No | Startup script; requires `object` |
+| `created` | No | Initial script-object creation state; default `true` |
+| `scale` | No | Three positive scale factors; default `[1, 1, 1]` |
+| `animationEvents` | No | Name or checksum of a typed animation-event table |
 
-An actor can use its own scenery rig. This does not change the fixed performer rigs. All actor mesh nodes use the same skin. The importer checks inverse bind matrices, joint hierarchy, unit joint scale, weights, and animation channels. It accepts translation and rotation tracks with `LINEAR` or `STEP` interpolation, sampled at 60 Hz. Clips are at most 120 seconds; there can be at most 16. A model without animation retains its bind pose.
+An actor can use its own scenery rig. All actor mesh nodes use the same skin. The importer checks inverse bind matrices, joint hierarchy, unit joint scale, weights, and animation channels. It accepts translation and rotation tracks with `LINEAR` or `STEP` interpolation, sampled at 60 Hz. Clips are at most 120 seconds; there can be at most 256. The runtime limits an animation file to four million bone poses. A model without animation retains its bind pose.
 
-Loops use the song clock. Pause and seek therefore have the same behavior as stage cameras and lighting. The original dragon, two knights, hammer, and Satan puppet use their idle clips. The prison gas prop retains the first pose of its throw clip until a future venue-event controller can trigger it.
+Loops use the song clock. The test build after 0.8.115 also runs the original actor scripts for guards, dancers, the dragon, knights, hammer, and puppet. These scripts select clips and use their source waits. Animation-event tables map clip checksums to typed arrays of `time` (seconds), `scr`, and `params` rows. A replacement clip cancels pending events from the previous clip. See [event coverage](GH3-EVENT-COVERAGE.md) for the tested behavior and remaining functions.
+
+### Scripted scenery
+
+The optional pack field `scripts` points to a typed script bank with `version: 1`, `definitions`, and `startup`. It can use the same definitions as an imported GH3 venue. A GLB node can define these extras:
+
+| Property | Meaning |
+| --- | --- |
+| `gh3Object` | Object name or checksum |
+| `gh3ObjectPivot` | Source pivot in public stage coordinates |
+| `gh3ObjectRotation` | Source unit quaternion |
+| `gh3ObjectCreated` | Initial creation state; default `true` |
+| `gh3ObjectScript` | Startup script |
+
+Nodes without a mesh can provide attachment pivots. All meshes that share an object ID must share its placement. Runtime object commands use these pivots for movement, rotation, attachments, scaling, and note-hit pulses. Script events use the song clock and rebuild their state on backward seek.
 
 ### Continuous orbit cameras
 
@@ -127,7 +171,7 @@ Each snapshot lists every light and beam. A setting can include `inherit: true` 
 
 All packs use the existing band animation, hand and drum IK, hair, camera, light motion, transparency, and streak-fire systems. They use the same original-song direction library. The main venues retain their source start positions. The credits source has only a guitarist start; its manifest supplies three extra placements for the required four-role band. Soundcheck retains its source off-stage placements for the supporting performers.
 
-The converter reads literal pyro positions and referenced position arrays from the source venue scripts and writes ordinary emitter transforms. The shared burst styles remain approximations. Runtime execution of GH3 scripts is not implemented. Venue-specific encore sequences, stage divers, security and dancer behavior, score-dependent scenery changes, native shaders, and native shadows remain outside this port. Conversion reports list source model nodes so these are visible gaps rather than hidden runtime paths.
+The converter reads literal pyro positions and referenced position arrays from source venue scripts and writes ordinary emitter transforms. The shared burst styles remain approximations. A script interpreter now runs tested audio, actor, and scenery paths in the separate test build. Complete encore sequences, particle functions, native shaders, shadows, and original-game comparisons remain incomplete. Conversion reports and runtime diagnostics retain these gaps.
 
 Skin-pack import remains separate work. Stage packs use the shared default skins. Build 0.8.112 adds version 2 song-channel resolution and retains version 1 complete-timeline replacement. See [song cue sources](STAGES.md#where-cues-come-from).
 

@@ -45,6 +45,14 @@ def skeleton(data):
     return names, parents, positions, rotations
 
 
+def remap_animation(clip, source_names, target_names):
+    source = {name: i for i, name in enumerate(source_names)}
+    if len(source) != len(source_names) or len(set(target_names)) != len(target_names): raise ValueError("Duplicate animation bone names")
+    indices = {source[name]: i for i, name in enumerate(target_names) if name in source}
+    if not indices: raise ValueError("Animation and actor do not share any bones")
+    return clip[0], {indices[i]: frames for i, frames in clip[1].items() if i in indices}, {indices[i]: frames for i, frames in clip[2].items() if i in indices}, clip[3]
+
+
 def animation(data, expected_bones):
     if word(data, 0) != 0 or word(data, 32) != 0x48:
         raise ValueError("Expected a GH3 SKA clip")

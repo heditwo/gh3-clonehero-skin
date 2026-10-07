@@ -155,10 +155,10 @@ internal static class SongDirectionLogicTests
             "\"events\":[{\"time\":0,\"type\":\"perform\",\"value\":\"jump\"}]",
             "\"events\":[{\"time\":0,\"type\":\"strum\",\"role\":\"singer\",\"value\":\"1\"}]",
             "\"events\":[{\"time\":0,\"type\":\"strum\",\"role\":\"guitarist\",\"value\":\"32\"}]",
-            "\"events\":[{\"time\":0,\"type\":\"fret\",\"value\":\"96\"}]",
-            "\"events\":[{\"time\":0,\"type\":\"drum\",\"value\":\"96\"}]",
-            "\"events\":[{\"time\":0,\"type\":\"gh3-note\",\"value\":\"1\"}]",
-            "\"events\":[{\"time\":0,\"type\":\"crowd\",\"value\":\"1\"}]",
+            "\"events\":[{\"time\":0,\"type\":\"fret\",\"value\":\"128\"}]",
+            "\"events\":[{\"time\":0,\"type\":\"drum\",\"value\":\"-1\"}]",
+            "\"events\":[{\"time\":0,\"type\":\"gh3-note\",\"value\":\"128\"}]",
+            "\"events\":[{\"time\":0,\"type\":\"crowd\",\"value\":\"no-note\"}]",
             "\"events\":[{\"time\":0,\"type\":\"tempo\",\"value\":\"NaN\"}]",
             "\"events\":[{\"time\":0,\"type\":\"pyro\",\"immediate\":1}]"
         })

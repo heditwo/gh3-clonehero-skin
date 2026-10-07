@@ -11,6 +11,7 @@ import struct
 import tempfile
 
 import numpy as np
+from PIL import Image
 
 from gh3_formats import key
 from gh3_mesh_cutout import alpha_region, trim_mesh
@@ -150,7 +151,8 @@ def compile_lighting(data):
     fields(data, {"version", "lights", "snapshots", "moods", "colors"}, {"version", "lights", "snapshots", "moods", "colors"})
     if type(data["version"]) != int or data["version"] != 1 or not data["snapshots"] or not data["lights"]: raise ValueError("Invalid lighting bank")
     for light in data["lights"]:
-        fields(light, {"id", "group", "type", "position", "rotation", "overrideColor", "hotspot", "field"}, {"id", "group", "type", "position", "rotation"})
+        fields(light, {"id", "object", "group", "type", "position", "rotation", "overrideColor", "hotspot", "field"}, {"id", "group", "type", "position", "rotation"})
+        if "object" in light and (not isinstance(light["object"], str) or not 1 <= len(light["object"]) <= 256): raise ValueError("Invalid light object identity")
         if light["type"] not in ("Ambient", "Dir", "Point", "Spot"): raise ValueError("Unsupported light type")
         vector(light["position"]); rotation(light["rotation"])
         if type(light.get("overrideColor", False)) != bool: raise ValueError("Invalid light color override flag")
@@ -227,7 +229,21 @@ def import_materials(glb, folder):
         if mode not in ("OPAQUE", "MASK", "BLEND"): raise ValueError("Unsupported material alpha mode")
         materials[name] = {"texture": texture, "blend": 1 if extras.get("gh3Additive") else 2 if mode == "BLEND" else 0,
                            "cutoff": float(material.get("alphaCutoff", 0.5)) if mode == "MASK" else 0,
-                           "crowd": bool(extras.get("gh3CrowdAtlas")), "sortedTransparency": bool(extras.get("gh3SortedTransparency"))}
+                            "crowd": bool(extras.get("gh3CrowdAtlas")), "sortedTransparency": bool(extras.get("gh3SortedTransparency"))}
+        source_material = extras.get("gh3SourceMaterial", material.get("name", "material-"+str(i)))
+        if not isinstance(source_material, str) or not source_material or len(source_material) > 256: raise ValueError("Invalid material identity")
+        materials[name]["source"] = source_material
+        movie_slot = extras.get("gh3MovieSlot", -1)
+        if type(movie_slot) != int or movie_slot < -1 or movie_slot > 31: raise ValueError("Invalid movie texture slot")
+        materials[name]["movieSlot"] = movie_slot
+        if "gh3TextureAnimation" in extras:
+            animation = extras["gh3TextureAnimation"]
+            fields(animation, {"columns", "rows", "fps", "offset"}, {"columns", "rows", "fps", "offset"})
+            if any(type(animation[field]) != int or not 1 <= animation[field] <= 256 for field in ("columns", "rows")):
+                raise ValueError("Invalid texture atlas dimensions")
+            if any(type(animation[field]) not in (int, float) or not math.isfinite(animation[field]) or abs(animation[field]) > 100000 for field in ("fps", "offset")):
+                raise ValueError("Invalid texture animation rate or offset")
+            materials[name]["animation"] = animation
         if materials[name]["crowd"]: materials[name].update(blend=3, cutoff=0.3)
         material_ids[i] = name
     return materials, material_ids, images
@@ -237,13 +253,24 @@ def compile_stage(source, destination):
     source = Path(source).resolve(); manifest = load_json(source/"stage-pack.json")
     destination = Path(destination).resolve()
     if source.is_relative_to(destination): raise ValueError("The compiled pack cannot replace its source")
-    fields(manifest, {"version", "kind", "id", "name", "library", "model", "band", "waypoints", "cameras", "lighting", "effects", "actors"},
+    fields(manifest, {"version", "kind", "id", "name", "library", "model", "band", "waypoints", "cameras", "lighting", "effects", "actors", "crowd", "scripts"},
            {"version", "kind", "id", "name", "library", "model", "band", "cameras"})
     if type(manifest["version"]) != int or manifest["version"] != 1 or manifest["kind"] != "stage" or manifest["library"] != "gh3-band-v1" or not isinstance(manifest["id"],str) or not re.fullmatch(r"[a-z0-9][a-z0-9.-]{0,95}", manifest["id"]):
         raise ValueError("Invalid stage pack identity or version")
     if not isinstance(manifest["name"],str) or not manifest["name"].strip(): raise ValueError("A stage needs a display name")
     if set(manifest["band"]) != ROLES: raise ValueError("A stage needs all four performer placements")
     for placement in manifest["band"].values(): transform(placement)
+    crowd = manifest.get("crowd", [])
+    if not isinstance(crowd, list) or len(crowd) > 8: raise ValueError("Invalid crowd members")
+    roles = set()
+    for member in crowd:
+        fields(member, {"role", "model", "yaw"}, {"role", "model", "yaw"})
+        if not isinstance(member["role"], str) or not re.fullmatch(r"crowd[1-8]", member["role"]) or member["role"] in roles:
+            raise ValueError("Invalid or repeated crowd role")
+        if not isinstance(member["model"], str) or not re.fullmatch(r"[a-zA-Z0-9_]{1,64}", member["model"]):
+            raise ValueError("Invalid crowd model")
+        number(member["yaw"], -360, 360)
+        roles.add(member["role"])
     waypoints = {role+"_start": placement for role, placement in manifest["band"].items()}
     for name, placement in manifest.get("waypoints", {}).items():
         if name in waypoints: raise ValueError("Stage cannot replace a reserved start waypoint")
@@ -275,11 +302,33 @@ def compile_stage(source, destination):
         materials, material_ids, images = import_materials(glb, folder)
         if glb.data.get("animations"): raise ValueError("Put stage animations in an actor GLB")
         default = len(material_ids)-1
-        meshes = []; groups = []; fixtures = []; fixture_models = {}; masks = {}
+        meshes = []; groups = []; visibility = []; hidden = set(); visibility_defaults = {}; fixtures = []; fixture_models = {}; masks = {}
+        object_ids = []; objects = {}
         for node_index, node, world in glb.nodes():
-            if "mesh" not in node: continue
             if "skin" in node: raise ValueError("Skinned stage objects require an actor definition")
             extras = node.get("extras", {}); fixture = extras.get("gh3FixtureId")
+            object_name = extras.get("gh3Object", "")
+            if not isinstance(object_name, str) or len(object_name) > 128: raise ValueError("Invalid scenery object name")
+            object_id = object_name[2:].lower() if re.fullmatch(r"0x[0-9a-fA-F]{8}", object_name) else f"{key(object_name):08x}" if object_name else ""
+            if object_name:
+                pivot = extras.get("gh3ObjectPivot", [0, 0, 0])
+                vector(pivot)
+                orientation = rotation(extras.get("gh3ObjectRotation", [0, 0, 0, 1]))
+                created = extras.get("gh3ObjectCreated", True); script = extras.get("gh3ObjectScript", "")
+                if type(created) != bool or not isinstance(script, str) or len(script) > 256: raise ValueError("Invalid scenery object startup")
+                placement = {"position": pivot, "rotation": orientation, "created": created, "script": script}
+                if objects.setdefault(object_id, placement) != placement: raise ValueError("A scenery object must have one pivot")
+            if "mesh" not in node: continue
+            visibility_group = extras.get("gh3VisibilityGroup", "")
+            initially_visible = extras.get("gh3InitiallyVisible", True)
+            if not isinstance(visibility_group, str) or len(visibility_group) > 128 or type(initially_visible) != bool:
+                raise ValueError("Invalid scenery visibility group")
+            if not initially_visible and not visibility_group: raise ValueError("Hidden scenery needs a visibility group")
+            if visibility_group:
+                if fixture: raise ValueError("Visibility groups apply to scenery, not fixtures")
+                if visibility_defaults.setdefault(visibility_group, initially_visible) != initially_visible:
+                    raise ValueError("A visibility group must have one initial state")
+                if not initially_visible: hidden.add(visibility_group)
             geometry_transform = world
             fixture_rotation = None
             if fixture:
@@ -307,17 +356,69 @@ def compile_stage(source, destination):
                 model = f"{key('mesh-'+str(node['mesh'])+'-'+str(scale.tolist())):08x}"
                 fixture_models.setdefault(model, local_meshes)
                 fixtures.append({"id": id, "model": model, "position": world[:3, 3].tolist(), "rotation": fixture_rotation,
-                                 "fixedPosition": bool(extras.get("gh3FixtureFixedPosition"))})
+                                 "fixedPosition": bool(extras.get("gh3FixtureFixedPosition")), "object": extras.get("gh3FixtureObject", fixture)})
+                if not isinstance(fixtures[-1]["object"], str) or not 1 <= len(fixtures[-1]["object"]) <= 256: raise ValueError("Invalid fixture object name")
             else:
                 meshes.extend(local_meshes)
                 groups.extend([f"{key(extras.get('gh3LightGroup', 'Stage')):08x}"]*len(local_meshes))
+                visibility.extend([visibility_group]*len(local_meshes))
+                object_ids.extend([object_id]*len(local_meshes))
         if not meshes: raise ValueError("Stage has no visible scenery")
         definition = write_meshes(folder, meshes, materials, groups)
         definition["name"] = manifest["name"]
+        definition["visibilityGroups"] = visibility
+        definition["hiddenGroups"] = sorted(hidden.intersection(visibility))
+        definition["objectIds"] = object_ids
+        definition["objects"] = objects
         start = manifest["band"].get("guitarist", next(iter(manifest["band"].values())))["position"]
         definition["cameraPosition"] = [start[0], start[1]+3, start[2]-10]
         definition["cameraTarget"] = [start[0], start[1]+1, start[2]]
         write_json(folder/"stage.json", definition)
+        if "scripts" in manifest:
+            path = relative(source, manifest["scripts"]); inputs.append(path)
+            scripts = load_json(path)
+            fields(scripts, {"version", "definitions", "startup", "nodes", "textures", "performanceChanged", "prefixes", "lightVolumes", "movies"}, {"version", "definitions"})
+            if scripts["version"] != 1 or not isinstance(scripts["definitions"], dict) or len(scripts["definitions"]) > 50000:
+                raise ValueError("Invalid stage script definitions")
+            if any(not re.fullmatch(r"[0-9a-f]{8}", name) or not isinstance(value, list) or len(value) != 2 for name, value in scripts["definitions"].items()):
+                raise ValueError("Invalid typed script value")
+            startup = scripts.get("startup", [])
+            if not isinstance(startup, list) or len(startup) > 256 or any(not isinstance(name, str) or len(name) > 256 for name in startup):
+                raise ValueError("Invalid stage startup scripts")
+            write_json(folder/"scripts.json", scripts)
+            nodes = scripts.get("nodes", [])
+            performance = scripts.get("performanceChanged", "")
+            if not isinstance(performance, str) or len(performance) > 256: raise ValueError("Invalid stage performance script")
+            if not isinstance(nodes, list) or len(nodes) > 256 or any(not isinstance(name, str) or not name or len(name) > 256 for name in nodes):
+                raise ValueError("Invalid stage node arrays")
+            prefixes = scripts.get("prefixes", {})
+            volumes = scripts.get("lightVolumes", {})
+            if not isinstance(volumes, dict) or len(volumes) > 1024 or any(not isinstance(name, str) or not isinstance(beam, str) or not beam or len(beam) > 256 for name, beam in volumes.items()):
+                raise ValueError("Invalid script light volumes")
+            if not isinstance(prefixes, dict) or len(prefixes) > 100000 or any(not isinstance(name, str) or not isinstance(members, list) or
+                any(not isinstance(member, str) or not member or len(member) > 256 for member in members) for name, members in prefixes.items()):
+                raise ValueError("Invalid stage node prefixes")
+            textures = scripts.get("textures", {})
+            if not isinstance(textures, dict) or len(textures) > 2048: raise ValueError("Invalid script texture library")
+            for name, file in textures.items():
+                if not isinstance(name, str) or not name or len(name) > 256: raise ValueError("Invalid script texture name")
+                image = relative(source, file); inputs.append(image)
+                destination_image = folder/image.relative_to(source)
+                if destination_image.exists(): raise ValueError("Script texture replaces another pack file")
+                destination_image.parent.mkdir(parents=True, exist_ok=True)
+                Image.open(image).verify()
+                shutil.copy2(image, destination_image)
+            movies = scripts.get("movies", {})
+            if not isinstance(movies, dict) or len(movies) > 256: raise ValueError("Invalid stage movie library")
+            for name, file in movies.items():
+                if not isinstance(name, str) or not name or len(name) > 256: raise ValueError("Invalid stage movie name")
+                movie = relative(source, file); inputs.append(movie)
+                destination_movie = folder/movie.relative_to(source)
+                if destination_movie.exists(): raise ValueError("Stage movie replaces another pack file")
+                with movie.open("rb") as stream:
+                    if stream.read(8) != b"GH3VID01": raise ValueError("Invalid movie frame bank")
+                destination_movie.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(movie, destination_movie)
         for name, parts in fixture_models.items():
             model_dir = folder/"fixtures"/name
             used = {p[0]: materials[p[0]] for p in parts}
@@ -329,7 +430,7 @@ def compile_stage(source, destination):
         actors = []
         for name, actor in manifest.get("actors", {}).items():
             from stage_actor import compile_actor
-            fields(actor, {"model", "transform", "clip", "lightGroup", "playback"}, {"model", "transform"})
+            fields(actor, {"model", "transform", "clip", "lightGroup", "playback", "role", "initiallyVisible", "actions", "object", "script", "created", "scale", "animationEvents"}, {"model", "transform"})
             transform(actor["transform"])
             model = relative(source, actor["model"]); inputs.append(model)
             id = f"{key(name):08x}"
@@ -338,11 +439,30 @@ def compile_stage(source, destination):
             if clip not in clips: raise ValueError(f"Actor {name} has no clip {clip}")
             playback = actor.get("playback", "loop")
             if playback not in ("loop", "hold"): raise ValueError("Invalid actor playback mode")
-            actors.append({"id": id, "clip": clips.index(clip), "playback": playback, "transform": actor["transform"], "lightGroup": f"{key(actor.get('lightGroup', 'Stage')):08x}"})
+            role = actor.get("role", "")
+            visible = actor.get("initiallyVisible", True)
+            actions = actor.get("actions", {})
+            source_object = actor.get("object", ""); script = actor.get("script", ""); created = actor.get("created", True)
+            if not all(isinstance(value, str) and len(value) <= 256 for value in (source_object, script)) or type(created) != bool: raise ValueError("Invalid actor script binding")
+            if script and not source_object: raise ValueError("A scripted actor needs an object name")
+            animation_events = actor.get("animationEvents", "")
+            if not isinstance(animation_events, str) or len(animation_events) > 256: raise ValueError("Invalid animation event table")
+            scale = vector(actor.get("scale", [1, 1, 1]))
+            if any(value <= 0 for value in scale): raise ValueError("Actor scale must be positive")
+            if not isinstance(role, str) or len(role) > 128 or type(visible) != bool: raise ValueError("Invalid actor role or visibility")
+            if not isinstance(actions, dict) or len(actions) > 256: raise ValueError("Invalid actor actions")
+            for action, choices in actions.items():
+                if not isinstance(action, str) or not action or not isinstance(choices, list) or not 1 <= len(choices) <= 256 or any(c not in clips for c in choices):
+                    raise ValueError(f"Invalid actor action: {action}")
+            actors.append({"id": id, "clip": clips.index(clip), "clips": {c: i for i, c in enumerate(clips)},
+                           "actions": {a: [clips.index(c) for c in choices] for a, choices in actions.items()},
+                           "role": role, "initiallyVisible": visible, "playback": playback, "transform": actor["transform"],
+                           "object": source_object, "script": script, "created": created, "scale": scale, "animationEvents": animation_events,
+                           "lightGroup": f"{key(actor.get('lightGroup', 'Stage')):08x}"})
         if actors: write_json(folder/"actors.json", {"version": 1, "actors": actors})
         write_json(folder/"cameras.json", cameras); write_json(folder/"lighting.json", lighting)
         pack = {"version": 1, "id": manifest["id"], "name": manifest["name"], "library": manifest["library"],
-                "band": manifest["band"], "waypoints": waypoints, "effects": effects,
+                "band": manifest["band"], "waypoints": waypoints, "effects": effects, "crowd": crowd,
                 "sources": {str(p.relative_to(source)): sha256(p.read_bytes()).hexdigest() for p in inputs}}
         pack["files"] = {str(p.relative_to(folder)): sha256(p.read_bytes()).hexdigest() for p in folder.rglob("*") if p.is_file()}
         write_json(folder/"pack.json", pack)

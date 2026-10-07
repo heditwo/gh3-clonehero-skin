@@ -1,7 +1,7 @@
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(Gh3Skin.SkinMod), "GH3 Gameplay Skin", "0.8.112", "hedi")]
+[assembly: MelonInfo(typeof(Gh3Skin.SkinMod), "GH3 Gameplay Skin", "0.8.115", "hedi")]
 [assembly: MelonGame("srylain Inc.", "Clone Hero")]
 
 namespace Gh3Skin;
@@ -64,10 +64,19 @@ public sealed class SkinMod : MelonMod
         _hud.EnsureCreated();
         var state = GameplayStateReader.Read(player, score, _options);
         _renderer.Update(player, score, state.StarPowerActive);
-        _stage?.Update(player, state.Combo);
+        _stage?.Update(player, state.Combo, state.Rock);
         _hud.Update(state, player.mainCamera);
         _capture.Update();
     }
 
-    public override void OnDeinitializeMelon() => _stage?.Reset();
+    public override void OnApplicationQuit() => CloseStage();
+
+    public override void OnDeinitializeMelon() => CloseStage();
+
+    private void CloseStage()
+    {
+        _gameplay = false;
+        _stage?.Reset();
+        _stage = null;
+    }
 }

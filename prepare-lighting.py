@@ -26,20 +26,21 @@ def export(directory, destination, venue="z_budokan"):
     entries = source.load(f"ZONES/{venue}.pak.xen")
     qbs = [b for k, n, b in entries if k in (key(".qb"), key(".nqb"))]
     nodes = next(a for b in qbs if (a := find_array(b, venue+"_gfx_NodeArray")) is not None)
+    geometry_nodes = next((a for b in qbs if (a := find_array(b, venue+"_NodeArray")) is not None), [])
+    volumes = {node[key("Name")]: node for node in [*nodes, *geometry_nodes] if key("LightVolumeType") in node}
     snapshots = next((a for b in qbs if (a := find_struct(b, venue+"_snapshots")) is not None), None)
     mapping = next((a for b in qbs if (a := find_struct(b, venue+"_lightshow_mapping")) is not None), None)
     scripts = source.scripts()
     common = scripts[key("scripts\\fx\\lightshow.qb")]
     exclusions = find_array(common, "LightShow_ColorOverrideExcludeLights")
     overrides = find_struct(common, "LightShow_ColorOverrides")
-    light_ids = {r[key("LightChecksum")] for rows in snapshots.values() for r in rows if key("LightChecksum") in r} if snapshots else {
-        n[key("Name")] for n in nodes if n.get(key("Class")) == key("LevelLight") and n.get(key("Type")) in {key(t) for t in ("Ambient", "Dir", "Point", "Spot")}}
+    light_ids = {n[key("Name")] for n in nodes if n.get(key("Class")) == key("LevelLight") and n.get(key("Type")) in {key(t) for t in ("Ambient", "Dir", "Point", "Spot")}}
     lights = []
     for node in nodes:
         if node.get(key("Name")) not in light_ids: continue
         light_type = next(t for t in ("Ambient", "Dir", "Point", "Spot") if key(t) == node[key("Type")])
         q = node[key("RotationQuat")]
-        lights.append({"id": f"{node[key('Name')]:08x}", "group": f"{node.get(key('LightGroup'), key('None')):08x}",
+        lights.append({"id": f"{node[key('Name')]:08x}", "object": f"0x{node[key('Name')]:08x}", "group": f"{node.get(key('LightGroup'), key('None')):08x}",
                        "type": light_type, "position": vector(node[key("Pos")]), "rotation": light_rotation(q),
                        "overrideColor": node[key("Name")] not in exclusions,
                        "hotspot": node.get(key("Hotspot"), 0), "field": node.get(key("Field"), 0)})
@@ -85,6 +86,14 @@ def export(directory, destination, venue="z_budokan"):
                 "startRadius": node.get(key("StartRadius"), 0.1), "endRadius": node.get(key("EndRadius"), 1), "range": node.get(key("Range"), 10)}
         converted["static"] = {"lights": settings, "beams": beams}
     beam_defaults = {name: value for snapshot in converted.values() for name, value in snapshot["beams"].items()}
+    from stage_gltf import matrix_quaternion
+    from prepare_stage_support import angles_matrix
+    for id, node in volumes.items():
+        if f"{id:08x}" in beam_defaults: continue
+        value = {"position": vector(node[key("Pos")]), "rotation": matrix_quaternion(angles_matrix(node.get(key("Angles"), [0, 0, 0]))),
+                 "color": [v/255 for v in node.get(key("VolumeColor"), [255, 255, 255])], "density": node.get(key("VolumeDensity"), 0),
+                 "startRadius": node.get(key("StartRadius"), .1), "endRadius": node.get(key("EndRadius"), 1), "range": node.get(key("Range"), 10)}
+        for snapshot in converted.values(): snapshot["beams"][f"{id:08x}"] = value
     for snapshot in converted.values():
         for name, value in beam_defaults.items():
             snapshot["beams"].setdefault(name, {**value, "density": 0, "inherit": True})

@@ -92,6 +92,9 @@ class GlbWriter:
             row["alphaMode"] = "MASK"
             row["alphaCutoff"] = definition.get("cutoff", 0.5)
         extras = {}
+        if definition.get("sourceMaterial"): extras["gh3SourceMaterial"] = definition["sourceMaterial"]
+        if "movieSlot" in definition: extras["gh3MovieSlot"] = definition["movieSlot"]
+        if "textureAnimation" in definition: extras["gh3TextureAnimation"] = definition["textureAnimation"]
         if blend == 1: extras["gh3Additive"] = True
         if definition.get("crowd"): extras["gh3CrowdAtlas"] = True
         if definition.get("sortedTransparency"): extras["gh3SortedTransparency"] = True

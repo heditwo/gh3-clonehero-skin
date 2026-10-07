@@ -18,12 +18,16 @@ internal sealed class StageHousing
     public float[] Position { get; set; } = Array.Empty<float>();
     public float[] Rotation { get; set; } = Array.Empty<float>();
     public bool FixedPosition { get; set; }
+    public string Object { get; set; } = "";
 }
 
 internal sealed class StageFixtures : IDisposable
 {
     private readonly List<StageAssets> _assets = new();
     private readonly Dictionary<string, (Transform Transform, bool FixedPosition)> _housings = new();
+    public Dictionary<string, StageObjectPlacement> Placements { get; } = new();
+    public Dictionary<uint, string> ObjectBeams { get; } = new();
+    public StageScriptState? Scripts { get; set; }
 
     public void Load(string directory, GameObject root, int layer)
     {
@@ -69,6 +73,10 @@ internal sealed class StageFixtures : IDisposable
                 renderer.reflectionProbeUsage = ReflectionProbeUsage.Off;
             }
             _housings.Add(housing.Id, (obj.transform, housing.FixedPosition));
+            var source = housing.Object.Length == 0 ? Convert.ToUInt32(housing.Id, 16) : Gh3QbText.Key(housing.Object);
+            if (!Placements.TryAdd(source.ToString("x8"), new() { Position = housing.Position, Rotation = housing.Rotation }))
+                throw new InvalidDataException($"Duplicate light housing object {source:x8} in {path}: housing {housing.Id}, source '{housing.Object}', prior beams {string.Join(", ", ObjectBeams.Select(pair => $"{pair.Key:x8}={pair.Value}"))}");
+            ObjectBeams.Add(source, housing.Id);
         }
         MelonLogger.Msg($"GH3 light housings: {_housings.Count} fixtures; {models.Count} shared models");
     }
@@ -81,10 +89,33 @@ internal sealed class StageFixtures : IDisposable
         housing.Transform.localRotation = new(q.X, q.Y, q.Z, q.W);
     }
 
+    public StageBeamValue Resolve(string id, StageBeamValue value, double time)
+    {
+        if (Scripts == null) return value;
+        foreach (var (source, beam) in ObjectBeams)
+        {
+            if (beam != id || !Scripts.Objects.TryGetValue(source, out var state)) continue;
+            value = Scripts.Beam(source, value);
+            var pose = Scripts.Sample(source, time);
+            if (_housings.TryGetValue(id, out var housing))
+            {
+                housing.Transform.gameObject.SetActive(pose.Visible);
+                housing.Transform.localScale = new(pose.Scale.X, pose.Scale.Y, pose.Scale.Z);
+                if (state.PositionChanged || Scripts.Attached(source)) housing.Transform.localPosition = new(pose.Position.X, pose.Position.Y, pose.Position.Z);
+            }
+            return value with { Position = state.PositionChanged || Scripts.Attached(source) ? pose.Position : value.Position,
+                Rotation = state.RotationChanged || Scripts.Attached(source) ? pose.Rotation : value.Rotation, Density = pose.Visible ? value.Density : 0 };
+        }
+        return value;
+    }
+
     public void Dispose()
     {
         foreach (var assets in _assets) assets.Dispose();
         _assets.Clear();
         _housings.Clear();
+        Placements.Clear();
+        ObjectBeams.Clear();
+        Scripts = null;
     }
 }

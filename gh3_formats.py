@@ -32,6 +32,19 @@ def pak_entries(data):
     raise ValueError("PAK has no end marker")
 
 
+def node_prefixes(data, arrays):
+    array, count = values(data, 0, "2I")
+    if array not in arrays or count > 100000 or 8 + count*12 > len(data): raise ValueError("Invalid node prefix table")
+    nodes = arrays[array]; start = 8 + count*12; result = {}
+    for index in range(count):
+        name, offset, length = values(data, 8 + index*12, "3I")
+        if name in result or offset % 2 or start + offset + length*2 > len(data): raise ValueError("Invalid node prefix range")
+        indices = values(data, start + offset, f"{length}H")
+        if any(i >= len(nodes) for i in indices): raise ValueError("Node prefix index is outside its array")
+        result[name] = [nodes[i][key("Name")] for i in indices]
+    return result
+
+
 def qb_array(data, offset, depth=0):
     if depth > 12:
         raise ValueError("QB array nesting is too deep")

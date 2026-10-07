@@ -2,7 +2,7 @@
 
 Build **0.8.112** supports all ten GH3 performance venues as ordinary stage packs and version 2 song-direction files. **Kaiju Megadome** (`gh3.budokan`) is the default. The camera moves between stage and performer views. The stage runs behind the highway during the supported single-player guitar mode.
 
-See [STAGE-PACKS.md](STAGE-PACKS.md) for the venue list, common importer, and working custom-stage template. The [custom-content specification](CUSTOM-CONTENT.md) defines version 2 song direction and planned skin packs around the fixed GH3 rigs.
+See [STAGE-PACKS.md](STAGE-PACKS.md) for the venue list, common importer, and working custom-stage template. The [custom-content specification](CUSTOM-CONTENT.md) describes the current version 2 song direction and skin-pack proposal. [MOONSCRAPER.md](MOONSCRAPER.md) defines the updated authoring target and records the format audit.
 
 Latest preview: [100-note streak hand fire with automatic cameras, 900p60 with audio](https://filebin.net/gh3-hand-fire-7390d10c14bb/hand-fire-preview.mp4), version **0.8.110**. The link expires on **2026-10-13**.
 
@@ -17,11 +17,20 @@ MISE_QUIET=1 uv run --with pillow --with numpy --with 'shapely>=2.1' python expo
   --data "$HOME/games/gh3-test-tools/game/DATA"
 MISE_QUIET=1 python3 export-stage-events.py \
   "$HOME/games/gh3-test-tools/game/DATA" --library --output assets/stages/events
+MISE_QUIET=1 uv run --with UnityPy --with numpy python prepare-stage-shaders.py
+MISE_QUIET=1 uv run --with pillow --with numpy python prepare-particle-materials.py
+MISE_QUIET=1 uv run --with pillow --with numpy python prepare-tesla.py
 MISE_QUIET=1 bash install.sh
 MISE_QUIET=1 bash run-gh3-skin.sh
 ```
 
-The shared library is in `assets/libraries/gh3-band-v1/`. Editable source packs are in `assets/stage-packs/`; compiled packs are in `assets/stages/<id>/`. The song exporter writes `assets/stages/events/`. These generated files are local and are excluded from Git. The installer copies them into the isolated game. The source copy supplies 74 song direction tracks with 529 pyro triggers.
+The shared library is in `assets/libraries/gh3-band-v1/`. Editable source packs are in `assets/stage-packs/`; compiled packs are in `assets/stages/<id>/`. The song exporter writes `assets/stages/events/`. These generated files are local and are excluded from Git. The installer copies them into the isolated game. The source copy supplies 159 song archives; 74 have title and artist metadata.
+
+The screen-color, outline, particle, and Tesla shaders use the installed Clone Hero Unity `2022.3.62f2` format and OpenGL. Use `prepare-stage-shaders.py --game <path>` if the game is in another directory. Their sources are in `src/Stage/Shaders/`. Rebuild the shared library's shader bundles when these sources change.
+
+Particle sorting also needs `render/particle-materials.json` in the shared library. `prepare-particle-materials.py` exports the 144 original PC shader variants. Use `--source <MaterialLibrary.bin.xen>` to select the original material library.
+
+Tesla rendering needs `render/tesla.bundle` and `render/tesla-noise.png`. `prepare-tesla.py` exports the original noise image and records its source hash in `render/tesla-material.json`. Use `--data <GH3 DATA directory>` to select the original installation.
 
 Use `GH3_SKIN_STAGE=off` to use the stock background. A missing or invalid stage leaves the game running with its stock background and writes the cause to the loader log.
 
@@ -36,7 +45,11 @@ It has pyro at 6 and 8 seconds, sparks at 11 seconds, fireworks at 12 and 20 sec
 
 ## Where cues come from
 
-For a version 2 `stage-events.json`, the loader chooses a source for each channel when the song loads:
+Build **0.8.113** reads the standard `CAMERAS`, `LIGHTSHOW`, `ANIMS`, `DRUMS`, and `CROWD` note tracks from `.chart` as well as MIDI. Notes keep their numeric IDs and durations; MIDI velocity is retained in runtime cues. `DRUMS` is the animation track, separate from playable drums. No JSON direction file is required. This track support does not yet implement every GH3 command or provide a Moonscraper editor UI.
+
+Build **0.8.113** first checks for one native `<song>_song.pak.xen` in the song folder. When present, it reads direction directly from the native QB data, with the original Expert-note gestures and fretbar timing. This native path takes priority over the sources below. See [NATIVE-GH3.md](NATIVE-GH3.md) for the camera edit tool and current playback limits.
+
+Without a native song PAK, a version 2 `stage-events.json` selects a source for each channel when the song loads:
 
 1. Events in the song file, or a matching `clearChannels` entry.
 2. Explicit direction events in `notes.chart` or `notes.mid`.
@@ -239,17 +252,17 @@ Custom chart text can also use `stage stance guitarist stance_b`, `stage perform
 
 ## Crowd animation
 
-The crowd uses the original `crowd_ped_01` through `crowd_ped_04`, `crowd_pedf_1`, and `crowd_pedf_2` models. `prepare-crowd.py` converts the 28-bone `GH3_ped` skeleton and two original cheering clips for each model from `perm_anims.pak.xen`.
+The crowd uses the original `crowd_ped_01` through `crowd_ped_04`, `crowd_pedf_1`, `crowd_pedf_2`, two prison models, and two biker models. `prepare-crowd.py` converts the 28-bone `GH3_ped` skeleton. Build 0.8.115 adds all eight source profiles, their 102 referenced clips from `perm_anims.pak.xen`, and the original hand variants. Stage packs select the model and orientation for each profile.
 
 At runtime, 24 small animated figures render into a 1024 × 768 texture atlas. The venue's audience cards display its 24 cells. This animates all 1,340 spectators with 672 animated bones, rather than a separate skeleton for each spectator. Each group has a different time offset. The figures clap, sway, and raise their arms using the original clips, with smooth transitions between loops.
 
 The atlas has a separate camera and layer. The stage and highway cameras cannot see its source models. A separate alpha pass supplies the silhouettes because the game's particle shader writes only color. Stage lighting applies to the audience cards. Scene cleanup releases the atlas, camera, meshes, and textures.
 
-Crowd poses use the song clock. A pause holds the pose; a seek samples the new time directly. The crowd remains on the venue's original flat cards. It does not move through the venue or change its cheering state with player performance. If the converted crowd assets are absent, the original static atlas remains available.
+Crowd poses use the song clock. A pause holds the pose; a seek restores the selected animation at the new time. Source animation groups respond to tempo and player health. Lighter commands change the hands and animation, monitor performance, and toggle the venue's lighter meshes. The crowd remains on the venue's original flat cards. If the converted crowd assets are absent, the original static atlas remains available. See [event coverage](GH3-EVENT-COVERAGE.md#crowd-commands-in-08115) for remaining native behavior checks.
 
 ## Current scope
 
-The renderer imports the original venue geometry, band, crowd models, animation clips, lighting snapshots, and lightshow timing. Unity effects reproduce pyro, sparks, fireworks, smoke, and lighting changes. The original GH3 particle scripts and shaders do not run inside Clone Hero. Venue-specific scripted set changes are not implemented.
+The renderer imports the original venue geometry, band, crowd models, animation clips, lighting snapshots, and lightshow timing. The shared QB runtime executes source venue and particle scripts. Translated OpenGL shaders draw source particles and Tesla effects. Scenery creation, movement, animation callbacks, and encore scripts have partial playback support. Full command coverage, shadows, and original-game composition comparisons remain incomplete. See [GH3 event coverage](GH3-EVENT-COVERAGE.md) for the verified scope and remaining work.
 
 Original song cues now drive cameras, body actions, playing gestures, and facial clips. For other charts, expert guitar and bass notes supply playing gestures and the tempo map controls body speed. Such charts need explicit drum, face, and performance cues for those features.
 

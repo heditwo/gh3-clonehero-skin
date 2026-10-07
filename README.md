@@ -1,6 +1,6 @@
 # GH3 gameplay skin for Clone Hero
 
-This local mod uses art from the owner's BetterGH3 PC copy. It targets Linux Clone Hero **v1.1.0.6142-final** with **MelonLoader 0.7.3**. The local build is `0.8.112`.
+This local mod uses art from the owner's BetterGH3 PC copy. It targets Linux Clone Hero **v1.1.0.6142-final** with **MelonLoader 0.7.3**. The source build is `0.8.115`.
 
 ## Install and run
 
@@ -12,6 +12,10 @@ MISE_QUIET=1 bash ./run-gh3-skin.sh
 ```
 
 The installer builds the mod, copies the prepared assets and tuning file, and installs all bundled test charts. Preview scripts use the charts in this repository. A direct build also accepts `dotnet build src/Gh3Skin.csproj -p:GameRoot=/path/to/game`.
+
+## Event coverage work
+
+The current source retains complete native script rows through the song exporter and the shared playback dispatcher. The audit covers 159 installed songs and ten venues. Full GH3 playback coverage remains in progress. See [GH3 event coverage](docs/GH3-EVENT-COVERAGE.md) for results and remaining work.
 
 ## Current behavior
 
@@ -30,6 +34,8 @@ The installer builds the mod, copies the prepared assets and tuning file, and in
 - HUD images fit a centered 16:9 area. Rails and ready effects follow the actual game camera area and field of view. Portrait layout is not supported.
 - All ten GH3 performance venues load as ordinary stage packs, with the same GLB importer and runtime loader as custom stages. The shared band uses GH3's default male singer, Axel, bassist, drummer, and their instruments. Original song cues drive cameras, stances, strums, drum strokes, facial clips, lighting, and effects. See [stage packs](docs/STAGE-PACKS.md) for the venue list and authoring tools, and [song cues](docs/STAGES.md) for playback details and translation limits.
 - Version 2 `stage-events.json` files replace selected song-direction channels. A camera-only file keeps inherited lighting and band cues. Playable chart notes supply strums, and the chart tempo map supplies timing. Version 1 files retain complete-timeline replacement.
+- Standard `CAMERAS`, `LIGHTSHOW`, `ANIMS`, `DRUMS`, and `CROWD` note tracks load from `.chart` and MIDI, with note IDs and durations intact. MIDI velocity is retained for future playback use. See [Moonscraper authoring](docs/MOONSCRAPER.md) for the complete-GH3 target and editor gaps.
+- An optional native `<song>_song.pak.xen` beside the playable chart supplies GH3 direction directly and takes priority over converted event files. A compatibility tool can inspect the PAK and change one camera note while preserving every other byte. See [native GH3 content](docs/NATIVE-GH3.md).
 
 The game-state field map is in [docs/GAME-BINDINGS.md](docs/GAME-BINDINGS.md). Runtime check results are in [docs/VERIFICATION.md](docs/VERIFICATION.md). Later corrections are in [docs/STRIKE-LINES.md](docs/STRIKE-LINES.md) and [docs/METERS.md](docs/METERS.md). Previous GH3 comparisons are in [docs/VISUAL-HISTORY.md](docs/VISUAL-HISTORY.md).
 

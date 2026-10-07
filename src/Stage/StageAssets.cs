@@ -16,10 +16,17 @@ internal sealed class StageDefinition
     public float[][] PyroPositions { get; set; } = Array.Empty<float[]>();
     public Dictionary<string, StageMaterial> Materials { get; set; } = new();
     public string[] LightGroups { get; set; } = Array.Empty<string>();
+    public string[] VisibilityGroups { get; set; } = Array.Empty<string>();
+    public string[] HiddenGroups { get; set; } = Array.Empty<string>();
+    public string[] ObjectIds { get; set; } = Array.Empty<string>();
+    public Dictionary<string, StageObjectPlacement> Objects { get; set; } = new();
 }
 
 internal sealed class StageMaterial
 {
+    public string Source { get; set; } = "";
+    public int MovieSlot { get; set; } = -1;
+    public StageTextureAnimation? Animation { get; set; }
     public string Texture { get; set; } = "";
     public int Blend { get; set; }
     public float Cutoff { get; set; }
@@ -29,7 +36,7 @@ internal sealed class StageMaterial
 
 internal sealed class StageAssets : IDisposable
 {
-    internal sealed record LitMesh(Mesh Mesh, string Group, Vector3[] Positions, Vector3[] Normals, Color32[] Colors);
+    internal sealed record LitMesh(Mesh Mesh, string Group, Vector3[] Positions, Vector3[] Normals, Color32[] Colors, Transform Transform);
     internal sealed record LitBandMesh(SkinnedMeshRenderer Renderer, Color32[] Colors, string Group);
     [StructLayout(LayoutKind.Sequential)]
     private struct SkinWeight
@@ -44,6 +51,17 @@ internal sealed class StageAssets : IDisposable
     public List<LitMesh> LitMeshes { get; } = new();
     public List<LitBandMesh> BandMeshes { get; } = new();
     public List<StageTransparency> TransparentMeshes { get; } = new();
+    private readonly Dictionary<string, List<Renderer>> _visibility = new();
+    public Dictionary<string, Transform> Objects { get; } = new();
+    public List<(uint Object, uint Material, Renderer Renderer, StageMaterial Definition)> MaterialSurfaces { get; } = new();
+    public List<(int Slot, Material Material, Texture? Original)> MovieSurfaces { get; } = new();
+
+    public void SetVisible(string group, bool? visible)
+    {
+        if (!_visibility.TryGetValue(group, out var renderers)) return;
+        var enabled = visible ?? !Definition.HiddenGroups.Contains(group);
+        foreach (var renderer in renderers) renderer.enabled = enabled;
+    }
 
     public T Own<T>(T resource) where T : UnityEngine.Object
     {
@@ -120,6 +138,8 @@ internal sealed class StageAssets : IDisposable
             materials.Add(Convert.ToUInt32(key, 16), material);
             SurfaceMaterials.Add(material);
             if (source.Crowd) CrowdMaterials.Add(material);
+            if (source.MovieSlot is < -1 or > 31) throw new InvalidDataException("Invalid movie surface slot");
+            if (source.MovieSlot >= 0) MovieSurfaces.Add((source.MovieSlot, material, material.mainTexture));
         }
         using var reader = new BinaryReader(File.OpenRead(Path.Combine(directory, "meshes.bin")));
         if (System.Text.Encoding.ASCII.GetString(reader.ReadBytes(8)) != (bones == null ? "GH3STG01" : "GH3BND01"))
@@ -128,8 +148,26 @@ internal sealed class StageAssets : IDisposable
         if (meshCount < 1 || meshCount > 10000) throw new InvalidDataException("Invalid stage mesh count");
         if (Definition.LightGroups.Length != 0 && Definition.LightGroups.Length != meshCount)
             throw new InvalidDataException("Stage light groups do not match the meshes");
+        if (Definition.VisibilityGroups.Length != 0 && Definition.VisibilityGroups.Length != meshCount ||
+            Definition.VisibilityGroups.Any(group => group == null || group.Length > 128) ||
+            Definition.HiddenGroups.Any(group => string.IsNullOrEmpty(group) || !Definition.VisibilityGroups.Contains(group)))
+            throw new InvalidDataException("Invalid scenery visibility groups");
         if (lighting && bones == null && Definition.LightGroups.Length == 0)
             throw new InvalidDataException("Stage light groups are missing. Run prepare-stage.py again.");
+        if (Definition.ObjectIds.Length != 0 && Definition.ObjectIds.Length != meshCount ||
+            Definition.ObjectIds.Any(id => id.Length > 0 && !Definition.Objects.ContainsKey(id)) || Definition.Objects.Count > 10000)
+            throw new InvalidDataException("Invalid stage object groups");
+        foreach (var (id, placement) in Definition.Objects)
+        {
+            if (id.Length != 8 || !id.All(Uri.IsHexDigit) || !placement.Valid) throw new InvalidDataException("Invalid stage object pivot");
+            var obj = new GameObject("GH3 Object " + id) { layer = layer };
+            obj.transform.SetParent(root.transform, false);
+            obj.transform.localPosition = Vector(placement.Position);
+            var orientation = placement.Rotation;
+            obj.transform.localRotation = new(orientation[0], orientation[1], orientation[2], orientation[3]);
+            obj.SetActive(placement.Created);
+            Objects.Add(id, obj.transform);
+        }
         for (var part = 0; part < meshCount; part++)
         {
             var materialId = reader.ReadUInt32();
@@ -187,9 +225,17 @@ internal sealed class StageAssets : IDisposable
             var dynamicColors = lighting && (bones != null || Definition.LightGroups.Length > 0);
             if (dynamicColors || sorted) mesh.MarkDynamic();
             mesh.UploadMeshData(!dynamicColors && !sorted);
-            if (dynamicColors && bones == null) LitMeshes.Add(new(mesh, Definition.LightGroups[part], vertices, normals, colors));
             var item = new GameObject(mesh.name) { layer = layer };
             item.transform.SetParent(root.transform, false);
+            var objectId = Definition.ObjectIds.Length == 0 ? "" : Definition.ObjectIds[part];
+            if (objectId.Length > 0)
+            {
+                item.transform.SetParent(Objects[objectId], false);
+                var inverse = Quaternion.Inverse(Objects[objectId].localRotation);
+                item.transform.localPosition = inverse * -Vector(Definition.Objects[objectId].Position);
+                item.transform.localRotation = inverse;
+            }
+            if (dynamicColors && bones == null) LitMeshes.Add(new(mesh, Definition.LightGroups[part], vertices, normals, colors, item.transform));
             Renderer renderer;
             if (bones == null)
             {
@@ -209,10 +255,21 @@ internal sealed class StageAssets : IDisposable
                 if (sorted) TransparentMeshes.Add(new(this, skin, vertexCount, indices));
             }
             renderer.sharedMaterial = material;
+            var sourceMaterial = Definition.Materials[materialId.ToString("x8")].Source;
+            if (objectId.Length > 0 && sourceMaterial.Length > 0)
+                MaterialSurfaces.Add((Convert.ToUInt32(objectId, 16), Gh3QbText.Key(sourceMaterial), renderer, Definition.Materials[materialId.ToString("x8")]));
+            Definition.Materials[materialId.ToString("x8")].Animation?.Validate();
             renderer.shadowCastingMode = ShadowCastingMode.Off;
             renderer.receiveShadows = false;
             renderer.lightProbeUsage = LightProbeUsage.Off;
             renderer.reflectionProbeUsage = ReflectionProbeUsage.Off;
+            var visibility = Definition.VisibilityGroups.Length == 0 ? "" : Definition.VisibilityGroups[part];
+            if (visibility.Length > 0)
+            {
+                if (!_visibility.TryGetValue(visibility, out var renderers)) _visibility.Add(visibility, renderers = new());
+                renderers.Add(renderer);
+                renderer.enabled = !Definition.HiddenGroups.Contains(visibility);
+            }
         }
         if (reader.BaseStream.Position != reader.BaseStream.Length) throw new InvalidDataException("Extra stage mesh data");
     }
@@ -252,7 +309,11 @@ internal sealed class StageAssets : IDisposable
         SurfaceMaterials.Clear();
         CrowdMaterials.Clear();
         LitMeshes.Clear();
+        Objects.Clear();
+        MaterialSurfaces.Clear();
+        MovieSurfaces.Clear();
         BandMeshes.Clear();
         TransparentMeshes.Clear();
+        _visibility.Clear();
     }
 }

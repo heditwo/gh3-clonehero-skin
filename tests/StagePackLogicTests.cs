@@ -19,6 +19,10 @@ internal static class StagePackLogicTests
             var directory = Path.GetDirectoryName(file)!;
             var pack = StagePack.Load(directory);
             var library = Path.Combine(assets, "libraries", pack.Library);
+            var crowd = CrowdDefinition.Load(Path.Combine(library, "crowd", "crowd.json"));
+            foreach (var member in pack.Crowd)
+                Check(crowd.Version == 2 && crowd.Models.Contains(member.Model) && crowd.Members.ContainsKey(member.Role),
+                    $"{pack.Id}: crowd model {member.Model} and profile {member.Role} exist in the shared library");
             var performance = StagePerformance.Load(Path.Combine(library, "direction", "performance.json"))!;
             Check(performance.Waypoints.Count == 0, "the animation library has no venue placements");
             var cameras = StageCameraBank.Load(Path.Combine(directory, "cameras.json"))!;

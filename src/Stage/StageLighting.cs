@@ -6,6 +6,7 @@ namespace Gh3Skin;
 internal sealed class StageLightDefinition
 {
     public string Id { get; set; } = "";
+    public string Object { get; set; } = "";
     public string Group { get; set; } = "";
     public string Type { get; set; } = "";
     public float[] Position { get; set; } = Array.Empty<float>();
@@ -89,11 +90,17 @@ internal sealed class StageLightingBank
     public static Vector3 Vector(float[] value) => new(value[0], value[1], value[2]);
 }
 
-internal readonly record struct StageLightValue(Vector3 Energy, float Near, float Far)
+internal readonly record struct StageLightValue(Vector3 Color, float Intensity, float Specular, float SpecularPower, float Near, float Far)
 {
+    public Vector3 Energy => Color * Intensity;
+    public StageLightValue(Vector3 energy, float near, float far) : this(energy, 1, 1, 1, near, far) { }
     public static StageLightValue Mix(StageLightValue a, StageLightValue b, float t) => new(
-        Vector3.Lerp(a.Energy, b.Energy, t), a.Near + (b.Near - a.Near) * t, a.Far + (b.Far - a.Far) * t);
+        a.Color + (b.Color - a.Color) * t, a.Intensity + (b.Intensity - a.Intensity) * t,
+        a.Specular + (b.Specular - a.Specular) * t, a.SpecularPower + (b.SpecularPower - a.SpecularPower) * t,
+        a.Near + (b.Near - a.Near) * t, a.Far + (b.Far - a.Far) * t);
 }
+
+internal readonly record struct StageLightPose(Vector3 Position, Vector3 Forward);
 
 internal readonly struct StageLightSample
 {
@@ -108,11 +115,11 @@ internal readonly struct StageLightSample
     private readonly bool _directional;
     private readonly bool _spot;
 
-    public StageLightSample(StageLightDefinition light, StageLightValue value)
+    public StageLightSample(StageLightDefinition light, StageLightValue value, StageLightPose? pose = null)
     {
         Energy = value.Energy;
-        _position = light.Location;
-        _forward = light.Forward;
+        _position = pose?.Position ?? light.Location;
+        _forward = pose?.Forward ?? light.Forward;
         _far = value.Far;
         _rangeScale = 1 / Math.Max(0.00001f, value.Far - value.Near);
         _ambient = light.Type == "Ambient";
@@ -144,20 +151,31 @@ internal readonly record struct StageBeamValue(Vector3 Position, Quaternion Rota
 }
 
 internal sealed record StageLightingValues(StageLightValue[] Lights, StageBeamValue[] Beams);
+internal sealed record StageLightFade(double Time, double Blend, StageLightValue From, StageLightValue To)
+{
+    public StageLightValue Sample(double time) => StageLightValue.Mix(From, To, Blend <= 0 ? 1 : (float)Math.Clamp((time - Time) / Blend, 0, 1));
+}
+internal sealed record StageBeamFade(double Time, double Blend, StageBeamValue From, StageBeamValue To)
+{
+    public StageBeamValue Sample(double time) => StageBeamValue.Mix(From, To, Blend <= 0 ? 1 : (float)Math.Clamp((time - Time) / Blend, 0, 1));
+}
 internal sealed record StageLightingFrame(double Time, double Blend, StageLightingValues From, StageLightingValues To, string Snapshot,
     StageBeamMotion[] Motion)
 {
+    public StageLightFade[]? LightFades { get; init; }
+    public StageBeamFade[]? BeamFades { get; init; }
     public float Amount(double time) => Blend <= 0 ? 1 : (float)Math.Clamp((time - Time) / Blend, 0, 1);
     public StageBeamValue SampleBeam(int index, double time)
     {
         var pose = Motion[index].Sample(time);
-        return StageBeamValue.Mix(From.Beams[index], To.Beams[index], Amount(time)) with { Position = pose.Position, Rotation = pose.Rotation };
+        var value = BeamFades == null ? StageBeamValue.Mix(From.Beams[index], To.Beams[index], Amount(time)) : BeamFades[index].Sample(time);
+        return value with { Position = pose.Position, Rotation = pose.Rotation };
     }
 
     public StageLightingValues Sample(double time)
     {
         var t = Amount(time);
-        return new(From.Lights.Zip(To.Lights, (a, b) => StageLightValue.Mix(a, b, t)).ToArray(),
+        return new(LightFades == null ? From.Lights.Zip(To.Lights, (a, b) => StageLightValue.Mix(a, b, t)).ToArray() : LightFades.Select(fade => fade.Sample(time)).ToArray(),
             Enumerable.Range(0, To.Beams.Length).Select(i => SampleBeam(i, time)).ToArray());
     }
 }
@@ -165,8 +183,11 @@ internal sealed record StageLightingFrame(double Time, double Blend, StageLighti
 internal sealed class StageLighting
 {
     private readonly StageLightingFrame[] _frames;
+    private readonly List<StageLightingFrame> _scriptFrames = new();
+    private bool _scriptControl;
     public StageLightingBank Bank { get; }
     public string[] BeamIds { get; }
+    public Action<string, double, double, StageLightValue[], bool[], Gh3QbValue>? SnapshotPlayed { get; set; }
 
     public StageLighting(StageLightingBank bank, StageTimeline timeline)
     {
@@ -177,7 +198,7 @@ internal sealed class StageLighting
         var snapshot = bank.Moods[mood][0];
         var previous = snapshot;
         string? color = null;
-        var blend = 0.3;
+        var blend = Gh3CommandDispatch.DefaultLightBlend;
         var strobeOn = false;
         var initial = Values(snapshot, color);
         var motion = initial.Beams.Select(b => new StageBeamMotion(b)).ToArray();
@@ -189,7 +210,7 @@ internal sealed class StageLighting
             indices[current] = index + 1;
             return choices[index % choices.Length];
         }
-        foreach (var original in timeline.Cues)
+        foreach (var original in timeline.PlaybackCues)
         {
             var cue = original.Type == "gh3-note" && int.TryParse(original.Value, out var note) ? StageTimeline.FromGh3Note(original.Time, note) : original;
             if (cue == null) continue;
@@ -239,7 +260,63 @@ internal sealed class StageLighting
         _frames = frames.ToArray();
     }
 
-    public StageLightingFrame At(double time) => _frames[Math.Max(0, StageTimeline.UpperBound(_frames, time, f => f.Time) - 1)];
+    public StageLightingFrame At(double time) => _scriptControl ?
+        _scriptFrames[Math.Max(0, StageTimeline.UpperBound(_scriptFrames, time, f => f.Time) - 1)] :
+        _frames[Math.Max(0, StageTimeline.UpperBound(_frames, time, f => f.Time) - 1)];
+
+    public void BeginScriptControl()
+    {
+        _scriptControl = true;
+        _scriptFrames.Clear();
+        _scriptFrames.Add(_frames[0]);
+    }
+
+    public void PlaySnapshot(string name, double time, double blend, string? color, Gh3QbValue parameters, bool positions)
+    {
+        if (!_scriptControl || !Bank.Snapshots.ContainsKey(name)) throw new InvalidDataException("Script lighting snapshot is missing: " + name);
+        if (_scriptFrames.Count >= 100000) throw new InvalidDataException("Too many script lighting changes");
+        var frame = At(time);
+        var from = frame.Sample(time);
+        var snapshot = Bank.Snapshots[name];
+        var target = Values(name, color, previous: frame.To);
+        if (parameters.Field("intensity") is { Type: 1 or 2 } intensity)
+            for (var i = 0; i < target.Lights.Length; i++)
+            {
+                var setting = snapshot.Lights[i];
+                if (setting.Inherit) continue;
+                var rgb = color != null && Bank.Lights[i].OverrideColor ? StageLightingBank.Vector(Bank.Colors[color]) : StageLightingBank.Vector(setting.Color);
+                target.Lights[i] = target.Lights[i] with { Color = rgb, Intensity = (float)Gh3ScriptRuntime.Numeric(intensity) };
+            }
+        if (parameters.Field("specularintensity") is { Type: 1 or 2 } specular)
+            for (var i = 0; i < target.Lights.Length; i++)
+                if (!snapshot.Lights[i].Inherit) target.Lights[i] = target.Lights[i] with { Specular = (float)Gh3ScriptRuntime.Numeric(specular) };
+        var motion = positions ? frame.Motion.Select((item, i) => snapshot.Beams[BeamIds[i]].Inherit ? item : item.Retarget(time, blend, target.Beams[i])).ToArray() : frame.Motion;
+        if (!positions)
+            for (var i = 0; i < target.Beams.Length; i++)
+                target.Beams[i] = target.Beams[i] with { Position = from.Beams[i].Position, Rotation = from.Beams[i].Rotation };
+        _scriptFrames.Add(new(time, blend, from, target, name, motion) {
+            LightFades = target.Lights.Select((value, i) => snapshot.Lights[i].Inherit ?
+                frame.LightFades?[i] ?? new(frame.Time, frame.Blend, frame.From.Lights[i], frame.To.Lights[i]) : new(time, blend, from.Lights[i], value)).ToArray(),
+            BeamFades = target.Beams.Select((value, i) => snapshot.Beams[BeamIds[i]].Inherit ?
+                frame.BeamFades?[i] ?? new(frame.Time, frame.Blend, frame.From.Beams[i], frame.To.Beams[i]) : new(time, blend, from.Beams[i], value)).ToArray()
+        });
+        SnapshotPlayed?.Invoke(name, time, blend, target.Lights, snapshot.Lights.Select(light => !light.Inherit).ToArray(), parameters);
+    }
+
+    public void SetBeam(int index, double time, StageBeamValue value)
+    {
+        if (!_scriptControl || index < 0 || index >= BeamIds.Length) throw new InvalidDataException("Script light volume is missing");
+        if (_scriptFrames.Count >= 100000) throw new InvalidDataException("Too many script lighting changes");
+        var frame = At(time);
+        var from = frame.Sample(time);
+        var beams = frame.To.Beams.ToArray();
+        beams[index] = value;
+        _scriptFrames.Add(new(time, 0, from, new(frame.To.Lights, beams), frame.Snapshot, frame.Motion) {
+            LightFades = frame.LightFades ?? frame.To.Lights.Select((light, i) => new StageLightFade(frame.Time, frame.Blend, frame.From.Lights[i], light)).ToArray(),
+            BeamFades = beams.Select((beam, i) => i == index ? new StageBeamFade(time, 0, beam, beam) :
+                frame.BeamFades?[i] ?? new(frame.Time, frame.Blend, frame.From.Beams[i], frame.To.Beams[i])).ToArray()
+        });
+    }
 
     private StageLightingValues Values(string name, string? color, bool fullIntensity = false, StageLightingValues? previous = null)
     {
@@ -247,19 +324,19 @@ internal sealed class StageLighting
         Vector3? tint = color == null ? null : Bank.Colors.TryGetValue(color, out var rgb) ? StageLightingBank.Vector(rgb) :
             new Vector3(StageColor.Named(color).R, StageColor.Named(color).G, StageColor.Named(color).B);
         return new(snapshot.Lights.Select((s, i) => s.Inherit && previous != null ? previous.Lights[i] : new StageLightValue(
-                (Bank.Lights[i].OverrideColor && tint.HasValue ? tint.Value : StageLightingBank.Vector(s.Color)) * (fullIntensity ? 1 : s.Intensity), s.Near, s.Far)).ToArray(),
+                Bank.Lights[i].OverrideColor && tint.HasValue ? tint.Value : StageLightingBank.Vector(s.Color), fullIntensity ? 1 : s.Intensity, s.Specular, 1, s.Near, s.Far)).ToArray(),
             BeamIds.Select((id, i) => { var b = snapshot.Beams[id]; return b.Inherit && previous != null ? previous.Beams[i] : new StageBeamValue(StageLightingBank.Vector(b.Position),
                 Quaternion.Normalize(new(b.Rotation[0], b.Rotation[1], b.Rotation[2], b.Rotation[3])), tint ?? StageLightingBank.Vector(b.Color),
                 b.Density, b.StartRadius, b.EndRadius, b.Range); }).ToArray());
     }
 
-    public static float Weight(StageLightDefinition light, StageLightValue value, Vector3 position, Vector3 normal)
+    public static float Weight(StageLightDefinition light, StageLightValue value, Vector3 position, Vector3 normal, StageLightPose? pose = null)
     {
         if (light.Type == "Ambient") return 1;
-        var delta = light.Location - position;
+        var delta = (pose?.Position ?? light.Location) - position;
         var distance = delta.Length();
         var attenuation = Math.Clamp((value.Far - distance) / Math.Max(0.00001f, value.Far - value.Near), 0, 1);
-        var forward = light.Forward;
+        var forward = pose?.Forward ?? light.Forward;
         var toward = light.Type == "Dir" ? -forward : delta / Math.Max(distance, 0.0001f);
         if (light.Type == "Spot")
         {

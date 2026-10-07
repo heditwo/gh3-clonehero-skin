@@ -25,7 +25,7 @@ internal sealed class BandAnimation
             throw new InvalidDataException("Invalid band animation header");
         var count = reader.ReadInt32();
         var clips = reader.ReadInt32();
-        if (count < 1 || count > 255 || clips < 1 || clips > 16)
+        if (count < 1 || count > 255 || clips < 1 || clips > 256)
             throw new InvalidDataException("Invalid band animation size");
         Parents = new int[count];
         BindPose = new BandPose[count];
@@ -43,12 +43,16 @@ internal sealed class BandAnimation
                 if (depth >= count) throw new InvalidDataException("Band skeleton contains a cycle");
         }
         Clips = new BandClip[clips];
+        var totalPoses = 0;
         for (var i = 0; i < clips; i++)
         {
             var duration = reader.ReadSingle();
             var frames = reader.ReadInt32();
             if (!float.IsFinite(duration) || duration < 0.5 || duration > 120 || frames < 2 || frames > 7201)
                 throw new InvalidDataException("Invalid band clip size");
+            totalPoses += count * frames;
+            if (totalPoses > 4000000 || reader.BaseStream.Length - reader.BaseStream.Position < (long)count * frames * 28)
+                throw new InvalidDataException("Band animation data exceeds its size limit");
             var poses = new BandPose[count * frames];
             for (var j = 0; j < poses.Length; j++) poses[j] = ReadPose(reader);
             Clips[i] = new BandClip(duration, frames, poses);
@@ -90,6 +94,15 @@ internal sealed class BandAnimation
         var a = (int)frame;
         var b = Math.Min(a + 1, clip.Frames - 1);
         return BandPose.Mix(clip.Poses[a * Parents.Length + bone], clip.Poses[b * Parents.Length + bone], (float)(frame - a));
+    }
+
+    public IReadOnlyDictionary<uint, int> LoadBoneNames(string path)
+    {
+        if (!File.Exists(path)) return new Dictionary<uint, int>();
+        var names = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, int>>(File.ReadAllText(path))!;
+        if (names.Count != Parents.Length || names.Any(pair => pair.Key.Length != 8 || !pair.Key.All(Uri.IsHexDigit) || pair.Value < 0 || pair.Value >= Parents.Length) ||
+            names.Values.Distinct().Count() != names.Count) throw new InvalidDataException("Invalid actor bone names");
+        return names.ToDictionary(pair => Convert.ToUInt32(pair.Key, 16), pair => pair.Value);
     }
 
     private static BandPose ReadPose(BinaryReader reader)
