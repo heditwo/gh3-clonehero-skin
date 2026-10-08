@@ -217,7 +217,7 @@ internal sealed class GameplayStage
             _camera.transform.localPosition = StageAssets.Vector(_assets.Definition.CameraPosition);
             _camera.transform.LookAt(_root.transform.position + StageAssets.Vector(_assets.Definition.CameraTarget));
             _crowd = new StageCrowd();
-            _crowd.Load(Path.Combine(library, "crowd"), _assets, _root, _camera, pack.Crowd);
+            _crowd.Load(Path.Combine(library, "crowd"), _assets, _root, _camera, pack.Crowd, surfaceShader);
             var performance = StagePerformance.Load(Path.Combine(library, "direction", "performance.json"));
             var entry = GlobalVariables.instance?.currentSongEntry;
             try

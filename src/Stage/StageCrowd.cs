@@ -19,10 +19,13 @@ internal sealed class StageCrowd : IDisposable
         public Dictionary<string, GameObject> Hands = new();
     }
     public const int Layer = 29;
-    private const int Columns = 8;
-    private const int Rows = 3;
-    private const float CellWidth = 1.4f;
-    private const float CellHeight = 2.4f;
+    private int Columns = 8;
+    private int Rows = 3;
+    private float CellWidth = 1.4f;
+    private float CellHeight = 2.4f;
+    // GH3 crowd cards are 1.15 x 2.58 m and show one model's render across the whole card (AddCrowdModelCam).
+    private const float CardAspect = 1.15f / 2.58f;
+    private const float RoleCellHeight = 2.3f;
     private readonly List<StageAssets> _assets = new();
     private readonly List<Player> _players = new();
     private readonly Dictionary<string, PerformanceClip> _clips = new();
@@ -34,7 +37,7 @@ internal sealed class StageCrowd : IDisposable
     private RenderTexture? _atlas;
     private Camera? _camera;
 
-    public void Load(string directory, StageAssets stage, GameObject root, Camera stageCamera, StageCrowdMember[] members)
+    public void Load(string directory, StageAssets stage, GameObject root, Camera stageCamera, StageCrowdMember[] members, Shader? surfaceShader = null)
     {
         _stage = stage;
         var path = Path.Combine(directory, "crowd.json");
@@ -52,23 +55,48 @@ internal sealed class StageCrowd : IDisposable
         _root.transform.localPosition = new Vector3(0, 256, 0);
         var animations = new Dictionary<string, BandAnimation>();
         var alphaShader = Shader.Find("UI/Default");
+        // GH3 renders the crowd atlas from lit 3D peds (D_3ChkBox_Pass0, Crowd light group). The atlas sits off-stage,
+        // so the peds sample lights where the audience cards actually are.
+        System.Numerics.Vector3? lightAt = null;
+        if (surfaceShader != null)
+        {
+            var sum = Vector3.zero;
+            var count = 0;
+            foreach (var renderer in root.GetComponentsInChildren<MeshRenderer>(true))
+                if (renderer.sharedMaterial != null && stage.CrowdMaterials.Contains(renderer.sharedMaterial))
+                {
+                    var local = root.transform.InverseTransformPoint(renderer.bounds.center);
+                    sum = new Vector3 { x = sum.x + local.x, y = sum.y + local.y, z = sum.z + local.z };
+                    count++;
+                }
+            if (count > 0) lightAt = new System.Numerics.Vector3(sum.x / count, sum.y / count + 1.2f, sum.z / count);
+        }
         if (alphaShader == null) throw new InvalidOperationException("The crowd alpha shader is not available");
         foreach (var model in definition.Models)
         {
             using var reader = new BinaryReader(File.OpenRead(Path.Combine(directory, model, "animation.bin")));
             animations.Add(model, new BandAnimation(reader));
         }
+        var roles = stage.CrowdRoles.Values.Distinct().OrderBy(role => role, StringComparer.Ordinal).ToArray();
+        if (roles.Length > 0)
+        {
+            Columns = roles.Length;
+            Rows = 1;
+            CellHeight = RoleCellHeight;
+            CellWidth = RoleCellHeight * CardAspect;
+        }
         for (var cell = 0; cell < Columns * Rows; cell++)
         {
-            var member = members.Length == 0 ? null : members[cell % members.Length];
-            var role = member?.Role ?? "crowd" + (cell % 8 + 1);
+            var member = roles.Length > 0 ? members.FirstOrDefault(m => m.Role == roles[cell]) :
+                members.Length == 0 ? null : members[cell % members.Length];
+            var role = roles.Length > 0 ? roles[cell] : member?.Role ?? "crowd" + (cell % 8 + 1);
             var model = definition.Version == 2 ? member?.Model ?? definition.Members[role].Model : definition.Models[cell % definition.Models.Length];
             if (!animations.ContainsKey(model)) throw new InvalidDataException($"The crowd library has no model '{model}'. Run prepare-crowd.py.");
             var animation = animations[model];
             var person = new GameObject($"GH3 Crowd {cell}") { layer = Layer };
             person.transform.SetParent(_root.transform, false);
             person.transform.localPosition = new Vector3((cell % Columns - (Columns - 1) * 0.5f) * CellWidth,
-                (Rows - 1 - cell / Columns) * CellHeight + 0.1f, 0);
+                (Rows - 1 - cell / Columns) * CellHeight + (roles.Length > 0 ? 0.02f : 0.1f), 0);
             person.transform.localRotation = Quaternion.Euler(0, member?.Yaw ?? 0, 0);
             var bones = new Transform[animation.Parents.Length];
             for (var i = 0; i < bones.Length; i++)
@@ -80,7 +108,8 @@ internal sealed class StageCrowd : IDisposable
             }
             var assets = new StageAssets();
             _assets.Add(assets);
-            assets.Load(Path.Combine(directory, model), person, Layer, bones);
+            assets.Load(Path.Combine(directory, model), person, Layer, bones, lightAt != null, Gh3Checksum.Of("Crowd"), lightAt != null ? surfaceShader : null, lightAt);
+            stage.ShadedSurfaces.AddRange(assets.ShadedSurfaces);
             void Alpha(StageAssets owner, GameObject target)
             {
                 foreach (var skin in target.GetComponentsInChildren<SkinnedMeshRenderer>())
@@ -103,14 +132,15 @@ internal sealed class StageCrowd : IDisposable
                 item.transform.SetParent(person.transform, false);
                 var handAssets = new StageAssets();
                 _assets.Add(handAssets);
-                handAssets.Load(Path.Combine(directory, "hands", hand), item, Layer, bones);
+                handAssets.Load(Path.Combine(directory, "hands", hand), item, Layer, bones, lightAt != null, Gh3Checksum.Of("Crowd"), lightAt != null ? surfaceShader : null, lightAt);
+                stage.ShadedSurfaces.AddRange(handAssets.ShadedSurfaces);
                 Alpha(handAssets, item);
                 item.SetActive(hand.EndsWith("-clap", StringComparison.Ordinal));
                 player.Hands.Add(hand, item);
             }
             _players.Add(player);
         }
-        _atlas = new RenderTexture(Columns * 128, Rows * 256, 24, RenderTextureFormat.ARGB32)
+        _atlas = new RenderTexture(Columns * 128, Rows * (roles.Length > 0 ? 288 : 256), 24, RenderTextureFormat.ARGB32)
         {
             name = "GH3 Animated Crowd Atlas",
             wrapMode = TextureWrapMode.Clamp,
@@ -137,8 +167,14 @@ internal sealed class StageCrowd : IDisposable
         foreach (var material in stage.CrowdMaterials)
         {
             material.mainTexture = _atlas;
+            if (roles.Length > 0)
+            {
+                var tile = Array.IndexOf(roles, stage.CrowdRoles.GetValueOrDefault(material, roles[0]));
+                material.mainTextureScale = new Vector2 { x = 1f / Columns, y = 1 };
+                material.mainTextureOffset = new Vector2 { x = (float)Math.Max(0, tile) / Columns, y = 0 };
+            }
             // The atlas already contains alpha-blended color against a transparent background.
-            material.SetInt("_SrcBlend", (int)BlendMode.One);
+            if (material.shader.name != "GH3/Stage") material.SetInt("_SrcBlend", (int)BlendMode.One);
         }
         Update(0, 0.5f);
         MelonLogger.Msg($"GH3 crowd loaded: {definition.Models.Length} models; {_players.Count} animation groups; original GH3 clips");

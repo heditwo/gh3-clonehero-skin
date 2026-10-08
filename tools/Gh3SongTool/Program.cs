@@ -7,7 +7,9 @@ try
     if (args.Length > 0 && args[0] == "audit") return EventAudit.Run(args);
     if (args.Length == 3 && args[0] == "script-tokens")
     {
-        var script = new Gh3Qb(File.ReadAllBytes(args[1])).Section(args[2]) ?? throw new InvalidDataException("Script was not found");
+        var qb = new Gh3Qb(File.ReadAllBytes(args[1]));
+        var script = (args[2].StartsWith("0x") ? qb.Sections.GetValueOrDefault(Convert.ToUInt32(args[2], 16)) : qb.Section(args[2]))
+            ?? throw new InvalidDataException("Script was not found");
         Console.WriteLine(JsonSerializer.Serialize(new Gh3ScriptCode(script).Tokens.Select(token => new {
             token.Offset, op = token.Op.ToString("x2"), value = token.Value == null ? null : Gh3QbText.Encode(token.Value), token.Targets, token.Weights })));
         return 0;

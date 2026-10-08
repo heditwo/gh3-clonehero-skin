@@ -382,7 +382,8 @@ internal sealed class StageLightingRenderer
         {
             var (surface, properties, center) = _shaded[i];
             var local = center;
-            if (surface.Dynamic || float.IsNaN(center.X))
+            if (surface.LightAt is { } fixedAt) local = fixedAt;
+            else if (surface.Dynamic || float.IsNaN(center.X))
             {
                 var world = surface.Renderer.bounds.center;
                 local = Vec.Transform(new Vec(world.x - origin.x, world.y - origin.y, world.z - origin.z), inverse);

@@ -37,6 +37,7 @@ internal sealed class StageMaterial
     public float ColorScale { get; set; } = 1;
     public StageCharacterMaterial? Character { get; set; }
     public bool? DoubleSided { get; set; }
+    public string CrowdRole { get; set; } = "";
     public string[] Textures { get; set; } = Array.Empty<string>();
     public int ShadingMode => Shading switch { "unlit" => 0, "ambient" => 1, "lit" => 2, "" => -1, _ => throw new InvalidDataException("Unknown stage shading mode") };
 }
@@ -52,7 +53,8 @@ internal sealed class StageAssets : IDisposable
 {
     internal sealed record LitMesh(Mesh Mesh, string Group, Vector3[] Positions, Vector3[] Normals, Color32[] Colors, Transform Transform);
     internal sealed record LitBandMesh(SkinnedMeshRenderer Renderer, Color32[] Colors, string Group);
-    internal sealed record ShadedSurface(Renderer Renderer, int Mode, string Group, bool Dynamic);
+    // LightAt overrides the lighting sample position (stage-local) for meshes rendered away from where they appear.
+    internal sealed record ShadedSurface(Renderer Renderer, int Mode, string Group, bool Dynamic, System.Numerics.Vector3? LightAt = null);
     [StructLayout(LayoutKind.Sequential)]
     private struct SkinWeight
     {
@@ -64,6 +66,7 @@ internal sealed class StageAssets : IDisposable
     public List<Material> SurfaceMaterials { get; } = new();
     public List<Material> CharacterMaterials { get; } = new();
     public List<Material> CrowdMaterials { get; } = new();
+    public Dictionary<Material, string> CrowdRoles { get; } = new();
     public List<LitMesh> LitMeshes { get; } = new();
     public List<LitBandMesh> BandMeshes { get; } = new();
     public List<ShadedSurface> ShadedSurfaces { get; } = new();
@@ -153,7 +156,8 @@ internal sealed class StageAssets : IDisposable
         }
     }
 
-    public void Load(string directory, GameObject root, int layer, Transform[]? bones = null, bool lighting = false, string? lightGroup = null, Shader? surfaceShader = null)
+    public void Load(string directory, GameObject root, int layer, Transform[]? bones = null, bool lighting = false, string? lightGroup = null, Shader? surfaceShader = null,
+        System.Numerics.Vector3? lightAt = null)
     {
         Definition = JsonSerializer.Deserialize<StageDefinition>(File.ReadAllText(Path.Combine(directory, "stage.json")),
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? throw new InvalidDataException("Missing stage definition");
@@ -183,10 +187,13 @@ internal sealed class StageAssets : IDisposable
         foreach (var (key, source) in Definition.Materials)
         {
             var shaded = surfaceShader != null && source.ShadingMode >= 0;
-            var material = shaded ? MakeSurfaceMaterial(surfaceShader!, source) : Own(MakeMaterial(shader, source.Blend != 0, source.Blend == 1));
+            // GH3 draws crowd cards (Billboard_Fast) as opaque alpha-tested quads with depth; the lit peds are baked into the atlas.
+            var crowdCard = surfaceShader != null && source.Crowd;
+            var material = crowdCard ? MakeSurfaceMaterial(surfaceShader!, new StageMaterial { Shading = "unlit", Cutoff = 0.5f, Blend = 0 }) :
+                shaded ? MakeSurfaceMaterial(surfaceShader!, source) : Own(MakeMaterial(shader, source.Blend != 0, source.Blend == 1));
             material.name = "GH3 Stage " + key;
             if (bones != null && shaded) material.SetInt("_Cull", (int)CullMode.Off);
-            if (!shaded && source.Cutoff > 0 && !source.SortedTransparency)
+            if (!shaded && !crowdCard && source.Cutoff > 0 && !source.SortedTransparency)
             {
                 material.SetFloat("_Cutoff", source.Cutoff);
                 material.EnableKeyword("_ALPHATEST_ON");
@@ -217,6 +224,7 @@ internal sealed class StageAssets : IDisposable
                 material.SetVector("_Gh3Char5", flags);
             }
             if (source.Crowd) CrowdMaterials.Add(material);
+            if (source.Crowd && source.CrowdRole.Length > 0) CrowdRoles[material] = source.CrowdRole;
             if (source.MovieSlot is < -1 or > 31) throw new InvalidDataException("Invalid movie surface slot");
             if (source.MovieSlot >= 0) MovieSurfaces.Add((source.MovieSlot, material, material.mainTexture));
         }
@@ -343,7 +351,7 @@ internal sealed class StageAssets : IDisposable
             }
             renderer.sharedMaterial = material;
             if (shadedMode > 0) ShadedSurfaces.Add(new(renderer, shadedMode, bones != null ? lightGroup ?? Gh3Checksum.Of("Band") :
-                Definition.LightGroups.Length == 0 ? "" : Definition.LightGroups[part], bones != null || objectId.Length > 0));
+                Definition.LightGroups.Length == 0 ? "" : Definition.LightGroups[part], bones != null || objectId.Length > 0, lightAt));
             var sourceMaterial = Definition.Materials[materialId.ToString("x8")].Source;
             if (objectId.Length > 0 && sourceMaterial.Length > 0)
                 MaterialSurfaces.Add((Convert.ToUInt32(objectId, 16), Gh3QbText.Key(sourceMaterial), renderer, Definition.Materials[materialId.ToString("x8")]));
@@ -398,6 +406,7 @@ internal sealed class StageAssets : IDisposable
         SurfaceMaterials.Clear();
         CharacterMaterials.Clear();
         CrowdMaterials.Clear();
+        CrowdRoles.Clear();
         LitMeshes.Clear();
         Objects.Clear();
         MaterialSurfaces.Clear();

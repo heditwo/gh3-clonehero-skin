@@ -260,6 +260,9 @@ def import_materials(glb, folder):
                 raise ValueError("Invalid texture animation rate or offset")
             materials[name]["animation"] = animation
         if materials[name]["crowd"]: materials[name].update(blend=3, cutoff=0.3)
+        role = extras.get("gh3CrowdRole", "")
+        if role and not re.fullmatch(r"crowd[1-8]", role): raise ValueError("Invalid crowd card role")
+        if role: materials[name]["crowdRole"] = role
         material_ids[i] = name
     return materials, material_ids, images
 

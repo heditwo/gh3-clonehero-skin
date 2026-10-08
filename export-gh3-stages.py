@@ -250,8 +250,15 @@ def export(source, scripts, global_entries, zone, directory, global_references=N
     groups = []; mesh_nodes = []
     lighter_ids = {key(f"{zone}_LIGHTER_Geo{i:02}") for i in range(15)}
     scenery_ids = {n[key("Name")] for n in nodes if n.get(key("Class")) in (key("LevelGeometry"), key("LevelObject"))} - lighter_ids
-    materials, meshes = stage.scene(primary, nodes, light_groups=groups, mesh_nodes=mesh_nodes,
+    # GH3 crowd cards keep their 0..1 UVs; each card material shows one crowd model's render (see crowd_role below).
+    materials, meshes = stage.scene(primary, nodes, light_groups=groups, mesh_nodes=mesh_nodes, crowd_cards=False,
                                    include_nodes=scenery_ids | (lighter_ids if zone != "z_artdeco" else set()))
+    crowd_rows = next((rows for qb in scripts.values() if (rows := find_array(qb, zone+"_crowd_models")) is not None), [])
+    crowd_textures = {f'{row[0xc9c7838a]:08x}': f'crowd{i}' for row in crowd_rows
+                      for i in range(1, 9) if row.get(key("name")) == key(f"crowd{i}") and 0xc9c7838a in row}
+    for material in materials.values():
+        if material["template"] == "a17d40ed" and material["textures"] and material["textures"][0] in crowd_textures:
+            material["crowdRole"] = crowd_textures[material["textures"][0]]
     # Venue posters and billboards sample the global ad textures, which GH3 streams from global_ad_tex.pak.
     textures = {name: blob for k,n,b in source.load("PAK/global_ad_tex.pak.xen") if k == key(".tex") for name, blob in texture_dictionary(b).items()}
     for k,n,b in entries:
