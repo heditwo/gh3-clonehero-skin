@@ -362,7 +362,8 @@ def compile_stage(source, destination):
                 packed, faces = glb.primitive(primitive, geometry_transform)
                 for part in split_mesh(material, packed, faces):
                     mat = materials[material]
-                    if mat["cutoff"] and mat["texture"] and not mat["crowd"]:
+                    # An animated atlas changes its mask every frame, so it keeps the shader alpha test.
+                    if mat["cutoff"] and mat["texture"] and not mat["crowd"] and "animation" not in mat:
                         pair = mat["texture"], mat["cutoff"]
                         if pair not in masks: masks[pair] = alpha_region(images[pair[0]], pair[1])
                         part = trim_mesh(part, images[pair[0]], pair[1], masks[pair])

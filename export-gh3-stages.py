@@ -7,6 +7,7 @@ from io import BytesIO
 import importlib.util
 import json
 from pathlib import Path
+import struct
 
 import numpy as np
 from PIL import Image
@@ -55,7 +56,7 @@ def texture_dictionary(blob):
 def decode_textures(materials, texture_blobs):
     images = {}
     for name, material in materials.items():
-        material["sourceMaterial"] = "0x" + name
+        material.setdefault("sourceMaterial", "0x" + name)
         if "2c509be0" in material["textures"]: material["movieSlot"] = 0
         texture = stage.diffuse_texture(material, texture_blobs)
         material["texture"] = texture
@@ -64,11 +65,46 @@ def decode_textures(materials, texture_blobs):
             material.pop("lightmap", None)
         if material["template"] in {"4d7335f8", "f4e6db51"} and material["blend"] == 0 and material["cutoff"]:
             material["geometryCutout"] = True
+        if material["template"] in stage.ANIMATED_TEMPLATES and material["blend"] == 0 and material["cutoff"]:
+            material["alphaTest"] = True
         if material.get("lightmap") not in texture_blobs: material.pop("lightmap", None)
         for name in (texture, material.get("lightmap")):
             if name and name not in images:
                 images[name] = Image.open(BytesIO(texture_blobs[name])).convert("RGBA")
     return images
+
+
+def pass1_layers(materials, meshes, uv_layers, texture_blobs):
+    """Draw the second texture of layered materials as an alpha-blended copy of the base mesh on UV set 1."""
+    layered = {name for name, material in materials.items()
+               if material["template"] == stage.LAYERED_TEMPLATE and material["blend"] == 0 and not material["cutoff"]
+               and len(material["textures"]) == 4 and all(t in texture_blobs for t in material["textures"][1:3])}
+    for name in sorted(layered):
+        material = materials[name]; pass1, mask = material["textures"][1:3]
+        layer_mask = np.asarray(Image.open(BytesIO(texture_blobs[mask])).convert("RGBA"))[..., 0]
+        texture = pass1
+        if layer_mask.min() < 255:
+            if any(len(layers[0]) < 3 or any(uv[1] != uv[2] for uv in layers)
+                   for (owner, *_), layers in zip(meshes, uv_layers) if owner == name):
+                continue
+            image = Image.open(BytesIO(texture_blobs[pass1])).convert("RGBA")
+            alpha = np.asarray(image)[..., 3] * np.asarray(Image.fromarray(layer_mask).resize(image.size, Image.BILINEAR), dtype=float) / 255
+            image.putalpha(Image.fromarray(np.round(alpha).astype(np.uint8)))
+            blob = BytesIO(); image.save(blob, "PNG")
+            texture = f"{key(pass1 + '-' + mask):08x}"
+            texture_blobs[texture] = blob.getvalue()
+        materials[name + "-pass1"] = {"textures": [texture], "template": material["template"], "blend": 2, "cutoff": 0,
+                                      "doubleSided": material["doubleSided"], "shading": material.get("shading", "lit"),
+                                      "color": material.get("layerColor", [1, 1, 1, 1]), "sourceMaterial": "0x" + name,
+                                      **({"lightmap": material["lightmap"]} if "lightmap" in material else {})}
+    overlays = {}
+    for index, ((owner, count, vertices, faces), layers) in enumerate(zip(meshes, uv_layers)):
+        if owner + "-pass1" not in materials: continue
+        overlay = bytearray(vertices); stride = len(vertices) // count
+        for vertex, uv in enumerate(layers):
+            struct.pack_into("<2f", overlay, vertex*stride + 24, uv[1][0], 1 - uv[1][1])
+        overlays[index] = [(owner + "-pass1", count, bytes(overlay), faces)]
+    return overlays
 
 
 def label_group(value):
@@ -251,8 +287,9 @@ def export(source, scripts, global_entries, zone, directory, global_references=N
     lighter_ids = {key(f"{zone}_LIGHTER_Geo{i:02}") for i in range(15)}
     scenery_ids = {n[key("Name")] for n in nodes if n.get(key("Class")) in (key("LevelGeometry"), key("LevelObject"))} - lighter_ids
     # GH3 crowd cards keep their 0..1 UVs; each card material shows one crowd model's render (see crowd_role below).
+    uv_layers = []
     materials, meshes = stage.scene(primary, nodes, light_groups=groups, mesh_nodes=mesh_nodes, crowd_cards=False,
-                                   include_nodes=scenery_ids | (lighter_ids if zone != "z_artdeco" else set()))
+                                   include_nodes=scenery_ids | (lighter_ids if zone != "z_artdeco" else set()), uv_layers=uv_layers)
     crowd_rows = next((rows for qb in scripts.values() if (rows := find_array(qb, zone+"_crowd_models")) is not None), [])
     crowd_textures = {f'{row[0xc9c7838a]:08x}': f'crowd{i}' for row in crowd_rows
                       for i in range(1, 9) if row.get(key("name")) == key(f"crowd{i}") and 0xc9c7838a in row}
@@ -264,11 +301,12 @@ def export(source, scripts, global_entries, zone, directory, global_references=N
     for k,n,b in entries:
         if k == key(".tex"): textures.update(texture_dictionary(b))
     used = {m[0] for m in meshes}; materials = {n:m for n,m in materials.items() if n in used}
+    overlays = pass1_layers(materials, meshes, uv_layers, textures)
     images = decode_textures(materials, textures)
     exported_objects = set()
     for i, (mesh, group_id, node) in enumerate(zip(meshes, groups, mesh_nodes)):
         name = f"scenery-{i:04d}"
-        index = writer.mesh(name, [mesh], materials, images)
+        index = writer.mesh(name, [mesh, *overlays.get(i, [])], materials, images)
         extras = {"gh3LightGroup": label_group(int(group_id, 16))}
         if node is not None:
             exported_objects.add(node[key("Name")])

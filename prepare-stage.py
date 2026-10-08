@@ -16,6 +16,12 @@ from gh3_formats import find_array, key, pak_entries, values, word
 from gh3_mesh_cutout import trim_prop_cutouts
 
 
+# AnimatedTexture and AnimatedTexture_Lit read the same vertex constants: columns, rows, frames per second, frame offset.
+ANIMATED_TEMPLATES = {"9893d156", "f76185ad"}
+# D_3ChkBox_Pass0_Pass1 blends a second texture (UV set 1) over the base by its alpha and a mask (UV set 2).
+LAYERED_TEMPLATE = "92af2fe3"
+
+
 def textures(data):
     if word(data, 0) != 0xFACECAA7:
         raise ValueError("Expected a GH3 PC texture dictionary")
@@ -89,7 +95,7 @@ def crowd_uvs(vertices, count, faces, seed, stride):
         struct.pack_into("<2f", vertices, vertex*stride+24, (tile % 8+u)/8, 1-(tile//8+1-v)/3)
 
 
-def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, crowd_cards=True, include_nodes=()):
+def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, crowd_cards=True, include_nodes=(), uv_layers=None):
     count = values(data, 34, "H")[0]
     end = 32 + word(data, 36)
     offset = 48
@@ -119,7 +125,9 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
             count = 13 if model == "hair" else 11
             if model and len(constants) >= count:
                 materials[name]["character"] = {"model": model, "constants": [list(c) for c in constants[:count]]}
-        if materials[name]["template"] == "f76185ad":
+            if materials[name]["template"] == LAYERED_TEMPLATE and len(constants) >= 2:
+                materials[name]["layerColor"] = [max(0.0, v) for v in constants[1]]
+        if materials[name]["template"] in ANIMATED_TEMPLATES:
             constant_count, constant_offset = values(data, offset + 168, "II")
             if constant_count != 4: raise ValueError("Animated texture has an invalid vertex constant bank")
             columns, rows, fps, frame_offset = [values(data, offset + constant_offset + i*16, "f")[0] for i in range(4)]
@@ -186,6 +194,7 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
         tangent_count = 2 if flags & 0x800 else 1 if flags & 0x400 else 0
         uv_count = sum(bool(flags & (1 << bit)) for bit in range(16, 24))
         vertex_data = bytearray()
+        layers = []
         for vertex in range(vertex_count):
             start = vertices_at + vertex * stride
             if weighted:
@@ -207,6 +216,7 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
                 cursor += 4
             cursor += 4 if flags & 0x4000 and not weighted else 0
             uv = values(data, cursor, "2f") if uv_count else (0, 0)
+            if uv_layers is not None: layers.append([values(data, cursor + 8*k, "2f") for k in range(uv_count)])
             extra = cursor + uv_count * 8
             lightmap = values(data, extra, "2f") if flags & 0x0F000000 else (0, 0)
             expected = extra + (8 if flags & 0x0C000000 else 0) + (8 if flags & 0x03000000 else 0)
@@ -232,6 +242,8 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
         meshes.append((material, vertex_count, vertex_data, faces))
         if mesh_nodes is not None:
             mesh_nodes.append(node)
+        if uv_layers is not None:
+            uv_layers.append(layers)
         if light_groups is not None:
             light_groups.append(f"{(node or {}).get(key('LightGroup'), key('None')):08x}")
     for material in unlightmapped:

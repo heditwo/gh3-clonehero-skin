@@ -98,7 +98,7 @@ class GlbWriter:
             row["occlusionTexture"] = {"index": self.texture(textures[definition["lightmap"]]), "texCoord": 1}
         blend = definition.get("blend", 0)
         row["alphaMode"] = "BLEND" if blend else "OPAQUE"
-        if definition.get("geometryCutout"):
+        if definition.get("geometryCutout") or definition.get("alphaTest"):
             row["alphaMode"] = "MASK"
             row["alphaCutoff"] = definition.get("cutoff", 0.5)
         extras = {}

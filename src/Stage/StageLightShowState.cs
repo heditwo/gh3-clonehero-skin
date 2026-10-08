@@ -23,6 +23,10 @@ internal sealed class StageLightShowState
     private bool _active = true;
     private uint _transitionPerformance;
     private uint _transitionMood;
+    private bool _performanceSet;
+    // GH3.exe reads this unnamed table after LightShow_SetParams: node flags per performance, and per mood unless the performance is poor.
+    private const uint NodeFlagTable = 0x1a22a5e6;
+    public Action<uint, bool>? NodeFlagChanged { get; set; }
     public uint Mood { get; private set; } = Gh3Checksum.Value("intro");
     public uint Performance { get; private set; } = Gh3Checksum.Value("medium");
     private static uint Key(string name) => Gh3Checksum.Value(name);
@@ -64,16 +68,21 @@ internal sealed class StageLightShowState
     private void SetParameters(Gh3QbValue parameters)
     {
         _parameters = Gh3ScriptRuntime.Structure(_parameters.Fields.Where(field => parameters.Field(field.Name) == null).Concat(parameters.Fields));
+        var changed = false;
         if (parameters.Field("performance") is { } performance)
         {
+            changed |= !_performanceSet || Performance != performance.Integer;
+            _performanceSet = true;
             Performance = performance.Integer;
             Transition("performance", Performance, ref _transitionPerformance);
         }
         if (parameters.Field("mood") is { } mood)
         {
+            changed |= Mood != mood.Integer;
             Mood = mood.Integer;
             Transition("mood", Mood, ref _transitionMood);
         }
+        if (changed && _performanceSet) ApplyNodeFlags();
         if (!_active) return;
         var next = Settings()?.Field("processor")?.Integer ?? 0;
         if (next != _processor)
@@ -84,6 +93,24 @@ internal sealed class StageLightShowState
             RunProcessor(_processor, "screnter");
             RunProcessor(_processor, "screvent");
         }
+    }
+
+    private void ApplyNodeFlags()
+    {
+        if (NodeFlagChanged == null || !_bank.Values.TryGetValue(NodeFlagTable, out var table)) return;
+        static uint Flag(Gh3QbValue row) => row.Fields.First(field => field.Value.Type == 13).Value.Integer;
+        var enabled = new Dictionary<uint, bool>();
+        foreach (var section in table.Fields)
+            foreach (var state in section.Value.Fields)
+                foreach (var row in state.Value.Items) enabled.TryAdd(Flag(row), false);
+        void Enable(string section, uint state)
+        {
+            foreach (var row in table.Field(section)?.Field(state)?.Items ?? Array.Empty<Gh3QbValue>())
+                enabled[Flag(row)] = row.Fields.FirstOrDefault(field => field.Value.Type == 1)?.Value is not { } value || Gh3ScriptRuntime.Truth(value);
+        }
+        Enable("performance", Performance);
+        if (Performance != Key("poor")) Enable("mood", Mood);
+        foreach (var (flag, value) in enabled) NodeFlagChanged(flag, value);
     }
 
     private void Transition(string name, uint value, ref uint previous)

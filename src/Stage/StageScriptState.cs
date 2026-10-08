@@ -90,7 +90,7 @@ internal sealed class StageScriptState : IDisposable
         _runtime = new(_bank.Values, Native, time: Math.Min(0, _commands.FirstOrDefault()?.Time ?? 0)) { Failed = (_, error) => _diagnostics.Add(error.Message) };
         _runtime.Tempo = _timeline.TempoAt;
         var zone = _venue.StartsWith("gh3.") ? "z_" + _venue.Substring(4) : _venue;
-        _lightShow = _sourceLighting ? new(_bank, _runtime, _lighting!, zone, message => _diagnostics.Add(message)) : null;
+        _lightShow = _sourceLighting ? new(_bank, _runtime, _lighting!, zone, message => _diagnostics.Add(message)) { NodeFlagChanged = ChangeNodeFlag } : null;
         Materials = new(_bank, _runtime, message => _diagnostics.Add(message), _materialDefaults);
         LightScene = new(_bank.NodeValues.Values, _runtime, _lighting, _bank.Values.GetValueOrDefault(Gh3Checksum.Value(zone + "_snapshots")));
         RenderControls = new(_lighting, id => _objects.TryGetValue(id, out var obj) && obj.Exists, message => _diagnostics.Add(message));
@@ -264,6 +264,29 @@ internal sealed class StageScriptState : IDisposable
         Cycle(actor.Start, actor.Offset);
     }
 
+    private void ChangeNodeFlag(uint flag, bool enabled)
+    {
+        if (!_knownNodeFlags.Contains(flag) || enabled == _nodeFlags.Contains(flag)) return;
+        if (enabled) _nodeFlags.Add(flag); else _nodeFlags.Remove(flag);
+        ChangeNodeObjects(flag);
+    }
+
+    // GH3.exe creates a node when every known flag named by its CreatedFromVariable and CreatedOnProgress fields is set.
+    private void ChangeNodeObjects(uint flag)
+    {
+        foreach (var (id, node) in _bank.NodeValues)
+        {
+            var flags = new[] { node.Field("CreatedFromVariable")?.Integer, node.Field("CreatedOnProgress")?.Integer };
+            if (!flags.Contains(flag)) continue;
+            // The export skips geometry in the separate _gfx scene, so those nodes have no object to create.
+            var geometry = node.Field("Class")?.Integer is var type && (type == Gh3Checksum.Value("LevelGeometry") || type == Gh3Checksum.Value("LevelObject"));
+            if (geometry && !_objects.ContainsKey(id)) continue;
+            var create = flags.All(item => item is not { } other || !_knownNodeFlags.Contains(other) || _nodeFlags.Contains(other));
+            var args = Gh3ScriptRuntime.Structure(new[] { new Gh3QbField(Gh3Checksum.Value("nodeName"), new(13, -1, id)) });
+            _runtime.Start(Gh3Checksum.Value(create ? "SafeCreate" : "SafeKill"), args);
+        }
+    }
+
     private Gh3ScriptCallResult? Native(Gh3ScriptContext context, uint command, Gh3QbValue parameters)
     {
         bool Is(string name) => command == Gh3Checksum.Value(name);
@@ -288,17 +311,8 @@ internal sealed class StageScriptState : IDisposable
             }
             if (Is("ChangeNodeFlag") && !_knownNodeFlags.Contains(flag) || enabled == _nodeFlags.Contains(flag)) return new(true);
             if (enabled) _nodeFlags.Add(flag); else _nodeFlags.Remove(flag);
-            void ChangeObjects()
-            {
-                foreach (var (id, node) in _bank.NodeValues)
-                {
-                    if (node.Field("CreatedOnProgress")?.Integer != flag) continue;
-                    var args = Gh3ScriptRuntime.Structure(new[] { new Gh3QbField(Gh3Checksum.Value("nodeName"), new(13, -1, id)) });
-                    _runtime.Start(Gh3Checksum.Value(enabled ? "SafeCreate" : "SafeKill"), args);
-                }
-            }
-            if (parameters.Field("queue") is { } queue && Gh3ScriptRuntime.Truth(queue)) _runtime.Schedule(_runtime.Time + _runtime.FrameDuration, ChangeObjects);
-            else ChangeObjects();
+            if (parameters.Field("queue") is { } queue && Gh3ScriptRuntime.Truth(queue)) _runtime.Schedule(_runtime.Time + _runtime.FrameDuration, () => ChangeNodeObjects(flag));
+            else ChangeNodeObjects(flag);
             return new(true);
         }
         if (Is("GetNode"))
