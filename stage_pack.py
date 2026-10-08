@@ -276,7 +276,7 @@ def compile_stage(source, destination):
     if type(manifest["version"]) != int or manifest["version"] != 1 or manifest["kind"] != "stage" or manifest["library"] != "gh3-band-v1" or not isinstance(manifest["id"],str) or not re.fullmatch(r"[a-z0-9][a-z0-9.-]{0,95}", manifest["id"]):
         raise ValueError("Invalid stage pack identity or version")
     if not isinstance(manifest["name"],str) or not manifest["name"].strip(): raise ValueError("A stage needs a display name")
-    if set(manifest["band"]) != ROLES: raise ValueError("A stage needs all four performer placements")
+    if not manifest["band"] or set(manifest["band"]) - ROLES: raise ValueError("A stage needs one to four known performer placements")
     for placement in manifest["band"].values(): transform(placement)
     crowd = manifest.get("crowd", [])
     if not isinstance(crowd, list) or len(crowd) > 8: raise ValueError("Invalid crowd members")

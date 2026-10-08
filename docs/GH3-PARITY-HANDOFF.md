@@ -251,6 +251,13 @@ MelonLoader's assembly generator contacted `api.melonloader.com` on every launch
 - **Calibrated by eye.** The overshoot (12 units), the squash amounts, the pop size, the flash size, and the six- and seven-digit shrink.
 - **Test.** `GH3_SKIN_FORCE_COMBO=9975 GH3_SKIN_FORCE_COMBO_BREAK=10045` shows 9999→10000 and a break after about 25 s of My Curse. `ComboReelLogicTests` checks the curves, the reel layout, the lamp clearance, the animation, and the override.
 
+#### Credits band (fix-credits)
+
+- **Fault.** In the Credits venue, a drummer stood inside the box on top of the tower. A bassist and a singer were also on the tower. `z_credits_NodeArray` has only one band waypoint, `z_credits_TRG_Waypoint_Guitarist_Start`. The exporter added the missing members at fixed offsets from the guitarist (drummer: 3 units behind). These positions were not from GH3.
+- **GH3 data.** `create_band` (`qb.pak`, script `0x3681c07d`) has a special path when `current_level` is `z_credits`: it calls `create_guitarist`, then `destroy_band_member` for `bassist`, `vocalist`, and `drummer`. Thus GH3 shows only the guitarist in Credits. `get_starting_position` gives `NONE` for a member without a `_start` waypoint.
+- **Fix.** `export-gh3-stages.py` exports only the members that have a start waypoint. It does not add members. `stage_pack.py` and `StagePack.cs` accept one to four known performers. The source report lists the exported members in `band` (it replaces `addedBandPlacements`). The other nine venues have all four start waypoints, so their packs do not change.
+- **Check.** Credits loads with 1 performer. The drummer camera (`GH3_SKIN_CAMERA=drummer`) shows each drummer on his riser in the other venues.
+
 ### Installation state
 
 - Version `0.9.8` is installed in `~/games/clonehero-gh3-melon` with all ten re-exported venues, the regenerated band library, and the rebuilt `render/stage.bundle` (the light-data texture needs it). DLL SHA-256: `6355e437839341495fc084bfebfc49adb0a193f0964ec12db090c767899a5d52`.

@@ -276,12 +276,6 @@ def export(source, scripts, global_entries, zone, directory, global_references=N
         "performanceChanged": zone + "_performance_changed" if f"{key(zone + '_performance_changed'):08x}" in script_values else ""})
     waypoint_names, band, waypoints = waypoint_map(zone, nodes)
     if not band: raise ValueError(f"Venue has no performer starts: {zone}")
-    added_roles = []
-    for role, offset in {"guitarist": [2,0,0], "bassist": [-3,0,0], "singer": [0,0,-1], "drummer": [0,0,3]}.items():
-        if role in band: continue
-        origin = next(iter(band.values()))["position"]
-        band[role] = {"position": [a+b for a,b in zip(origin,offset)], "rotation": [0,0,0,1]}
-        added_roles.append(role)
     writer = GlbWriter(); primary = max((b for k,n,b in entries if k == key(".scn")), key=len)
     groups = []; mesh_nodes = []
     lighter_ids = {key(f"{zone}_LIGHTER_Geo{i:02}") for i in range(15)}
@@ -396,7 +390,7 @@ def export(source, scripts, global_entries, zone, directory, global_references=N
             "model": row[key("Model")].replace("\\", "/").split("/")[-1].split(".")[0].lower(),
             "yaw": -signed_angle(row.get(key("roty"), 0))} for row in crowd_models if key("remap_only") not in row.get(0, [])]
     write_json(directory/"stage-pack.json", manifest)
-    report = {"zone": zone, "sourceSha256": source.hashes[f"ZONES/{zone}.pak.xen"], "meshes": len(meshes), "fixtures": fixture_count, "addedBandPlacements": added_roles,
+    report = {"zone": zone, "sourceSha256": source.hashes[f"ZONES/{zone}.pak.xen"], "meshes": len(meshes), "fixtures": fixture_count, "band": sorted(band),
               "unmappedCameras": bank["unmappedControls"], "modelNodes": [{"name": f'{n[key("Name")]:08x}', "model": n.get(key("Model")),
                   "profile": f'{n.get(key("Profile"), 0):08x}', "created": key("CreatedAtStart") in n.get(0, [])}
                   for n in nodes if n.get(key("Class")) == key("GameObject") and n.get(key("Model"), "none") != "none"]}

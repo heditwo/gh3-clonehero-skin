@@ -257,12 +257,24 @@ class StagePackTests(unittest.TestCase):
         with self.assertRaises(ValueError): node_prefixes(data, {key("nodes"): nodes[:3]})
         with self.assertRaises(ValueError): node_prefixes(data, {})
 
+    def test_stage_can_place_only_some_performers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); source = root/"source"; output = root/"compiled"
+            TEMPLATE.create(source)
+            manifest = load_json(source/"stage-pack.json"); manifest["band"] = {"guitarist": manifest["band"]["guitarist"]}
+            write_json(source/"stage-pack.json",manifest)
+            camera = load_json(source/"cameras.json"); camera["shots"]["wide"]["points"][0]["lookAt"] = "guitarist.head"
+            write_json(source/"cameras.json",camera)
+            compile_stage(source,output)
+            self.assertEqual(set(load_json(output/"pack.json")["band"]), {"guitarist"})
+
     def test_manifest_camera_and_fixture_failures_preserve_cache(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); source = root/"source"; output = root/"cache"
             TEMPLATE.create(source); compile_stage(source,output)
             manifest = load_json(source/"stage-pack.json")
-            for field,value in [("unexpected",True),("id","../bad"),("band",{}),("effects",{"unknown":[]})]:
+            for field,value in [("unexpected",True),("id","../bad"),("band",{}),("band",{**manifest["band"],"keyboardist":manifest["band"]["guitarist"]}),
+                                ("effects",{"unknown":[]})]:
                 invalid = deepcopy(manifest); invalid[field] = value
                 write_json(source/"stage-pack.json",invalid)
                 with self.assertRaises(ValueError): compile_stage(source,output)
