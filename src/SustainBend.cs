@@ -45,6 +45,8 @@ internal sealed class WhammyHistory
         return _entries[channel, index] + (_entries[channel, index + 1] - _entries[channel, index]) * fraction;
     }
 
+    public float Value(int channel, float secondsAgo) => Read(channel, secondsAgo);
+
     private float Read(int channel, float secondsAgo)
     {
         var texture = _texture!;

@@ -1,6 +1,7 @@
 using Il2Cpp;
 using MelonLoader;
 using UnityEngine;
+using NoteFlags = Il2Cpp.ObjectPublicObInObDoSiDoUIInBoInUnique.EnumNPublicSealedvaNoChDiExChHoStTaSoUnique;
 
 namespace Gh3Skin;
 
@@ -34,6 +35,9 @@ internal sealed class GameplaySpriteRenderer
     private readonly MaterialPropertyBlock _sustainProperties = new();
     private readonly WhammyHistory _whammy = new();
     private bool _whammyReady;
+    private GuitarNoteRenderer? _noteRenderer;
+    private readonly StarWhammy[] _starWhammy = { new(), new(), new(), new(), new() };
+    private float _starWhammyTime;
     private float _highwayEndZ;
 
     public GameplaySpriteRenderer(SkinAssets assets, SkinOptions options)
@@ -143,6 +147,7 @@ internal sealed class GameplaySpriteRenderer
         if (_options.ForceWhammyRate > 0)
             WhammyHistory.Force(0.5f - 0.5f * MathF.Cos(2 * MathF.PI * _options.ForceWhammyRate * (float)Time.timeAsDouble));
         _whammyReady = _whammy.Begin();
+        UpdateStarWhammy();
         foreach (var entry in _effects)
         {
             var renderer = entry.Renderer;
@@ -205,6 +210,7 @@ internal sealed class GameplaySpriteRenderer
         {
             renderer.noteZPosFarLimit = HighwayView.NeckStartZ + HighwayView.NeckLength * HighwayView.NeckSpriteLength;
             renderer.field_Protected_Double_0 = renderer.noteZPosFarLimit / renderer.noteSpeed;
+            _noteRenderer = renderer;
             _noteRenderersSet = true;
         }
     }
@@ -334,7 +340,7 @@ internal sealed class GameplaySpriteRenderer
         else if (!_sustainFrames.TryGetValue(key, out frame))
             return;
         var lane = NearestLane(transform.localPosition.x);
-        var variant = SustainState.Variant(frame, lane, starPowerActive);
+        var variant = SustainState.Variant(frame, lane, starPowerActive || _starWhammy[lane].Star);
         var sprite = frame == 0 ? _assets.HeldSustain(variant) : _assets.Sustain(variant);
         if (renderer.sprite?.Pointer != sprite.Pointer)
         {
@@ -357,6 +363,34 @@ internal sealed class GameplaySpriteRenderer
         }
         else
             bend?.Hide(renderer);
+    }
+
+    // GH3 spawns star_whammy for each held Star Power phrase sustain and steps it once per 60 Hz game frame.
+    private void UpdateStarWhammy()
+    {
+        var held = 0;
+        if (_noteRenderer != null)
+            foreach (var note in _noteRenderer.HeldSustainNotes)
+                if ((note.field_Public_EnumNPublicSealedvaNoChDiExChHoStTaSoUnique_0 & NoteFlags.StarPower) != 0)
+                    held |= note.field_Public_UInt16_0;
+        _starWhammyTime += Time.deltaTime;
+        var ticks = Math.Min((int)(_starWhammyTime * StarWhammy.FramesPerSecond), 10);
+        _starWhammyTime = Math.Min(_starWhammyTime - ticks / StarWhammy.FramesPerSecond, 1 / StarWhammy.FramesPerSecond);
+        for (var lane = 0; lane < _starWhammy.Length; lane++)
+        {
+            var state = _starWhammy[lane];
+            var channel = SustainState.WhammyChannel(lane);
+            if ((held & (1 << channel)) == 0 || !_whammyReady)
+            {
+                state.Reset();
+                continue;
+            }
+            for (var tick = ticks - 1; tick >= 0; tick--)
+            {
+                var age = tick / StarWhammy.FramesPerSecond;
+                state.Step(_whammy.Value(channel, age) - _whammy.Value(channel, age + 1 / StarWhammy.FramesPerSecond));
+            }
+        }
     }
 
     private void ReplaceEffect(SpriteRenderer renderer, string name, string objectName)

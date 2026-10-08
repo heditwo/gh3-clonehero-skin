@@ -82,7 +82,7 @@ Open items:
 
 - No GH3 reference shows a whammy, because the GH3 bot does not use the whammy bar. The bend follows the GH3 code, but no matched frame verifies it.
 - No GH3 reference shows a sustain during active Star Power. The Star Power bar uses GH3's `sys_Whammy2D_StarPower` texture and was verified in the mod only.
-- GH3 also changes a Star Power phrase sustain to the Star Power texture while the player uses the whammy (`star_power_whammy` in `guitar_starpower.qb`, `MakeStarWhammy` after 5 frames). The mod does not do this. The sustain renderer does not know if its note is in a phrase.
+- GH3 changes a held Star Power phrase sustain to the Star Power texture while the player uses the whammy (qb script `0x8fc2ccad`, which calls `MakeStarWhammy` and `MakeNormalWhammy`). Each 60 Hz frame, a whammy change of more than 0.03 sets a 5-frame counter. After 5 frames with the counter on, the bar turns blue. After 5 frames with the counter off, the bar goes back to the lane colour. `StarWhammy` (`src/SustainVariant.cs`) does the same. The mod finds held phrase notes in `GuitarNoteRenderer.HeldSustainNotes`: the note flags have `StarPower` (128), and `field_Public_UInt16_0` is the lane mask (bit = lane + 1, the same as the whammy channel).
 - Dead (dropped) sustains are not verified in a capture.
 
 ### Performance findings
