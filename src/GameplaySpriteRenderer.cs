@@ -20,6 +20,10 @@ internal sealed class GameplaySpriteRenderer
     private Transform? _camera;
     private Transform? _neck;
     private bool _highwayApplied;
+    private HighwayScroll? _scroll;
+    private const float NeckHeight = 5.05f;
+    private float _stockNeckHeight;
+    private float _speedSet;
     private ParticleSystemRenderer? _starParticles;
     private int _childCount = -1;
 
@@ -45,6 +49,9 @@ internal sealed class GameplaySpriteRenderer
         _camera = null;
         _neck = null;
         _highwayApplied = false;
+        _scroll = null;
+        _stockNeckHeight = 0;
+        _speedSet = 0;
         _starParticles = null;
         _childCount = -1;
     }
@@ -79,7 +86,11 @@ internal sealed class GameplaySpriteRenderer
         if (_camera != null)
             _camera.localPosition = new Vector3(-0.005f, 1, -3.97f);
         if (_neck != null)
-            _neck.localScale = new Vector3(0.96f, 5.05f, 1);
+        {
+            if (_stockNeckHeight == 0) _stockNeckHeight = _neck.localScale.y;
+            _neck.localScale = new Vector3(0.96f, NeckHeight, 1);
+        }
+        KeepHighwayAtNoteSpeed();
         if (_starParticles != null)
             _starParticles.enabled = false;
         foreach (var (renderer, _) in _stockStarPowerEffects)
@@ -128,7 +139,19 @@ internal sealed class GameplaySpriteRenderer
         var scroll = neck.GetComponent<HighwayScroll>() ?? neck.GetComponentInParent<HighwayScroll>() ?? _player?.GetComponentInChildren<HighwayScroll>(true);
         if (scroll == null) { MelonLogger.Warning("GH3 highway: HighwayScroll was not found"); return; }
         scroll.Method_Public_Void_Texture2D_0(_assets.HighwayTexture);
+        _scroll = scroll;
         MelonLogger.Msg("Applied GH3 highway through Clone Hero's highway scroll");
+    }
+
+    // HighwayScroll moves the texture by songTime * speed / 6 UV, which matches the notes for the stock neck height.
+    // The skin stretches the neck, so the texture's scroll speed shrinks by the same factor.
+    private void KeepHighwayAtNoteSpeed()
+    {
+        if (_scroll == null || _stockNeckHeight <= 0) return;
+        var speed = _scroll.field_Private_Single_1;
+        if (Math.Abs(speed - _speedSet) < 1e-6f || speed <= 0) return;
+        _speedSet = speed * _stockNeckHeight / NeckHeight;
+        _scroll.field_Private_Single_1 = _speedSet;
     }
 
     private void CachePlayer(Transform transform)

@@ -91,11 +91,18 @@ Original GH3 now records on the GPU: `~/.cache/gh3ref/start-gh3-gpu.sh :9310` st
 
 Fixed from that comparison: back-face culling (GH3 material flag +220 marks two-sided materials), Axel's highway texture, venue posters from `global_ad_tex.pak`, housing lens flares, and the "Note Streak!" and "Star Power Ready" messages. Remaining visible gaps: GH3's shadow map, the camera-shot choice (GH3 picks shots at random), bloom around bright lights, and overall stage brightness in some snapshots.
 
+#### Highway speed and crowd (0.9.7)
+
+- **Highway speed.** `HighwayScroll` moves the board texture by `songTime × speed / 6` UV (`field_Private_Single_1`, 7 by default), which matches the notes for the stock neck height (4.617). The skin stretches the neck to 5.05, so the board ran about 9% faster than the notes. `KeepHighwayAtNoteSpeed` scales the scroll speed by the stock height over the skin height.
+- **Crowd cards face the camera.** `Billboard_Fast` stores each card's pivot in the normal slot and offsets the corners along the view axes (`c120`–`c122`). The stage shader does the same when `_Gh3CamRight.w` is 1; `StageCrowd.Face` sets the camera axes every frame.
+- **Crowd lighting.** GH3's crowd script parks ped *n* at `(-500, -200 - 100n, 0)` with `LightGroup = Crowd`, next to the venue's Crowd ambient and directional lights (both at x = -500). The peds now sample lights there instead of at the audience position.
+- **Crowd card brightness.** The card pixel shader is `texture × c0 × vertex colour` with `c0 = 1`. The baked vertex colours go from black at the feet to about 0.66 at the head; the cards use them at double scale (0x80 = full). This matched GH3's crowd brightness in the comparison frames.
+
 MelonLoader's assembly generator contacted `api.melonloader.com` on every launch, and the leftover HTTPS connection crashed the CLR later. The installed game now has `force_offline_generation = true` in `UserData/Loader.cfg`; the original file is backed up as `~/.cache/gh3-install-backup-0.8.115/Loader.cfg.bak`.
 
 ### Installation state
 
-- Version `0.9.4` is installed in `~/games/clonehero-gh3-melon` with all ten re-exported venues, the regenerated band library, and the rebuilt `render/stage.bundle` (the light-data texture needs it). DLL SHA-256: `4226c612d65d879e9cd56b694567eb9c5e741f45dcf2f9bded2937d586aea302`.
+- Version `0.9.7` is installed in `~/games/clonehero-gh3-melon` with all ten re-exported venues, the regenerated band library, and the rebuilt `render/stage.bundle` (the light-data texture needs it). DLL SHA-256: `5c88b784a552f9c85ce4464f52e932584caabf20ffef72051d4a330ea56bf7a0`.
 - The previous `0.8.115` install (DLL and `Mods/GH3Skin`) is backed up in `~/.cache/gh3-install-backup-0.8.115`.
 - Verification for this build: logic tests, asset-driven venue script checks, Python tests, and the 33-set regression pass. Headless captures of all ten venues load and render; with network isolation, Video and Budokan passed three of three runs each. Captures end by timeout, so they do not establish a clean process exit.
 - Evidence (not in Git): `~/.cache/gh3ref/` holds the GH3 Slow Ride recording (`gh3-slowride.mp4`), the Dive constant trace (`dive-slowride-ps-constants.log.zst`), matched frames, and comparison sheets.

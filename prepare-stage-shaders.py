@@ -58,7 +58,7 @@ def convert(game, output, kind='screen-color'):
         '_Gh3Particle', '_Gh3SoftEdge', '_Gh3CameraForward', '_Gh3Lighting', '_Gh3AmbientWeights', '_Gh3LightDirection', '_Gh3LightColor',
         '_Gh3SH0', '_Gh3SH1', '_Gh3SH2', '_Gh3SH3', '_Gh3Maps', '_Gh3Eye') if particle else (
         '_Gh3TeslaAnimation', '_Gh3TeslaShape', '_Gh3TeslaColor') if tesla else (
-        '_Color', '_Gh3Surface', '_Gh3LightIndex', '_Gh3Eye', '_Gh3Char0', '_Gh3Char1', '_Gh3Char2', '_Gh3Char3', '_Gh3Char4', '_Gh3Char5') if surface else (
+        '_Color', '_Gh3Surface', '_Gh3LightIndex', '_Gh3Eye', '_Gh3Char0', '_Gh3Char1', '_Gh3Char2', '_Gh3Char3', '_Gh3Char4', '_Gh3Char5', '_Gh3CamRight', '_Gh3CamUp') if surface else (
         '_Gh3Red', '_Gh3Green', '_Gh3Blue')
     variables = b''.join(aligned(name) + parameters[0x38:0x4c] + struct.pack('<I', index * 16) for index, name in enumerate(names))
     if surface:

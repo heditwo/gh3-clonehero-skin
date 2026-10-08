@@ -55,22 +55,9 @@ internal sealed class StageCrowd : IDisposable
         _root.transform.localPosition = new Vector3(0, 256, 0);
         var animations = new Dictionary<string, BandAnimation>();
         var alphaShader = Shader.Find("UI/Default");
-        // GH3 renders the crowd atlas from lit 3D peds (D_3ChkBox_Pass0, Crowd light group). The atlas sits off-stage,
-        // so the peds sample lights where the audience cards actually are.
-        System.Numerics.Vector3? lightAt = null;
-        if (surfaceShader != null)
-        {
-            var sum = Vector3.zero;
-            var count = 0;
-            foreach (var renderer in root.GetComponentsInChildren<MeshRenderer>(true))
-                if (renderer.sharedMaterial != null && stage.CrowdMaterials.Contains(renderer.sharedMaterial))
-                {
-                    var local = root.transform.InverseTransformPoint(renderer.bounds.center);
-                    sum = new Vector3 { x = sum.x + local.x, y = sum.y + local.y, z = sum.z + local.z };
-                    count++;
-                }
-            if (count > 0) lightAt = new System.Numerics.Vector3(sum.x / count, sum.y / count + 1.2f, sum.z / count);
-        }
+        // GH3 renders the crowd atlas from lit 3D peds (D_3ChkBox_Pass0, Crowd light group). Its crowd script parks ped n
+        // at (-500, -200 - 100n, 0), next to the venue's Crowd ambient and directional lights, and lights it there.
+        var lit = surfaceShader != null;
         if (alphaShader == null) throw new InvalidOperationException("The crowd alpha shader is not available");
         foreach (var model in definition.Models)
         {
@@ -106,9 +93,10 @@ internal sealed class StageCrowd : IDisposable
                 bones[i].SetParent(animation.Parents[i] < 0 ? person.transform : bones[animation.Parents[i]], false);
                 Apply(bones[i], animation.BindPose[i]);
             }
+            System.Numerics.Vector3? lightAt = lit ? new System.Numerics.Vector3(-500, -200 - 100 * RoleIndex(role), 0) : null;
             var assets = new StageAssets();
             _assets.Add(assets);
-            assets.Load(Path.Combine(directory, model), person, Layer, bones, lightAt != null, Gh3Checksum.Of("Crowd"), lightAt != null ? surfaceShader : null, lightAt);
+            assets.Load(Path.Combine(directory, model), person, Layer, bones, lit, Gh3Checksum.Of("Crowd"), lit ? surfaceShader : null, lightAt);
             stage.ShadedSurfaces.AddRange(assets.ShadedSurfaces);
             void Alpha(StageAssets owner, GameObject target)
             {
@@ -132,7 +120,7 @@ internal sealed class StageCrowd : IDisposable
                 item.transform.SetParent(person.transform, false);
                 var handAssets = new StageAssets();
                 _assets.Add(handAssets);
-                handAssets.Load(Path.Combine(directory, "hands", hand), item, Layer, bones, lightAt != null, Gh3Checksum.Of("Crowd"), lightAt != null ? surfaceShader : null, lightAt);
+                handAssets.Load(Path.Combine(directory, "hands", hand), item, Layer, bones, lit, Gh3Checksum.Of("Crowd"), lit ? surfaceShader : null, lightAt);
                 stage.ShadedSurfaces.AddRange(handAssets.ShadedSurfaces);
                 Alpha(handAssets, item);
                 item.SetActive(hand.EndsWith("-clap", StringComparison.Ordinal));
@@ -194,6 +182,28 @@ internal sealed class StageCrowd : IDisposable
             var player = _players[index];
             if (player.Bones.Length != _definition.Bones.Length) throw new InvalidDataException("Crowd skeleton does not match the animation library.");
             player.Performance = new CrowdAnimationPlayer(_definition, player.Role, index, timeline, _state);
+        }
+    }
+
+    private static int RoleIndex(string role) =>
+        role.StartsWith("crowd", StringComparison.Ordinal) && int.TryParse(role.AsSpan(5), out var number) ? number - 1 : 0;
+
+    private static readonly int CamRightId = Shader.PropertyToID("_Gh3CamRight");
+    private static readonly int CamUpId = Shader.PropertyToID("_Gh3CamUp");
+
+    // GH3 crowd cards are billboards: each card turns to face the view camera.
+    public void Face(Camera view)
+    {
+        if (_stage == null) return;
+        var right = view.transform.right;
+        var up = view.transform.up;
+        var r = new Vector4 { x = right.x, y = right.y, z = right.z, w = 1 };
+        var u = new Vector4 { x = up.x, y = up.y, z = up.z, w = 0 };
+        foreach (var material in _stage.CrowdMaterials)
+        {
+            if (material.shader.name != "GH3/Stage") continue;
+            material.SetVector(CamRightId, r);
+            material.SetVector(CamUpId, u);
         }
     }
 

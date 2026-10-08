@@ -121,6 +121,7 @@ internal sealed class GameplayStage
                 else _camera.transform.LookAt(_root.transform.position + new Vector3(pose.Target.X, pose.Target.Y, pose.Target.Z));
                 _camera.fieldOfView = pose.FieldOfView;
             }
+            if (_camera != null) _crowd?.Face(_camera);
             if (_camera != null && _assets != null && _assets.CharacterMaterials.Count > 0)
             {
                 var eye = _camera.transform.position;

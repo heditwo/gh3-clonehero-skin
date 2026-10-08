@@ -4,6 +4,8 @@
 uniform vec4 hlslcc_mtx4x4unity_ObjectToWorld[4];
 uniform vec4 hlslcc_mtx4x4unity_MatrixVP[4];
 uniform vec4 _MainTex_ST;
+uniform vec4 _Gh3CamRight;
+uniform vec4 _Gh3CamUp;
 in vec4 in_POSITION0;
 in vec3 in_NORMAL0;
 in vec4 in_TANGENT0;
@@ -21,6 +23,12 @@ void main()
     mat4 model = mat4(hlslcc_mtx4x4unity_ObjectToWorld[0], hlslcc_mtx4x4unity_ObjectToWorld[1], hlslcc_mtx4x4unity_ObjectToWorld[2], hlslcc_mtx4x4unity_ObjectToWorld[3]);
     mat4 viewProjection = mat4(hlslcc_mtx4x4unity_MatrixVP[0], hlslcc_mtx4x4unity_MatrixVP[1], hlslcc_mtx4x4unity_MatrixVP[2], hlslcc_mtx4x4unity_MatrixVP[3]);
     vec4 world = model * in_POSITION0;
+    // GH3 Billboard_Fast: the normal holds the card pivot, and the corner offset is applied along the camera axes.
+    if (_Gh3CamRight.w > 0.5)
+    {
+        vec3 offset = in_POSITION0.xyz - in_NORMAL0;
+        world = model * vec4(in_NORMAL0, 1.0) + vec4(_Gh3CamRight.xyz * offset.x + _Gh3CamUp.xyz * offset.y, 0.0);
+    }
     surfaceWorld = world.xyz;
     gl_Position = viewProjection * world;
     surfaceColor = in_COLOR0;

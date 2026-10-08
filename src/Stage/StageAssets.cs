@@ -66,6 +66,7 @@ internal sealed class StageAssets : IDisposable
     public List<Material> SurfaceMaterials { get; } = new();
     public List<Material> CharacterMaterials { get; } = new();
     public List<Material> CrowdMaterials { get; } = new();
+    public List<Renderer> CrowdCards { get; } = new();
     public Dictionary<Material, string> CrowdRoles { get; } = new();
     public List<LitMesh> LitMeshes { get; } = new();
     public List<LitBandMesh> BandMeshes { get; } = new();
@@ -125,6 +126,32 @@ internal sealed class StageAssets : IDisposable
         if (source.Character is { } character) ConfigureCharacter(material, character);
         material.renderQueue = transparent ? 3000 : cutout ? 2450 : 2000;
         return material;
+    }
+
+    // Each crowd card is an independent quad; its pivot is the centre of its connected vertices.
+    private static Vector3[] CardPivots(Vector3[] vertices, int[] indices)
+    {
+        var parent = Enumerable.Range(0, vertices.Length).ToArray();
+        int Root(int i) { while (parent[i] != i) i = parent[i] = parent[parent[i]]; return i; }
+        for (var i = 0; i + 2 < indices.Length; i += 3)
+        {
+            parent[Root(indices[i + 1])] = Root(indices[i]);
+            parent[Root(indices[i + 2])] = Root(indices[i]);
+        }
+        var sums = new Dictionary<int, (float X, float Y, float Z, int Count)>();
+        for (var i = 0; i < vertices.Length; i++)
+        {
+            var root = Root(i);
+            var s = sums.GetValueOrDefault(root);
+            sums[root] = (s.X + vertices[i].x, s.Y + vertices[i].y, s.Z + vertices[i].z, s.Count + 1);
+        }
+        var pivots = new Vector3[vertices.Length];
+        for (var i = 0; i < vertices.Length; i++)
+        {
+            var s = sums[Root(i)];
+            pivots[i] = new Vector3 { x = s.X / s.Count, y = s.Y / s.Count, z = s.Z / s.Count };
+        }
+        return pivots;
     }
 
     private static void ConfigureCharacter(Material material, StageCharacterMaterial character)
@@ -188,8 +215,9 @@ internal sealed class StageAssets : IDisposable
         {
             var shaded = surfaceShader != null && source.ShadingMode >= 0;
             // GH3 draws crowd cards (Billboard_Fast) as opaque alpha-tested quads with depth; the lit peds are baked into the atlas.
+            // The cards' baked vertex colours (black feet to ~0.66 at the head) treat 0x80 as full brightness.
             var crowdCard = surfaceShader != null && source.Crowd;
-            var material = crowdCard ? MakeSurfaceMaterial(surfaceShader!, new StageMaterial { Shading = "unlit", Cutoff = 0.5f, Blend = 0 }) :
+            var material = crowdCard ? MakeSurfaceMaterial(surfaceShader!, new StageMaterial { Shading = "unlit", Cutoff = 0.5f, Blend = 0, ColorScale = 2 }) :
                 shaded ? MakeSurfaceMaterial(surfaceShader!, source) : Own(MakeMaterial(shader, source.Blend != 0, source.Blend == 1));
             material.name = "GH3 Stage " + key;
             if (bones != null && shaded) material.SetInt("_Cull", (int)CullMode.Off);
@@ -302,7 +330,8 @@ internal sealed class StageAssets : IDisposable
             var mesh = Own(new Mesh());
             mesh.name = "GH3 Stage Mesh " + part;
             mesh.vertices = new Il2CppStructArray<Vector3>(vertices);
-            mesh.normals = new Il2CppStructArray<Vector3>(normals);
+            var crowdCards = bones == null && surfaceShader != null && Definition.Materials[materialId.ToString("x8")].Crowd;
+            mesh.normals = new Il2CppStructArray<Vector3>(crowdCards ? CardPivots(vertices, indices) : normals);
             mesh.uv = new Il2CppStructArray<Vector2>(uv);
             if (lightmapUv != null) mesh.uv2 = new Il2CppStructArray<Vector2>(lightmapUv);
             mesh.colors32 = new Il2CppStructArray<Color32>(colors);
@@ -314,6 +343,12 @@ internal sealed class StageAssets : IDisposable
                     bone.worldToLocalMatrix * root.transform.localToWorldMatrix).ToArray());
             }
             mesh.RecalculateBounds();
+            if (crowdCards)
+            {
+                var bounds = mesh.bounds;
+                bounds.Expand(4);
+                mesh.bounds = bounds;
+            }
             if (bones != null && surfaceShader != null && Definition.Materials[materialId.ToString("x8")].Character != null)
                 mesh.RecalculateTangentsImpl(UnityEngine.Rendering.MeshUpdateFlags.Default);
             var shadedMode = surfaceShader != null ? Definition.Materials[materialId.ToString("x8")].ShadingMode : -1;
@@ -336,6 +371,7 @@ internal sealed class StageAssets : IDisposable
             {
                 item.AddComponent<MeshFilter>().sharedMesh = mesh;
                 renderer = item.AddComponent<MeshRenderer>();
+                if (crowdCards) CrowdCards.Add(renderer);
             }
             else
             {
@@ -406,6 +442,7 @@ internal sealed class StageAssets : IDisposable
         SurfaceMaterials.Clear();
         CharacterMaterials.Clear();
         CrowdMaterials.Clear();
+        CrowdCards.Clear();
         CrowdRoles.Clear();
         LitMeshes.Clear();
         Objects.Clear();
