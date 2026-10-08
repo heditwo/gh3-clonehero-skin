@@ -50,6 +50,7 @@ BandLogicTests.Run();
 HairLogicTests.Run();
 DirectionLogicTests.Run();
 ShowFlowLogicTests.Run();
+HitEffectLogicTests.Run();
 DrumHandLogicTests.Run();
 HandFireLogicTests.Run();
 LightingLogicTests.Run();

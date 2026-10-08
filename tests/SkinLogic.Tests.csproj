@@ -19,6 +19,7 @@
     <Compile Include="../src/StarPowerHighwayAnimation.cs" Link="StarPowerHighwayAnimation.cs" />
     <Compile Include="../src/GemKind.cs" Link="GemKind.cs" />
     <Compile Include="../src/SustainVariant.cs" Link="SustainVariant.cs" />
+    <Compile Include="../src/HitEffects.cs" Link="HitEffects.cs" />
     <Compile Include="../src/GemAnimation.cs" Link="GemAnimation.cs" />
     <Compile Include="../src/GameCompatibility.cs" Link="GameCompatibility.cs" />
     <Compile Include="../src/Stage/StageTimeline.cs" Link="StageTimeline.cs" />

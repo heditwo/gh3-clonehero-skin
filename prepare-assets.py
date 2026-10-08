@@ -150,11 +150,6 @@ for name, index in (("beatline", 79), ("beatline-beat", 90), ("beatline-half", 1
     image = Image.open(file).convert("RGBA")
     image.save(target / f"{name}.png")
 
-flame_source = Path(__file__).parent / "reference-flames"
-for frame in range(16):
-    Image.open(flame_source / f"hit-{frame // 2:02d}.png").save(target / f"hit-{frame:02d}.png")
-    Image.open(flame_source / f"held-{frame:02d}.png").save(target / f"sustain-flame-{frame:02d}.png")
-
 
 def whammy_textures():
     # sys_whammy2d_<name> materials (WhammyBar_UI) in global.pak sample these 32 x 32 textures; red is not in global-gfx-png.
@@ -218,15 +213,5 @@ for variant, texture in whammy_textures().items():
     sprite.save(target / f"sustain-{variant}.png")
     if variant != "dead":
         held_sustain(sprite).save(target / f"sustain-held-{variant}.png")
-
-spark = Image.open(next(global_images.glob("032_*.png"))).convert("RGBA")
-for frame in range(16):
-    size = round(48 + 80 * min(frame / 5, 1))
-    glow = spark.resize((size, size), Image.Resampling.LANCZOS)
-    brightness = max(0, min(1, (frame + 1) / 4, (16 - frame) / 11))
-    glow.putalpha(glow.convert("RGB").convert("L").point(lambda value: round(value * brightness)))
-    tile = Image.new("RGBA", (128, 128))
-    tile.alpha_composite(glow, ((128 - size) // 2, (128 - size) // 2))
-    tile.save(target / f"sp-spark-{frame:02d}.png")
 
 print(f"Prepared {len(list(target.glob('*.png'))) + len(list(target.glob('*.dds')))} GH3 textures in {target}")

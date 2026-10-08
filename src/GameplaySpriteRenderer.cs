@@ -14,6 +14,7 @@ internal sealed class GameplaySpriteRenderer
     private readonly List<BeatlineVisual> _beatlines = new();
     private readonly List<(SpriteRenderer Renderer, Transform Transform, GameObject Object, string Name)> _effects = new();
     private readonly List<SpriteRenderer> _hidden = new();
+    private readonly List<Renderer> _stockHitEffects = new();
     private readonly List<(Renderer Renderer, bool ForceRenderingOff)> _stockStarPowerEffects = new();
     private readonly Dictionary<IntPtr, string> _spriteNames = new();
     private readonly Transform?[] _frets = new Transform?[5];
@@ -52,6 +53,7 @@ internal sealed class GameplaySpriteRenderer
         _beatlines.Clear();
         _effects.Clear();
         _hidden.Clear();
+        _stockHitEffects.Clear();
         foreach (var (renderer, forceRenderingOff) in _stockStarPowerEffects)
             if (renderer != null)
                 renderer.forceRenderingOff = forceRenderingOff;
@@ -98,10 +100,11 @@ internal sealed class GameplaySpriteRenderer
             _notes.Clear();
             _beatlines.Clear();
             _effects.Clear();
+            _stockHitEffects.Clear();
             CachePlayer(_player);
             _childCount = _player.childCount;
             ShowNotesToHighwayTop();
-            MelonLogger.Msg($"Cached {_notes.Count} note objects and {_effects.Count} gameplay renderers");
+            MelonLogger.Msg($"Cached {_notes.Count} note objects, {_effects.Count} gameplay renderers, and {_stockHitEffects.Count} stock hit effects");
         }
         if (_camera != null)
         {
@@ -132,6 +135,10 @@ internal sealed class GameplaySpriteRenderer
         foreach (var renderer in _hidden)
             if (renderer != null)
                 renderer.sprite = _assets.GetSprite("clear");
+        if (!_options.KeepStockFlames)
+            foreach (var renderer in _stockHitEffects)
+                if (renderer != null && renderer.enabled)
+                    renderer.enabled = false;
         if (!_options.KeepStockGems)
         {
             var gemFrame = GemAnimation.Frame(Time.timeAsDouble);
@@ -168,8 +175,6 @@ internal sealed class GameplaySpriteRenderer
                 ApplyHighway(entry.Object);
             else if (entry.Name is "sidebar_l" or "sidebar_r")
                 renderer.enabled = false;
-            else
-                ReplaceEffect(renderer, name, entry.Name);
         }
     }
 
@@ -243,12 +248,20 @@ internal sealed class GameplaySpriteRenderer
             _beatlines.Add(new BeatlineVisual(transform, _assets));
             return;
         }
-        if (name is "Sustain(Clone)" or "Sustain Glow" or "Neck" or
-            "sidebar_l" or "sidebar_r" or "Flames" or "SPSparks" or "SustainSpark" or "SustainSpark Overlay")
+        if (name is "Sustain(Clone)" or "Sustain Glow" or "Neck" or "sidebar_l" or "sidebar_r")
         {
             var renderer = transform.GetComponent<SpriteRenderer>();
             if (renderer != null)
                 _effects.Add((renderer, transform, transform.gameObject, name));
+        }
+        // Clone Hero's hit flames, held-note sparks, Star Power sparks and lightning, hit particles, and open-note
+        // flames. GH3's own effects (HitEffectsHud) replace them; GH3 has no open-note effect.
+        if (name is "Flames" or "SPSparks" or "SustainSpark" or "SustainSpark Overlay" or "lightning" or "lightning_white" or
+            "Particles_NoteHit" or "Particles_Sustain" or "open_hitflames" or "open_hitflames_oval")
+        {
+            var renderer = transform.GetComponent<Renderer>();
+            if (renderer != null)
+                _stockHitEffects.Add(renderer);
         }
         for (var child = 0; child < transform.childCount; child++)
             CachePlayer(transform.GetChild(child));
@@ -391,33 +404,6 @@ internal sealed class GameplaySpriteRenderer
                 state.Step(_whammy.Value(channel, age) - _whammy.Value(channel, age + 1 / StarWhammy.FramesPerSecond));
             }
         }
-    }
-
-    private void ReplaceEffect(SpriteRenderer renderer, string name, string objectName)
-    {
-        if (_options.KeepStockFlames)
-            return;
-        string? replacement = null;
-        if (objectName == "SustainSpark" && name.StartsWith("sustain_spark_anim_color_", StringComparison.Ordinal))
-        {
-            renderer.enabled = false;
-            return;
-        }
-        if (objectName == "SustainSpark Overlay" && name.StartsWith("sustain_spark_anim_overlay_", StringComparison.Ordinal) &&
-            int.TryParse(name[27..], out var sustainFrame))
-            replacement = $"sustain-flame-{sustainFrame:00}";
-        else if (objectName == "SPSparks" && name.StartsWith("hit_spark_", StringComparison.Ordinal) &&
-            int.TryParse(name[10..], out var sparkFrame))
-            replacement = $"sp-spark-{sparkFrame:00}";
-        else if (name.StartsWith("hitflame_anim_16_", StringComparison.Ordinal) && int.TryParse(name[17..], out var frame))
-            replacement = $"hit-{Math.Clamp(frame, 0, 15):00}";
-        if (replacement == null || !_assets.TryGetSprite(replacement, out var sprite))
-            return;
-        renderer.sprite = sprite;
-        if (replacement.StartsWith("hit-", StringComparison.Ordinal))
-            renderer.color = new Color(0.765f, 0.336f, 0, 1);
-        else if (!replacement.StartsWith("sp-spark-", StringComparison.Ordinal))
-            renderer.color = Color.white;
     }
 
     private sealed class GemVisual

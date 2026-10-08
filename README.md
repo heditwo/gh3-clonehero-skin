@@ -19,7 +19,8 @@ The current source retains complete native script rows through the song exporter
 
 ## Current behavior
 
-- Black highway, GH3 rails, regular gems, glowing HOPO gems, animated phrase gems, BetterGH3 tap gems, and hit effects.
+- Black highway, GH3 rails, regular gems, glowing HOPO gems, animated phrase gems, and BetterGH3 tap gems.
+- GH3's own hit effects: the hit flame and sparks of each note, the held-note flame and sparks, the cyan Star Power versions, and the lightning and stars at the end of a completed Star Power phrase. Clone Hero's hit effects are hidden. See [hit effects](docs/HIT-EFFECTS.md).
 - GH3 moving beat lines at highway level, with the original bar, beat, and half-beat textures. Clone Hero supplies the fret buttons, strings, button animations, and open-note art.
 - Active Star Power changes regular notes, HOPOs, and taps to their cyan art. Overlapping phrase notes use the corresponding cyan star textures from FastGH3. Stars animate at GH3's 30 frames per second. Lane colors return when Star Power ends. See [gem selection and assets](docs/GEMS.md).
 - Score, streak, rock meter, charge, active Star Power, and multiplier come from the game. Active Star Power uses the blue 2×, 4×, 6×, or 8× art.
@@ -93,4 +94,4 @@ The [custom-content specification](docs/CUSTOM-CONTENT.md) defines the implement
 
 `SkinMod` manages scene resets. `GameplayScene` caches the player and score manager. `GameplaySpriteRenderer` caches pooled objects and maps each note to the nearest local fret. `GameplayHud` assembles the components in `src/Hud/`; each component owns its local layout and animation. See [the component structure](docs/HUD-COMPONENTS.md). `SkinAssets` keeps GPU textures across scenes and releases their readable CPU copies. `GameplayStage` owns the stage camera and scene resources. `StageTimeline` evaluates cues against the song clock.
 
-Prepared assets are in `assets/`. To regenerate them, use `uv run --with pillow prepare-assets.py` and `uv run --with pillow --with lz4 prepare-fonts.py`. To regenerate the ready animation, put the owner's `gh3-long-star-power-1600x900.mp4` in the project root and run `uv run --with pillow --with numpy prepare-ready-animation.py`. These steps need the local source art and recordings.
+Prepared assets are in `assets/`. To regenerate them, use `uv run --with pillow prepare-assets.py`, `uv run --with pillow prepare-hit-effects.py`, and `uv run --with pillow --with lz4 prepare-fonts.py`. To regenerate the ready animation, put the owner's `gh3-long-star-power-1600x900.mp4` in the project root and run `uv run --with pillow --with numpy prepare-ready-animation.py`. These steps need the local source art and recordings.

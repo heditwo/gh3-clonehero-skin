@@ -47,7 +47,7 @@ public sealed class SkinMod : MelonMod
         var tuning = HudTuning.Load(Path.Combine(assetsDirectory, "..", "counter-tuning.json"));
         var assets = new SkinAssets(assetsDirectory);
         _renderer = new GameplaySpriteRenderer(assets, _options);
-        _hud = new GameplayHud(assets, tuning);
+        _hud = new GameplayHud(assets, tuning, !_options.KeepStockFlames);
         _capture = new PreviewCapture(_options);
         _stage = new GameplayStage(assetsDirectory);
         MelonLogger.Msg($"Loaded {assets.GameplaySpriteCount} GH3 skin gameplay sprites");
@@ -87,6 +87,7 @@ public sealed class SkinMod : MelonMod
         FrameProfile.Measure("notes", () => _renderer.Update(player, score, state.StarPowerActive));
         _stage?.Update(player, state.Combo, state.Rock);
         FrameProfile.Measure("hud", () => _hud.Update(state, player.mainCamera, songTime, _stage?.ShowFlow == true, _stage?.WinTime ?? double.PositiveInfinity));
+        FrameProfile.Measure("hits", () => _hud.UpdateHitEffects(player, state, songTime));
         _capture.Update(songTime);
         FrameProfile.EndFrame(songTime);
     }

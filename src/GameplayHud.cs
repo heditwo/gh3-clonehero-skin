@@ -6,9 +6,11 @@ internal sealed class GameplayHud
 {
     private readonly SkinAssets _assets;
     private readonly HudTuning _tuning;
+    private readonly bool _hitEffects;
     private Canvas? _canvas;
     private RectTransform? _screenRoot;
     private HighwayHud? _highway;
+    private HitEffectsHud? _hits;
     private RockMeterHud? _rock;
     private ScorePanelHud? _score;
     private MessageHud? _message;
@@ -20,10 +22,11 @@ internal sealed class GameplayHud
     private static readonly Vector2 RockPosition = new(1326, 752.4f);
     private static readonly Vector2 ScorePosition = new(322, 714);
 
-    public GameplayHud(SkinAssets assets, HudTuning tuning)
+    public GameplayHud(SkinAssets assets, HudTuning tuning, bool hitEffects)
     {
         _assets = assets;
         _tuning = tuning;
+        _hitEffects = hitEffects;
     }
 
     public void Reset()
@@ -32,6 +35,7 @@ internal sealed class GameplayHud
         _canvas = null;
         _screenRoot = null;
         _highway = null;
+        _hits = null;
         _rock = null;
         _score = null;
         _message = null;
@@ -50,6 +54,7 @@ internal sealed class GameplayHud
         _canvas.overrideSorting = true;
         _canvas.sortingOrder = 500;
         _highway = new HighwayHud(_canvas.transform, _assets);
+        if (_hitEffects) _hits = new HitEffectsHud(_highway.Root, _assets);
         _screenRoot = HudVisual.Group("Screen HUD", _canvas.transform);
         _rock = new RockMeterHud(_screenRoot, _tuning, _assets.Textures);
         HudVisual.Position(_rock.Root, RockPosition);
@@ -101,6 +106,9 @@ internal sealed class GameplayHud
         _score!.Update(state, time);
         _message?.Update(state, time);
     }
+
+    public void UpdateHitEffects(Il2Cpp.BasePlayer player, GameplayState state, double songTime) =>
+        _hits?.Update(player, state, songTime);
 
     private static void SetActive(Component component, bool active)
     {

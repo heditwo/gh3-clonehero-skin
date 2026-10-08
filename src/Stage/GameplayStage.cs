@@ -194,7 +194,14 @@ internal sealed class GameplayStage
         if (rise == _highwayRise) return;
         _highwayRise = rise;
         camera.ResetProjectionMatrix();
-        if (rise <= 0) return;
+        if (rise <= 0)
+        {
+            // Clone Hero computed the track fade of its "Fade Instance" materials (sustains, gem bodies, hit flames)
+            // through the raised projection, one viewport below the highway, which hides them. Compute it again.
+            foreach (var fade in UnityEngine.Object.FindObjectsOfType<TrackFadeManager>())
+                fade.Method_Public_Void_0();
+            return;
+        }
         var projection = camera.projectionMatrix;
         projection.m12 += rise / 360;
         camera.projectionMatrix = projection;

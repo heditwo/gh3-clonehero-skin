@@ -170,12 +170,6 @@ internal sealed class SkinAssets
                 ? _sustains[variant]
                 : LoadSustain(root, $"sustain-held-{SustainVariants[variant]}");
         }
-        for (var frame = 0; frame < 16; frame++)
-        {
-            Load(root, $"hit-{frame:00}", 150, new Vector2(0.5f, 0.2f));
-            Load(root, $"sustain-flame-{frame:00}", 400, new Vector2(0.5f, 0.2f));
-            Load(root, $"sp-spark-{frame:00}", 333, new Vector2(0.5f, 0.5f));
-        }
     }
 
     private void LoadHudTextures(string root)
@@ -190,7 +184,9 @@ internal sealed class SkinAssets
             "HUD_score_nixie_1a", "HUD_score_nixie_2a",
             "HUD_score_nixie_3a", "HUD_score_nixie_4a", "HUD_rock_tube",
             "HUD_score_nixie_2b", "HUD_score_nixie_4b", "HUD_score_nixie_6b", "HUD_score_nixie_8b",
-            "HUD_rock_tube_glow_full", "HUD_rock_tube_glow_full_b"
+            "HUD_rock_tube_glow_full", "HUD_rock_tube_glow_full_b",
+            "gh3-note-hit", "gh3-note-hit-star", "gh3-whammy-hold", "gh3-big-bolt",
+            "gh3-particle-spark", "gh3-particle-star", "gh3-particle-star2"
         };
         hudNames.AddRange(new[] { "", "_blue", "_green", "_purple" }.SelectMany(color =>
             Enumerable.Range(0, 3).Select(state => $"HUD_score_light_{state}{color}")));
@@ -200,7 +196,7 @@ internal sealed class SkinAssets
             var texture = name == "HUD_score_body" || name.StartsWith("HUD_score_nixie_", StringComparison.Ordinal)
                 ? LoadDxt5(Path.Combine(root, name + ".dds"))
                 : LoadTexture(Path.Combine(root, name + ".png"));
-            if (name.StartsWith("HUD_score_light_", StringComparison.Ordinal))
+            if (name.StartsWith("HUD_score_light_", StringComparison.Ordinal) || name.StartsWith("gh3-", StringComparison.Ordinal))
                 texture.wrapMode = TextureWrapMode.Clamp;
             _textures[name] = texture;
         }
