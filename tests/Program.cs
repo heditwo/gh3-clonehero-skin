@@ -200,18 +200,42 @@ foreach (var (width, height, expectedScale, expectedX, expectedCenterY, expected
 
 foreach (var (width, height) in new[] { (1600, 900), (2560, 1440), (1600, 1200), (1920, 1200), (3440, 1440) })
 {
-    var rails = HudViewport.ForHighway(height, 0, 0, width, height, 20);
+    var rails = HudViewport.ForHighway(height, 0, 0, width, height, HighwayView.FieldOfView);
     if (Math.Abs(1080 * rails.Scale - height) > 0.001f ||
         Math.Abs(rails.OffsetX + 960 * rails.Scale - width / 2f) > 0.001f ||
         Math.Abs(rails.CenterOffsetY) > 0.001f)
         throw new Exception($"Highway projection must preserve its aspect ratio at {width} x {height}");
 }
-if (HudViewport.ForHighway(900, 0, 0, 1600, 900, 40).Scale >= HudViewport.ForHighway(900, 0, 0, 1600, 900, 20).Scale)
+if (HudViewport.ForHighway(900, 0, 0, 1600, 900, 40).Scale >= HudViewport.ForHighway(900, 0, 0, 1600, 900, HighwayView.FieldOfView).Scale)
     throw new Exception("Wider camera field of view must reduce rail size");
-var letterbox = HudViewport.ForHighway(1200, 0, 0, 1600, 900, 20);
+var letterbox = HudViewport.ForHighway(1200, 0, 0, 1600, 900, HighwayView.FieldOfView);
 Equal(300f, letterbox.CenterOffsetY, "rails follow the bottom-aligned game camera at 4:3");
 Equal(0f, letterbox.OffsetX, "4:3 camera preserves horizontal rail placement");
 Equal(1600f / 1920, letterbox.Scale, "rails use camera height, not full screen height");
+
+(float X, float Y) ProjectHighway(float x, float z)
+{
+    var pitch = HighwayView.PitchRadians;
+    var dy = -HighwayView.CameraHeight;
+    var dz = z - HighwayView.CameraZ;
+    var depth = dz * MathF.Cos(pitch) - dy * MathF.Sin(pitch);
+    var up = dy * MathF.Cos(pitch) + dz * MathF.Sin(pitch);
+    return (800 + HighwayView.Focal * x / depth, 450 - HighwayView.Focal * up / depth);
+}
+foreach (var time in new[] { -0.1f, 0, 0.5f, 1, 1.4f })
+{
+    var z = HighwayView.StrikeZ + HighwayView.NoteSpeed * time;
+    var (_, y) = ProjectHighway(0, z);
+    if (Math.Abs(y - HighwayView.ScreenY(time)) > 0.05f)
+        throw new Exception($"Player camera puts a gem {time} s ahead at y {y}, GH3 at {HighwayView.ScreenY(time)}");
+}
+var (strikeLeft, strikeY) = ProjectHighway(-2 * HighwayView.LaneWidth, HighwayView.StrikeZ);
+var (strikeRight, _) = ProjectHighway(2 * HighwayView.LaneWidth, HighwayView.StrikeZ);
+if (Math.Abs(strikeY - HighwayView.StrikeY) > 0.05f || Math.Abs((strikeRight - strikeLeft) / 4 - HighwayView.LaneSpacing) > 0.05f)
+    throw new Exception($"GH3 frets are at y {HighwayView.StrikeY}, {HighwayView.LaneSpacing} px apart; camera gives {strikeY}, {(strikeRight - strikeLeft) / 4}");
+var (_, topY) = ProjectHighway(0, HighwayView.NeckStartZ + HighwayView.NeckLength * HighwayView.NeckSpriteLength);
+Equal(MathF.Round(HighwayView.TopY, 1), MathF.Round(topY, 1), "the board ends at GH3's highway top");
+Equal(6f, MathF.Round(HighwayView.ScrollSpeed(7), 4), "GH3's board moves one repeat per second at the default note speed");
 
 foreach (var active in new[] { false, true })
     for (var multiplier = 1; multiplier <= 4; multiplier++)

@@ -6,6 +6,8 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from highway_overlay import warp
+
 root = Path(__file__).parent
 source = Path.home() / "games/gh3-skin-assets/global-gfx-png"
 target = root / "assets"
@@ -72,6 +74,6 @@ for frame, model in enumerate(models):
     alpha[alpha < 2] = 0
     color = np.divide(image * 255, alpha[:, :, None], out=np.zeros_like(image), where=alpha[:, :, None] > 0)
     rgba = np.dstack((color, alpha)).round().astype(np.uint8)
-    Image.fromarray(rgba).save(target / f"active-highway-{frame:02}.png", optimize=True)
+    warp(Image.fromarray(rgba), 380).save(target / f"active-highway-{frame:02}.png", optimize=True)
 
 print("Prepared eight GH3 active Star Power highway frames from the original textures and reference recording")

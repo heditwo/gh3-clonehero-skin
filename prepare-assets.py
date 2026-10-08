@@ -7,6 +7,8 @@ from zlib import crc32
 import shutil
 from PIL import Image
 
+from highway_overlay import warp as warp_rails
+
 source = Path.home() / "games/gh3-skin-assets"
 target = Path(__file__).parent / "assets"
 target.mkdir(exist_ok=True)
@@ -131,8 +133,8 @@ for y in range(380, 900):
             blue_rails.putpixel((x, y), (min(255, red * 255 // alpha), min(255, green * 255 // alpha), min(255, blue * 255 // alpha), alpha))
             neutral = min(255, round((red + green + blue) / 3 * 1.25))
             gray_rails.putpixel((x, y), (neutral, neutral, neutral, alpha))
-blue_rails.save(target / "highway-edges-blue.png")
-gray_rails.save(target / "highway-edges-normal.png")
+warp_rails(blue_rails).save(target / "highway-edges-blue.png")
+warp_rails(gray_rails).save(target / "highway-edges-normal.png")
 for name, index in (("beatline", 79), ("beatline-beat", 90), ("beatline-half", 100), ("sustain", 53)):
     file = next(global_images.glob(f"{index:03d}_*.png"))
     image = Image.open(file).convert("RGBA")

@@ -11,6 +11,7 @@
     <Compile Include="../src/HudTuning.cs" Link="HudTuning.cs" />
     <Compile Include="../src/ReadyAnimationTrigger.cs" Link="ReadyAnimationTrigger.cs" />
     <Compile Include="../src/HudViewport.cs" Link="HudViewport.cs" />
+    <Compile Include="../src/HighwayView.cs" Link="HighwayView.cs" />
     <Compile Include="../src/HudState.cs" Link="HudState.cs" />
     <Compile Include="../src/RockMeterState.cs" Link="RockMeterState.cs" />
     <Compile Include="../src/StarPowerBulbAnimation.cs" Link="StarPowerBulbAnimation.cs" />

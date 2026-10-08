@@ -4,10 +4,11 @@ namespace Gh3Skin;
 
 internal sealed class BeatlineVisual
 {
-    private const float ReferenceCenterX = 803.5f;
-    private const float ReferenceVanishingY = 212;
-    private const float ReferenceFadeStartY = 396;
-    private const float ReferenceFadeLength = 45;
+    private const float ReferenceCenterX = 800;
+    private const float ReferenceFadeStartY = HighwayView.FadeStartY;
+    private const float ReferenceFadeLength = HighwayView.FadeLength;
+    // GH3 beat lines end at 0.955 of the rail half-width.
+    private const float ReferenceWidthPerY = 2 * 0.955f * HighwayView.RailSlope;
     private readonly Transform _transform;
     private readonly GameObject _object;
     private readonly SpriteRenderer _source;
@@ -55,8 +56,7 @@ internal sealed class BeatlineVisual
         var referenceY = (Screen.height - position.y - viewport.CenterOffsetY) / referenceScale;
         _display.color = new Color(1, 1, 1,
             Mathf.SmoothStep(0, 1, (referenceY - ReferenceFadeStartY) / ReferenceFadeLength));
-        // GH3 line ends follow the rail perspective in the 1600 x 900 source capture.
-        var width = Math.Max(0, referenceY - ReferenceVanishingY) * referenceScale;
+        var width = Math.Max(0, referenceY - HighwayView.VanishingY) * ReferenceWidthPerY * referenceScale;
         var right = camera.WorldToScreenPoint(_transform.position + _transform.parent.right);
         var pixelsPerUnit = right.x - position.x;
         var worldWidth = width / Math.Abs(pixelsPerUnit);

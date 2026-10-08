@@ -13,7 +13,7 @@ internal readonly record struct HudViewport(float Scale, float OffsetX, float Ce
     public static HudViewport ForHighway(int screenHeight, float cameraX, float cameraY,
         float cameraWidth, float cameraHeight, float fieldOfView)
     {
-        var zoom = MathF.Tan(10 * MathF.PI / 180) / MathF.Tan(fieldOfView * MathF.PI / 360);
+        var zoom = MathF.Tan(HighwayView.FieldOfView * MathF.PI / 360) / MathF.Tan(fieldOfView * MathF.PI / 360);
         var scale = cameraHeight / 1080f * zoom;
         var offsetY = screenHeight - cameraY - cameraHeight / 2 - 540 * scale;
         return new HudViewport(scale, cameraX + cameraWidth / 2 - 960 * scale, offsetY, offsetY);

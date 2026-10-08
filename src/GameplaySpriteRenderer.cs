@@ -21,9 +21,11 @@ internal sealed class GameplaySpriteRenderer
     private Transform? _neck;
     private bool _highwayApplied;
     private HighwayScroll? _scroll;
-    private const float NeckHeight = 5.05f;
     private float _stockNeckHeight;
     private float _speedSet;
+    private bool _noteRenderersSet;
+    private SpriteRenderer? _neckRenderer;
+    private static readonly int FadeParams = Shader.PropertyToID("_FadeParams");
     private ParticleSystemRenderer? _starParticles;
     private int _childCount = -1;
 
@@ -52,6 +54,8 @@ internal sealed class GameplaySpriteRenderer
         _scroll = null;
         _stockNeckHeight = 0;
         _speedSet = 0;
+        _noteRenderersSet = false;
+        _neckRenderer = null;
         _starParticles = null;
         _childCount = -1;
     }
@@ -81,16 +85,30 @@ internal sealed class GameplaySpriteRenderer
             _effects.Clear();
             CachePlayer(_player);
             _childCount = _player.childCount;
+            ShowNotesToHighwayTop();
             MelonLogger.Msg($"Cached {_notes.Count} note objects and {_effects.Count} gameplay renderers");
         }
         if (_camera != null)
-            _camera.localPosition = new Vector3(-0.005f, 1, -3.97f);
+        {
+            _camera.localPosition = new Vector3(0, HighwayView.CameraHeight, HighwayView.CameraZ);
+            _camera.localEulerAngles = new Vector3(HighwayView.CameraPitch, 0, 0);
+            player.mainCamera.fieldOfView = HighwayView.FieldOfView;
+        }
+        for (var lane = 0; lane < _frets.Length; lane++)
+        {
+            var fret = _frets[lane];
+            if (fret == null) continue;
+            var position = fret.localPosition;
+            position.x = (lane - 2) * HighwayView.LaneWidth;
+            fret.localPosition = position;
+        }
         if (_neck != null)
         {
             if (_stockNeckHeight == 0) _stockNeckHeight = _neck.localScale.y;
-            _neck.localScale = new Vector3(0.96f, NeckHeight, 1);
+            _neck.localScale = new Vector3(HighwayView.NeckWidth, HighwayView.NeckLength, 1);
         }
         KeepHighwayAtNoteSpeed();
+        FadeHighwayTop();
         if (_starParticles != null)
             _starParticles.enabled = false;
         foreach (var (renderer, _) in _stockStarPowerEffects)
@@ -143,15 +161,47 @@ internal sealed class GameplaySpriteRenderer
         MelonLogger.Msg("Applied GH3 highway through Clone Hero's highway scroll");
     }
 
-    // HighwayScroll moves the texture by songTime * speed / 6 UV, which matches the notes for the stock neck height.
-    // The skin stretches the neck, so the texture's scroll speed shrinks by the same factor.
+    // HighwayScroll sizes the texture for the stock neck. The skin sets GH3's repeat length and scrolls it with the notes.
     private void KeepHighwayAtNoteSpeed()
     {
         if (_scroll == null || _stockNeckHeight <= 0) return;
+        var tiling = _scroll.field_Private_Vector4_0;
+        if (tiling.y != HighwayView.TextureTiling)
+        {
+            tiling.y = HighwayView.TextureTiling;
+            _scroll.field_Private_Vector4_0 = tiling;
+        }
         var speed = _scroll.field_Private_Single_1;
         if (Math.Abs(speed - _speedSet) < 1e-6f || speed <= 0) return;
-        _speedSet = speed * _stockNeckHeight / NeckHeight;
+        _speedSet = HighwayView.ScrollSpeed(speed);
         _scroll.field_Private_Single_1 = _speedSet;
+    }
+
+    // Clone Hero spawns gems 7.87 units ahead; GH3 shows them up to the top of its highway.
+    private void ShowNotesToHighwayTop()
+    {
+        if (_noteRenderersSet) return;
+        foreach (var renderer in UnityEngine.Object.FindObjectsOfType<GuitarNoteRenderer>())
+        {
+            renderer.noteZPosFarLimit = HighwayView.NeckStartZ + HighwayView.NeckLength * HighwayView.NeckSpriteLength;
+            renderer.field_Protected_Double_0 = renderer.noteZPosFarLimit / renderer.noteSpeed;
+            _noteRenderersSet = true;
+        }
+    }
+
+    // The track shader fades between two viewport heights (_FadeParams z and w, from the top).
+    private void FadeHighwayTop()
+    {
+        if (_neckRenderer == null) _neckRenderer = _neck?.GetComponent<SpriteRenderer>();
+        var material = _neckRenderer?.sharedMaterial;
+        if (material == null || !material.HasProperty(FadeParams)) return;
+        var fade = material.GetVector(FadeParams);
+        var start = HighwayView.FadeStartY / HighwayView.ScreenHeight;
+        var end = (HighwayView.FadeStartY + HighwayView.FadeLength) / HighwayView.ScreenHeight;
+        if (fade.z == start && fade.w == end) return;
+        fade.z = start;
+        fade.w = end;
+        material.SetVector(FadeParams, fade);
     }
 
     private void CachePlayer(Transform transform)
@@ -239,6 +289,7 @@ internal sealed class GameplaySpriteRenderer
         }
         note.Display.enabled = true;
         note.Display.sprite = _assets.Gem(lane, kind, frame, starPowerActive);
+        note.Display.color = new Color(1, 1, 1, HighwayView.FadeAt(note.Transform.localPosition.z));
         note.Head.enabled = false;
         if (note.Body != null) note.Body.enabled = false;
         if (note.Anim != null) note.Anim.enabled = false;
