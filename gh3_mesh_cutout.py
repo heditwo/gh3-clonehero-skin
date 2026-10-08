@@ -33,7 +33,7 @@ def trim_mesh(mesh, image, cutoff, region=None):
 
     material, count, vertices, faces = mesh
     stride = len(vertices) // count
-    if stride not in (36, 44, 56) or len(vertices) != count * stride:
+    if stride not in (36, 44, 56, 60) or len(vertices) != count * stride:
         raise ValueError("Invalid cutout mesh vertex layout")
     width, height = image.size
     region = alpha_region(image, cutoff) if region is None else region
@@ -81,9 +81,10 @@ def trim_mesh(mesh, image, cutoff, region=None):
             if length > 1e-8:
                 values[3:6] = [v / length for v in values[3:6]]
             data = struct.pack("<8f4B", *values[:8], *(round(max(0, min(255, v))) for v in values[8:]))
-            if stride == 44:
-                lightmaps = [struct.unpack_from("<2f", packed[i], 36) for i in face]
-                data += struct.pack("<2f", *(sum(w * row[k] for w, row in zip(weights, lightmaps)) for k in range(2)))
+            if stride in (44, 60):
+                channels = (stride - 36) // 4
+                extra = [struct.unpack_from(f"<{channels}f", packed[i], 36) for i in face]
+                data += struct.pack(f"<{channels}f", *(sum(w * row[k] for w, row in zip(weights, extra)) for k in range(channels)))
             if stride == 56:
                 influences = {}
                 for w, i in zip(weights, face):

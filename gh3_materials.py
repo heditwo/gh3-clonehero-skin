@@ -50,14 +50,26 @@ def _register(token):
 
 
 def classify(code):
-    """Return the shading mode, diffuse constant, and sampler count of one pixel shader."""
+    """Return the shading mode, diffuse constant, sampler count, and per-sampler UV scale constants of one pixel shader."""
     constants = set(); samplers = set(); diffuse = None; diffuse_register = None
+    scaled = {}; uv_scales = {}
     for opcode, arguments in _instructions(code):
         if opcode in (31, 81):
             continue
         sources = [_register(argument) for argument in arguments[1:]]
         constants.update(index for kind, index in sources if kind == 2)
         destination = _register(arguments[0]) if arguments else None
+        if opcode == 66 and sources[0] in scaled: uv_scales[sources[-1][1]] = scaled[sources[0]]
+        if destination is not None and destination[0] == 0:
+            scaled.pop(destination, None)
+        # "mul rN.xy, cK.c, vM" before "texld rX, rN, sS" scales that sampler's UV by one constant component.
+        if opcode == 5 and len(sources) == 2 and destination[0] == 0:
+            kinds = [kind for kind, _ in sources]
+            if sorted(kinds) == [1, 2]:
+                token = arguments[1 + kinds.index(2)]
+                swizzle = [(token >> (16 + 2 * i)) & 3 for i in range(4)]
+                if len(set(swizzle)) == 1:
+                    scaled[destination] = (sources[kinds.index(2)][1], swizzle[0])
         if opcode == 66:
             sampler = sources[-1][1]
             samplers.add(sampler)
@@ -72,7 +84,7 @@ def classify(code):
         shading = "ambient"
     else:
         shading = "unlit"
-    return {"shading": shading, "diffuseConstant": diffuse, "samplers": len(samplers)}
+    return {"shading": shading, "diffuseConstant": diffuse, "samplers": len(samplers), "uvScales": uv_scales}
 
 
 @lru_cache(maxsize=1)

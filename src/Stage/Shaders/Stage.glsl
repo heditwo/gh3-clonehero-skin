@@ -6,15 +6,21 @@ uniform vec4 hlslcc_mtx4x4unity_MatrixVP[4];
 uniform vec4 _MainTex_ST;
 uniform vec4 _Gh3CamRight;
 uniform vec4 _Gh3CamUp;
+uniform vec4 _Gh3UvWibble;
+uniform vec4 _Gh3UvPivot;
 in vec4 in_POSITION0;
 in vec3 in_NORMAL0;
 in vec4 in_TANGENT0;
 in vec4 in_COLOR0;
 in vec2 in_TEXCOORD0;
 in vec2 in_TEXCOORD1;
+in vec2 in_TEXCOORD2;
+in vec2 in_TEXCOORD3;
 out vec4 surfaceColor;
 out vec2 surfaceUv;
 out vec2 surfaceLightmapUv;
+out vec2 surfaceLayerUv;
+out vec2 surfaceMaskUv;
 out vec3 surfaceNormal;
 out vec3 surfaceWorld;
 out vec4 surfaceTangent;
@@ -32,8 +38,18 @@ void main()
     surfaceWorld = world.xyz;
     gl_Position = viewProjection * world;
     surfaceColor = in_COLOR0;
-    surfaceUv = in_TEXCOORD0 * _MainTex_ST.xy + _MainTex_ST.zw;
+    vec2 uv = in_TEXCOORD0;
+    // GH3 Wibble_Simple turns and scrolls the diffuse UV in its top-down V convention.
+    if (_Gh3UvPivot.z > 0.5)
+    {
+        vec2 d = vec2(uv.x, 1.0 - uv.y) - _Gh3UvPivot.xy;
+        vec2 turned = vec2(d.x * _Gh3UvWibble.x + d.y * _Gh3UvWibble.y, d.y * _Gh3UvWibble.x - d.x * _Gh3UvWibble.y) + _Gh3UvPivot.xy + _Gh3UvWibble.zw;
+        uv = vec2(turned.x, 1.0 - turned.y);
+    }
+    surfaceUv = uv * _MainTex_ST.xy + _MainTex_ST.zw;
     surfaceLightmapUv = in_TEXCOORD1;
+    surfaceLayerUv = in_TEXCOORD2;
+    surfaceMaskUv = in_TEXCOORD3;
     surfaceNormal = mat3(model) * in_NORMAL0;
     surfaceTangent = vec4(mat3(model) * in_TANGENT0.xyz, in_TANGENT0.w);
 }
@@ -56,9 +72,15 @@ uniform vec4 _Gh3Char4;
 uniform vec4 _Gh3Char5;
 uniform sampler2D _Gh3NormalTex;
 uniform sampler2D _Gh3SpecularTex;
+uniform sampler2D _Gh3LayerTex;
+uniform sampler2D _Gh3MaskTex;
+uniform vec4 _Gh3LayerColor;
+uniform vec4 _Gh3Layers;
 in vec4 surfaceColor;
 in vec2 surfaceUv;
 in vec2 surfaceLightmapUv;
+in vec2 surfaceLayerUv;
+in vec2 surfaceMaskUv;
 in vec3 surfaceNormal;
 in vec3 surfaceWorld;
 in vec4 surfaceTangent;
@@ -143,6 +165,14 @@ void main()
         return;
     }
     vec4 color = albedo * surfaceColor;
+    float mask = _Gh3Layers.y > 0.5 ? texture(_Gh3MaskTex, surfaceMaskUv).r : 1.0;
+    // D_3ChkBox_Pass0_Pass1: the second texture replaces the diffuse by layer alpha x mask x vertex alpha; the output alpha stays the diffuse alpha.
+    if (_Gh3Layers.x > 0.5)
+    {
+        vec4 layer = texture(_Gh3LayerTex, surfaceLayerUv) * _Gh3LayerColor;
+        color.rgb = mix(color.rgb, surfaceColor.rgb * layer.rgb, clamp(layer.a * mask * surfaceColor.a, 0.0, 1.0));
+    }
+    else color.a *= mask;
     if (_Gh3Surface.y > 0.0 && color.a <= _Gh3Surface.y) discard;
     if (_Gh3Surface.x > 1.5)
     {

@@ -128,6 +128,7 @@ internal sealed class GameplayStage
             _lastRock = rock;
             FrameProfile.Measure("band", () => _band?.Update(time));
             FrameProfile.Measure("scripts", () => _scripts?.Update(time, rock, _noteHits.Update(player, time)));
+            _assets?.UpdateUvWibble(time);
             FrameProfile.Measure("actors", () => _actors?.Update(time));
             FrameProfile.Measure("crowd", () => _crowd?.Update(time, rock));
             if (_cameraPath != null && _camera != null && _root != null)

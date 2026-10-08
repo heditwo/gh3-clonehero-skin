@@ -85,14 +85,53 @@ class StagePackTests(unittest.TestCase):
             self.assertEqual(lit[0]["colorScale"], 2)
             self.assertTrue((output/"textures"/(lit[0]["lightmap"]+".png")).exists())
             data = (output/"meshes.bin").read_bytes()
-            self.assertEqual(data[:8], b"GH3STG02")
+            self.assertEqual(data[:8], b"GH3STG03")
             offset = 12; found = []
             for _ in range(struct.unpack_from("<I", data, 8)[0]):
                 material, count, indices = struct.unpack_from("<III", data, offset); offset += 12
-                rows = np.frombuffer(data, STATIC_VERTEX, count, offset); offset += count*44 + indices*4
+                rows = np.frombuffer(data, STATIC_VERTEX, count, offset); offset += count*STATIC_VERTEX.itemsize + indices*4
                 if f"{material:08x}" in definition["materials"] and definition["materials"][f"{material:08x}"]["shading"] == "lit": found = rows
             np.testing.assert_allclose(sorted(map(tuple, found["lightmap"])), sorted(map(tuple, vertices["lightmap"])), atol=1e-6)
             self.assertTrue(np.all(found["color"][:, 0] == 255) and np.all(found["color"][:, 1:3] == 128))
+
+    def test_alpha_cutoff_layers_and_masks_survive_import(self):
+        from PIL import Image
+        from stage_gltf import STATIC_VERTEX
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); source = root/"source"; output = root/"cache"
+            TEMPLATE.create(source)
+            glb = GlbReader(source/"stage.glb")
+            vertices = np.zeros(3, dtype=STATIC_VERTEX)
+            vertices["position"] = [[0, 0, 0], [1, 0, 0], [0, 1, 0]]
+            vertices["normal"] = [0, 0, 1]; vertices["color"] = 255
+            vertices["layer"] = [[.1, .9], [.2, .9], [.1, .8]]
+            vertices["mask"] = [[.3, .7], [.4, .7], [.3, .6]]
+            images = {name: Image.new("RGBA", (4, 4), (i * 60, 0, 0, 255)) for i, name in enumerate(("diffuse", "glow", "mask"))}
+            wibble = [0, 0, 0, 0, .1, 0, 0, 0, .25, .5, .5]
+            materials = {"cutout": {"blend": 0, "cutoff": .5, "texture": "diffuse", "shading": "lit"},
+                         "glow": {"blend": 3, "cutoff": .25, "texture": "diffuse", "shading": "lit", "mask": "mask",
+                                  "layer": {"texture": "glow", "color": [5, 5, 5, 1]}, "uvWibble": wibble}}
+            writer = GlbWriter(); writer.data = glb.data; writer.binary = bytearray(glb.binary)
+            for name in materials:
+                writer.node(name, writer.mesh(name, [(name, 3, vertices.tobytes(), [(0, 1, 2)])], materials, images))
+            writer.save(source/"stage.glb")
+            rows = {m["name"]: m for m in GlbReader(source/"stage.glb").data["materials"]}
+            self.assertEqual((rows["cutout"]["alphaMode"], rows["cutout"]["alphaCutoff"]), ("MASK", .5))
+            self.assertEqual((rows["glow"]["alphaMode"], rows["glow"]["extras"]["gh3AlphaCutoff"]), ("BLEND", .25))
+            compile_stage(source, output)
+            definition = load_json(output/"stage.json")
+            compiled = {m["source"]: m for m in definition["materials"].values()}
+            self.assertEqual((compiled["cutout"]["blend"], compiled["cutout"]["cutoff"]), (0, .5))
+            glow = compiled["glow"]
+            self.assertEqual((glow["blend"], glow["cutoff"], glow["layerColor"], glow["uvWibble"]), (2, .25, [5, 5, 5, 1], wibble))
+            self.assertTrue((output/"textures"/(glow["mask"]+".png")).exists() and (output/"textures"/(glow["layer"]+".png")).exists())
+            data = (output/"meshes.bin").read_bytes(); offset = 12; found = None
+            for _ in range(struct.unpack_from("<I", data, 8)[0]):
+                material, count, indices = struct.unpack_from("<III", data, offset); offset += 12
+                part = np.frombuffer(data, STATIC_VERTEX, count, offset); offset += count*STATIC_VERTEX.itemsize + indices*4
+                if definition["materials"][f"{material:08x}"]["source"] == "glow": found = part
+            for field in ("layer", "mask"):
+                np.testing.assert_allclose(sorted(map(tuple, found[field])), sorted(map(tuple, vertices[field])), atol=1e-6)
 
     def test_material_templates_classify_original_pixel_shaders(self):
         import gh3_materials
@@ -105,6 +144,10 @@ class StagePackTests(unittest.TestCase):
         self.assertEqual(gh3_materials.lightmap_slot(named["D_N_S_4ChkBox"], 4), 3)
         self.assertEqual(gh3_materials.lightmap_slot(named["Env_D_N_S_Decal_3ChkBox"], 5), 3)
         self.assertIsNone(gh3_materials.lightmap_slot(named["D_1VertexColorOnly"], 1))
+        self.assertEqual(named["D_N_S_4ChkBox"]["uvScales"][0], (2, 0))
+        self.assertEqual({s: named["D_N_S_4ChkBox_Pass1"]["uvScales"][s] for s in (3, 4)}, {3: (5, 0), 4: (5, 1)})
+        self.assertEqual(named["Wibble_Simple"]["uvScales"], {0: (1, 0), 1: (1, 1)})
+        self.assertEqual(named["D_3ChkBox_Pass0"]["uvScales"], {})
 
     def test_scenery_visibility_survives_import_and_invalid_edits_preserve_cache(self):
         with tempfile.TemporaryDirectory() as temporary:

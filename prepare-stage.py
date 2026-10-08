@@ -15,11 +15,15 @@ import gh3_materials
 from gh3_formats import find_array, key, pak_entries, values, word
 from gh3_mesh_cutout import trim_prop_cutouts
 
-
-# AnimatedTexture and AnimatedTexture_Lit read the same vertex constants: columns, rows, frames per second, frame offset.
-ANIMATED_TEMPLATES = {"9893d156", "f76185ad"}
-# D_3ChkBox_Pass0_Pass1 blends a second texture (UV set 1) over the base by its alpha and a mask (UV set 2).
-LAYERED_TEMPLATE = "92af2fe3"
+# AnimatedTexture, AnimatedTexture_Lit, and AnimatedTexture_Billboard share one vertex shader atlas step:
+# c0 columns, c1 rows, c2 frames per second, c3 frame offset.
+ANIMATED_TEXTURE_TEMPLATES = {"9893d156", "f76185ad", "9224d2a1"}
+# Original pixel and vertex shaders: (diffuse UV set, layer sampler, layer UV set, mask sampler, mask UV set, layer colour constant).
+# D_3ChkBox_Pass0_Pass1 and D_N_S_4ChkBox_Pass1 blend a second texture over the diffuse by layer alpha x mask red x vertex alpha.
+# D_3ChkBox_Pass1 and Wibble_Simple multiply the output alpha by the mask's red channel.
+LAYERED_TEMPLATES = {"D_3ChkBox_Pass0_Pass1": (0, 1, 1, 2, 2, 1), "D_3ChkBox_Pass1": (1, None, None, 1, 2, None),
+                     "Wibble_Simple": (0, None, None, 1, 1, None), "D_N_S_4ChkBox_Pass1": (0, 3, 1, 4, 1, 4)}
+WIBBLE_SIMPLE = "d825b71c"
 
 
 def textures(data):
@@ -69,9 +73,12 @@ def rotate(vector, angles):
     return x, y, z
 
 
+SECOND_SAMPLER_DIFFUSE = {"852105c8", "acd09a98", "6f3f03f3", "4ec03414", "4d7335f8"}
+
+
 def diffuse_texture(material, available):
     samples = material["textures"]
-    if material["template"] in {"852105c8", "acd09a98", "6f3f03f3", "4ec03414", "4d7335f8"}:
+    if material["template"] in SECOND_SAMPLER_DIFFUSE:
         samples = samples[1:2]
     return next((name for name in samples if name in available), "")
 
@@ -95,7 +102,7 @@ def crowd_uvs(vertices, count, faces, seed, stride):
         struct.pack_into("<2f", vertices, vertex*stride+24, (tile % 8+u)/8, 1-(tile//8+1-v)/3)
 
 
-def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, crowd_cards=True, include_nodes=(), uv_layers=None):
+def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, crowd_cards=True, include_nodes=()):
     count = values(data, 34, "H")[0]
     end = 32 + word(data, 36)
     offset = 48
@@ -125,13 +132,36 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
             count = 13 if model == "hair" else 11
             if model and len(constants) >= count:
                 materials[name]["character"] = {"model": model, "constants": [list(c) for c in constants[:count]]}
-            if materials[name]["template"] == LAYERED_TEMPLATE and len(constants) >= 2:
-                materials[name]["layerColor"] = [max(0.0, v) for v in constants[1]]
-        if materials[name]["template"] in ANIMATED_TEMPLATES:
+            def uv_scale(sampler):
+                entry = template["uvScales"].get(sampler)
+                return constants[entry[0]][entry[1]] if entry and entry[0] < len(constants) else 1.0
+            layers = LAYERED_TEMPLATES.get(template["name"], (0, None, None, None, None, None))
+            scales = [uv_scale(1 if materials[name]["template"] in SECOND_SAMPLER_DIFFUSE else 0),
+                      uv_scale(layers[1]) if layers[1] is not None else 1.0, uv_scale(layers[3]) if layers[3] is not None else 1.0]
+            if scales != [1, 1, 1]: materials[name]["uvScale"] = scales
+            if template["name"] in LAYERED_TEMPLATES:
+                textures = materials[name]["textures"]
+                diffuse_set, layer, layer_set, mask, mask_set, layer_constant = layers
+                materials[name]["uvSets"] = (diffuse_set, layer_set, mask_set)
+                materials[name]["mask"] = textures[mask]
+                if layer is not None:
+                    if len(constants) <= layer_constant: raise ValueError("Layered material has no layer colour")
+                    base = materials[name].get("color", [1, 1, 1, 1])
+                    # The diffuse constant is baked into vertex colours; the layer uses lighting x vertex colour x its own constant.
+                    materials[name]["layer"] = {"texture": textures[layer],
+                                                "color": [c / max(b, 1e-3) for c, b in zip(constants[layer_constant], base)]}
+        if materials[name]["template"] in ANIMATED_TEXTURE_TEMPLATES:
             constant_count, constant_offset = values(data, offset + 168, "II")
             if constant_count != 4: raise ValueError("Animated texture has an invalid vertex constant bank")
             columns, rows, fps, frame_offset = [values(data, offset + constant_offset + i*16, "f")[0] for i in range(4)]
             materials[name]["textureAnimation"] = {"columns": int(columns), "rows": int(rows), "fps": fps, "offset": frame_offset}
+        if materials[name]["template"] == WIBBLE_SIMPLE:
+            constant_count, constant_offset = values(data, offset + 168, "II")
+            if constant_count != 11: raise ValueError("Wibble_Simple has an invalid vertex constant bank")
+            motion = [values(data, offset + constant_offset + i*16, "f")[0] for i in range(11)]
+            # The pixel shader scales the UV after the vertex shader's turn and scroll, so the pivot and scroll scale with it.
+            scale = materials[name].get("uvScale", [1, 1, 1])[0]
+            materials[name]["uvWibble"] = [v * scale if i in (0, 1, 4, 5, 9, 10) else v for i, v in enumerate(motion)]
         size = word(data, offset + 196)
         if size < 256:
             raise ValueError("Invalid material size")
@@ -194,7 +224,6 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
         tangent_count = 2 if flags & 0x800 else 1 if flags & 0x400 else 0
         uv_count = sum(bool(flags & (1 << bit)) for bit in range(16, 24))
         vertex_data = bytearray()
-        layers = []
         for vertex in range(vertex_count):
             start = vertices_at + vertex * stride
             if weighted:
@@ -215,8 +244,18 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
                 color = (r, g, b, a)
                 cursor += 4
             cursor += 4 if flags & 0x4000 and not weighted else 0
-            uv = values(data, cursor, "2f") if uv_count else (0, 0)
-            if uv_layers is not None: layers.append([values(data, cursor + 8*k, "2f") for k in range(uv_count)])
+            sets = {}
+            for uv_set in range(4):
+                if flags & (3 << (16 + 2 * uv_set)):
+                    sets[uv_set] = values(data, cursor + len(sets) * 8, "2f")
+            if len(sets) != uv_count:
+                raise ValueError(f"Unsupported UV set flags {flags:08x}")
+            uv_sets = materials[material].get("uvSets")
+            uv_scale = materials[material].get("uvScale", (1, 1, 1))
+            uv = sets.get(uv_sets[0], (0, 0)) if uv_sets else next(iter(sets.values()), (0, 0))
+            layer_uv = sets.get(uv_sets[1], (0, 0)) if uv_sets and uv_sets[1] is not None else (0, 0)
+            mask_uv = sets.get(uv_sets[2], (0, 0)) if uv_sets else (0, 0)
+            uv, layer_uv, mask_uv = ((u * scale, v * scale) for (u, v), scale in zip((uv, layer_uv, mask_uv), uv_scale))
             extra = cursor + uv_count * 8
             lightmap = values(data, extra, "2f") if flags & 0x0F000000 else (0, 0)
             expected = extra + (8 if flags & 0x0C000000 else 0) + (8 if flags & 0x03000000 else 0)
@@ -225,16 +264,19 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
             floats = (*position[:2], -position[2], *normal[:2], -normal[2], uv[0], 1 - uv[1])
             if not all(math.isfinite(value) for value in floats + lightmap):
                 raise ValueError("Non-finite vertex")
+            # One Backyard Bash layer material (ca426c7d) stores NaN in its second UV set; sample its layer at the origin.
+            layer_uv = layer_uv if all(map(math.isfinite, layer_uv)) else (0, 0)
+            mask_uv = mask_uv if all(map(math.isfinite, mask_uv)) else (0, 0)
             vertex_data.extend(struct.pack("<8f4B", *floats, *color))
             if not skinned:
-                vertex_data.extend(struct.pack("<2f", lightmap[0], 1 - lightmap[1]))
+                vertex_data.extend(struct.pack("<6f", lightmap[0], 1 - lightmap[1], layer_uv[0], 1 - layer_uv[1], mask_uv[0], 1 - mask_uv[1]))
             if skinned:
                 vertex_data.extend(weights[vertex] if weighted else struct.pack("<4B4f", 0, 0, 0, 0, 1, 0, 0, 0))
         faces = triangles(values(data, indices_at, f"{index_count}H"), kind)
         if any(max(face) >= vertex_count for face in faces):
             raise ValueError("Triangle index outside vertex buffer")
         if crowd_cards and materials[material]["template"] == "a17d40ed":
-            crowd_uvs(vertex_data, vertex_count, faces, index, 56 if skinned else 44)
+            crowd_uvs(vertex_data, vertex_count, faces, index, 56 if skinned else 60)
         if material not in materials:
             raise ValueError("Mesh has no material")
         if skinned or not flags & 0x0F000000:
@@ -242,8 +284,6 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
         meshes.append((material, vertex_count, vertex_data, faces))
         if mesh_nodes is not None:
             mesh_nodes.append(node)
-        if uv_layers is not None:
-            uv_layers.append(layers)
         if light_groups is not None:
             light_groups.append(f"{(node or {}).get(key('LightGroup'), key('None')):08x}")
     for material in unlightmapped:
@@ -282,7 +322,7 @@ def convert(pak_path, destination):
             material["crowd"] = True
     meshes = trim_prop_cutouts(meshes, materials, texture_dir)
     with (destination / "meshes.bin").open("wb") as output:
-        output.write(b"GH3STG02" + struct.pack("<I", len(meshes)))
+        output.write(b"GH3STG03" + struct.pack("<I", len(meshes)))
         for material, count, vertices, faces in meshes:
             output.write(struct.pack("<III", int(material, 16), count, len(faces) * 3))
             output.write(vertices)

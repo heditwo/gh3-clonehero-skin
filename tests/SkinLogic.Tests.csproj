@@ -58,6 +58,7 @@
     <Compile Include="../src/Stage/StageRenderControlState.cs" Link="StageRenderControlState.cs" />
     <Compile Include="../src/Stage/StageScreenColor.cs" Link="StageScreenColor.cs" />
     <Compile Include="../src/Stage/StageTextureAnimation.cs" Link="StageTextureAnimation.cs" />
+    <Compile Include="../src/Stage/StageUvWibble.cs" Link="StageUvWibble.cs" />
     <Compile Include="../src/Stage/StageMovieClip.cs" Link="StageMovieClip.cs" />
     <Compile Include="../src/Stage/StageMovieState.cs" Link="StageMovieState.cs" />
     <Compile Include="../src/Stage/StageCrowdPerformance.cs" Link="StageCrowdPerformance.cs" />

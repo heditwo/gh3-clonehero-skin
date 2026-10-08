@@ -101,6 +101,13 @@ internal static class StageVisualControlTests
             Check(animation.Transform(0) == new Vector4(1, .5f, 0, 0) && animation.Transform(.5) == new Vector4(1, .5f, 0, .5f), "The original Budokan atlas must follow its shader constants.");
             Check(animation.Transform(10, 0) == animation.Transform(0), "Poor performance must stop the Budokan atlas at its source offset.");
             Check(animation.Transform(.25, 2) != animation.Transform(.25, 4), "Medium and good performance must use their source atlas rates.");
+            var turn = new StageUvWibble(new[] { 0f, 0, 0, 0, 0, 0, 0, 0, .25f, .5f, .5f });
+            var turned = turn.Transform(2);
+            Check(MathF.Abs(turned.X - MathF.Cos(.5f)) < 1e-6f && MathF.Abs(turned.Y - MathF.Sin(.5f)) < 1e-6f && turned.Z == 0 && turned.W == 0 && turn.PivotU == .5f,
+                "Wibble_Simple must turn the UV at c8 radians per second about its pivot.");
+            var scroll = new StageUvWibble(new[] { .5f, .2f, 2, 1, -.1f, 0, 0, 0, 0, 0, 0 }).Transform(20);
+            Check(MathF.Abs(scroll.Z - (10 + .2f * MathF.Sin(41)) % 8) < 1e-5f && MathF.Abs(scroll.W + 2) < 1e-5f && scroll.X == 1,
+                "Wibble_Simple must scroll by c0·t + c1·sin(c2·t + c3) and wrap to ±8 like the vertex shader.");
             var controls = new StageRenderControlState(null, _ => true, gap => gaps.Add(gap));
             Gh3ScriptCallResult Control(string command, Gh3QbValue parameters) => controls.Execute(new(Key(command), Key("panel"), parameters.Fields), Key(command), parameters, runtime.Time)!;
             Control("SetOutlineShaderParams", Params(("min", Number(.002)), ("max", Number(.004)), ("rate", Number(1)), ("filldist", Number(200))));

@@ -28,7 +28,7 @@ Original GH3 PC now runs headless under Wine on a private Xvfb display, and its 
 
 ### Remaining visible gaps found by matched captures (Dive, Slow Ride)
 
-1. `*_Pass1` decal layers (second diffuse UV set, mask, grime, logos): about 3% of venue geometry. Needs two more UV sets in the export.
+1. `*_Pass1` decal layers (second diffuse UV set, mask, grime, logos): about 3% of venue geometry. Needs two more UV sets in the export. Partly fixed: see [venue material parity](#venue-material-parity-fix-venues).
 2. The mural behind the Dive drummer is fixed (fix-dive). It is the `D_3ChkBox_Pass0_Pass1` layer of the backdrop cloth; see "Dive neon dancer and backdrop cloth".
 3. `SkinShader`/`HairShader` specifics: normal maps, skin color ramp, rim tint, specular, and the projected shadow map (`s13`).
 4. Normal and specular maps for `D_N_S_*` venue templates.
@@ -119,10 +119,10 @@ Not verified: the per-bone weights of a difference clip (`+0x1040` in the anim b
 **Neon dancer.** The red neon dancer right of the stage is node `0xed7f462c` (material `0x80c0de9e`, template `AnimatedTexture`, two frames at 2 fps). The node has no `CreatedAtStart`. It has `CreatedFromVariable = 0xbcdc78f5`. GH3.exe reads an unnamed table (`0x1a22a5e6` in the global scripts) after each `LightShow_SetParams`. The table sets node flags for each `performance` value, and for each `mood` value if the performance is not `poor`. Flag `0xbcdc78f5` is on only for the `good` performance. Then the engine creates or kills each node whose `CreatedFromVariable` or `CreatedOnProgress` flag changed (`0x437c20`, `0x437d50`, `0x49a240`). Before this fix, the mod did not use `CreatedFromVariable` and did not apply the table. Thus the dancer never showed. Also:
 
 - `prepare-stage.py` read the atlas constants only for `AnimatedTexture_Lit` (`f76185ad`). `AnimatedTexture` (`9893d156`) uses the same vertex constants c0–c3 (columns, rows, fps, frame offset). Both templates are now read. This adds atlas animation to 34 materials in 8 venues (all except Credits and Video). Before, those materials showed the full atlas.
-- An animated atlas changes its alpha mask in each frame. Thus `stage_pack.py` does not cut the mesh to the alpha of frame 0. The shader alpha test (material `cutoff`) is used instead (`alphaTest` in the GLB).
+- An animated atlas changes its alpha mask in each frame. Thus `stage_pack.py` does not cut the mesh to the alpha of frame 0. The shader alpha test (material `cutoff`) is used instead. (fix-venues made this general: see [venue material parity](#venue-material-parity-fix-venues).)
 - `StageLightShowState.ApplyNodeFlags` applies the table. `StageScriptState.ChangeNodeObjects` creates a node only when all of its known flags are on.
 
-**Backdrop cloth.** The cloth behind the drummer uses `D_3ChkBox_Pass0_Pass1` (`92af2fe3`). The pixel shader is `base(UV0) × light`, then `lerp(base, pass1(UV1) × c1 × light, pass1.a × mask(UV2).r × vertex.a)`. The Dive `pass1` texture `0xa77e41b6` is the painted monster banner. The base texture `0x164bace9` is grey brick. The mod drew only the base. `export-gh3-stages.py` (`pass1_layers`) now adds a second, alpha-blended copy of each such mesh that uses UV set 1, the `pass1` texture, and `c1` as its color. If the mask is not all white, the mask is multiplied into the `pass1` alpha (only when UV set 2 equals UV set 1). The overlay keeps the base lightmap. Overlays are added in Art Deco, Dive, Hell, Soundcheck, and Video. Party is not changed: its layer uses a different UV set for the mask.
+**Backdrop cloth.** The cloth behind the drummer uses `D_3ChkBox_Pass0_Pass1` (`92af2fe3`). The pixel shader is `base(UV0) × light`, then `lerp(base, pass1(UV1) × c1 × light, pass1.a × mask(UV2).r × vertex.a)`. The Dive `pass1` texture `0xa77e41b6` is the painted monster banner. The base texture `0x164bace9` is grey brick. The mod drew only the base. `export-gh3-stages.py` (`pass1_layers`) now adds a second, alpha-blended copy of each such mesh that uses UV set 1, the `pass1` texture, and `c1` as its color. If the mask is not all white, the mask is multiplied into the `pass1` alpha (only when UV set 2 equals UV set 1). The overlay keeps the base lightmap. Overlays are added in Art Deco, Dive, Hell, Soundcheck, and Video. Party is not changed: its layer uses a different UV set for the mask. **Replaced by fix-venues:** the stage shader now mixes the layer in the same pass with its own mask UV (also in Party). The overlay meshes are removed.
 
 Evidence: `~/.cache/gh3ref/agent-dive/dive-compare.png` (GH3, mod 0.9.8, fix at 174 s and 116.5 s), `~/.cache/gh3ref/agent-dive/hell-before-after.jpg`.
 
@@ -306,6 +306,30 @@ MelonLoader's assembly generator contacted `api.melonloader.com` on every launch
 - **Check.** My Curse in The Dive (`~/.cache/gh3ref/agent-showflow/intro-compare.png`, `outro-compare.png`, `sbs-intro.mp4`, `sbs-outro.mp4`). The highway rise, the HUD entrance, the "You Rock!" start (253.8 s), the flames, the explosion of the letters, and the highway removal agree with GH3 within one or two frames. The audio envelope from 251 s to 262 s has a correlation of 0.97 with GH3.
 - **Not done.** The song title text (`intro_song_info`), the button ripple, the hand flames that stay on during the win (GH3 `play_outro` stops them), the crowd `Idle` command of the win transition, and the win-camera geometry (owned by the camera work). Practice mode keeps Clone Hero's own lead-in.
 - **Regenerate in main.** `prepare-library.py` (or `prepare-direction.py --output assets/libraries/gh3-band-v1/direction` and then the catalog/library manifests), `export-gh3-stages.py` for all venues (for `cameras_win`), and `prepare-fonts.py`.
+
+#### Venue material parity (fix-venues)
+
+- **Fault.** The exporter kept the GH3 alpha test (material byte +232) only for two templates (`D_N_S_1SeperateChnl`, `EnvMask_D_N_S_2ChkBox`). This was a Budokan fix that was not general. In all ten venues, 157 material entries with an alpha test drew as solid quads. Examples in Lou's Inferno: white backgrounds around the spike rows (`3d9af1e4`), the candelabra (`e509beab`), and the dragon tail. The `AnimatedTexture` template (unlit) did not animate, so the full flame atlas showed on one quad. The second texture, mask, and UV motion of layered templates were not exported. Thus the glowing parts of `D_3ChkBox_Pass0_Pass1` surfaces were missing (for example, the burning rims of the Inferno bass drums), `*_Pass1` decals and `Wibble_Simple` smoke, rings, and swirls drew as full rectangles, and `Wibble_Simple` did not move.
+- **GH3 data.** `tools/disassemble-ps.py` and the vertex shaders (descriptor +0x50 size, +0x58 offset, directly before the pixel shader) give these rules:
+  - Alpha test: all blend modes (0 opaque, 1 additive, 3 alpha blend) use the +232 reference.
+  - `AnimatedTexture`, `AnimatedTexture_Lit`, and `AnimatedTexture_Billboard` share one atlas step: vertex constants c0 columns, c1 rows, c2 frames per second, c3 offset.
+  - `D_3ChkBox_Pass0_Pass1`: colour = lerp(diffuse(UV0), layer(UV1) × c1, layer alpha × c1.a × mask(UV2).r × vertex alpha), then lighting. The alpha stays the diffuse alpha.
+  - `D_N_S_4ChkBox_Pass1`: the same layer model with s3/s4 on UV1, colour c4, and UV scales c5.x/c5.y.
+  - `D_3ChkBox_Pass1`: diffuse on UV set 1; alpha × mask(UV set 2).r.
+  - `Wibble_Simple`: alpha × mask(UV set 1).r. The diffuse UV turns about (c9, c10) at c8 rad/s. Then it scrolls by c0·t + c1·sin(c2·t + c3) in U and by c4·t + c5·sin(c6·t + c7) in V.
+  - Vertex flags bit 17 + 2n mark UV set n.
+  - Many `D_N_S_*` pixel shaders scale the UV by a constant before the sample (`mul rN.xy, cK.c, v0`). `gh3_materials.classify` now returns these scales as `uvScales`, and the exporter applies them. Before, the mod ignored the scale (×3 and ×10 tiling on a few materials).
+- **Fix.**
+  - `prepare-stage.py` reads all UV sets and writes `GH3STG03` static meshes (60-byte vertices: the lightmap UV, then the layer UV and the mask UV).
+  - The GLB carries the cutoff as `MASK`/`alphaCutoff`, or as `extras.gh3AlphaCutoff` for blended materials. It also carries `gh3MaskTexture`, `gh3LayerTexture`, `gh3LayerColor`, `gh3UvWibble`, and `TEXCOORD_2`/`TEXCOORD_3`.
+  - `Stage.glsl` discards below the cutoff, mixes the layer, applies the mask, and turns and scrolls the UV. `StageUvWibble` computes the motion from the song clock.
+  - The importer trims geometry to the alpha mask only for unshaded (particle-shader) materials, because the surface shader now discards. Budokan and Party now have fewer vertices.
+- **Not ported (reported by the audit).**
+  - `D_S_3ChkBox_Pass0_Pass1`, `D_NBlend_S_3ChkBox_Pass0_Pass1`, `D_N_S_4ChkBox_Pass1_Pass2`, `Env_D_N_S_Decal_3ChkBox_Pass1/Pass2`: these draw the base layer only.
+  - `Wibble`, `Wibble_Rot`, `Wibble_Pos_*`, `Wibble_Simple_Billboard`: these are static.
+  - Material +212 (a float, non-zero mostly on blended materials, 1–50) is probably a draw order. The mod does not use it yet.
+  - The layer colour is c_layer / c_diffuse because the diffuse constant is in the vertex colours. When a diffuse channel is near 0, 8-bit vertex colours make that channel of the layer less accurate.
+- **Regenerate.** Run `export-gh3-stages.py` (all venues) and `prepare-stage-shaders.py` (stage bundle). Older `GH3STG02` packs still load.
 
 ### Installation state
 

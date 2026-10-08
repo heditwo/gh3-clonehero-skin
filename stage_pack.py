@@ -202,7 +202,7 @@ def split_mesh(material, packed, faces):
 def write_meshes(folder, meshes, materials, groups=None, skinned=False):
     folder.mkdir(parents=True, exist_ok=True)
     with (folder/"meshes.bin").open("wb") as stream:
-        stream.write((b"GH3BND01" if skinned else b"GH3STG02") + struct.pack("<I", len(meshes)))
+        stream.write((b"GH3BND01" if skinned else b"GH3STG03") + struct.pack("<I", len(meshes)))
         for material, count, vertices, faces in meshes:
             stream.write(struct.pack("<III", int(material, 16), count, len(faces)*3)); stream.write(vertices)
             stream.write(np.asarray(faces, dtype="<u4").tobytes())
@@ -228,7 +228,7 @@ def import_materials(glb, folder):
         mode = material.get("alphaMode", "OPAQUE")
         if mode not in ("OPAQUE", "MASK", "BLEND"): raise ValueError("Unsupported material alpha mode")
         materials[name] = {"texture": texture, "blend": 1 if extras.get("gh3Additive") else 2 if mode == "BLEND" else 0,
-                           "cutoff": float(material.get("alphaCutoff", 0.5)) if mode == "MASK" else 0,
+                           "cutoff": float(material.get("alphaCutoff", 0.5)) if mode == "MASK" else float(number(extras.get("gh3AlphaCutoff", 0), 0, 1)) if mode == "BLEND" else 0,
                             "crowd": bool(extras.get("gh3CrowdAtlas")), "sortedTransparency": bool(extras.get("gh3SortedTransparency"))}
         shading = extras.get("gh3Shading", "")
         if shading not in ("", *SHADING): raise ValueError("Unknown material shading mode")
@@ -259,6 +259,18 @@ def import_materials(glb, folder):
             if any(type(animation[field]) not in (int, float) or not math.isfinite(animation[field]) or abs(animation[field]) > 100000 for field in ("fps", "offset")):
                 raise ValueError("Invalid texture animation rate or offset")
             materials[name]["animation"] = animation
+        for field, extra in (("mask", "gh3MaskTexture"), ("layer", "gh3LayerTexture")):
+            if extra not in extras: continue
+            index = extras[extra]
+            if type(index) != int or not 0 <= index < len(glb.data.get("textures", [])): raise ValueError("Invalid material layer texture")
+            image = f"{key('texture-'+str(index)):08x}"
+            if image not in images:
+                images[image] = glb.image(index); images[image].save(texture_dir/(image+".png"))
+            materials[name][field] = image
+        if "layer" in materials[name]:
+            materials[name]["layerColor"] = [float(number(v, 0, 1000)) for v in vector(extras.get("gh3LayerColor"), 4)]
+        if "gh3UvWibble" in extras:
+            materials[name]["uvWibble"] = [float(number(v, -1000, 1000)) for v in vector(extras["gh3UvWibble"], 11)]
         if materials[name]["crowd"]: materials[name].update(blend=3, cutoff=0.3)
         role = extras.get("gh3CrowdRole", "")
         if role and not re.fullmatch(r"crowd[1-8]", role): raise ValueError("Invalid crowd card role")
@@ -362,8 +374,8 @@ def compile_stage(source, destination):
                 packed, faces = glb.primitive(primitive, geometry_transform)
                 for part in split_mesh(material, packed, faces):
                     mat = materials[material]
-                    # An animated atlas changes its mask every frame, so it keeps the shader alpha test.
-                    if mat["cutoff"] and mat["texture"] and not mat["crowd"] and "animation" not in mat:
+                    # The stage surface shader discards below the cutoff; only the unshaded particle-shader fallback needs trimmed geometry.
+                    if mat["cutoff"] and mat["texture"] and not mat["crowd"] and not mat["shading"]:
                         pair = mat["texture"], mat["cutoff"]
                         if pair not in masks: masks[pair] = alpha_region(images[pair[0]], pair[1])
                         part = trim_mesh(part, images[pair[0]], pair[1], masks[pair])

@@ -39,6 +39,10 @@ internal sealed class StageMaterial
     public bool? DoubleSided { get; set; }
     public string CrowdRole { get; set; } = "";
     public string[] Textures { get; set; } = Array.Empty<string>();
+    public string Mask { get; set; } = "";
+    public string Layer { get; set; } = "";
+    public float[] LayerColor { get; set; } = Array.Empty<float>();
+    public float[] UvWibble { get; set; } = Array.Empty<float>();
     public int ShadingMode => Shading switch { "unlit" => 0, "ambient" => 1, "lit" => 2, "" => -1, _ => throw new InvalidDataException("Unknown stage shading mode") };
 }
 
@@ -76,6 +80,7 @@ internal sealed class StageAssets : IDisposable
     public Dictionary<string, Transform> Objects { get; } = new();
     public List<(uint Object, uint Material, Renderer Renderer, StageMaterial Definition)> MaterialSurfaces { get; } = new();
     public List<(int Slot, Material Material, Texture? Original)> MovieSurfaces { get; } = new();
+    public List<(Material Material, StageUvWibble Motion)> WibbleMaterials { get; } = new();
 
     public void SetVisible(string group, bool? visible)
     {
@@ -152,6 +157,44 @@ internal sealed class StageAssets : IDisposable
             pivots[i] = new Vector3 { x = s.X / s.Count, y = s.Y / s.Count, z = s.Z / s.Count };
         }
         return pivots;
+    }
+
+    private static readonly int LayerTexId = Shader.PropertyToID("_Gh3LayerTex");
+    private static readonly int MaskTexId = Shader.PropertyToID("_Gh3MaskTex");
+    private static readonly int LayerColorId = Shader.PropertyToID("_Gh3LayerColor");
+    private static readonly int LayersId = Shader.PropertyToID("_Gh3Layers");
+
+    // GH3 two-layer and masked templates (D_3ChkBox_Pass0_Pass1, D_3ChkBox_Pass1, Wibble_Simple); see prepare-stage.py.
+    private void ConfigureLayers(Material material, StageMaterial source, Func<string, Texture2D> load)
+    {
+        if (source.Layer.Length > 0 && (source.LayerColor.Length != 4 || !source.LayerColor.All(float.IsFinite)))
+            throw new InvalidDataException("Invalid GH3 layer colour");
+        if (source.UvWibble.Length is not (0 or 11) || !source.UvWibble.All(float.IsFinite)) throw new InvalidDataException("Invalid GH3 UV wibble");
+        if (source.Layer.Length > 0)
+        {
+            material.SetTexture(LayerTexId, load(source.Layer));
+            var c = source.LayerColor;
+            material.SetVector(LayerColorId, new Vector4 { x = c[0], y = c[1], z = c[2], w = c[3] });
+        }
+        if (source.Mask.Length > 0) material.SetTexture(MaskTexId, load(source.Mask));
+        material.SetVector(LayersId, new Vector4 { x = source.Layer.Length > 0 ? 1 : 0, y = source.Mask.Length > 0 ? 1 : 0 });
+        if (source.UvWibble.Length == 0) return;
+        var motion = new StageUvWibble(source.UvWibble);
+        material.SetVector(UvPivotId, new Vector4 { x = motion.PivotU, y = motion.PivotV, z = 1 });
+        material.SetVector(UvWibbleId, new Vector4 { x = 1 });
+        WibbleMaterials.Add((material, motion));
+    }
+
+    private static readonly int UvWibbleId = Shader.PropertyToID("_Gh3UvWibble");
+    private static readonly int UvPivotId = Shader.PropertyToID("_Gh3UvPivot");
+
+    public void UpdateUvWibble(double time)
+    {
+        foreach (var (material, motion) in WibbleMaterials)
+        {
+            var transform = motion.Transform(time);
+            material.SetVector(UvWibbleId, new Vector4 { x = transform.X, y = transform.Y, z = transform.Z, w = transform.W });
+        }
     }
 
     private static void ConfigureCharacter(Material material, StageCharacterMaterial character)
@@ -235,6 +278,7 @@ internal sealed class StageAssets : IDisposable
             }
             if (source.Texture.Length > 0) material.mainTexture = LoadTexture(source.Texture, TextureWrapMode.Repeat);
             if (shaded && source.Lightmap.Length > 0) material.SetTexture("_Gh3Lightmap", LoadTexture(source.Lightmap, TextureWrapMode.Clamp));
+            if (shaded) ConfigureLayers(material, source, name => LoadTexture(name, TextureWrapMode.Repeat));
             materials.Add(Convert.ToUInt32(key, 16), material);
             SurfaceMaterials.Add(material);
             if (shaded && source.Character != null)
@@ -258,9 +302,10 @@ internal sealed class StageAssets : IDisposable
         }
         using var reader = new BinaryReader(File.OpenRead(Path.Combine(directory, "meshes.bin")));
         var header = System.Text.Encoding.ASCII.GetString(reader.ReadBytes(8));
-        if (bones == null ? header is not ("GH3STG01" or "GH3STG02") : header != "GH3BND01")
+        if (bones == null ? header is not ("GH3STG01" or "GH3STG02" or "GH3STG03") : header != "GH3BND01")
             throw new InvalidDataException("Invalid stage mesh header");
-        var lightmapped = header == "GH3STG02";
+        var lightmapped = header is "GH3STG02" or "GH3STG03";
+        var layered = header == "GH3STG03";
         var meshCount = reader.ReadInt32();
         if (meshCount < 1 || meshCount > 10000) throw new InvalidDataException("Invalid stage mesh count");
         if (Definition.LightGroups.Length != 0 && Definition.LightGroups.Length != meshCount)
@@ -298,6 +343,8 @@ internal sealed class StageAssets : IDisposable
             var normals = new Vector3[vertexCount];
             var uv = new Vector2[vertexCount];
             var lightmapUv = lightmapped ? new Vector2[vertexCount] : null;
+            var layerUv = layered ? new Vector2[vertexCount] : null;
+            var maskUv = layered ? new Vector2[vertexCount] : null;
             var colors = new Color32[vertexCount];
             var weights = bones == null ? null : new List<SkinWeight>(vertexCount * 3);
             var boneCounts = bones == null ? null : new byte[vertexCount];
@@ -308,6 +355,8 @@ internal sealed class StageAssets : IDisposable
                 uv[v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
                 colors[v] = new Color32(reader.ReadByte(), reader.ReadByte(), reader.ReadByte(), reader.ReadByte());
                 if (lightmapUv != null) lightmapUv[v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
+                if (layerUv != null) layerUv[v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
+                if (maskUv != null) maskUv[v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
                 if (weights != null && bones != null)
                 {
                     var indicesForVertex = reader.ReadBytes(4);
@@ -334,6 +383,9 @@ internal sealed class StageAssets : IDisposable
             mesh.normals = new Il2CppStructArray<Vector3>(crowdCards ? CardPivots(vertices, indices) : normals);
             mesh.uv = new Il2CppStructArray<Vector2>(uv);
             if (lightmapUv != null) mesh.uv2 = new Il2CppStructArray<Vector2>(lightmapUv);
+            var partMaterial = Definition.Materials[materialId.ToString("x8")];
+            if (layerUv != null && partMaterial.Layer.Length > 0) mesh.uv3 = new Il2CppStructArray<Vector2>(layerUv);
+            if (maskUv != null && partMaterial.Mask.Length > 0) mesh.uv4 = new Il2CppStructArray<Vector2>(maskUv);
             mesh.colors32 = new Il2CppStructArray<Color32>(colors);
             mesh.triangles = new Il2CppStructArray<int>(indices);
             if (weights != null && bones != null)

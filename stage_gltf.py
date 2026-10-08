@@ -11,7 +11,7 @@ from PIL import Image
 
 REFLECTION = np.diag([1, 1, -1, 1])
 VERTEX = np.dtype([("position", "<f4", 3), ("normal", "<f4", 3), ("uv", "<f4", 2), ("color", "u1", 4)])
-STATIC_VERTEX = np.dtype(VERTEX.descr + [("lightmap", "<f4", 2)])
+STATIC_VERTEX = np.dtype(VERTEX.descr + [("lightmap", "<f4", 2), ("layer", "<f4", 2), ("mask", "<f4", 2)])
 SHADING = ("lit", "ambient", "unlit")
 
 
@@ -84,7 +84,7 @@ class GlbWriter:
             self.textures[blob] = i
         return self.textures[blob]
 
-    def material(self, name, definition, textures):
+    def material(self, name, definition, textures, layered=True):
         if name in self.materials: return self.materials[name]
         row = {"name": name, "pbrMetallicRoughness": {"metallicFactor": 0, "roughnessFactor": 1}, "doubleSided": definition.get("doubleSided", True)}
         texture = definition.get("texture", "")
@@ -97,11 +97,17 @@ class GlbWriter:
         if definition.get("lightmap"):
             row["occlusionTexture"] = {"index": self.texture(textures[definition["lightmap"]]), "texCoord": 1}
         blend = definition.get("blend", 0)
-        row["alphaMode"] = "BLEND" if blend else "OPAQUE"
-        if definition.get("geometryCutout") or definition.get("alphaTest"):
-            row["alphaMode"] = "MASK"
-            row["alphaCutoff"] = definition.get("cutoff", 0.5)
+        # GH3 applies the material alpha test (+232) to opaque and blended materials alike.
+        cutoff = definition.get("cutoff", 0) if not definition.get("crowd") else 0
+        row["alphaMode"] = "BLEND" if blend else "MASK" if cutoff else "OPAQUE"
+        if row["alphaMode"] == "MASK": row["alphaCutoff"] = cutoff
         extras = {}
+        if blend and cutoff: extras["gh3AlphaCutoff"] = cutoff
+        if layered and definition.get("mask"): extras["gh3MaskTexture"] = self.texture(textures[definition["mask"]])
+        if layered and definition.get("layer"):
+            extras["gh3LayerTexture"] = self.texture(textures[definition["layer"]["texture"]])
+            extras["gh3LayerColor"] = [float(v) for v in definition["layer"]["color"]]
+        if definition.get("uvWibble"): extras["gh3UvWibble"] = [float(v) for v in definition["uvWibble"]]
         if definition.get("sourceMaterial"): extras["gh3SourceMaterial"] = definition["sourceMaterial"]
         if "movieSlot" in definition: extras["gh3MovieSlot"] = definition["movieSlot"]
         if "textureAnimation" in definition: extras["gh3TextureAnimation"] = definition["textureAnimation"]
@@ -121,20 +127,23 @@ class GlbWriter:
         for material, count, packed, faces in parts:
             if not faces: continue
             stride = len(packed) // count
-            dtype = {36: VERTEX, 44: STATIC_VERTEX}.get(stride) or np.dtype(VERTEX.descr + [("joints", "u1", 4), ("weights", "<f4", 4)])
+            dtype = {36: VERTEX, STATIC_VERTEX.itemsize: STATIC_VERTEX}.get(stride) or np.dtype(VERTEX.descr + [("joints", "u1", 4), ("weights", "<f4", 4)])
             vertices = np.frombuffer(packed, dtype=dtype)
             p = vertices["position"] * [1, 1, -1]; n = vertices["normal"] * [1, 1, -1]
             uv = vertices["uv"].copy(); uv[:, 1] = 1-uv[:, 1]
             attrs = {"POSITION": self.accessor(p, "VEC3"), "NORMAL": self.accessor(n, "VEC3"),
                      "TEXCOORD_0": self.accessor(uv, "VEC2"), "COLOR_0": self.accessor(vertices["color"], "VEC4", 5121, True)}
-            if stride == 44 and materials[material].get("lightmap"):
-                lightmap = vertices["lightmap"].copy(); lightmap[:, 1] = 1-lightmap[:, 1]
-                attrs["TEXCOORD_1"] = self.accessor(lightmap, "VEC2")
+            layered = stride == STATIC_VERTEX.itemsize
+            for field, attribute, used in (("lightmap", "TEXCOORD_1", materials[material].get("lightmap")),
+                                           ("layer", "TEXCOORD_2", materials[material].get("layer")), ("mask", "TEXCOORD_3", materials[material].get("mask"))):
+                if layered and used:
+                    channel = vertices[field].copy(); channel[:, 1] = 1-channel[:, 1]
+                    attrs[attribute] = self.accessor(channel, "VEC2")
             if stride == 56:
                 attrs.update(JOINTS_0=self.accessor(vertices["joints"], "VEC4", 5121), WEIGHTS_0=self.accessor(vertices["weights"], "VEC4"))
             indices = np.asarray(faces)[:, [0, 2, 1]].reshape(-1)
             primitives.append({"attributes": attrs, "indices": self.accessor(indices, "SCALAR", 5125),
-                               "material": self.material(material, materials[material], textures), "mode": 4})
+                               "material": self.material(material, materials[material], textures, layered), "mode": 4})
         if not primitives: return None
         index = len(self.data["meshes"])
         self.data["meshes"].append({"name": name, "primitives": primitives})
@@ -254,11 +263,10 @@ class GlbReader:
         positions = positions @ transform[:3, :3].T + transform[:3, 3]
         normals = normals @ np.linalg.inv(transform[:3, :3])
         lengths = np.linalg.norm(normals, axis=1); normals /= np.maximum(lengths, 1e-10)[:, None]
-        uv = self.accessor(attrs["TEXCOORD_0"]) if "TEXCOORD_0" in attrs else np.zeros((count, 2))
-        lightmap = self.accessor(attrs["TEXCOORD_1"]) if "TEXCOORD_1" in attrs else np.zeros((count, 2))
+        uv, lightmap, layer, mask = (self.accessor(attrs[f"TEXCOORD_{i}"]) if f"TEXCOORD_{i}" in attrs else np.zeros((count, 2)) for i in range(4))
         color = self.accessor(attrs["COLOR_0"]) if "COLOR_0" in attrs else np.ones((count, 4))
         if color.shape == (count, 3): color = np.column_stack((color, np.ones(count)))
-        if uv.shape != (count, 2) or lightmap.shape != (count, 2) or color.shape != (count, 4): raise ValueError("Invalid glTF UV or color count")
+        if any(channel.shape != (count, 2) for channel in (uv, lightmap, layer, mask)) or color.shape != (count, 4): raise ValueError("Invalid glTF UV or color count")
         indices = self.accessor(primitive["indices"]).reshape(-1) if "indices" in primitive else np.arange(count)
         if indices.dtype.kind not in "ui" or len(indices) % 3 or np.any(indices < 0) or np.any(indices >= count): raise ValueError("Invalid glTF triangles")
         faces = indices.reshape(-1, 3)
@@ -269,5 +277,7 @@ class GlbReader:
         packed["position"] = positions; packed["normal"] = normals
         packed["uv"] = uv; packed["uv"][:, 1] = 1-uv[:, 1]
         packed["lightmap"] = lightmap; packed["lightmap"][:, 1] = 1-lightmap[:, 1]
+        packed["layer"] = layer; packed["layer"][:, 1] = 1-layer[:, 1]
+        packed["mask"] = mask; packed["mask"][:, 1] = 1-mask[:, 1]
         packed["color"] = np.round(np.clip(color, 0, 1)*255).astype("u1")
         return packed, faces

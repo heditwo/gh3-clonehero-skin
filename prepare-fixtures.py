@@ -66,7 +66,7 @@ def convert(directory, destination):
             name = material["texture"]
             textures[name].save(folder / "textures" / f"{name}.png")
         with (folder / "meshes.bin").open("wb") as output:
-            output.write(b"GH3STG01" + struct.pack("<I", len(meshes)))
+            output.write(b"GH3STG03" + struct.pack("<I", len(meshes)))
             for material, count, vertices, faces in meshes:
                 output.write(struct.pack("<III", int(material, 16), count, len(faces) * 3))
                 output.write(vertices)
