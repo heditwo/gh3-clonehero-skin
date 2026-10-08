@@ -100,6 +100,7 @@ internal sealed class PerformanceClip
         }
     }
 
+    // additive is GH3's applydifference (GH3.exe 0x4a3550): current * difference, so the difference turns about the bone's own axes.
     public void Apply(BandPose[] output, BandPose[] bind, double time, bool additive = false, float weight = 1)
     {
         var frame = Math.Clamp(time / Duration * (_frames - 1), 0, _frames - 1);
@@ -111,7 +112,7 @@ internal sealed class PerformanceClip
             var pose = BandPose.Mix(_poses[a * _bones.Length + i], _poses[b * _bones.Length + i], (float)(frame - a));
             var current = output[bone];
             var position = (_masks[i] & 1) == 0 ? current.Position : additive ? current.Position + pose.Position - bind[bone].Position : pose.Position;
-            var rotation = (_masks[i] & 2) == 0 ? current.Rotation : additive ? Quaternion.Normalize(pose.Rotation * current.Rotation) : pose.Rotation;
+            var rotation = (_masks[i] & 2) == 0 ? current.Rotation : additive ? Quaternion.Normalize(current.Rotation * pose.Rotation) : pose.Rotation;
             output[bone] = BandPose.Mix(current, new(position, rotation), weight);
         }
     }
@@ -161,6 +162,7 @@ internal sealed class PerformancePlayer
         _commands = timeline.PlaybackCues.Where(c => c.Role == role && c.Type is "stance" or "perform" or "clip").ToArray();
         _armDelta = new BandPose[bind.Length];
         _armTouched = new bool[bind.Length];
+        if (role == "drummer" && parents != null) _rig = new StageGuitarRig(parents, bind, member.Bones, "Bone_IK_Hand_Slave");
         if (role is "guitarist" or "bassist" && parents != null)
         {
             _rig = new StageGuitarRig(parents, bind, member.Bones);
@@ -196,7 +198,8 @@ internal sealed class PerformancePlayer
         Array.Copy(_bind, Pose, Pose.Length);
         Clip(segment.Clip).Apply(Pose, _bind, (time - segment.Time) * segment.Rate);
         var index = StageTimeline.UpperBound(_segments, time, s => s.Time) - 1;
-        var weight = (float)Math.Clamp((time - segment.Time) / 0.2, 0, 1);
+        // Body DegenerateBlend with BlendDuration 0.2 (hero_play_adjusting_random_anims); see StageBlendTrack.
+        var weight = (float)(1 / (2 - Math.Clamp((time - segment.Time) / 0.2, 0, 1)));
         if (index > 0 && weight < 1)
         {
             var previous = _segments[index - 1];
@@ -216,8 +219,12 @@ internal sealed class PerformancePlayer
                 for (var bone = 0; bone < Pose.Length; bone++) Pose[bone] = BandPose.Mix(Pose[bone], _previous[bone], walkWeight);
             }
         }
-        if (_rig != null) Arms(time);
-        _drummer?.Apply(Pose, _bind, time, Clip);
+        if (_drummer != null)
+        {
+            _drummer.Apply(Pose, _bind, time, Clip);
+            _rig?.Apply(Pose, 1, 1);
+        }
+        else if (_rig != null) Arms(time);
         var face = Last(_timeline.Track("face", _role), time);
         if (face != null && _member.Clips.TryGetValue(face.Value, out var info) && time < face.Time + info.Duration)
             Clip(face.Value).Apply(Pose, _bind, time - face.Time, weight: (float)Math.Clamp((time - face.Time) / 0.1, 0, 1));
@@ -250,8 +257,8 @@ internal sealed class PerformancePlayer
         _seed ^= _seed >> 17;
         _seed ^= _seed << 5;
         var selected = options[_seed % options.Length];
-        var rate = transition ? 1 : bpm / (speed == "slow" ? 75 : speed == "med" ? 115 : 145);
-        rate = Math.Clamp(rate, 0.5, 2);
+        // hero_play_tempo_anim_cfunc (GH3.exe 0x420d50) only picks the slow, med, or fast clip; hero_play_anim plays it at Speed 1.
+        const double rate = 1;
         var end = start + _member.Clips[selected].Duration / rate;
         var immediate = _commands.Skip(_commandIndex).FirstOrDefault(c => c.Immediate && c.Time < end);
         if (immediate != null) end = Math.Max(start + 0.001, immediate.Time);

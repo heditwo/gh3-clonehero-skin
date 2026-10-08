@@ -2,10 +2,9 @@ namespace Gh3Skin;
 
 // GH3 drives the drummer from the song's drum notes (guitar_hand_events.qb Drum_iterator and Drum_cymbal_iterator,
 // GH3.exe 0x42d730). Each arm, the kick foot, and each cymbal is a DegenerateBlend slot of drummer_static_tree:
-// a new clip blends in linearly over the old output and plays once, then holds its last frame.
+// a new clip blends in over the old output (StageBlendTrack.Factors) and plays once, then holds its last frame.
 internal sealed class StageDrummer
 {
-    private readonly record struct Branch(double Start, string Clip, double Blend);
     private readonly record struct Hit(double Start, string Clip, double Blend, int Note);
 
     // play_drummer_*_arm_anim blends to the sticks-down clip over 0.6 s. GH3.exe passes BlendDuration only to the
@@ -14,7 +13,7 @@ internal sealed class StageDrummer
     private const double DefaultBlend = 0.2;
     private const double TwistFrame = 1.0 / 60;
 
-    private readonly Branch[][] _slots;
+    private readonly StageBlendTrack.Branch[][] _slots;
     private readonly string _twistClip;
     private readonly float[] _twist;
 
@@ -29,8 +28,8 @@ internal sealed class StageDrummer
         var hihatCountoff = timeline.Countoff.StartsWith("hihat", StringComparison.OrdinalIgnoreCase);
         var arms = new[] { new List<Hit>(), new List<Hit>() };
         var twistNotes = new List<(double Time, int Arm, int Note)>();
-        var foot = new List<Branch>();
-        var cymbals = Enumerable.Range(0, 4).Select(_ => new List<Branch>()).ToArray();
+        var foot = new List<StageBlendTrack.Branch>();
+        var cymbals = Enumerable.Range(0, 4).Select(_ => new List<StageBlendTrack.Branch>()).ToArray();
         foreach (var cue in timeline.Track("drum"))
         {
             if (!int.TryParse(cue.Value, out var note)) continue;
@@ -55,12 +54,12 @@ internal sealed class StageDrummer
             var cymbal = note switch { 44 or 56 => 0, 45 or 57 => 1, 43 or 55 => 2, 41 or 42 or 53 or 54 => 3, _ => -1 };
             if (cymbal >= 0 && Layer($"cymbal/{cymbal}") is { } swing) cymbals[cymbal].Add(new(cue.Time, swing, drumBlend));
         }
-        var armSlots = new List<Branch>[2];
+        var armSlots = new List<StageBlendTrack.Branch>[2];
         for (var arm = 0; arm < 2; arm++)
         {
             var hits = arms[arm].OrderBy(h => h.Start).ToList();
             var down = Layer(arm == 0 ? "stickdown_l" : "stickdown_r");
-            armSlots[arm] = new List<Branch>();
+            armSlots[arm] = new List<StageBlendTrack.Branch>();
             for (var i = 0; i < hits.Count; i++)
             {
                 var hit = hits[i];
@@ -72,29 +71,26 @@ internal sealed class StageDrummer
                 if (lowered + clearTwist < next) twistNotes.Add((lowered + clearTwist, arm, 0));
             }
         }
-        _slots = new[] { armSlots[0], armSlots[1], foot }.Concat(cymbals).Select(slot => slot.OrderBy(b => b.Start).ToArray()).ToArray();
+        _slots = new[] { armSlots[0], armSlots[1], foot }.Concat(cymbals).Select(slot => slot.OrderBy(b => b.Time).ToArray()).ToArray();
         _twistClip = Layer("bodytwist") ?? "";
         _twist = _twistClip.Length == 0 ? Array.Empty<float>() : Twist(twistNotes, constants, Constant("drummer_twist_rate", 0.05));
     }
 
     public void Apply(BandPose[] pose, BandPose[] bind, double time, Func<string, PerformanceClip> clip)
     {
+        Span<float> factors = stackalloc float[StageBlendTrack.MaxDepth + 1];
         foreach (var branches in _slots)
         {
-            var last = StageTimeline.UpperBound(branches, time, b => b.Start) - 1;
-            if (last < 0) continue;
-            var first = last;
-            while (first > 0 && last - first < 16 && Weight(branches[first], time) < 1) first--;
-            for (var i = first; i <= last; i++)
-                clip(branches[i].Clip).Apply(pose, bind, time - branches[i].Start, weight: Weight(branches[i], time));
+            var newest = StageTimeline.UpperBound(branches, time, b => b.Time) - 1;
+            if (newest < 0) continue;
+            var oldest = StageBlendTrack.Factors(branches, newest, time, factors);
+            for (var i = oldest; i <= newest; i++)
+                clip(branches[i].Clip).Apply(pose, bind, time - branches[i].Time, weight: factors[i - oldest]);
         }
         if (_twist.Length == 0) return;
         var strength = _twist[Math.Clamp((int)(time / TwistFrame), 0, _twist.Length - 1)];
         if (strength > 0) clip(_twistClip).Apply(pose, bind, 0, true, strength);
     }
-
-    private static float Weight(Branch branch, double time) =>
-        branch.Blend <= 0 ? 1 : (float)Math.Clamp((time - branch.Start) / branch.Blend, 0, 1);
 
     // drummer_autotwist (guitar_character.qb) moves the twist strength toward the mean of both arms' factors
     // by drummer_twist_rate each game frame.

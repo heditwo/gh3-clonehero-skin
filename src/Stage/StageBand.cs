@@ -165,7 +165,6 @@ internal sealed class StageBand : IDisposable
             var root = SamplePose(player, time, player.Pose);
             Apply(player.Root, root);
             player.Hair?.Apply(player.Pose);
-            if (player.Role == "drummer") StageDrumHands.Apply(player.Animation.Parents, player.Pose);
             for (var i = 0; i < player.Bones.Length; i++) Apply(player.Bones[i], player.Pose[i]);
         }
     }

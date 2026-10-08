@@ -2,16 +2,18 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
-// GH3 DegenerateBlend node: every new branch fades in linearly while all older blends advance at the newest blend
-// duration; a branch is dropped when the blend that covers it ends.
+// GH3 DegenerateBlend node (GH3.exe 0x659d40 update, 0x659f50 evaluate). A new branch enters with weight 1 and keeps it;
+// the branch it replaces gets the "linear" blend curve, and every older branch loses dt / BlendDuration of the newest
+// blend per update until it is dropped at 0. The output is the weighted mean, built from the oldest branch with lerp
+// factor weight / running sum, so two branches give the new one 1 / (2 - u) at blend progress u.
 internal sealed class StageBlendTrack
 {
     internal readonly record struct Branch(double Time, string Clip, double Blend);
-    private const int MaxDepth = 16;
+    internal const int MaxDepth = 16;
     private readonly Branch[] _branches;
     private readonly BandPose[] _sample;
     private readonly bool[] _sampled;
-    private readonly double[] _values = new double[MaxDepth];
+    private readonly float[] _factors = new float[MaxDepth + 1];
 
     public StageBlendTrack(IEnumerable<Branch> branches, int bones)
     {
@@ -22,27 +24,43 @@ internal sealed class StageBlendTrack
 
     public IEnumerable<string> Clips => _branches.Select(b => b.Clip).Distinct();
 
+    // Writes the lerp factor of branch k to factors[k - oldest] and returns the oldest branch that still has weight.
+    public static int Factors(IReadOnlyList<Branch> branches, int newest, double time, Span<float> factors)
+    {
+        Span<double> weights = stackalloc double[MaxDepth + 1];
+        var oldest = newest;
+        var decay = 0.0;
+        weights[0] = 1;
+        for (var k = newest - 1; k >= 0 && newest - k <= MaxDepth; k--)
+        {
+            var next = branches[k + 1];
+            if (next.Blend <= 0) break;
+            decay += ((k + 1 == newest ? time : branches[k + 2].Time) - next.Time) / next.Blend;
+            if (decay >= 1) break;
+            weights[newest - k] = 1 - decay;
+            oldest = k;
+        }
+        var sum = 0.0;
+        for (var k = oldest; k <= newest; k++)
+        {
+            var weight = weights[newest - k];
+            sum += weight;
+            factors[k - oldest] = (float)(weight / sum);
+        }
+        return oldest;
+    }
+
     public void Evaluate(double time, Func<string, PerformanceClip> clip, BandPose[] bind, BandPose[] output, bool[] touched)
     {
         var newest = StageTimeline.UpperBound(_branches, time, b => b.Time) - 1;
         if (newest < 0) return;
-        var oldest = newest;
-        var progress = 0.0;
-        for (var k = newest - 1; k >= 0 && newest - k <= MaxDepth; k--)
-        {
-            var next = _branches[k + 1];
-            if (next.Blend <= 0) break;
-            progress += ((k + 1 == newest ? time : _branches[k + 2].Time) - next.Time) / next.Blend;
-            if (progress >= 1) break;
-            _values[newest - 1 - k] = 1 - progress;
-            oldest = k;
-        }
+        var oldest = Factors(_branches, newest, time, _factors);
         var first = _branches[oldest];
         clip(first.Clip).SampleDelta(output, touched, bind, time - first.Time);
-        for (var k = oldest; k < newest; k++)
+        for (var k = oldest + 1; k <= newest; k++)
         {
-            var weight = (float)(1 - _values[newest - 1 - k]);
-            var branch = _branches[k + 1];
+            var weight = _factors[k - oldest];
+            var branch = _branches[k];
             Array.Fill(_sample, new BandPose(Vector3.Zero, Quaternion.Identity));
             Array.Clear(_sampled, 0, _sampled.Length);
             clip(branch.Clip).SampleDelta(_sample, _sampled, bind, time - branch.Time);
@@ -56,7 +74,8 @@ internal sealed class StageBlendTrack
     }
 }
 
-// GH3 guitarist_static_tree after the animation layers: Havok two-joint IK (Hero_Ik_params), then hero_ConstraintBones.
+// GH3 guitarist_static_tree and drummer_static_tree after the animation layers: Havok two-joint IK (Hero_Ik_params,
+// drummer_IK_params; they differ only in the hand target bones), then hero_ConstraintBones.
 internal sealed class StageGuitarRig
 {
     private sealed record Chain(int First, int Second, int End, int Target, Vector3 Hinge, int Side);
@@ -69,7 +88,7 @@ internal sealed class StageGuitarRig
     private readonly Vector3[] _position;
     private readonly Quaternion[] _rotation;
 
-    public StageGuitarRig(int[] parents, BandPose[] bind, string[] bones)
+    public StageGuitarRig(int[] parents, BandPose[] bind, string[] bones, string handTarget = "Bone_IK_Hand_Guitar")
     {
         _parents = parents;
         _bind = bind;
@@ -79,8 +98,8 @@ internal sealed class StageGuitarRig
         // Hinge axes are the original values; mirroring Z to Unity space keeps a Z axis unchanged for an axis-angle pair.
         _chains = new[]
         {
-            new Chain(Bone("Bone_Bicep_R"), Bone("Bone_Forearm_R"), Bone("Bone_Palm_R"), Bone("Bone_IK_Hand_Guitar_R"), -Vector3.UnitZ, 1),
-            new Chain(Bone("Bone_Bicep_L"), Bone("Bone_Forearm_L"), Bone("Bone_Palm_L"), Bone("Bone_IK_Hand_Guitar_L"), -Vector3.UnitZ, -1),
+            new Chain(Bone("Bone_Bicep_R"), Bone("Bone_Forearm_R"), Bone("Bone_Palm_R"), Bone(handTarget + "_R"), -Vector3.UnitZ, 1),
+            new Chain(Bone("Bone_Bicep_L"), Bone("Bone_Forearm_L"), Bone("Bone_Palm_L"), Bone(handTarget + "_L"), -Vector3.UnitZ, -1),
             new Chain(Bone("Bone_Thigh_L"), Bone("Bone_Knee_L"), Bone("Bone_Ankle_L"), Bone("Bone_IK_Foot_Slave_L"), Vector3.UnitZ, 0),
             new Chain(Bone("Bone_Thigh_R"), Bone("Bone_Knee_R"), Bone("Bone_Ankle_R"), Bone("Bone_IK_Foot_Slave_R"), Vector3.UnitZ, 0),
         }.Where(c => c.First >= 0 && c.Second >= 0 && c.End >= 0 && c.Target >= 0 &&

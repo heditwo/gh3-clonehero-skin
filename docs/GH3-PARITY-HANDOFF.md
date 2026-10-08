@@ -103,7 +103,16 @@ GH3 data and code that the fix uses:
 
 `StageDrummer` keeps these slots. `prepare-direction.py` writes the new constants and the `bodytwist` layer. In My Curse (45–60 s), the 99th percentile hand speed went from 20 m/s to 4 m/s, and the 99th percentile elbow speed from 17 m/s to 3.6 m/s.
 
-Not verified: the exact blend curve of a GH3 `DegenerateBlend` (the fix uses a linear blend) and the multiplication order of a GH3 difference clip. The ragdoll and `hero_ConstraintBones` steps of the drummer tree are not ported.
+Follow-up (fix-drumik2):
+
+- **Blend curve.** `DegenerateBlend` (GH3.exe `0x659d40` update, `0x659f50` evaluate) does not crossfade linearly. A new branch enters with weight 1. Each older branch loses `dt / BlendDuration` (of the newest blend) at each update and is removed at 0. The output is the weighted mean: the node starts at the oldest branch and lerps each newer branch in by `weight / running sum`. With two branches the new branch has `1 / (2 − u)` at blend progress `u`: it is half visible at once, then it goes to 1 at the end. The default curve object (`0x8c1f24`) is `linear` and returns its input. `StageBlendTrack.Factors` (shared with the guitar arms) now does this, and the drummer slots and the body clip blend (0.2 s) use it. Tell the hands agent: the guitar arm tracks get the same correction through `StageBlendTrack.Evaluate`.
+- **IK and constraint bones.** The drummer now uses `StageGuitarRig` with the `Bone_IK_Hand_Slave` targets (`drummer_IK_params` is the same as `Hero_Ik_params` except for the hand targets) and the 14 `hero_ConstraintBones` entries (`0x658c40`: Split, SplitR, Twist, Twistchild). `StageDrumHands` is removed. Before this, the drummer twist and split bones (wrists, biceps, elbows, knees, thighs) stayed at the bind pose.
+- **Ragdoll.** The `ragdoll` node of the drummer tree simulates only the accessory bones `Guitarist_accessory_bones` (`Bone_ACC_01`–`15`, the hair). The body rigid bodies follow the animation. `StageHair` already ports this from the same ragdoll (`d6b5340d`). No other change is necessary.
+- **Body clip speed.** `hero_play_tempo_anim_cfunc` (`0x420d50`) only selects the slow, med, or fast clip (`0x420af0`: limits at the mean of two tempo constants). `hero_play_anim` plays it at speed 1. The mod played the body clip at `bpm / 145` (1.2 in My Curse), so the idle head and body motion was 20% too fast for all members. Now the speed is 1.
+- **Difference clips.** `applydifference` (`0x4a3550`) multiplies the bone rotation by the difference rotation in the bone's own frame. `PerformanceClip.Apply(additive: true)` now uses `current * difference`. Only the drummer body twist uses this path.
+- **Head at 173 s.** The head pitch and yaw come from the fast idle clips (`GH3_Drummer_Fst_Idle_01`: head pitch −22° to +20°) plus the body twist (up to about 38° of head yaw at strength 0.5). GH3 selects the idle clip and its phase at random, so the head pose of one frame cannot be matched. In three drummer shots, the fix now has the same range of head motion as GH3. Head tracking (look-at) is not in the drummer scripts.
+
+Not verified: the per-bone weights of a difference clip (`+0x1040` in the anim buffer) are taken as 1.
 
 ### Dive neon dancer and backdrop cloth (fix-dive)
 

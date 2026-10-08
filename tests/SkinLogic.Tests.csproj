@@ -64,7 +64,6 @@
     <Compile Include="../src/Stage/StagePack.cs" Link="StagePack.cs" />
     <Compile Include="../src/Stage/StageCameraPath.cs" Link="StageCameraPath.cs" />
     <Compile Include="../src/Stage/BandAnimation.cs" Link="BandAnimation.cs" />
-    <Compile Include="../src/Stage/StageDrumHands.cs" Link="StageDrumHands.cs" />
     <Compile Include="../src/Stage/StageDrummer.cs" Link="StageDrummer.cs" />
     <Compile Include="../src/Stage/StageHandFireState.cs" Link="StageHandFireState.cs" />
     <Compile Include="../src/Stage/StageHair.cs" Link="StageHair.cs" />
