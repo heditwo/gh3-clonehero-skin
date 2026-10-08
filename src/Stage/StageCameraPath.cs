@@ -149,8 +149,10 @@ internal sealed class StageCameraPath
             fraction = (float)Math.Clamp((age - shot.Times[first]) / (shot.Times[last] - shot.Times[first]), 0, 1);
             if (shot.Interpolation == "smooth") fraction = Smooth(fraction);
         }
-        var a = Resolve(points[first], shot.Control == "OrbitContinuous" ? OrbitPosition(shot, time) : null);
-        var b = points.Length == 1 ? a : Resolve(points[last]);
+        // CCam_Orbit turns the lock frame about its Y axis before the look-at (GH3.exe 0x4ba2d0).
+        var spin = shot.Control is "Orbit" or "OrbitAndMorphTwoCam" && !shot.DisableOrbit2 ? -shot.OrbitAngle * MathF.PI / 180 * t : 0;
+        var a = Resolve(points[first], shot.Control == "OrbitContinuous" ? OrbitPosition(shot, time) : null, spin: spin);
+        var b = points.Length == 1 ? a : Resolve(points[last], spin: spin);
         var position = Vector3.Lerp(a.Position, b.Position, fraction);
         var rotation = Quaternion.Slerp(a.Rotation, b.Rotation, fraction);
         var fov = a.Fov + (b.Fov - a.Fov) * fraction;
@@ -159,22 +161,15 @@ internal sealed class StageCameraPath
             var scaled = t * (points.Length - 1);
             var segment = Math.Min((int)scaled, points.Length - 2);
             var u = scaled - segment;
-            var p0 = Resolve(points[Math.Max(0, segment - 1)]);
-            var p1 = Resolve(points[segment]);
-            var p2 = Resolve(points[segment + 1]);
-            var p3 = Resolve(points[Math.Min(points.Length - 1, segment + 2)]);
+            var p0 = Resolve(points[Math.Max(0, segment - 1)], spin: spin);
+            var p1 = Resolve(points[segment], spin: spin);
+            var p2 = Resolve(points[segment + 1], spin: spin);
+            var p3 = Resolve(points[Math.Min(points.Length - 1, segment + 2)], spin: spin);
             position = 0.5f * ((2 * p1.Position) + (-p0.Position + p2.Position) * u +
                 (2 * p0.Position - 5 * p1.Position + 4 * p2.Position - p3.Position) * u * u +
                 (-p0.Position + 3 * p1.Position - 3 * p2.Position + p3.Position) * u * u * u);
             rotation = Quaternion.Slerp(p1.Rotation, p2.Rotation, u);
             fov = p1.Fov + (p2.Fov - p1.Fov) * u;
-        }
-        if (shot.Control is "Orbit" or "OrbitAndMorphTwoCam" && !shot.DisableOrbit2)
-        {
-            var center = Anchor(points[^1].LockTo, points[^1].LockBone).Position;
-            var orbit = Quaternion.CreateFromAxisAngle(Vector3.UnitY, -shot.OrbitAngle * MathF.PI / 180 * t);
-            position = center + Vector3.Transform(position - center, orbit);
-            rotation = orbit * rotation;
         }
         if (shot.Control == "SpecialStepMove" && age < shot.StepTime)
             position += Vector(shot.StepDirection) * MathF.Sin((float)(age / shot.StepTime) * shot.StepCount * 2 * MathF.PI);
@@ -182,6 +177,8 @@ internal sealed class StageCameraPath
         {
             var zoom = shot.Type == "longshot" ? cut.Zoom < 25 ? 62 : cut.Zoom > 95 ? 78 : a.Fov :
                 cut.Zoom < 5 ? 64 : cut.Zoom > 85 ? 82 : a.Fov;
+            var zoomed = Resolve(points[0], fov: zoom);
+            rotation = Quaternion.Slerp(a.Rotation, zoomed.Rotation, t);
             fov = a.Fov + (zoom - a.Fov) * t;
         }
         var vertical = 2 * MathF.Atan(MathF.Tan(fov * MathF.PI / 360) / Aspect) * 180 / MathF.PI;
@@ -258,30 +255,35 @@ internal sealed class StageCameraPath
             Quaternion.CreateFromAxisAngle(Vector3.UnitY, angle)) + Vector3.UnitY * height;
     }
 
-    private (Vector3 Position, Quaternion Rotation, float Fov) Resolve(OriginalCameraPoint point, Vector3? orbit = null)
+    private (Vector3 Position, Quaternion Rotation, float Fov) Resolve(OriginalCameraPoint point, Vector3? orbit = null, float? fov = null, float spin = 0)
     {
         var anchor = Anchor(point.LockTo, point.LockBone);
-        var position = orbit ?? anchor.Position + Vector3.Transform(Vector(point.Position), anchor.Rotation);
+        var frame = point.LockTo == "world" ? anchor.Rotation : anchor.Rotation * Quaternion.CreateFromAxisAngle(Vector3.UnitY, spin);
+        var position = orbit ?? anchor.Position + Vector3.Transform(Vector(point.Position), frame);
         var q = point.Rotation;
-        var rotation = Quaternion.Normalize(anchor.Rotation * new Quaternion(q[0], q[1], q[2], q[3]));
+        var rotation = Quaternion.Normalize(frame * new Quaternion(q[0], q[1], q[2], q[3]));
+        fov ??= point.FieldOfView;
         if (point.LookAt.Length > 0)
         {
+            // GH3.exe 0x4bb9d0: the look-at basis keeps the up axis of the authored Quat, so the shot keeps its roll.
             var target = Anchor(point.LookAt, point.LookBone).Position;
             var forward = Vector3.Normalize(target - position);
-            var right = Vector3.Cross(Vector3.UnitY, forward);
+            var right = Vector3.Cross(Vector3.Transform(Vector3.UnitY, rotation), forward);
             if (right.LengthSquared() > 0.00001f)
             {
                 right = Vector3.Normalize(right);
                 var up = Vector3.Cross(forward, right);
                 var look = Quaternion.CreateFromRotationMatrix(new Matrix4x4(right.X, right.Y, right.Z, 0,
                     up.X, up.Y, up.Z, 0, forward.X, forward.Y, forward.Z, 0, 0, 0, 0, 1));
-                var tangent = MathF.Tan(point.FieldOfView * MathF.PI / 360);
-                var yaw = -MathF.Atan(point.ScreenOffset[0] * tangent);
-                var pitch = MathF.Atan(point.ScreenOffset[1] * tangent / Aspect);
-                rotation = look * Quaternion.CreateFromYawPitchRoll(yaw, pitch, 0);
+                // GH3.exe 0x4b8a60 turns the view by ScreenOffset times the half field of view (pitch also divided by the aspect).
+                // The local pitch comes before the yaw; the other order rolls the horizon by yaw × pitch.
+                var half = fov.Value * MathF.PI / 360;
+                var yaw = -point.ScreenOffset[0] * half;
+                var pitch = -point.ScreenOffset[1] * half / Aspect;
+                rotation = look * Quaternion.CreateFromAxisAngle(Vector3.UnitX, pitch) * Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw);
             }
         }
-        return (position, rotation, point.FieldOfView);
+        return (position, rotation, fov.Value);
     }
 
     private BandPose Anchor(string role, string bone) => _anchor?.Invoke(role, bone) ??

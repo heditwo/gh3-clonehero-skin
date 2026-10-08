@@ -10,6 +10,7 @@ internal static class StagePackLogicTests
         CheckInheritedLighting();
         CheckContinuousOrbit();
         CheckCameraKeyframes();
+        CheckLookAtScreenOffset();
         if (Environment.GetEnvironmentVariable("GH3_PACK_ASSETS") is not { } assets) return;
         var timeline = StageChartReader.Load("", "", Path.Combine(assets, "stages", "events"), "My Curse", "Killswitch Engage");
         var paths = Directory.GetFiles(Path.Combine(assets, "stages"), "pack.json", SearchOption.AllDirectories);
@@ -109,6 +110,24 @@ internal static class StagePackLogicTests
         Check(Math.Abs(middle.Position.X-4) < 0.0001, "quick zoom follows its authored duration");
         Check(path.Sample(timeline,9).Position.X == 8, "camera keyframes hold the final pose");
         Check(path.Sample(timeline,2.375) == middle, "timed camera tracks support seeks");
+    }
+
+    private static void CheckLookAtScreenOffset()
+    {
+        var roll = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, 0.3f);
+        var point = new OriginalCameraPoint { Position = new float[] { 0,0,0 }, Rotation = new[] { roll.X,roll.Y,roll.Z,roll.W },
+            FieldOfView = 90, LookAt = "guitarist", ScreenOffset = new[] { -0.5f,-0.5f } };
+        var shot = new OriginalCameraShot { Control = "TwoCam", Points = new[] { point } };
+        var bank = new StageCameraBank { Version = 1, Arrays = new() { ["cameras"] = new[] { shot } } };
+        var timeline = new StageTimeline(new[] { new StageCue(0,"camera","wide",10) },"look");
+        var path = new StageCameraPath(new(Vector3.Zero,Vector3.UnitZ,55,"fixed"),new Dictionary<string,Vector3> { ["guitarist"] = new(0,0,10) },bank:bank) { Aspect = 2 };
+        var view = Quaternion.Inverse(path.Sample(timeline,1).Rotation!.Value);
+        var target = Vector3.Transform(Vector3.UnitZ, view);
+        var yaw = MathF.Atan2(target.X, target.Z);
+        var pitch = MathF.Atan2(target.Y, new Vector2(target.X, target.Z).Length());
+        Check(Math.Abs(yaw + MathF.PI / 8) < 0.0001 && Math.Abs(pitch - MathF.PI / 16) < 0.0001,
+            "look-at screen offset turns the view by the half field of view, pitch first");
+        Check(Vector3.Transform(Vector3.UnitY, path.Sample(timeline,1).Rotation!.Value).X < -0.2f, "look-at keeps the authored roll");
     }
 
     private static void Check(bool condition, string message)
