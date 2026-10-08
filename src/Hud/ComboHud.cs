@@ -3,40 +3,34 @@ using UnityEngine.UI;
 
 namespace Gh3Skin;
 
+// GH3's note container in GH3 units: the drum (z 8) under the body (z 9), the num_a7 digits (z 25), and the note
+// icon (z 26) that covers the fourth drum below a 1000-note streak.
 internal sealed class ComboHud
 {
-    private const float ReelBottom = 97;
     private static readonly float[] EntryOffsets =
     {
         62, 50, 32, 20, 10, -6, -20, -30, -37, -41, -40, -20,
         -13, -4, 2, 6, 7, 7, 6, 6, 6, 4, 2, 0
     };
-    private readonly HudTuning _tuning;
     private readonly RectTransform _motion;
-    private readonly RawImage _iconBack;
     private readonly RawImage _icon;
-    private readonly RawImage _backing;
-    private readonly ComboReelHud[] _reels = new ComboReelHud[4];
+    private readonly ComboDigitHud[] _digits = new ComboDigitHud[4];
     private int _shownCombo;
     private float _entryStarted = float.NegativeInfinity;
     private bool _first = true;
 
     public RectTransform Root { get; }
 
-    public ComboHud(Transform parent, HudTuning tuning, IReadOnlyDictionary<string, Texture2D> textures)
+    public ComboHud(Transform parent, HudTuning tuning, IReadOnlyDictionary<string, Texture2D> textures, HudFont font)
     {
-        _tuning = tuning;
         Root = HudVisual.Group("Combo meter", parent);
-        Root.localScale = new Vector3(1.06f, 1, 1);
+        Root.localScale = new Vector3(HudVisual.Gh3Scale, HudVisual.Gh3Scale, 1);
         _motion = HudVisual.Group("Combo entrance", Root);
-        var frame = new Rect(0, 0, 256, 128);
-        HudVisual.Image(_motion, "comboBody", textures["HUD_counter_body"], frame);
-        _iconBack = HudVisual.Image(_motion, "comboIconBack", textures["HUD_counter_drum_icon_back"], new Rect(36, 40, 76, 59));
-        _icon = HudVisual.Image(_motion, "comboIcon", textures["HUD_counter_drum_icon"], new Rect(44.5f, 42.5f, 68, 66));
-        _backing = HudVisual.Image(_motion, "comboBacking0", textures["combo-reel-0"], new Rect());
-        for (var slot = 0; slot < _reels.Length; slot++)
-            _reels[slot] = new ComboReelHud(_motion, slot, tuning, textures);
-        HudVisual.Image(_motion, "comboFrame", textures["HUD_counter_frame"], frame);
+        HudVisual.Image(_motion, "comboDrum", textures["HUD_counter_drum"], new Rect(4, 40, 256, 64));
+        HudVisual.Image(_motion, "comboBody", textures["HUD_counter_body"], new Rect(0, 0, 256, 128));
+        for (var place = 0; place < _digits.Length; place++)
+            _digits[place] = new ComboDigitHud(_motion, place, font, tuning);
+        _icon = HudVisual.Image(_motion, "comboIcon", textures["HUD_counter_drum_icon"], new Rect(44, 40, 64, 64));
     }
 
     public void Update(int combo, float time)
@@ -49,39 +43,20 @@ internal sealed class ComboHud
             _first = false;
             var digits = Math.Clamp(combo, 0, 9999).ToString("D3");
             var previous = Math.Clamp(_shownCombo, 0, 9999).ToString($"D{digits.Length}");
-            _iconBack.enabled = _icon.enabled = digits.Length == 3;
-            var start = digits.Length == 4 ? 53 : 91;
-            for (var slot = 0; slot < _reels.Length; slot++)
+            _icon.enabled = digits.Length == 3;
+            // GH3 rolls only the highest digit that changed; on a carry the lower digits switch at once.
+            var rolling = visible && _shownCombo >= 25 && combo > _shownCombo;
+            var highest = Enumerable.Range(0, digits.Length).FirstOrDefault(index => previous[index] != digits[index], -1);
+            for (var place = 0; place < _digits.Length; place++)
             {
-                var reel = _reels[slot];
-                reel.Root.gameObject.SetActive(slot < digits.Length);
-                if (slot >= digits.Length) continue;
-                var layout = SlotLayout(start, slot, digits.Length);
-                reel.SetDigit(digits[slot] - '0', digits.Length, layout, ReelBottom);
-                if (slot == 0) HudVisual.Layout(_backing, new Rect(layout.x, layout.y, 38, ReelBottom - layout.y));
-                var lastCarried = slot == digits.Length - 1 && slot > 0 && previous[slot - 1] != digits[slot - 1];
-                var roll = visible && _shownCombo >= 25 && combo > _shownCombo && previous[slot] != digits[slot] && !lastCarried;
-                var carry = slot < digits.Length - 1 && previous[slot + 1] != digits[slot + 1];
-                reel.Change(roll, carry, time);
+                var index = digits.Length - 1 - place;
+                _digits[place].SetDigit(index >= 0 ? digits[index] : '0', index >= 0);
+                _digits[place].Change(rolling && index >= 0 && index == highest, time);
             }
             _shownCombo = combo;
         }
         HudVisual.Position(_motion, new Vector2(0, EntryOffset(time)));
-        foreach (var reel in _reels) reel.Update(time);
-    }
-
-    private Rect SlotLayout(int start, int slot, int length)
-    {
-        var width = slot switch
-        {
-            0 => _tuning.FirstReelWidth,
-            1 => 36,
-            2 when length == 3 => _tuning.LastReelWidth,
-            2 => 34,
-            _ => 38
-        };
-        return new Rect(start + slot * 38 + (slot == 0 ? 5 : slot == 1 ? 2 : 1),
-            slot == 2 ? 49 : 47, width, slot == 2 ? 48 : 45);
+        foreach (var digit in _digits) digit.Update(time);
     }
 
     private float EntryOffset(float time)
@@ -91,6 +66,7 @@ internal sealed class ComboHud
         var index = (int)frame;
         if (index >= EntryOffsets.Length - 1) return 0;
         var fraction = frame - index;
-        return (EntryOffsets[index] * (1 - fraction) + EntryOffsets[index + 1] * fraction) * 1.5f;
+        // The entrance offsets are 720p screen pixels; one GH3 unit is 0.7 of those.
+        return (EntryOffsets[index] * (1 - fraction) + EntryOffsets[index + 1] * fraction) / 0.7f;
     }
 }

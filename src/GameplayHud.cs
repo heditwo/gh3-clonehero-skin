@@ -45,7 +45,8 @@ internal sealed class GameplayHud
         _screenRoot = HudVisual.Group("Screen HUD", _canvas.transform);
         _rock = new RockMeterHud(_screenRoot, _tuning, _assets.Textures);
         HudVisual.Position(_rock.Root, new Vector2(1326, 752.4f));
-        _score = new ScorePanelHud(_screenRoot, _tuning, _assets.Textures, _assets.AmpMaterial);
+        _score = new ScorePanelHud(_screenRoot, _tuning, _assets.Textures, _assets.AmpMaterial,
+            new HudFont(_assets.Root, "score-font"), new HudFont(_assets.Root, "counter-font"));
         HudVisual.Position(_score.Root, new Vector2(322, 714));
         if (File.Exists(Path.Combine(_assets.Root, "message-font.png"))) _message = new MessageHud(_screenRoot, _assets.Root);
     }

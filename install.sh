@@ -9,7 +9,7 @@ dotnet build "$project_dir/src/Gh3Skin.csproj" -c Release --nologo -p:GameRoot="
 mkdir -p "$game_dir/Mods/GH3Skin/assets"
 cp "$project_dir/src/bin/Release/net6.0/Gh3Skin.dll" "$game_dir/Mods/Gh3Skin.dll"
 cp "$project_dir/assets/"*.{png,dds} "$game_dir/Mods/GH3Skin/assets/"
-cp "$project_dir/assets/ready-animation.json" "$project_dir/assets/message-font.json" "$game_dir/Mods/GH3Skin/assets/"
+cp "$project_dir/assets/ready-animation.json" "$project_dir/assets/"*-font.json "$game_dir/Mods/GH3Skin/assets/"
 cp "$project_dir/counter-tuning.json" "$game_dir/Mods/GH3Skin/counter-tuning.json"
 if [[ -d "$project_dir/assets/stages" ]]; then
   cp -a "$project_dir/assets/stages" "$game_dir/Mods/GH3Skin/assets/"

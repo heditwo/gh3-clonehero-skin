@@ -180,7 +180,6 @@ finally
 
 var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../.."));
 var tuning = HudTuning.Load(Path.Combine(root, "counter-tuning.json"));
-Equal(39, tuning.LastReelWidth, "last reel width");
 Equal(tuning.RollAlphas.Length, tuning.RollOffsets.Length, "matched animation arrays");
 foreach (var (width, height, expectedScale, expectedX, expectedCenterY, expectedBottomY) in new[]
 {

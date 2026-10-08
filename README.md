@@ -23,12 +23,12 @@ The current source retains complete native script rows through the song exporter
 - GH3 moving beat lines at highway level, with the original bar, beat, and half-beat textures. Clone Hero supplies the fret buttons, strings, button animations, and open-note art.
 - Active Star Power changes regular notes, HOPOs, and taps to their cyan art. Overlapping phrase notes use the corresponding cyan star textures from FastGH3. Stars animate at GH3's 30 frames per second. Lane colors return when Star Power ends. See [gem selection and assets](docs/GEMS.md).
 - Score, streak, rock meter, charge, active Star Power, and multiplier come from the game. Active Star Power uses the blue 2×, 4×, 6×, or 8× art.
-- Score digits align to a fixed right edge inside the amp. Long scores use narrower digits to stay inside the display.
+- The score uses GH3's `num_a9` font and layout. Scores wider than the display are drawn smaller.
 - The rock needle follows the current health value directly. Its background blends from yellow toward red or green with the needle's distance from the center. The indicator lamps use Clone Hero's one-third and two-thirds health thresholds at the GH3 dial boundaries.
 - The extra Star Power bulbs slide out in sequence when charge reaches 50%. The meter lifts, tilts, and settles with the GH3 entrance motion. See [the animation measurements](docs/BULB-ANIMATION.md).
 - Active Star Power uses GH3's animated rail lightning and cyan glow. The stock highway effect is hidden. See [the source and checks](docs/STAR-POWER-HIGHWAY.md).
 - The ready banner runs for 126 frames at 60 fps when charge reaches 50%. Activation hides it. It can run again after the charge drops and refills.
-- The note-streak counter appears at 25 notes. Its measured entrance and reel animation use `counter-tuning.json`. Gray reel backgrounds extend behind the lower frame, with the numbers drawn separately.
+- The note-streak counter appears at 25 notes. Its measured entrance and digit roll use `counter-tuning.json`. The digits use GH3's `num_a7` font and layout.
 - At a 100-note streak, the stage guitarist gets GH3's original flames and sparks on both hands. They stay active while the streak continues and fade out when it breaks.
 - One five-fret guitar player is supported. Other player layouts use the stock display. Other game versions are rejected before obfuscated fields are read.
 - HUD images fit a centered 16:9 area. Rails and ready effects follow the actual game camera area and field of view. Portrait layout is not supported.
@@ -91,4 +91,4 @@ The [custom-content specification](docs/CUSTOM-CONTENT.md) defines the implement
 
 `SkinMod` manages scene resets. `GameplayScene` caches the player and score manager. `GameplaySpriteRenderer` caches pooled objects and maps each note to the nearest local fret. `GameplayHud` assembles the components in `src/Hud/`; each component owns its local layout and animation. See [the component structure](docs/HUD-COMPONENTS.md). `SkinAssets` keeps GPU textures across scenes and releases their readable CPU copies. `GameplayStage` owns the stage camera and scene resources. `StageTimeline` evaluates cues against the song clock.
 
-Prepared assets are in `assets/`. To regenerate them, use `uv run --with pillow prepare-assets.py`. To regenerate the ready animation, put the owner's `gh3-long-star-power-1600x900.mp4` in the project root and run `uv run --with pillow --with numpy prepare-ready-animation.py`. These steps need the local source art and recordings. `counter-lab.py --measure` checks reel placement against the stored reference frames.
+Prepared assets are in `assets/`. To regenerate them, use `uv run --with pillow prepare-assets.py` and `uv run --with pillow --with lz4 prepare-fonts.py`. To regenerate the ready animation, put the owner's `gh3-long-star-power-1600x900.mp4` in the project root and run `uv run --with pillow --with numpy prepare-ready-animation.py`. These steps need the local source art and recordings.

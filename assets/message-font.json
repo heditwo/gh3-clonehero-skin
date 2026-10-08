@@ -1,6 +1,7 @@
 {
  "version": 1,
  "lineHeight": 48.0,
+ "baseline": 15,
  "atlas": [
   1024,
   256

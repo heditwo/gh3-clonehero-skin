@@ -1,4 +1,3 @@
-using System.Text.Json;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -8,7 +7,6 @@ namespace Gh3Skin;
 // measured from 60 fps recordings of original GH3 at 1600x900 (My Curse, The Dive).
 internal sealed class MessageHud
 {
-    private sealed record Glyph(Rect Uv, float Width, float Height, float X, float Y);
     private readonly record struct Key(float Time, float Scale, float Alpha, float Warm);
 
     // "N Note Streak!": a faint oversized ghost, a small white flash with a light streak, then a yellow swell and
@@ -30,10 +28,9 @@ internal sealed class MessageHud
     private const float Space = 22;
     private const float CenterY = 345;
     private readonly RectTransform _root;
-    private readonly Texture2D _font;
+    private readonly HudFont _font;
     private readonly Texture2D _streakTexture;
     private readonly RawImage _streak;
-    private readonly Dictionary<char, Glyph> _glyphs = new();
     private readonly List<RawImage> _images = new();
     private string _text = "";
     private Key[] _keys = StreakKeys;
@@ -45,18 +42,7 @@ internal sealed class MessageHud
     public MessageHud(Transform parent, string assets)
     {
         _root = HudVisual.Group("Gameplay message", parent);
-        _font = new Texture2D(2, 2, TextureFormat.RGBA32, false);
-        if (!_font.LoadImage(new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStructArray<byte>(File.ReadAllBytes(Path.Combine(assets, "message-font.png"))), true))
-            throw new InvalidDataException("Invalid message font atlas");
-        _font.filterMode = FilterMode.Bilinear;
-        _font.hideFlags = HideFlags.DontUnloadUnusedAsset;
-        using var json = JsonDocument.Parse(File.ReadAllText(Path.Combine(assets, "message-font.json")));
-        foreach (var glyph in json.RootElement.GetProperty("glyphs").EnumerateObject())
-        {
-            float F(string name, int index) => glyph.Value.GetProperty(name)[index].GetSingle();
-            var u0 = F("uv", 0); var v0 = F("uv", 1); var u1 = F("uv", 2); var v1 = F("uv", 3);
-            _glyphs[glyph.Name[0]] = new(new Rect(u0, 1 - v1, u1 - u0, v1 - v0), F("size", 0), F("size", 1), F("offset", 0), F("offset", 1));
-        }
+        _font = new HudFont(assets, "message-font");
         _streakTexture = StreakTexture();
         _streak = HudVisual.Image(_root, "streak", _streakTexture, new Rect(0, 0, 1, 1));
         _streak.enabled = false;
@@ -98,10 +84,10 @@ internal sealed class MessageHud
         _keys = keys;
         _ready = ready;
         _start = time;
-        while (_images.Count < text.Length) _images.Add(HudVisual.Image(_root, "glyph", _font, new Rect(0, 0, 1, 1)));
+        while (_images.Count < text.Length) _images.Add(HudVisual.Image(_root, "glyph", _font.Atlas, new Rect(0, 0, 1, 1)));
     }
 
-    private float Advance(char character) => character == ' ' ? Space : _glyphs.TryGetValue(character, out var glyph) ? glyph.Width + Tracking : Space;
+    private float Advance(char character) => character == ' ' ? Space : _font.TryGet(character, out var glyph) ? glyph.Width + Tracking : Space;
 
     private static Key Sample(Key[] keys, float age)
     {
@@ -137,7 +123,7 @@ internal sealed class MessageHud
         for (var i = 0; i < _images.Count; i++)
         {
             var image = _images[i];
-            if (i >= _text.Length || !_glyphs.TryGetValue(_text[i], out var glyph) || glyph.Uv.width <= 0)
+            if (i >= _text.Length || !_font.TryGet(_text[i], out var glyph) || glyph.Uv.width <= 0)
             {
                 image.enabled = false;
                 if (i < _text.Length) x += Advance(_text[i]) * scale;

@@ -100,6 +100,15 @@ Fixed from that comparison: back-face culling (GH3 material flag +220 marks two-
 
 MelonLoader's assembly generator contacted `api.melonloader.com` on every launch, and the leftover HTTPS connection crashed the CLR later. The installed game now has `force_offline_generation = true` in `UserData/Loader.cfg`; the original file is backed up as `~/.cache/gh3-install-backup-0.8.115/Loader.cfg.bak`.
 
+
+#### Score and note-streak digits
+
+- **Fault.** In 0.9.7, each streak digit was a pre-made tile with its own size and position. The third digit used a different tile at four digits, so it sat lower than the other digits. The score used fixed-width crops of the font.
+- **GH3 data.** `create_2d_hud_elements` in `scripts/guitar/guitar_hud_2d.qb` makes the score and the four streak digits as text elements. The score uses font `num_a9` at (222, 70), justification right/bottom, scale 1.1, and `font_spacing` 5. Streak digit *i* (1 to 4) uses font `num_a7` at (222 − 37*i*, 78), centered, z 25. Digit 1 has colour (15, 15, 70, 200); the other digits have (230, 230, 230, 200). `career_hud_2d_elements` puts the drum, body, and note icon in `HUD2D_note_container` at `counter_pos`. The note icon (z 26) covers the fourth digit.
+- **Fix.** `prepare-fonts.py` exports `num_a9`, `num_a7`, and `text_a6` from `ZONES/global.pak.xen` as atlases with glyph tables. `HudText` draws all digits of a line with one top line and one pitch. `ComboHud` uses GH3's container layout and the original drum, body, and icon textures. When a digit changes, only the highest changed digit rolls. The lower digits change immediately, as in GH3 frames at 099→100 and 999→1000.
+- **Calibrated by eye.** The streak glyphs are at one texel for each 1080p pixel. Six-digit scores are narrowed to 176 GH3 units. The roll timing is unchanged from `counter-tuning.json`.
+- **Check.** At 1110 notes, the digit centres are within 0.4 px of GH3 (1600×900). Five-digit score glyph runs are within 1 px.
+
 ### Installation state
 
 - Version `0.9.7` is installed in `~/games/clonehero-gh3-melon` with all ten re-exported venues, the regenerated band library, and the rebuilt `render/stage.bundle` (the light-data texture needs it). DLL SHA-256: `5c88b784a552f9c85ce4464f52e932584caabf20ffef72051d4a330ea56bf7a0`.

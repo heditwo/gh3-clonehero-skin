@@ -175,22 +175,14 @@ internal sealed class SkinAssets
             "HUD_rock_lights_all", "HUD_rock_lights_green", "HUD_rock_lights_yellow",
             "HUD_rock_lights_red", "HUD_rock_needle",
             "HUD_score_body",
-            "HUD_counter_body", "HUD_counter_frame", "HUD_counter_drum_icon",
-            "HUD_counter_drum_icon_back", "HUD_score_nixie_1a", "HUD_score_nixie_2a",
+            "HUD_counter_body", "HUD_counter_drum", "HUD_counter_drum_icon",
+            "HUD_score_nixie_1a", "HUD_score_nixie_2a",
             "HUD_score_nixie_3a", "HUD_score_nixie_4a", "HUD_rock_tube",
             "HUD_score_nixie_2b", "HUD_score_nixie_4b", "HUD_score_nixie_6b", "HUD_score_nixie_8b",
             "HUD_rock_tube_glow_full", "HUD_rock_tube_glow_full_b"
         };
         hudNames.AddRange(new[] { "", "_blue", "_green", "_purple" }.SelectMany(color =>
             Enumerable.Range(0, 3).Select(state => $"HUD_score_light_{state}{color}")));
-        hudNames.AddRange(Enumerable.Range(0, 10).Select(digit => $"score-digit-{digit}"));
-        hudNames.AddRange(Enumerable.Range(0, 4).SelectMany(slot => Enumerable.Range(0, 10).Select(digit => $"combo-{slot}-digit-{digit}")));
-        hudNames.AddRange(Enumerable.Range(0, 10).Select(digit => $"combo-2-dark-digit-{digit}"));
-        hudNames.AddRange(Enumerable.Range(0, 10).Select(digit => $"combo-2-extended-digit-{digit}"));
-        hudNames.AddRange(Enumerable.Range(0, 4).Select(slot => $"combo-reel-{slot}"));
-        hudNames.Add("combo-reel-2-dark");
-        hudNames.Add("combo-reel-2-extended");
-        hudNames.AddRange(new[] { "light", "dark" }.SelectMany(shade => Enumerable.Range(0, 10).Select(digit => $"combo-glyph-{shade}-{digit}")));
 
         foreach (var name in hudNames)
         {
