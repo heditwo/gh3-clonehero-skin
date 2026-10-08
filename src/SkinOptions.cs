@@ -9,6 +9,8 @@ internal sealed class SkinOptions
     public float? DisplayPower { get; private init; }
     public float? DisplayRock { get; private init; }
     public int ForcePowerAtCombo { get; private init; }
+    public int ForceCombo { get; private init; }
+    public int ForceComboBreak { get; private init; }
     public float ForceWhammyRate { get; private init; }
     public bool ForceStarPowerActive { get; private init; }
     public float CaptureAfter { get; private init; }
@@ -42,6 +44,8 @@ internal sealed class SkinOptions
             DisplayRock = rock.HasValue ? Math.Clamp(rock.Value, 0, 1) : null,
             ForcePowerAtCombo = int.TryParse(Environment.GetEnvironmentVariable("GH3_SKIN_FORCE_POWER_AT_COMBO"), out var combo)
                 ? Math.Max(0, combo) : 0,
+            ForceCombo = ParseInt("GH3_SKIN_FORCE_COMBO"),
+            ForceComboBreak = ParseInt("GH3_SKIN_FORCE_COMBO_BREAK"),
             ForceWhammyRate = Math.Max(0, ParseFloat("GH3_SKIN_FORCE_WHAMMY") ?? 0),
             ForceStarPowerActive = Environment.GetEnvironmentVariable("GH3_SKIN_FORCE_STAR_POWER_ACTIVE") == "1",
             CaptureAfter = captureAfter,
@@ -54,7 +58,43 @@ internal sealed class SkinOptions
         };
     }
 
+    private static int ParseInt(string name) =>
+        int.TryParse(Environment.GetEnvironmentVariable(name), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
+            ? Math.Max(0, value) : 0;
+
     private static float? ParseFloat(string name) =>
         float.TryParse(Environment.GetEnvironmentVariable(name), NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && float.IsFinite(value)
             ? value : null;
+}
+
+// Test override for the displayed note streak: GH3_SKIN_FORCE_COMBO adds a fixed amount to a running streak, and
+// GH3_SKIN_FORCE_COMBO_BREAK breaks the shown streak once it reaches that value, as if a note was missed.
+internal sealed class ComboOverride
+{
+    private readonly int _offset;
+    private readonly int _breakAt;
+    private int _brokenAt = -1;
+
+    public ComboOverride(int offset, int breakAt)
+    {
+        _offset = offset;
+        _breakAt = breakAt;
+    }
+
+    public void Reset() => _brokenAt = -1;
+
+    public int Apply(int combo)
+    {
+        if (_offset <= 0) return combo;
+        if (_brokenAt >= 0)
+        {
+            if (combo < _brokenAt) _brokenAt = 0;
+            return combo - _brokenAt;
+        }
+        if (combo == 0) return 0;
+        var shown = combo + _offset;
+        if (_breakAt <= 0 || shown < _breakAt) return shown;
+        _brokenAt = combo;
+        return 0;
+    }
 }

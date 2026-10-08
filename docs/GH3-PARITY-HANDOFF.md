@@ -176,6 +176,16 @@ MelonLoader's assembly generator contacted `api.melonloader.com` on every launch
 - **Calibrated by eye.** The streak glyphs are at one texel for each 1080p pixel. Six-digit scores are narrowed to 176 GH3 units. The roll timing is unchanged from `counter-tuning.json`.
 - **Check.** At 1110 notes, the digit centres are within 0.4 px of GH3 (1600×900). Five-digit score glyph runs are within 1 px.
 
+
+#### Note streaks of five or more digits
+
+- **Problem.** GH3 shows only four streak digits. Clone Hero streaks can be longer.
+- **Layout.** `ComboReelLayout` (in `src/ComboReelAnimation.cs`) opens the counter at x = 95, between the first and second drum reels. For each digit after the fourth, it inserts one 37-unit drum reel (cut from `HUD_counter_drum`) and one 37-unit body strip (`HUD_counter_body_tile.png`, made by `prepare-assets.py`). The first reel and the left end of the body move left. GH3's layout for one to four digits does not change. The highest digit stays on the first reel; the other digits keep GH3's positions.
+- **Room.** The lamp column is to the left of the counter. Five digits fit at full size. For six or seven digits, the counter shrinks about its right edge so that it does not cover the lamps.
+- **Curves.** `Gh3Morphs` uses the DoMorph `motion` curves in GH3.exe at 0x55b010: `ease_in` = t², `ease_out` = 2t − t², `smooth` = 3t² − 2t³. The width opens like `hud_move_note_scorebar` (overshoot with `ease_out` in 0.3 s, settle with `ease_in` in a third of that time, then a 0.1 s + 0.1 s nudge). The new digit uses the scale and rotation steps of the "Note Streak!" text in `hud_show_note_streak_combo` at twice the speed. The flash is `hud_glowburst_alert` with its `Char_Select_Hilite1` sprite (`assets/hud-glowburst.png`, from `prepare-fonts.py`), scaled down to the counter. When the streak breaks, the digits fade in 0.1 s, the counter hops out, closes, and then leaves as before.
+- **Calibrated by eye.** The overshoot (12 units), the squash amounts, the pop size, the flash size, and the six- and seven-digit shrink.
+- **Test.** `GH3_SKIN_FORCE_COMBO=9975 GH3_SKIN_FORCE_COMBO_BREAK=10045` shows 9999→10000 and a break after about 25 s of My Curse. `ComboReelLogicTests` checks the curves, the reel layout, the lamp clearance, the animation, and the override.
+
 ### Installation state
 
 - Version `0.9.8` is installed in `~/games/clonehero-gh3-melon` with all ten re-exported venues, the regenerated band library, and the rebuilt `render/stage.bundle` (the light-data texture needs it). DLL SHA-256: `6355e437839341495fc084bfebfc49adb0a193f0964ec12db090c767899a5d52`.

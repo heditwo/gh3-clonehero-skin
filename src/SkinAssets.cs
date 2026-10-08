@@ -186,7 +186,7 @@ internal sealed class SkinAssets
             "HUD_rock_lights_all", "HUD_rock_lights_green", "HUD_rock_lights_yellow",
             "HUD_rock_lights_red", "HUD_rock_needle",
             "HUD_score_body",
-            "HUD_counter_body", "HUD_counter_drum", "HUD_counter_drum_icon",
+            "HUD_counter_body", "HUD_counter_body_tile", "HUD_counter_drum", "HUD_counter_drum_icon", "hud-glowburst",
             "HUD_score_nixie_1a", "HUD_score_nixie_2a",
             "HUD_score_nixie_3a", "HUD_score_nixie_4a", "HUD_rock_tube",
             "HUD_score_nixie_2b", "HUD_score_nixie_4b", "HUD_score_nixie_6b", "HUD_score_nixie_8b",

@@ -15,6 +15,7 @@ if (Environment.GetEnvironmentVariable("GH3_BENCH") is { } benchVenue)
 }
 
 var animation = new ReadyAnimationTrigger();
+ComboReelLogicTests.Run();
 StageLogicTests.Run();
 NativeSongLogicTests.Run();
 Gh3EventLogicTests.Run();

@@ -18,8 +18,11 @@ internal sealed class ScorePanelHud
         _amp = new AmpHud(Root, textures, ampMaterial, scoreFont);
         _ampMount = new Vector2(-7 + tuning.ScoreOffsetX, -20.5f + tuning.ScoreOffsetY);
         // career_hud_2d_elements: counter_pos (330, 810) minus score_pos (300, 650).
-        _comboMount = _ampMount + new Vector2(30 * HudVisual.Gh3Scale, 160 * HudVisual.Gh3Scale);
-        _combo = new ComboHud(Root, tuning, textures, counterFont);
+        var comboOffset = new Vector2(30 * HudVisual.Gh3Scale, 160 * HudVisual.Gh3Scale);
+        _comboMount = _ampMount + comboOffset;
+        // The lamp column ends at the amp frame's left edge; long streaks must not cover it.
+        _combo = new ComboHud(Root, tuning, textures, counterFont,
+            ComboReelLayout.LeftLimit(AmpHud.FrameLeftEdge - comboOffset.x));
     }
 
     public void Layout(float pixelScale)

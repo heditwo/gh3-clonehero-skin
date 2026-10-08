@@ -9,6 +9,7 @@ namespace Gh3Skin;
 public sealed class SkinMod : MelonMod
 {
     private SkinOptions? _options;
+    private ComboOverride? _comboOverride;
     private GameplaySpriteRenderer? _renderer;
     private GameplayHud? _hud;
     private PreviewCapture? _capture;
@@ -42,6 +43,7 @@ public sealed class SkinMod : MelonMod
         }
         var assetsDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Mods", "GH3Skin", "assets");
         _options = SkinOptions.FromEnvironment();
+        _comboOverride = new ComboOverride(_options.ForceCombo, _options.ForceComboBreak);
         var tuning = HudTuning.Load(Path.Combine(assetsDirectory, "..", "counter-tuning.json"));
         var assets = new SkinAssets(assetsDirectory);
         _renderer = new GameplaySpriteRenderer(assets, _options);
@@ -59,6 +61,7 @@ public sealed class SkinMod : MelonMod
         _renderer?.Reset();
         _hud?.Reset();
         _capture?.Reset();
+        _comboOverride?.Reset();
         _stage?.Reset();
         if (_gameplay)
             MelonLogger.Msg("GH3 gameplay scene loaded");
@@ -75,11 +78,12 @@ public sealed class SkinMod : MelonMod
             _renderer.Reset();
             _hud.Reset();
             _capture.Reset();
+            _comboOverride?.Reset();
         }
         _lastSongTime = songTime;
         _hud.EnsureCreated();
         GameplayState state = default;
-        FrameProfile.Measure("state", () => state = GameplayStateReader.Read(player, score, _options));
+        FrameProfile.Measure("state", () => state = GameplayStateReader.Read(player, score, _options, _comboOverride!));
         FrameProfile.Measure("notes", () => _renderer.Update(player, score, state.StarPowerActive));
         _stage?.Update(player, state.Combo, state.Rock);
         FrameProfile.Measure("hud", () => _hud.Update(state, player.mainCamera));

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Export GH3's gameplay fonts as atlases and glyph tables: the message font (Note Streak!, Star Power Ready),
-the note-streak counter digits (num_a7), and the green score digits (num_a9)."""
+the note-streak counter digits (num_a7), and the green score digits (num_a9). Also exports the HUD sprites that
+the gameplay HUD scripts draw next to that text."""
 
 import json
 import struct
@@ -16,6 +17,8 @@ FONT_TYPE = 0x7E1ABC70
 CHARACTER_TABLE = 0x14
 GLYPHS = 0x200A4
 FONTS = {"text_a6": "message-font", "num_a7": "counter-font", "num_a9": "score-font"}
+# hud_glowburst_alert's light streak.
+SPRITES = {"Char_Select_Hilite1": "hud-glowburst"}
 
 
 def export(blob, output, name):
@@ -42,9 +45,17 @@ def export(blob, output, name):
 def convert(data, output):
     output.mkdir(parents=True, exist_ok=True)
     names = {key(font): name for font, name in FONTS.items()}
-    found = {names[n]: b for k, n, b in Source(data).load("ZONES/global.pak.xen") if k == FONT_TYPE and n in names}
+    sprites = {key(sprite): name for sprite, name in SPRITES.items()}
+    found, images = {}, {}
+    for kind, name, blob in Source(data).load("ZONES/global.pak.xen"):
+        if kind == FONT_TYPE and name in names: found[names[name]] = blob
+        if kind == key(".img") and name in sprites: images[sprites[name]] = blob
     if len(found) != len(FONTS): raise ValueError(f"Missing GH3 fonts: {set(FONTS.values()) - set(found)}")
+    if len(images) != len(SPRITES): raise ValueError(f"Missing GH3 HUD sprites: {set(SPRITES.values()) - set(images)}")
     for name, blob in found.items(): export(blob, output, name)
+    for name, blob in images.items():
+        Image.open(BytesIO(blob[blob.index(b"DDS "):])).convert("RGBA").save(output / f"{name}.png")
+        print(f"Exported {name}")
 
 
 if __name__ == "__main__":

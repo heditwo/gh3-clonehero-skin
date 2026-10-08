@@ -25,7 +25,7 @@ classDiagram
 - `HudVisual` creates Unity image groups and converts these coordinates to `RectTransform` coordinates. Unity applies parent movement and scale to all children.
 - `ScorePanelHud` places the amp and combo meter. The score tuning offset moves both. The combo meter is at GH3's `counter_pos` relative to `score_pos`.
 - `AmpHud` draws the multiplier behind the original amp texture. The texture supplies the metal ring and ×, with transparency and shadow shading over the multiplier. The amp texture is drawn once. The lamp column meets the visible frame edge. Its unlit images sit behind the amp body; its glow images sit in front of it. Both layers use the same local mount. The score digits sit in front of the amp.
-- `ComboHud` draws GH3's note container: the drum texture, the counter body, four digits, and the note icon. Each `ComboDigitHud` owns one digit and its roll animation.
+- `ComboHud` draws GH3's note container: the drum texture, the counter body, four digits, and the note icon. Each `ComboDigitHud` owns one digit and its roll animation. For five or more digits, `ComboHud` opens the counter with `ComboReelLayout` and `ComboReelAnimation`.
 - `HudText` draws one line of text from a `HudFont` (a GH3 font atlas from `prepare-fonts.py`). All glyphs of a line use one top line and one pitch. The score, the note-streak digits, and the gameplay messages use the same fonts as GH3.
 - `RockMeterHud` places the gauge and bulbs. A shared animation group moves both during the Star Power entrance. `RockGaugeHud` owns the needle and background fade. `StarPowerBulbsHud` owns each bulb's glass, glow, and extension.
 - `HighwayHud` owns the normal rails, active rail animation, and ready effect. Its root follows the gameplay camera.

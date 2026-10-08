@@ -5,7 +5,7 @@ namespace Gh3Skin;
 
 internal sealed class AmpHud
 {
-    private const float FrameLeftEdge = 36;
+    public const float FrameLeftEdge = 36;
     private readonly IReadOnlyDictionary<string, Texture2D> _textures;
     private readonly LampColumnHud _lights;
     private readonly HudText _score;

@@ -93,6 +93,16 @@ for name in ("HUD_score_body", "HUD_score_nixie_1a", "HUD_score_nixie_2a", "HUD_
 
 for name in ("HUD_counter_body", "HUD_counter_drum", "HUD_counter_drum_icon", "HUD_rock_body", "HUD_rock_BG_green", "HUD_rock_BG_red", "HUD_rock_BG_yellow", "HUD_rock_lights_all", "HUD_rock_lights_green", "HUD_rock_lights_red", "HUD_rock_lights_yellow", "HUD_rock_needle", "HUD_rock_tube", "HUD_rock_tube_glow_full", "HUD_rock_tube_glow_full_b"):
     Image.open(source / "hud-png" / f"{name}.png").convert("RGBA").save(target / f"{name}.png")
+# Streaks of five or more digits open the counter at x = 95 and repeat this 37-texel strip of the body. Its last
+# columns fade into the columns that precede x = 95, so copies join each other and both body halves without a seam.
+counter_body = Image.open(target / "HUD_counter_body.png")
+counter_tile = counter_body.crop((95, 0, 132, counter_body.height))
+for column in range(8):
+    weight = (column + 1) / 9
+    x = 37 - 8 + column
+    counter_tile.paste(Image.blend(counter_body.crop((95 + x, 0, 96 + x, counter_body.height)),
+        counter_body.crop((58 + x, 0, 59 + x, counter_body.height)), weight), (x, 0))
+counter_tile.save(target / "HUD_counter_body_tile.png")
 for color in ("", "_blue", "_green", "_purple"):
     for state in range(3):
         name = f"HUD_score_light_{state}{color}"

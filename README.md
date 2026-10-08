@@ -28,7 +28,7 @@ The current source retains complete native script rows through the song exporter
 - The extra Star Power bulbs slide out in sequence when charge reaches 50%. The meter lifts, tilts, and settles with the GH3 entrance motion. See [the animation measurements](docs/BULB-ANIMATION.md).
 - Active Star Power uses GH3's animated rail lightning and cyan glow. The stock highway effect is hidden. See [the source and checks](docs/STAR-POWER-HIGHWAY.md).
 - The ready banner runs for 126 frames at 60 fps when charge reaches 50%. Activation hides it. It can run again after the charge drops and refills.
-- The note-streak counter appears at 25 notes. Its measured entrance and digit roll use `counter-tuning.json`. The digits use GH3's `num_a7` font and layout.
+- The note-streak counter appears at 25 notes. Its measured entrance and digit roll use `counter-tuning.json`. The digits use GH3's `num_a7` font and layout. At 10000 notes and more, the counter opens to the left and adds a reel for each extra digit.
 - At a 100-note streak, the stage guitarist gets GH3's original flames and sparks on both hands. They stay active while the streak continues and fade out when it breaks.
 - One five-fret guitar player is supported. Other player layouts use the stock display. Other game versions are rejected before obfuscated fields are read.
 - HUD images fit a centered 16:9 area. Rails and ready effects follow the actual game camera area and field of view. Portrait layout is not supported.
@@ -67,6 +67,8 @@ Video capture reads the compositor output in the game window's region. This avoi
 | `GH3_SKIN_VIDEO_X`, `GH3_SKIN_VIDEO_Y` | Capture window position; defaults to 32, 64. Keep the whole window inside the screen. |
 | `GH3_SKIN_FORCE_POWER`, `GH3_SKIN_FORCE_ROCK` | Visual-only values from 0 to 1 |
 | `GH3_SKIN_FORCE_POWER_AT_COMBO` | Streak threshold for the visual charge override |
+| `GH3_SKIN_FORCE_COMBO` | Adds this value to the shown note streak, to test long streaks |
+| `GH3_SKIN_FORCE_COMBO_BREAK` | Breaks the shown streak once it reaches this value |
 | `GH3_SKIN_KEEP_STOCK_GEMS`, `GH3_SKIN_KEEP_STOCK_FLAMES` | Set to `1` for stock art comparisons |
 | `GH3_SKIN_STAGE` | Installed pack ID; defaults to `gh3.budokan`. For example, `gh3.hell` or `example.studio`. Use `off` for the stock background. |
 | `GH3_SKIN_CAMERA` | Defaults to `auto`. Use `fixed` for the original stage view, or a shot name from `docs/STAGES.md`. |
