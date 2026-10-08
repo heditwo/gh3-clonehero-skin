@@ -38,7 +38,7 @@ internal static class Gh3CommandDispatch
     private static readonly Dictionary<uint, string> Names = ("stance_a stance_b stance_c intro intro_smstg win lose win_smstg lose_smstg " +
         "idle jump kick solo special release long_note transitions good normal bad slow med fast short long " +
         "no_strum_anim start_anim cycle_anim stop_left_anim stop_right_anim guitarist_start guitarist_walk01 guitarist_walk02 guitarist_walk03 " +
-        "bassist_start bassist_walk01 bassist_walk02 strum mute normal_strums bass_normal_strums bass_pick_strums bass_slap_strums none")
+        "bassist_start bassist_walk01 bassist_walk02 strum mute normal_strums bass_normal_strums bass_pick_strums bass_slap_strums bass_normal bass_pick bass_slap none")
         .Split(' ').ToDictionary(Gh3Checksum.Value);
 
     public static Gh3CommandResult Resolve(Gh3ScriptEvent call)

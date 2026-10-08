@@ -69,11 +69,35 @@ internal static class DirectionLogicTests
         var gripPose = new[] { new BandPose(Vector3.One, Quaternion.Identity),
             new BandPose(new(3, 4, 5), Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 2)) };
         var gripBind = gripPose.ToArray();
-        grip.Apply(gripPose, gripBind, 0, true);
-        Check(Vector3.Distance(Vector3.Transform(Vector3.UnitX, gripPose[1].Rotation), Vector3.UnitY) < 0.00001f,
+        var gripDelta = new BandPose[2];
+        var gripTouched = new bool[2];
+        grip.SampleDelta(gripDelta, gripTouched, gripBind, 0);
+        var turned = Quaternion.Normalize(gripDelta[1].Rotation * gripPose[1].Rotation);
+        Check(Vector3.Distance(Vector3.Transform(Vector3.UnitX, turned), Vector3.UnitY) < 0.00001f,
             "hand rotation deltas turn the authored grip in parent space");
-        Check(gripPose[0] == gripBind[0] && gripPose[1].Position == gripBind[1].Position,
+        Check(!gripTouched[0] && gripTouched[1] && gripDelta[1].Position == Vector3.Zero,
             "a hand rotation layer preserves other bones and the grip position");
+
+        StageBlendTrack.Branch Branch(double time, double blend) => new(time, "grip", blend);
+        var blend = new StageBlendTrack(new[] { Branch(double.NegativeInfinity, 0), Branch(1, 0.2), Branch(1.1, 0.1) }, 2);
+        var blendOut = new BandPose[2];
+        var blendTouched = new bool[2];
+        blend.Evaluate(1.15, _ => grip, gripBind, blendOut, blendTouched);
+        Check(blendTouched[1] && Math.Abs(blendOut[1].Rotation.LengthSquared() - 1) < 0.0001f, "degenerate blend output stays normalized");
+
+        var rigBones = new[] { "control_root", "Bone_Bicep_R", "Bone_Forearm_R", "Bone_Palm_R", "Bone_IK_Hand_Guitar_R", "Bone_Twist_Wrist_R" }
+            .Select(Gh3Checksum.Of).ToArray();
+        var rigParents = new[] { -1, 0, 1, 2, 0, 2 };
+        var rigBind = new[] { new BandPose(Vector3.Zero, Quaternion.Identity), new BandPose(new(0, 1.5f, 0), Quaternion.Identity),
+            new BandPose(new(0.3f, 0, 0), Quaternion.Identity), new BandPose(new(0.25f, 0, 0), Quaternion.Identity),
+            new BandPose(new(0.35f, 1.2f, 0.2f), Quaternion.CreateFromAxisAngle(Vector3.UnitX, 0.7f)), new BandPose(new(0.12f, 0, 0), Quaternion.Identity) };
+        var rigPose = rigBind.ToArray();
+        new StageGuitarRig(rigParents, rigBind, rigBones).Apply(rigPose, 1, 1);
+        Vector3 World(int bone) => bone < 0 ? Vector3.Zero : World(rigParents[bone]) + Vector3.Transform(rigPose[bone].Position, Rotation(rigParents[bone]));
+        Quaternion Rotation(int bone) => bone < 0 ? Quaternion.Identity : Rotation(rigParents[bone]) * rigPose[bone].Rotation;
+        Check(Vector3.Distance(World(3), World(4)) < 0.0001f, "two-joint IK puts the palm on the guitar target");
+        Check(Quaternion.Dot(Rotation(3), Rotation(4)) is > 0.9999f or < -0.9999f, "IK copies the guitar target rotation to the palm");
+        Check(Math.Abs(Quaternion.Dot(rigPose[5].Rotation, Quaternion.Identity)) < 0.99999f, "wrist twist bone follows half of the palm roll");
 
         var chart = StageChartReader.ReadChart("[Song]\nResolution = 192\n[SyncTrack]\n0 = B 120000\n192 = B 60000\n[ExpertSingle]\n0 = N 0 384\n0 = N 2 384");
         var chord = chart.Track("strum", "guitarist").Single();
@@ -137,8 +161,9 @@ internal static class DirectionLogicTests
         foreach (var (role, definition) in bank.Members)
         {
             using var reader = new BinaryReader(File.OpenRead(Path.Combine(assets, "budokan", "band", role, "animation.bin")));
-            var bind = new BandAnimation(reader).BindPose;
-            var player = new PerformancePlayer(role, directory, definition, bind, timeline);
+            var animation = new BandAnimation(reader);
+            var bind = animation.BindPose;
+            var player = new PerformancePlayer(role, directory, definition, bind, timeline, animation.Parents, bank.Constants);
             player.Prepare();
             for (double time = 0; time < timeline.Cues[^1].Time + 1; time += 0.1)
             {

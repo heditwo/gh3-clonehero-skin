@@ -61,11 +61,25 @@ def qb_array(data, offset, depth=0):
         return list(entries)
     if kind in (0x10500, 0x10600):
         return [values(data, entry + 4, "2f" if kind == 0x10500 else "3f") for entry in entries]
+    if kind in (0x10300, 0x10400):
+        return [qb_text(data, entry, kind == 0x10400) for entry in entries]
     if kind == 0x10C00:
         return [qb_array(data, entry, depth + 1) for entry in entries]
     if kind == 0x10A00:
         return [qb_struct(data, entry, depth + 1) for entry in entries]
     raise ValueError(f"Unsupported QB array type {kind:08x}")
+
+
+def qb_text(data, offset, wide):
+    if not wide:
+        end = data.find(b"\0", offset)
+        if offset >= len(data) or end < 0:
+            raise ValueError("Invalid QB string")
+        return data[offset:end].decode("latin1")
+    end = offset
+    while values(data, end, "H")[0] != 0:
+        end += 2
+    return data[offset:end].decode("utf-16-be")
 
 
 def qb_struct(data, offset, depth=0):
@@ -85,16 +99,8 @@ def qb_struct(data, offset, depth=0):
             value = values(data, value + 4, "3f")
         elif kind == 0x00820000:
             value = values(data, offset + 8, "f")[0]
-        elif kind == 0x00830000:
-            end = data.find(b"\0", value)
-            if value >= len(data) or end < 0:
-                raise ValueError("Invalid QB string")
-            value = data[value:end].decode("latin1")
-        elif kind == 0x00840000:
-            end = value
-            while values(data, end, "H")[0] != 0:
-                end += 2
-            value = data[value:end].decode("utf-16-be")
+        elif kind in (0x00830000, 0x00840000):
+            value = qb_text(data, value, kind == 0x00840000)
         elif kind == 0x008C0000:
             value = qb_array(data, value, depth + 1)
         elif kind == 0x008A0000:

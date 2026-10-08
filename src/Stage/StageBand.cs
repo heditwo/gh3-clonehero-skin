@@ -113,7 +113,8 @@ internal sealed class StageBand : IDisposable
         {
             if (!_performance.Members.TryGetValue(player.Role, out var definition)) continue;
             player.Definition = definition;
-            player.Performance = new PerformancePlayer(player.Role, directory, definition, player.Animation.BindPose, timeline, _performance.Constants);
+            player.Performance = new PerformancePlayer(player.Role, directory, definition, player.Animation.BindPose, timeline,
+                player.Animation.Parents, _performance.Constants);
             player.Performance.Prepare();
             var position = player.Start;
             var speed = 1.0;
@@ -164,8 +165,6 @@ internal sealed class StageBand : IDisposable
             player.Hair?.Apply(player.Pose);
             if (player.Role == "drummer") StageDrumHands.Apply(player.Animation.Parents, player.Pose);
             for (var i = 0; i < player.Bones.Length; i++) Apply(player.Bones[i], player.Pose[i]);
-            if (player.Role is "guitarist" or "bassist" && player.Performance?.ArmsEnabled == true)
-                SolveArms(player.Bones, player.Performance.StrumEnabled);
         }
     }
 
@@ -201,33 +200,6 @@ internal sealed class StageBand : IDisposable
             for (var i = 0; i < pose.Length; i++) pose[i] = player.Animation.Sample(sample, i);
         }
         return new(new(position.x, position.y, position.z), new(rotation.x, rotation.y, rotation.z, rotation.w));
-    }
-
-    private static void SolveArms(Transform[] bones, bool strum)
-    {
-        foreach (var (upper, lower, hand, target, side) in new[] { (11, 12, 13, 122, 1), (15, 16, 17, 124, -1) })
-        {
-            if (bones.Length <= target) continue;
-            if (side == -1 && !strum) continue;
-            var a = bones[upper].position;
-            var b = bones[lower].position;
-            var c = bones[hand].position;
-            var goal = bones[target].position;
-            var first = Vector3.Distance(a, b);
-            var second = Vector3.Distance(b, c);
-            var distance = Vector3.Distance(a, goal);
-            if (distance < 0.0001f || first < 0.0001f || second < 0.0001f) continue;
-            var direction = (goal - a).normalized;
-            distance = Mathf.Clamp(distance, Mathf.Abs(first - second) + 0.0001f, first + second - 0.0001f);
-            var along = (first * first - second * second + distance * distance) / (2 * distance);
-            var height = Mathf.Sqrt(Mathf.Max(0, first * first - along * along));
-            var pole = bones[0].parent.TransformDirection(new Vector3(side * 0.5f, -1, -0.1f));
-            pole -= direction * Vector3.Dot(pole, direction);
-            var elbow = a + direction * along + pole.normalized * height;
-            bones[upper].rotation = Quaternion.FromToRotation(b - a, elbow - a) * bones[upper].rotation;
-            bones[lower].rotation = Quaternion.FromToRotation(bones[hand].position - bones[lower].position, goal - bones[lower].position) * bones[lower].rotation;
-            bones[hand].rotation = bones[target].rotation;
-        }
     }
 
     private static void Apply(Transform bone, BandPose pose)

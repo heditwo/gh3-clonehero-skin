@@ -119,6 +119,37 @@ Evidence: `~/.cache/gh3ref/agent-dive/dive-compare.png` (GH3, mod 0.9.8, fix at 
 
 Not verified: Hell uses flags `0x637530e6` (on for `medium` and `good`) and `0x9cfa6026` (on only for `poor`) on 26 level objects. The flaming sign over the Hell stage now changes with performance. No GH3 footage of Hell is available to compare.
 
+### Guitarist and bassist arms (fix-hands)
+
+Before this fix, the arm and hand motion of the guitarist and bassist was rough. The hands popped on each note and the fingers jumped between chords. The cause was in `PerformancePlayer.Hands` and `StageBand.SolveArms`:
+
+- Each strum, fret, and chord clip replaced the last clip in one frame. There was no blend.
+- The strum started at the note time. GH3 starts the hand events 250 ms (`strum_anim_lead_time`) before the note.
+- The strum set was wrong. Axel used the shared `Normal_Strums` and the bassist used `Bass_Pick_Strums`. The profiles in `guitar_band_profile.qb` (`Musician_Profiles`) give Axel `NormalAxel`, `fret_anims_lrg`, and `guitarist_finger_anims_Axel`, and give the bassist `Bass_Slap`, `fret_anims_med`, and `guitarist_finger_anims_Bassist`.
+- The arm IK was a custom solver with a fixed elbow pole. GH3 uses the Havok two-joint solver. The twist and split bones did not follow the arms, so the wrists and elbows twisted.
+
+What GH3 does (from `guitar_anim_tree.qb`, `guitar_hand_events.qb`, `guitar_character.qb`, and GH3.exe):
+
+- `guitarist_static_tree` is `ConstraintBones(hero_ConstraintBones) → Ik(Hero_Ik_params) → PartialSwitch → ApplyDifference(hero_arm_branch, Body)`. The arm branch adds three `DegenerateBlend` nodes: `RightArm` (strum), `LeftArm` (fret position), and `LeftHand` (fingers). `ApplyDifference` (job `0x4a3550`) multiplies each rotation difference onto the body rotation and adds the position difference.
+- A `DegenerateBlend` node (`0x659730`, `0x6599b0`) blends each new branch in linearly over its `BlendDuration`. All older blends advance at the rate of the newest blend. A branch is removed when the blend that covers it is complete.
+- Blend times: strum 0.1 s, then `no_strum_anim` 0.2 s when the strum ends (`hero_strum_guitar`). Fret position 0.1 s (`fret_blend_time`). Finger press 0.07 s, finger release 0.2 s, release after the note length plus 0.01 s (`FretFingers_iterator_CFunc`, `0x42d0d0`). Strum length class: short below 150 ms, medium below 600 ms, long after that.
+- `CIKAnimNode` (`0x656960`) calls `hkaTwoJointsIkSolver` (`0x79b120`) for each chain of `Hero_Ik_params`: hinge axis (0, 0, −1), cosine limits ±0.97 for the arms. The solver turns the second joint about the hinge, then turns the first joint to the target. Then the end bone gets the rotation of the target bone (`Bone_IK_Hand_Guitar_L/R`). The chain strength blends over 0.25 s when arms are enabled or disabled (`hero_toggle_arms`).
+- `CConstraintBonesAnimNode` (`0x658c40`) then sets the twist and split bones: `Twistchild`, `Twist`, `Split`, and `SplitR` with the amounts of `hero_ConstraintBones`.
+
+The fix:
+
+- `prepare-direction.py` reads the profile of each member and writes every `*_Strums` set (the profile set is `strum/default/...`), the profile fret set, and the profile finger set. It also writes the finger blend constants. `gh3_formats.py` now reads QB string arrays.
+- `StageBlendTrack` (`src/Stage/StageGuitarArms.cs`) is the `DegenerateBlend` node. `PerformancePlayer` makes the strum, fret, and finger tracks from the note and animation-note cues, 250 ms before each note, and applies them as differences.
+- `StageGuitarRig` is the Havok IK and the constraint bones. It replaces `StageBand.SolveArms`.
+
+Result (My Curse, Dive, 60 Hz pose samples, 5–230 s): the largest fret-hand fingertip speed went from 16.8 to 4.8 m/s. The 99th percentile of the fret-hand fingertip acceleration went from 346 to 61 m/s². The strum-hand values went from 7.3 to 4.4 m/s and from 357 to 152 m/s². Images: `~/.cache/gh3ref/agent-hands/cmp-guitarist-5fps.jpg`, `cmp-strum-20fps.jpg`, `cmp-frethand-20fps.jpg`, and `fingertip-speed-40-50s.png`.
+
+Open items:
+
+- Hand clips with `_d` in the name are stored as differences (their IK target keys are far from the bind pose). The mod applies the rotation keys as differences and the position keys relative to the bind pose. This puts the palms on the guitar targets, but no GH3 frame was compared bone by bone.
+- In `hero_strum_guitar`, the `strum_guitar` event plays a strum only if `always_strum` is true (it is false). A hit note calls `handle_hit_note_CFunc` (`0x41f960`), which reads `playing_missed_note` but was not decoded further. The GH3 video shows a strum on each hit note, so the mod strums on each note.
+- Converted clips are sampled at 30 Hz. GH3 decodes the compressed keys directly.
+
 ### Performance findings
 
 Measured with `GH3_SKIN_PROFILE=1`, which logs per-subsystem milliseconds per frame once a second. The test case is My Curse in Kaiju Megadome: about 14,000 live pyro particles at 48–51 s.

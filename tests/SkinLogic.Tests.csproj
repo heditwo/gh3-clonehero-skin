@@ -70,6 +70,7 @@
     <Compile Include="../src/Stage/StageHair.cs" Link="StageHair.cs" />
     <Compile Include="../src/Stage/StageTriangleOrder.cs" Link="StageTriangleOrder.cs" />
     <Compile Include="../src/Stage/StagePerformance.cs" Link="StagePerformance.cs" />
+    <Compile Include="../src/Stage/StageGuitarArms.cs" Link="StageGuitarArms.cs" />
     <Compile Include="../src/Stage/StageLighting.cs" Link="StageLighting.cs" />
     <Compile Include="../src/Stage/StageLightShowState.cs" Link="StageLightShowState.cs" />
     <Compile Include="../src/Stage/StageBeamMotion.cs" Link="StageBeamMotion.cs" />
