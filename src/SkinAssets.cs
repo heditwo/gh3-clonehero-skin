@@ -49,6 +49,7 @@ internal sealed class SkinAssets
     }
 
     public string Root { get; }
+    public Texture2D? HighwayTexture { get; private set; }
 
     public SkinAssets(string root)
     {
@@ -61,7 +62,10 @@ internal sealed class SkinAssets
 
     private void LoadCoreTextures(string root)
     {
-        _textures["highway"] = LoadTexture(Path.Combine(root, Environment.GetEnvironmentVariable("GH3_SKIN_HIGHWAY") == "black" ? "highway-black.png" : "highway.png"));
+        var highway = Environment.GetEnvironmentVariable("GH3_SKIN_HIGHWAY");
+        _textures["highway"] = LoadTexture(Path.Combine(root, highway == "black" ? "highway-black.png" : "highway.png"));
+        _textures["highway"].wrapMode = TextureWrapMode.Repeat;
+        HighwayTexture = highway == "native" ? null : _textures["highway"];
         _textures["highway-edges-blue"] = LoadTexture(Path.Combine(root, "highway-edges-blue.png"));
         _textures["highway-edges-normal"] = LoadTexture(Path.Combine(root, "highway-edges-normal.png"));
         for (var frame = 0; frame < StarPowerHighwayAnimation.FrameCount; frame++)

@@ -19,6 +19,7 @@ internal sealed class GameplaySpriteRenderer
     private Transform? _player;
     private Transform? _camera;
     private Transform? _neck;
+    private bool _highwayApplied;
     private ParticleSystemRenderer? _starParticles;
     private int _childCount = -1;
 
@@ -43,6 +44,7 @@ internal sealed class GameplaySpriteRenderer
         _player = null;
         _camera = null;
         _neck = null;
+        _highwayApplied = false;
         _starParticles = null;
         _childCount = -1;
     }
@@ -109,12 +111,24 @@ internal sealed class GameplaySpriteRenderer
                 renderer.color = new Color(color.r, color.g, color.b, Math.Min(color.a, 0.55f));
             }
             else if (entry.Name == "Neck" && renderer.sprite != null)
-                renderer.sprite = _assets.Highway(renderer.sprite);
+                ApplyHighway(entry.Object);
             else if (entry.Name is "sidebar_l" or "sidebar_r")
                 renderer.enabled = false;
             else
                 ReplaceEffect(renderer, name, entry.Name);
         }
+    }
+
+    // Clone Hero's own custom-highway path: HighwayScroll sizes the scroll to the texture, so the board moves with the notes.
+    // GH3_SKIN_HIGHWAY=native keeps the highway chosen in Clone Hero's settings.
+    private void ApplyHighway(GameObject neck)
+    {
+        if (_highwayApplied || _assets.HighwayTexture == null) return;
+        _highwayApplied = true;
+        var scroll = neck.GetComponent<HighwayScroll>() ?? neck.GetComponentInParent<HighwayScroll>() ?? _player?.GetComponentInChildren<HighwayScroll>(true);
+        if (scroll == null) { MelonLogger.Warning("GH3 highway: HighwayScroll was not found"); return; }
+        scroll.Method_Public_Void_Texture2D_0(_assets.HighwayTexture);
+        MelonLogger.Msg("Applied GH3 highway through Clone Hero's highway scroll");
     }
 
     private void CachePlayer(Transform transform)

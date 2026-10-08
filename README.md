@@ -1,6 +1,6 @@
 # GH3 gameplay skin for Clone Hero
 
-This local mod uses art from the owner's BetterGH3 PC copy. It targets Linux Clone Hero **v1.1.0.6142-final** with **MelonLoader 0.7.3**. The source build is `0.9.4`.
+This local mod uses art from the owner's BetterGH3 PC copy. It targets Linux Clone Hero **v1.1.0.6142-final** with **MelonLoader 0.7.3**. The source build is `0.9.5`.
 
 ## Install and run
 

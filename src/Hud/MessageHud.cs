@@ -4,22 +4,41 @@ using UnityEngine.UI;
 
 namespace Gh3Skin;
 
-// GH3's centre-screen gameplay messages ("100 Note Streak!", "Star Power Ready") drawn from the original message font.
+// GH3's centre-screen gameplay messages drawn from the original message font. Timing and scale keyframes are
+// measured from 60 fps recordings of original GH3 at 1600x900 (My Curse, The Dive).
 internal sealed class MessageHud
 {
     private sealed record Glyph(Rect Uv, float Width, float Height, float X, float Y);
-    private const float Center = 800;
-    private const float Baseline = 300;
-    private const float GlyphScale = 1.9f;
+    private readonly record struct Key(float Time, float Scale, float Alpha, float Warm);
+
+    // "N Note Streak!": a faint oversized ghost, a small white flash with a light streak, then a yellow swell and
+    // a decaying size pulse. Scale is relative to the font's natural size.
+    private static readonly Key[] StreakKeys =
+    {
+        new(0.00f, 3.3f, 0.30f, 0), new(0.14f, 3.1f, 0.00f, 0), new(0.15f, 1.15f, 0.85f, 0), new(0.40f, 1.95f, 1, 0.6f),
+        new(0.55f, 2.22f, 1, 1), new(0.95f, 1.51f, 1, 1), new(1.35f, 1.90f, 1, 1), new(1.55f, 1.49f, 1, 1),
+        new(1.80f, 1.73f, 1, 1), new(2.05f, 1.36f, 1, 1), new(2.15f, 1.63f, 1, 1), new(2.30f, 1.26f, 1, 1),
+        new(2.45f, 1.15f, 0, 1),
+    };
+    private static readonly Key[] ReadyKeys =
+    {
+        new(0.00f, 2.6f, 0, 1), new(0.20f, 1.5f, 1, 1), new(1.60f, 1.5f, 1, 1), new(1.95f, 1.1f, 0, 1),
+    };
+    private const float CenterX = 800;
+    // GH3 lays the message out with extra tracking between glyphs and a wide word space.
+    private const float Tracking = 1;
+    private const float Space = 22;
+    private const float CenterY = 345;
     private readonly RectTransform _root;
     private readonly Texture2D _font;
+    private readonly Texture2D _streakTexture;
+    private readonly RawImage _streak;
     private readonly Dictionary<char, Glyph> _glyphs = new();
     private readonly List<RawImage> _images = new();
     private string _text = "";
-    private Color _color;
+    private Key[] _keys = StreakKeys;
+    private bool _ready;
     private float _start = float.NegativeInfinity;
-    private float _duration;
-    private bool _wobble;
     private int _lastCombo;
     private bool _wasReady;
 
@@ -38,67 +57,110 @@ internal sealed class MessageHud
             var u0 = F("uv", 0); var v0 = F("uv", 1); var u1 = F("uv", 2); var v1 = F("uv", 3);
             _glyphs[glyph.Name[0]] = new(new Rect(u0, 1 - v1, u1 - u0, v1 - v0), F("size", 0), F("size", 1), F("offset", 0), F("offset", 1));
         }
+        _streakTexture = StreakTexture();
+        _streak = HudVisual.Image(_root, "streak", _streakTexture, new Rect(0, 0, 1, 1));
+        _streak.enabled = false;
+    }
+
+    // A soft horizontal light bar that is brightest at its right end.
+    private static Texture2D StreakTexture()
+    {
+        const int width = 128, height = 16;
+        var texture = new Texture2D(width, height, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+        var pixels = new Color[width * height];
+        for (var y = 0; y < height; y++)
+            for (var x = 0; x < width; x++)
+            {
+                var v = (y + 0.5f) / height * 2 - 1;
+                var a = MathF.Pow((x + 0.5f) / width, 1.6f) * MathF.Exp(-v * v * 5);
+                pixels[y * width + x] = new Color { r = 1, g = 0.97f, b = 0.85f, a = a };
+            }
+        texture.SetPixels(new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStructArray<Color>(pixels));
+        texture.Apply(false);
+        texture.hideFlags = HideFlags.DontUnloadUnusedAsset;
+        return texture;
     }
 
     public void Update(GameplayState state, float time)
     {
         if (state.Combo < _lastCombo) _lastCombo = 0;
-        if (state.Combo >= 100 && state.Combo / 100 > _lastCombo / 100)
-            Show($"{state.Combo / 100 * 100} Note Streak!", new Color(1f, 0.96f, 0.62f, 1), time, 2.2f, false);
+        if (state.Combo >= 100 && state.Combo / 100 > _lastCombo / 100) Show($"{state.Combo / 100 * 100} Note Streak!", StreakKeys, false, time);
         _lastCombo = state.Combo;
         var ready = state.StarPower >= 0.5f && !state.StarPowerActive;
-        if (ready && !_wasReady) Show("Star Power Ready", new Color(0.55f, 0.86f, 0.96f, 1), time, 1.8f, true);
+        if (ready && !_wasReady) Show("Star Power Ready", ReadyKeys, true, time);
         _wasReady = ready;
         Draw(time);
     }
 
-    private void Show(string text, Color color, float time, float duration, bool wobble)
+    private void Show(string text, Key[] keys, bool ready, float time)
     {
         _text = text;
-        _color = color;
+        _keys = keys;
+        _ready = ready;
         _start = time;
-        _duration = duration;
-        _wobble = wobble;
-        while (_images.Count < text.Length)
+        while (_images.Count < text.Length) _images.Add(HudVisual.Image(_root, "glyph", _font, new Rect(0, 0, 1, 1)));
+    }
+
+    private float Advance(char character) => character == ' ' ? Space : _glyphs.TryGetValue(character, out var glyph) ? glyph.Width + Tracking : Space;
+
+    private static Key Sample(Key[] keys, float age)
+    {
+        if (age <= keys[0].Time) return keys[0];
+        for (var i = 1; i < keys.Length; i++)
         {
-            var image = HudVisual.Image(_root, "glyph", _font, new Rect(0, 0, 1, 1));
-            _images.Add(image);
+            if (age > keys[i].Time) continue;
+            var a = keys[i - 1];
+            var b = keys[i];
+            var t = (age - a.Time) / Math.Max(0.0001f, b.Time - a.Time);
+            t = t * t * (3 - 2 * t);
+            return new(age, a.Scale + (b.Scale - a.Scale) * t, a.Alpha + (b.Alpha - a.Alpha) * t, a.Warm + (b.Warm - a.Warm) * t);
         }
+        return keys[^1];
     }
 
     private void Draw(float time)
     {
         var age = time - _start;
-        var visible = age >= 0 && age < _duration;
-        if (!visible)
+        if (age < 0 || age > _keys[^1].Time)
         {
             foreach (var image in _images) image.enabled = false;
+            _streak.enabled = false;
             return;
         }
-        // Enters large and fades in, settles, then fades out; Star Power Ready shrinks away at the end.
-        var enter = Math.Clamp(age / 0.25f, 0, 1);
-        var leave = Math.Clamp((_duration - age) / 0.35f, 0, 1);
-        var scale = GlyphScale * (1 + 0.5f * (1 - enter) * (1 - enter));
-        if (_wobble) scale *= 0.55f + 0.45f * leave;
-        var alpha = enter * leave;
+        var key = Sample(_keys, age);
+        var scale = key.Scale * 1.2f;
+        var color = _ready ? new Color { r = 0.55f, g = 0.86f, b = 0.96f, a = key.Alpha }
+            : new Color { r = 1, g = 1 - 0.04f * key.Warm, b = 1 - 0.40f * key.Warm, a = key.Alpha };
         var width = 0f;
-        foreach (var character in _text) width += _glyphs.TryGetValue(character, out var g) ? g.Width : 14;
-        var x = Center - width * scale / 2;
+        foreach (var character in _text) width += Advance(character);
+        var x = CenterX - width * scale / 2;
         for (var i = 0; i < _images.Count; i++)
         {
             var image = _images[i];
             if (i >= _text.Length || !_glyphs.TryGetValue(_text[i], out var glyph) || glyph.Uv.width <= 0)
             {
                 image.enabled = false;
-                if (i < _text.Length) x += (_glyphs.TryGetValue(_text[i], out var space) ? space.Width : 14) * scale;
+                if (i < _text.Length) x += Advance(_text[i]) * scale;
                 continue;
             }
-            var tilt = _wobble ? MathF.Sin(age * 9 + i * 0.7f) * 4 * (1 - leave * 0.5f) : 0;
+            // Star Power Ready rolls a wave through its letters.
+            var wave = _ready ? MathF.Sin(age * 7 - i * 0.55f) * 6 : 0;
             image.enabled = true;
             image.uvRect = glyph.Uv;
-            image.color = new Color(_color.r, _color.g, _color.b, alpha);
-            HudVisual.Layout(image, new Rect(x + glyph.X * scale, Baseline - 40 * scale + glyph.Y * scale + tilt, glyph.Width * scale, glyph.Height * scale));
-            x += glyph.Width * scale;
+            image.color = color;
+            // The font stores each glyph's distance below the baseline (descenders are positive).
+            var bottom = CenterY + 15 * scale + glyph.X * scale;
+            HudVisual.Layout(image, new Rect(x, bottom - glyph.Height * scale + wave, glyph.Width * scale, glyph.Height * scale));
+            x += Advance(_text[i]) * scale;
+        }
+        // The light streak sweeps in from the left while the streak message flashes white.
+        var streak = _ready ? 0 : Math.Clamp(1 - Math.Abs(age - 0.35f) / 0.25f, 0, 1);
+        _streak.enabled = streak > 0;
+        if (_streak.enabled)
+        {
+            _streak.color = new Color { r = 1, g = 1, b = 1, a = 0.75f * streak };
+            var right = CenterX + width * scale * 0.2f;
+            HudVisual.Layout(_streak, new Rect(right - 720, CenterY - 40, 720, 80));
         }
     }
 }
