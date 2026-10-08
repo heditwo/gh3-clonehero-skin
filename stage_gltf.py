@@ -86,7 +86,7 @@ class GlbWriter:
 
     def material(self, name, definition, textures):
         if name in self.materials: return self.materials[name]
-        row = {"name": name, "pbrMetallicRoughness": {"metallicFactor": 0, "roughnessFactor": 1}, "doubleSided": True}
+        row = {"name": name, "pbrMetallicRoughness": {"metallicFactor": 0, "roughnessFactor": 1}, "doubleSided": definition.get("doubleSided", True)}
         texture = definition.get("texture", "")
         if texture:
             row["pbrMetallicRoughness"]["baseColorTexture"] = {"index": self.texture(textures[texture])}

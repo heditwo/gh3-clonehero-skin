@@ -103,6 +103,7 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
             "template": f"{word(data, offset + 160):08x}",
             "blend": word(data, offset + 216),
             "cutoff": data[offset + 232] / 255,
+            "doubleSided": word(data, offset + 220) != 0,
         }
         template = gh3_materials.templates().get(materials[name]["template"])
         if template is not None:

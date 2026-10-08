@@ -252,7 +252,8 @@ def export(source, scripts, global_entries, zone, directory, global_references=N
     scenery_ids = {n[key("Name")] for n in nodes if n.get(key("Class")) in (key("LevelGeometry"), key("LevelObject"))} - lighter_ids
     materials, meshes = stage.scene(primary, nodes, light_groups=groups, mesh_nodes=mesh_nodes,
                                    include_nodes=scenery_ids | (lighter_ids if zone != "z_artdeco" else set()))
-    textures = {}
+    # Venue posters and billboards sample the global ad textures, which GH3 streams from global_ad_tex.pak.
+    textures = {name: blob for k,n,b in source.load("PAK/global_ad_tex.pak.xen") if k == key(".tex") for name, blob in texture_dictionary(b).items()}
     for k,n,b in entries:
         if k == key(".tex"): textures.update(texture_dictionary(b))
     used = {m[0] for m in meshes}; materials = {n:m for n,m in materials.items() if n in used}

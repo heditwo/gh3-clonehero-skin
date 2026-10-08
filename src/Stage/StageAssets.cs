@@ -36,6 +36,7 @@ internal sealed class StageMaterial
     public string Lightmap { get; set; } = "";
     public float ColorScale { get; set; } = 1;
     public StageCharacterMaterial? Character { get; set; }
+    public bool? DoubleSided { get; set; }
     public string[] Textures { get; set; } = Array.Empty<string>();
     public int ShadingMode => Shading switch { "unlit" => 0, "ambient" => 1, "lit" => 2, "" => -1, _ => throw new InvalidDataException("Unknown stage shading mode") };
 }
@@ -112,7 +113,8 @@ internal sealed class StageAssets : IDisposable
         material.SetInt("_SrcBlend", (int)(transparent ? BlendMode.SrcAlpha : BlendMode.One));
         material.SetInt("_DstBlend", (int)(source.Blend == 1 ? BlendMode.One : transparent ? BlendMode.OneMinusSrcAlpha : BlendMode.Zero));
         material.SetInt("_ZWrite", transparent ? 0 : 1);
-        material.SetInt("_Cull", (int)CullMode.Off);
+        // GH3 culls back faces unless the material is two-sided; older exports without the flag stay double-sided.
+        material.SetInt("_Cull", (int)(source.DoubleSided == false ? CullMode.Back : CullMode.Off));
         var cutout = source.Cutoff > 0 && !source.SortedTransparency;
         if (!float.IsFinite(source.ColorScale) || source.ColorScale is < 1 or > 1000) throw new InvalidDataException("Invalid material color scale");
         material.SetVector("_Gh3Surface", new(source.ShadingMode, cutout ? source.Cutoff : 0, source.Lightmap.Length > 0 ? 1 : 0, source.ColorScale));
@@ -183,6 +185,7 @@ internal sealed class StageAssets : IDisposable
             var shaded = surfaceShader != null && source.ShadingMode >= 0;
             var material = shaded ? MakeSurfaceMaterial(surfaceShader!, source) : Own(MakeMaterial(shader, source.Blend != 0, source.Blend == 1));
             material.name = "GH3 Stage " + key;
+            if (bones != null && shaded) material.SetInt("_Cull", (int)CullMode.Off);
             if (!shaded && source.Cutoff > 0 && !source.SortedTransparency)
             {
                 material.SetFloat("_Cutoff", source.Cutoff);

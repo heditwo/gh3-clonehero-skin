@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 from io import BytesIO
 from struct import unpack_from
@@ -121,7 +122,20 @@ counter_frame.save(target / "HUD_counter_frame.png")
 global_images = source / "global-gfx-png"
 skull_highway = Image.open(next(global_images.glob("005_*.png"))).convert("RGBA")
 skull_highway.save(target / "highway-skull.png")
-Image.new("RGBA", skull_highway.size, (0, 0, 0, 255)).save(target / "highway.png")
+Image.new("RGBA", skull_highway.size, (0, 0, 0, 255)).save(target / "highway-black.png")
+# Vanilla GH3 shows the guitarist's own highway; Axel's is the bullet-belt board in axel_1.pak.
+sys.path.insert(0, str(Path(__file__).parent))
+import importlib.util as _util
+from gh3_direction import Source as _Source
+from gh3_formats import key as _key
+_spec = _util.spec_from_file_location("prepare_stage", Path(__file__).with_name("prepare-stage.py"))
+_stage = _util.module_from_spec(_spec); _spec.loader.exec_module(_stage)
+_axel = _Source(Path.home() / "games/gh3-test-tools/game/DATA")
+_boards = [image for kind, _, data in _axel.load("PAK/axel_1.pak.xen") if kind == _key(".tex")
+           for name, image in _stage.textures(data) if name == "ed67bbe0"]
+if len(_boards) != 1 or _boards[0].size != (512, 1024):
+    raise ValueError("Axel's highway texture ed67bbe0 is missing from axel_1.pak.xen")
+_boards[0].convert("RGBA").save(target / "highway.png")
 rail_reference = Image.open(Path(__file__).parent / "gh3-fast-six-bulbs-1600x900.png").convert("RGB")
 normal_reference = Image.open(Path(__file__).parent / "gh3-fast-autoplay-gameplay-1600x900.png").convert("RGB")
 blue_rails = Image.new("RGBA", rail_reference.size)

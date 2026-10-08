@@ -52,6 +52,19 @@ internal static class ScriptBench
             ini.GetValueOrDefault("name", ""), ini.GetValueOrDefault("artist", ""), performance);
         var lighting = new StageLighting(StageLightingBank.Load(directory)!, timeline);
         using var state = new StageScriptState(bank, placements, timeline, venue, (id, time) => null, actors, lighting);
+        if (Environment.GetEnvironmentVariable("GH3_BENCH_CAMERAS") == "1")
+        {
+            var pack = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "pack.json"))).RootElement;
+            var band = pack.GetProperty("band").EnumerateObject().ToDictionary(member => member.Name, member =>
+            {
+                var p = member.Value.GetProperty("position").EnumerateArray().Select(v => v.GetSingle()).ToArray();
+                return new System.Numerics.Vector3(p[0], p[1], p[2]);
+            });
+            var path = new StageCameraPath(new(System.Numerics.Vector3.Zero, System.Numerics.Vector3.UnitZ, 60, "fixed"), band, "auto",
+                StageCameraBank.Load(Path.Combine(directory, "cameras.json")));
+            for (var t = 0.0; t < end; t += 0.25) path.Sample(timeline, t);
+            return;
+        }
         using var sampler = Environment.GetEnvironmentVariable("GH3_BENCH_ALLOC") == "1" ? new AllocationSampler() : null;
         var rock = float.Parse(Environment.GetEnvironmentVariable("GH3_BENCH_ROCK") ?? "0.5");
         var step = 1.0 / 144;
