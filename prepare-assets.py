@@ -5,7 +5,7 @@ from struct import unpack_from
 from zipfile import ZipFile
 from zlib import crc32
 import shutil
-from PIL import Image
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from highway_overlay import warp as warp_rails
 
@@ -144,6 +144,70 @@ flame_source = Path(__file__).parent / "reference-flames"
 for frame in range(16):
     Image.open(flame_source / f"hit-{frame // 2:02d}.png").save(target / f"hit-{frame:02d}.png")
     Image.open(flame_source / f"held-{frame:02d}.png").save(target / f"sustain-flame-{frame:02d}.png")
+
+
+def whammy_textures():
+    # sys_whammy2d_<name> materials (WhammyBar_UI) in global.pak sample these 32 x 32 textures; red is not in global-gfx-png.
+    keys = {"green": 0xb47133c1, "red": 0x6c97b6c6, "yellow": 0xec463e7a, "blue": 0x037e6d2c,
+            "orange": 0xca034a7a, "star": 0xe78e1a35, "dead": 0x2a589f46}
+    found = {}
+    for kind, _, data in _axel.load("ZONES/global.pak.xen"):
+        if kind != _key(".tex"):
+            continue
+        count, table = unpack_from(">H", data, 6)[0], unpack_from(">I", data, 8)[0]
+        for index in range(count):
+            name = unpack_from(">I", data, table + 40 * index + 4)[0]
+            start, size = unpack_from(">II", data, table + 40 * index + 28)
+            if name in keys.values() and name not in found:
+                found[name] = Image.open(BytesIO(data[start:start + size])).convert("RGBA")
+    if len(found) != len(keys) or any(image.size != (32, 32) for image in found.values()):
+        raise ValueError("GH3 whammy textures are missing from global.pak.xen")
+    return {variant: found[key] for variant, key in keys.items()}
+
+
+def held_sustain(sprite, bar_width=30, sigma=1.2, colour_gain=1.8, white_gain=0.55):
+    # GH3 adds a glow around a held bar. Held green, blue, and orange bars in matched GH3 frames (164.8-167.9 s and
+    # 198.0-200.4 s, rows 600-690) fit bar + blur(1.8 * squared bar colour + 0.55 * white bar mask), with a Gaussian sigma
+    # of 1.2 bar widths. Squaring the colour keeps the glow saturated, as in GH3 (blue and orange glows add little green).
+    # The sprite is drawn with alpha blending, so the added glow is stored as colour over partial alpha.
+    margin = round(3 * sigma * bar_width) - (sprite.width - bar_width) // 2
+    size = (sprite.width + 2 * margin, sprite.height)
+    alpha = Image.new("L", size)
+    alpha.paste(sprite.getchannel("A"), (margin, 0))
+    colour = Image.new("RGB", size)
+    colour.paste(ImageChops.multiply(sprite.convert("RGB"), sprite.getchannel("A").convert("RGB")), (margin, 0))
+    squared = Image.new("RGB", size)
+    squared.paste(ImageChops.multiply(ImageChops.multiply(sprite.convert("RGB"), sprite.convert("RGB")),
+                                      sprite.getchannel("A").convert("RGB")), (margin, 0))
+    # Clone Hero squeezes the 73-pixel sprite to 0.13 units but keeps 100 pixels per unit vertically.
+    radius = (sigma * bar_width, sigma * bar_width * 0.13 / 73 * 100)
+    blurred_colour = squared.filter(ImageFilter.GaussianBlur(radius))
+    blurred_alpha = alpha.filter(ImageFilter.GaussianBlur(radius))
+    held = Image.new("RGBA", size)
+    for y in range(size[1]):
+        for x in range(size[0]):
+            glow = blurred_alpha.getpixel((x, y)) * white_gain
+            total = [min(255.0, base + colour_gain * blurred + glow)
+                     for base, blurred in zip(colour.getpixel((x, y)), blurred_colour.getpixel((x, y)))]
+            opacity = max(alpha.getpixel((x, y)), *total)
+            if opacity > 0:
+                held.putpixel((x, y), (*(round(value * 255 / opacity) for value in total), round(opacity)))
+    return held
+
+
+# Same layout as Clone Hero's spr_sustain_strip6 sprites (73 x 70, tube in columns 22-51, cap above the sliced border at
+# row 38), so the native sliced renderer keeps its width and cap length. GH3 rows 12-23 hold the cap; row 28 is the body.
+for variant, texture in whammy_textures().items():
+    tube = Image.new("RGBA", (32, 70))
+    tube.paste(texture.crop((0, 12, 32, 24)).resize((32, 24), Image.Resampling.NEAREST), (0, 14))
+    body = texture.crop((0, 28, 32, 29))
+    for y in range(38, 70):
+        tube.paste(body, (0, y))
+    sprite = Image.new("RGBA", (73, 70))
+    sprite.paste(tube, (21, 0))
+    sprite.save(target / f"sustain-{variant}.png")
+    if variant != "dead":
+        held_sustain(sprite).save(target / f"sustain-held-{variant}.png")
 
 spark = Image.open(next(global_images.glob("032_*.png"))).convert("RGBA")
 for frame in range(16):

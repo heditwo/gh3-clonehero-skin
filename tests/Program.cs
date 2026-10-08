@@ -351,6 +351,17 @@ Equal(GemKind.Stock, GemKind.FromSprites("spr_open_notes_strip5_0", ""), "pooled
 Equal(GemKind.Stock, GemKind.FromSprites("spr_open_notes_strip5_0", "spr_newnotes_strip4_3"), "open tap keeps stock art");
 Equal(GemKind.Stock, GemKind.FromSprites("", ""), "empty pooled note hides the custom gem");
 Equal(GemKind.Stock, GemKind.FromSprites("", "spr_newnotes_strip4_3"), "stale tap body does not revive an empty note");
+Equal(true, SustainState.TryFrame("spr_sustain_strip6_0", out var heldFrame) && heldFrame == 0, "held sustain frame");
+Equal(false, SustainState.TryFrame("GH3_sustain-green", out _), "replacement sustain sprite keeps the last native frame");
+Equal(false, SustainState.TryFrame("spr_sustain_strip6_6", out _), "unknown sustain frame");
+Equal(SustainVariant.Blue, SustainState.Variant(1, 3, false), "unheld sustain uses its lane texture");
+Equal(SustainVariant.Star, SustainState.Variant(0, 3, true), "Star Power sustain uses the star whammy texture");
+Equal(SustainVariant.Dead, SustainState.Variant(5, 3, true), "dropped sustain uses the dead whammy texture");
+Equal(1f, SustainState.WhammyWidth(0), "resting whammy keeps the bar width");
+Equal(2f, SustainState.WhammyWidth(1), "full whammy doubles the bar width (whammy_scale = len + 1)");
+Equal(1.5f, SustainState.WhammyWidth(0.5f), "half whammy widens the bar by half");
+Equal(1, SustainState.WhammyChannel(0), "green lane reads whammy channel 1");
+Equal(5, SustainState.WhammyChannel(4), "orange lane reads whammy channel 5");
 foreach (var (time, frame) in new[] { (0.0, 0), (0.033, 0), (0.034, 1), (0.5, 15), (0.534, 0), (1.0, 14) })
     Equal(frame, GemAnimation.Frame(time), "GH3 star animation uses a 16-frame atlas at 30 frames per second");
 foreach (var fps in new[] { 30, 60, 144 })

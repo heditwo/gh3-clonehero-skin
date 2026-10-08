@@ -28,6 +28,13 @@ internal sealed class GameplaySpriteRenderer
     private static readonly int FadeParams = Shader.PropertyToID("_FadeParams");
     private ParticleSystemRenderer? _starParticles;
     private int _childCount = -1;
+    private readonly Dictionary<IntPtr, int> _sustainFrames = new();
+    private readonly Dictionary<IntPtr, float> _sustainWidths = new();
+    private readonly Dictionary<IntPtr, SustainBend> _sustainBends = new();
+    private readonly MaterialPropertyBlock _sustainProperties = new();
+    private readonly WhammyHistory _whammy = new();
+    private bool _whammyReady;
+    private float _highwayEndZ;
 
     public GameplaySpriteRenderer(SkinAssets assets, SkinOptions options)
     {
@@ -46,6 +53,10 @@ internal sealed class GameplaySpriteRenderer
                 renderer.forceRenderingOff = forceRenderingOff;
         _stockStarPowerEffects.Clear();
         _spriteNames.Clear();
+        _sustainFrames.Clear();
+        _sustainWidths.Clear();
+        _sustainBends.Clear();
+        _highwayEndZ = 0;
         Array.Clear(_frets, 0, _frets.Length);
         _player = null;
         _camera = null;
@@ -126,20 +137,29 @@ internal sealed class GameplaySpriteRenderer
         }
         foreach (var line in _beatlines)
             line.Update(player.mainCamera);
+        foreach (var note in _notes)
+            if (note.Object != null && note.Object.activeSelf)
+                _highwayEndZ = Math.Max(_highwayEndZ, note.Transform.position.z);
+        if (_options.ForceWhammyRate > 0)
+            WhammyHistory.Force(0.5f - 0.5f * MathF.Cos(2 * MathF.PI * _options.ForceWhammyRate * (float)Time.timeAsDouble));
+        _whammyReady = _whammy.Begin();
         foreach (var entry in _effects)
         {
             var renderer = entry.Renderer;
             if (renderer == null || !entry.Object.activeInHierarchy)
                 continue;
             var name = SpriteName(renderer.sprite);
+            if (entry.Name is "Sustain(Clone)" or "Sustain Glow")
+            {
+                if (entry.Name == "Sustain Glow")
+                    renderer.enabled = false;
+                else
+                    UpdateSustain(entry.Transform, renderer, name, starPowerActive);
+                continue;
+            }
             if (name.StartsWith("GH3_", StringComparison.Ordinal))
                 continue;
-            if (entry.Name is "Sustain(Clone)" or "Sustain Glow" && name.StartsWith("spr_sustain_strip6_", StringComparison.Ordinal))
-            {
-                var color = renderer.color;
-                renderer.color = new Color(color.r, color.g, color.b, Math.Min(color.a, 0.55f));
-            }
-            else if (entry.Name == "Neck" && renderer.sprite != null)
+            if (entry.Name == "Neck" && renderer.sprite != null)
                 ApplyHighway(entry.Object);
             else if (entry.Name is "sidebar_l" or "sidebar_r")
                 renderer.enabled = false;
@@ -272,9 +292,19 @@ internal sealed class GameplaySpriteRenderer
             note.Display.sortingLayerID = note.Head.sortingLayerID;
             note.Display.sortingOrder = 10;
         }
+        note.Display.enabled = true;
+        note.Display.sprite = _assets.Gem(NearestLane(note.Transform.localPosition.x), kind, frame, starPowerActive);
+        note.Display.color = new Color(1, 1, 1, HighwayView.FadeAt(note.Transform.localPosition.z));
+        note.Head.enabled = false;
+        if (note.Body != null) note.Body.enabled = false;
+        if (note.Anim != null) note.Anim.enabled = false;
+        if (note.OpenHopo != null) note.OpenHopo.enabled = false;
+    }
+
+    private int NearestLane(float x)
+    {
         var lane = 0;
         var distance = float.PositiveInfinity;
-        var x = note.Transform.localPosition.x;
         for (var candidate = 0; candidate < _frets.Length; candidate++)
         {
             var fret = _frets[candidate];
@@ -287,13 +317,46 @@ internal sealed class GameplaySpriteRenderer
                 lane = candidate;
             }
         }
-        note.Display.enabled = true;
-        note.Display.sprite = _assets.Gem(lane, kind, frame, starPowerActive);
-        note.Display.color = new Color(1, 1, 1, HighwayView.FadeAt(note.Transform.localPosition.z));
-        note.Head.enabled = false;
-        if (note.Body != null) note.Body.enabled = false;
-        if (note.Anim != null) note.Anim.enabled = false;
-        if (note.OpenHopo != null) note.OpenHopo.enabled = false;
+        return lane;
+    }
+
+    // Clone Hero changes the sustain sprite only when the held state changes, so the last native frame and the native
+    // width are kept per renderer. GH3 draws the bar texture at full strength (WhammyBar_UI: texture * vertex colour),
+    // so the native lane tint is replaced with white. The held sprite is wider because it includes GH3's glow.
+    private void UpdateSustain(Transform transform, SpriteRenderer renderer, string name, bool starPowerActive)
+    {
+        var key = renderer.Pointer;
+        if (SustainState.TryFrame(name, out var frame))
+        {
+            _sustainFrames[key] = frame;
+            _sustainWidths.TryAdd(key, renderer.size.x);
+        }
+        else if (!_sustainFrames.TryGetValue(key, out frame))
+            return;
+        var lane = NearestLane(transform.localPosition.x);
+        var variant = SustainState.Variant(frame, lane, starPowerActive);
+        var sprite = frame == 0 ? _assets.HeldSustain(variant) : _assets.Sustain(variant);
+        if (renderer.sprite?.Pointer != sprite.Pointer)
+        {
+            renderer.sprite = sprite;
+            var size = renderer.size;
+            renderer.size = new Vector2(_sustainWidths[key] * sprite.rect.width / SkinAssets.SustainSpriteWidth, size.y);
+        }
+        var color = renderer.color;
+        if (color.r < 1 || color.g < 1 || color.b < 1 || color.a < 1)
+            renderer.color = Color.white;
+        _sustainBends.TryGetValue(key, out var bend);
+        var fret = _frets[lane];
+        // Clone Hero spawns notes at the far end of the visible highway, which is GH3's highway line 0.
+        var highwayLength = fret != null ? _highwayEndZ - fret.position.z : 0;
+        if (frame == 0 && _whammyReady && highwayLength > 0)
+        {
+            if (bend == null)
+                _sustainBends[key] = bend = new SustainBend(renderer);
+            bend.Update(renderer, _sustainProperties, _whammy, SustainState.WhammyChannel(lane), fret!.position.z, highwayLength);
+        }
+        else
+            bend?.Hide(renderer);
     }
 
     private void ReplaceEffect(SpriteRenderer renderer, string name, string objectName)

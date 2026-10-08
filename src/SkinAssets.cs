@@ -17,6 +17,10 @@ internal sealed class SkinAssets
     private readonly List<AnimationFrame> _readyLightningFrames = new();
     private readonly Sprite[,,] _gems = new Sprite[5, 6, GemAnimation.FrameCount];
     private readonly Sprite[,] _activeGems = new Sprite[6, GemAnimation.FrameCount];
+    private static readonly string[] SustainVariants = { "green", "red", "yellow", "blue", "orange", "star", "dead" };
+    private readonly Sprite[] _sustains = new Sprite[SustainVariants.Length];
+    private readonly Sprite[] _heldSustains = new Sprite[SustainVariants.Length];
+    public const float SustainSpriteWidth = 73;
     private Material? _beatlineMaterial;
     private Material? _ampMaterial;
 
@@ -159,6 +163,13 @@ internal sealed class SkinAssets
             Load(root, name, 1024, new Vector2(0.5f, 0));
             _sprites[name].texture.wrapMode = TextureWrapMode.Clamp;
         }
+        for (var variant = 0; variant < SustainVariants.Length; variant++)
+        {
+            _sustains[variant] = LoadSustain(root, $"sustain-{SustainVariants[variant]}");
+            _heldSustains[variant] = (SustainVariant)variant == SustainVariant.Dead
+                ? _sustains[variant]
+                : LoadSustain(root, $"sustain-held-{SustainVariants[variant]}");
+        }
         for (var frame = 0; frame < 16; frame++)
         {
             Load(root, $"hit-{frame:00}", 150, new Vector2(0.5f, 0.2f));
@@ -196,6 +207,8 @@ internal sealed class SkinAssets
     }
 
     public Sprite GetSprite(string name) => _sprites[name];
+    public Sprite Sustain(SustainVariant variant) => _sustains[(int)variant];
+    public Sprite HeldSustain(SustainVariant variant) => _heldSustains[(int)variant];
     public Sprite Gem(int lane, GemKind kind, int frame, bool starPowerActive) =>
         starPowerActive ? _activeGems[kind.Index, frame] : _gems[lane, kind.Index, frame];
     public bool TryGetSprite(string name, out Sprite sprite) => _sprites.TryGetValue(name, out sprite!);
@@ -212,6 +225,19 @@ internal sealed class SkinAssets
         _sprites["highway"] = highway;
         MelonLogger.Msg($"Applied GH3 highway (original PPU {original.pixelsPerUnit})");
         return highway;
+    }
+
+    // Matches Clone Hero's sliced sustain sprites: bottom pivot, 100 pixels per unit, and the cap above a 38-pixel top border.
+    private Sprite LoadSustain(string root, string name)
+    {
+        var texture = LoadTexture(Path.Combine(root, name + ".png"));
+        texture.wrapMode = TextureWrapMode.Clamp;
+        var sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), new Vector2(0.5f, 0), 100, 0,
+            SpriteMeshType.FullRect, new Vector4(0, 0, 0, 38));
+        sprite.name = "GH3_" + name;
+        sprite.hideFlags = HideFlags.DontUnloadUnusedAsset;
+        _sprites[name] = sprite;
+        return sprite;
     }
 
     private void Load(string root, string name, float pixelsPerUnit, Vector2 pivot)

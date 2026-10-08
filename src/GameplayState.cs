@@ -16,6 +16,7 @@ internal static class GameplayStateReader
             power = options.DisplayPower.Value;
         if (options.DisplayRock.HasValue)
             rock = options.DisplayRock.Value;
-        return new GameplayState(score, combo, rock, power, engine.prop_Int32_0, engine.field_Public_Boolean_0);
+        return new GameplayState(score, combo, rock, power, engine.prop_Int32_0,
+            engine.field_Public_Boolean_0 || options.ForceStarPowerActive);
     }
 }

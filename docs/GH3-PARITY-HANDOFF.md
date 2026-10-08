@@ -34,6 +34,57 @@ Original GH3 PC now runs headless under Wine on a private Xvfb display, and its 
 4. Normal and specular maps for `D_N_S_*` venue templates.
 5. Shadow maps (`SetShadowDirFromLight`, `c178.w` already carries the key-light shadow amount).
 
+### Sustain tails (fix-sustain)
+
+Before this fix, sustains used the Clone Hero sustain sprite with the lane tint. The mod also set the alpha of the tail and its glow to 0.55 or less. Thus held tails were approximately 9 px wide (GH3: 21–25 px) with no white core, and unheld tails were almost not visible.
+
+- GH3 draws the bar with the `sys_whammy2d_<lane|starpower|dead>` materials in `global.pak.xen`. The template is `WhammyBar_UI` (`texture × vertex colour`, alpha blend). The materials use 32 × 32 textures `0xb47133c1` (green), `0x6c97b6c6` (red), `0xec463e7a` (yellow), `0x037e6d2c` (blue), `0xca034a7a` (orange), `0xe78e1a35` (Star Power), and `0x2a589f46` (dead). Each texture has a white core and coloured sides. Rows 12–23 are the cap. Row 28 is the body.
+- `prepare-assets.py` writes `sustain-<variant>.png` from these textures. The layout is the same as the layout of `spr_sustain_strip6_*` (73 × 70, bar in columns 22–51, sliced border at row 38). Thus the native sliced renderer keeps the length, cap, and width.
+- `sustain-held-<variant>.png` adds the glow that GH3 shows around a held bar. The glow model is `bar + blur(1.8 × bar² + 0.55 × white bar mask)`, with a Gaussian sigma of 1.2 bar widths. The squared colour keeps the glow saturated. This model is a least-squares fit to held green, blue, and orange bars in `gh3-mycurse-raw.mp4` (164.8–167.9 s and 198.0–200.4 s, rows 600–690). It is calibrated by measurement, not taken from GH3 data. The GH3 glow source is not identified.
+- `GameplaySpriteRenderer.UpdateSustain` keeps the last native frame for each renderer (frame 0 is held, frames 1–4 are not held, frame 5 is dropped). It selects the variant from `SustainState` (dead, then Star Power, then lane), sets the colour to white, and makes the renderer wider for the held sprite. The native `Sustain Glow` renderer is disabled. Its shader is procedural and ignores the sprite.
+
+Measurements at 1600 × 900 (body = mean of the saturated bar run; halo = 0–0.25 bar widths outside it):
+
+| Frame | GH3 | Mod 0.9.7 | Fix |
+| --- | --- | --- | --- |
+| Held green, 165.5 s | w 22, core (229,251,232), body (126,246,129), halo (106,178,108)/(69,125,71) | w 9, core (33,238,33), body (26,227,26) | w 21, core (229,252,228), body (126,246,125), halo (77,149,72)/(69,150,68) |
+| Held blue, 165.5 s | w 24, core (220,249,255), body (105,194,246) | w 10, core (31,190,238), body (24,179,227) | w 20, core (223,250,253), body (117,222,248) |
+| Held orange, 199.0 s | w 25, core (252,250,214), body (246,194,103) | w 12, core (247,203,85), body (232,188,73) | w 22, core (255,249,229), body (249,219,120) |
+| Unheld green, 163.6 s, y 470 | w 10, core (148,251,146), body (77,241,79) | not detected | w 9, core (151,249,150), body (82,241,83) |
+
+The first comparison image is `~/.cache/gh3ref/agent-sustain/sustain-compare.png`.
+
+#### Whammy bend
+
+GH3 bends the bar width, not the bar position:
+
+- `control_whammy_pitchshift` (`guitar_input.qb`) calculates `whammy_scale = (len × 0.5 + 0.5) × 2 = len + 1` and calls `SetNewWhammyValue`. The bot uses `len = 0`, so the GH3 reference video has no whammy.
+- `SetNewWhammyValue` (GH3.exe `0x41de60`) moves the player's wibble array (`whammywibble0`, 136 entries, start value 1) by `whammy_wibble_speed` (2) entries in each 60 Hz frame. It writes the new value into entry 0.
+- The `WhammyBar` mesh (GH3.exe `0x601d30`, 128 rows) gives each row an entry index. Entry 0 is at the strike line and entry 128 is at the far end of the highway. The vertex shader of `WhammyBar_UI` multiplies the horizontal offset of each row by its entry. A full whammy thus makes the bar two times wider at that row. The pattern moves up the highway at 120 entries per second.
+
+The mod reads Clone Hero's own whammy history, the `_GlobalWhammyTexture` (1024 columns, one row for each channel; green is channel 1, as `_uSustainProperties.x` of the native glow shows). `WhammyHistory` changes the history into the 128 GH3 entries. `SustainBend` then draws a held sustain as a 128 × 8 strip mesh with the native sustain material and property block. Thus the length, track fade, and sorting stay native. The strip is shown only when the history is not flat. Otherwise the native sliced sprite stays. Extra columns are necessary because a mesh with only edge vertices bends the white core into a zigzag.
+
+`GH3_SKIN_FORCE_WHAMMY=<Hz>` sends a cosine whammy (0 to full) to Clone Hero's whammy input. Use it only for verification. `GH3_SKIN_FORCE_STAR_POWER_ACTIVE=1` sets the Star Power active flag for the skin, for verification only.
+
+#### Second measurements
+
+Mean of rows 600–690 in many frames (GH3 / fix), from `mc-after2.mp4`:
+
+| Bar | Width | Core | Body | Halo (0.5–0.75 widths outside) |
+| --- | --- | --- | --- | --- |
+| Green, 164.8–167.9 s | 23.9 / 23.5 | (226,251,227) / (227,253,226) | (126,245,126) / (117,247,117) | (94,152,89) / (66,152,63) |
+| Blue, 164.8–167.9 s | 24.9 / 22.8 | (215,250,254) / (230,252,255) | (103,195,247) / (113,206,248) | (92,114,162) / (74,99,163) |
+| Orange, 198.0–200.4 s | 25.3 / 22.9 | (254,247,212) / (254,249,224) | (246,196,104) / (249,206,114) | (156,98,63) / (164,96,61) |
+
+The orange body green channel is now 206 (GH3 196, before 221). The comparison image is `~/.cache/gh3ref/agent-sustain/sustain-compare-2.png`.
+
+Open items:
+
+- No GH3 reference shows a whammy, because the GH3 bot does not use the whammy bar. The bend follows the GH3 code, but no matched frame verifies it.
+- No GH3 reference shows a sustain during active Star Power. The Star Power bar uses GH3's `sys_Whammy2D_StarPower` texture and was verified in the mod only.
+- GH3 also changes a Star Power phrase sustain to the Star Power texture while the player uses the whammy (`star_power_whammy` in `guitar_starpower.qb`, `MakeStarWhammy` after 5 frames). The mod does not do this. The sustain renderer does not know if its note is in a phrase.
+- Dead (dropped) sustains are not verified in a capture.
+
 ### Performance findings
 
 Measured with `GH3_SKIN_PROFILE=1`, which logs per-subsystem milliseconds per frame once a second. The test case is My Curse in Kaiju Megadome: about 14,000 live pyro particles at 48–51 s.

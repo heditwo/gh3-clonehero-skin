@@ -9,6 +9,8 @@ internal sealed class SkinOptions
     public float? DisplayPower { get; private init; }
     public float? DisplayRock { get; private init; }
     public int ForcePowerAtCombo { get; private init; }
+    public float ForceWhammyRate { get; private init; }
+    public bool ForceStarPowerActive { get; private init; }
     public float CaptureAfter { get; private init; }
     public IReadOnlyList<float> CaptureTimes { get; private init; } = Array.Empty<float>();
     public string CaptureDirectory { get; private init; } = "";
@@ -40,6 +42,8 @@ internal sealed class SkinOptions
             DisplayRock = rock.HasValue ? Math.Clamp(rock.Value, 0, 1) : null,
             ForcePowerAtCombo = int.TryParse(Environment.GetEnvironmentVariable("GH3_SKIN_FORCE_POWER_AT_COMBO"), out var combo)
                 ? Math.Max(0, combo) : 0,
+            ForceWhammyRate = Math.Max(0, ParseFloat("GH3_SKIN_FORCE_WHAMMY") ?? 0),
+            ForceStarPowerActive = Environment.GetEnvironmentVariable("GH3_SKIN_FORCE_STAR_POWER_ACTIVE") == "1",
             CaptureAfter = captureAfter,
             CaptureTimes = captureTimes,
             CaptureSongClock = Environment.GetEnvironmentVariable("GH3_SKIN_CAPTURE_CLOCK") == "song",
