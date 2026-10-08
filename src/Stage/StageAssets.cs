@@ -36,6 +36,7 @@ internal sealed class StageMaterial
     public string Lightmap { get; set; } = "";
     public float ColorScale { get; set; } = 1;
     public StageCharacterMaterial? Character { get; set; }
+    public string[] Textures { get; set; } = Array.Empty<string>();
     public int ShadingMode => Shading switch { "unlit" => 0, "ambient" => 1, "lit" => 2, "" => -1, _ => throw new InvalidDataException("Unknown stage shading mode") };
 }
 
@@ -136,6 +137,8 @@ internal sealed class StageAssets : IDisposable
             material.SetVector("_Gh3Char1", V(c[1][0], c[1][1], c[1][2], c[4][0]));
             material.SetVector("_Gh3Char2", V(c[2][0], c[2][1], c[2][2], c[3][0]));
             material.SetVector("_Gh3Char3", V(c[8][0], c[8][1], c[8][2], c[10][0]));
+            material.SetVector("_Gh3Char4", V(c[7][0], c[7][1], c[7][2], c[6][0]));
+            material.SetVector("_Gh3Char5", V(c[5][0], 0, 0, 0));
         }
         else
         {
@@ -143,6 +146,8 @@ internal sealed class StageAssets : IDisposable
             material.SetVector("_Gh3Char1", V(0, 0, 0, c[6][0]));
             material.SetVector("_Gh3Char2", V(0, 0, 0, c[0][0]));
             material.SetVector("_Gh3Char3", V(c[8][0], c[8][1], c[8][2], c[9][0]));
+            material.SetVector("_Gh3Char4", V(0, 0, 0, 0));
+            material.SetVector("_Gh3Char5", V(c[7][0], 0, 0, 0));
         }
     }
 
@@ -159,16 +164,17 @@ internal sealed class StageAssets : IDisposable
         var shader = Shader.Find("Particles/Standard Unlit");
         if (shader == null) throw new InvalidOperationException("The stage shader is not available");
         var textures = new Dictionary<string, Texture2D>();
-        Texture2D LoadTexture(string name, TextureWrapMode wrap)
+        Texture2D LoadTexture(string name, TextureWrapMode wrap, bool linear = false)
         {
             if (name.Length != 8 || !name.All(Uri.IsHexDigit)) throw new InvalidDataException("Invalid stage texture name");
-            if (textures.TryGetValue(name, out var texture)) return texture;
-            texture = Own(new Texture2D(2, 2, TextureFormat.RGBA32, true));
+            var cacheKey = linear ? name + ":linear" : name;
+            if (textures.TryGetValue(cacheKey, out var texture)) return texture;
+            texture = Own(new Texture2D(2, 2, TextureFormat.RGBA32, true, linear));
             if (!texture.LoadImage(new Il2CppStructArray<byte>(File.ReadAllBytes(Path.Combine(directory, "textures", name + ".png"))), true))
                 throw new InvalidDataException("Invalid stage texture");
             texture.wrapMode = wrap;
             texture.filterMode = FilterMode.Trilinear;
-            textures.Add(name, texture);
+            textures.Add(cacheKey, texture);
             return texture;
         }
         var materials = new Dictionary<uint, Material>();
@@ -193,7 +199,20 @@ internal sealed class StageAssets : IDisposable
             if (shaded && source.Lightmap.Length > 0) material.SetTexture("_Gh3Lightmap", LoadTexture(source.Lightmap, TextureWrapMode.Clamp));
             materials.Add(Convert.ToUInt32(key, 16), material);
             SurfaceMaterials.Add(material);
-            if (shaded && source.Character != null) CharacterMaterials.Add(material);
+            if (shaded && source.Character != null)
+            {
+                CharacterMaterials.Add(material);
+                // GH3 character samplers: s0 normal map, s1 diffuse, s2 specular mask.
+                var normal = source.Textures.Length > 0 && File.Exists(Path.Combine(directory, "textures", source.Textures[0] + ".png")) ? source.Textures[0] : "";
+                var specular = source.Character.Model == "skin" && source.Textures.Length > 2 &&
+                    File.Exists(Path.Combine(directory, "textures", source.Textures[2] + ".png")) ? source.Textures[2] : "";
+                if (normal.Length > 0) material.SetTexture("_Gh3NormalTex", LoadTexture(normal, TextureWrapMode.Repeat, true));
+                if (specular.Length > 0) material.SetTexture("_Gh3SpecularTex", LoadTexture(specular, TextureWrapMode.Repeat, true));
+                var flags = material.GetVector("_Gh3Char5");
+                flags.y = normal.Length > 0 ? 1 : 0;
+                flags.z = specular.Length > 0 ? 1 : 0;
+                material.SetVector("_Gh3Char5", flags);
+            }
             if (source.Crowd) CrowdMaterials.Add(material);
             if (source.MovieSlot is < -1 or > 31) throw new InvalidDataException("Invalid movie surface slot");
             if (source.MovieSlot >= 0) MovieSurfaces.Add((source.MovieSlot, material, material.mainTexture));
@@ -284,6 +303,8 @@ internal sealed class StageAssets : IDisposable
                     bone.worldToLocalMatrix * root.transform.localToWorldMatrix).ToArray());
             }
             mesh.RecalculateBounds();
+            if (bones != null && surfaceShader != null && Definition.Materials[materialId.ToString("x8")].Character != null)
+                mesh.RecalculateTangentsImpl(UnityEngine.Rendering.MeshUpdateFlags.Default);
             var shadedMode = surfaceShader != null ? Definition.Materials[materialId.ToString("x8")].ShadingMode : -1;
             var dynamicColors = lighting && shadedMode < 0 && (bones != null || Definition.LightGroups.Length > 0);
             if (dynamicColors || sorted) mesh.MarkDynamic();

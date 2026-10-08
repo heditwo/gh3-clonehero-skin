@@ -47,6 +47,7 @@
     <Compile Include="../src/Stage/StageParticleShape.cs" Link="StageParticleShape.cs" />
     <Compile Include="../src/Stage/StageParticleGeometry.cs" Link="StageParticleGeometry.cs" />
     <Compile Include="../src/Stage/StageParticleState.cs" Link="StageParticleState.cs" />
+    <Compile Include="../src/Stage/StageHousingRotation.cs" Link="StageHousingRotation.cs" />
     <Compile Include="../src/Stage/StageWindState.cs" Link="StageWindState.cs" />
     <Compile Include="../src/Stage/StageTeslaState.cs" Link="StageTeslaState.cs" />
     <Compile Include="../src/Stage/StageTeslaRender.cs" Link="StageTeslaRender.cs" />

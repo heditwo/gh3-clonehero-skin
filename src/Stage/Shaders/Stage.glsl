@@ -6,6 +6,7 @@ uniform vec4 hlslcc_mtx4x4unity_MatrixVP[4];
 uniform vec4 _MainTex_ST;
 in vec4 in_POSITION0;
 in vec3 in_NORMAL0;
+in vec4 in_TANGENT0;
 in vec4 in_COLOR0;
 in vec2 in_TEXCOORD0;
 in vec2 in_TEXCOORD1;
@@ -14,6 +15,7 @@ out vec2 surfaceUv;
 out vec2 surfaceLightmapUv;
 out vec3 surfaceNormal;
 out vec3 surfaceWorld;
+out vec4 surfaceTangent;
 void main()
 {
     mat4 model = mat4(hlslcc_mtx4x4unity_ObjectToWorld[0], hlslcc_mtx4x4unity_ObjectToWorld[1], hlslcc_mtx4x4unity_ObjectToWorld[2], hlslcc_mtx4x4unity_ObjectToWorld[3]);
@@ -25,6 +27,7 @@ void main()
     surfaceUv = in_TEXCOORD0 * _MainTex_ST.xy + _MainTex_ST.zw;
     surfaceLightmapUv = in_TEXCOORD1;
     surfaceNormal = mat3(model) * in_NORMAL0;
+    surfaceTangent = vec4(mat3(model) * in_TANGENT0.xyz, in_TANGENT0.w);
 }
 #endif
 #ifdef FRAGMENT
@@ -41,11 +44,16 @@ uniform vec4 _Gh3Char0;
 uniform vec4 _Gh3Char1;
 uniform vec4 _Gh3Char2;
 uniform vec4 _Gh3Char3;
+uniform vec4 _Gh3Char4;
+uniform vec4 _Gh3Char5;
+uniform sampler2D _Gh3NormalTex;
+uniform sampler2D _Gh3SpecularTex;
 in vec4 surfaceColor;
 in vec2 surfaceUv;
 in vec2 surfaceLightmapUv;
 in vec3 surfaceNormal;
 in vec3 surfaceWorld;
+in vec4 surfaceTangent;
 layout(location = 0) out vec4 SV_Target0;
 // Each lit surface owns one row: ambient, key direction, key color, then four SH coefficients.
 vec4 Light(int column)
@@ -54,11 +62,24 @@ vec4 Light(int column)
     return texture(_Gh3LightData, (vec2(float(column), _Gh3LightIndex.x) + 0.5) / size);
 }
 float Smooth(float value) { return value * value * (3.0 - 2.0 * value); }
-// Diffuse part of GH3's SkinShader (mode 3) and HairShader (mode 4); specular and the shadow map are not ported.
+// GH3's SkinShader (mode 3) and the diffuse part of HairShader (mode 4); the projected shadow map is not ported.
 vec4 Character(vec4 albedo)
 {
-    vec3 normal = normalize(surfaceNormal);
+    vec3 vertexNormal = normalize(surfaceNormal);
+    vec3 normal = vertexNormal;
     vec3 view = normalize(_Gh3Eye.xyz - surfaceWorld);
+    // c138: the normal map fades out between 30 and 40 units from the camera.
+    float detail = clamp((40.0 - distance(_Gh3Eye.xyz, surfaceWorld)) * 0.1, 0.0, 1.0);
+    if (_Gh3Char5.y > 0.5)
+    {
+        vec3 tangent = normalize(surfaceTangent.xyz - vertexNormal * dot(vertexNormal, surfaceTangent.xyz));
+        vec3 bitangent = cross(vertexNormal, tangent) * (surfaceTangent.w < 0.0 ? -1.0 : 1.0);
+        vec2 xy = texture(_Gh3NormalTex, surfaceUv).xy * 2.0 - 1.0;
+        xy.y = -xy.y;
+        vec3 mapped = normalize(vec3(xy, sqrt(max(0.0, 1.0 - dot(xy, xy)))));
+        mapped = _Gh3Char5.x * (mapped - vec3(0.0, 0.0, 1.0)) + vec3(0.0, 0.0, 1.0);
+        normal = normalize(mix(vertexNormal, mapped.x * tangent + mapped.y * bitangent + mapped.z * vertexNormal, detail));
+    }
     vec3 sh = Light(3).xyz + Light(4).xyz * normal.x + Light(5).xyz * normal.y + Light(6).xyz * normal.z;
     vec4 key = Light(2);
     float facing = dot(normal, -Light(1).xyz);
@@ -67,6 +88,7 @@ vec4 Character(vec4 albedo)
     float viewFacing = clamp(dot(normal, view), 0.0, 1.0);
     vec3 light;
     float edge;
+    vec3 specular = vec3(0.0);
     if (_Gh3Surface.x < 3.5)
     {
         vec3 shadow = key.w * (surfaceColor.rgb - 1.0) + 1.0;
@@ -75,13 +97,19 @@ vec4 Character(vec4 albedo)
         light *= mix(_Gh3Char1.rgb, lit, Smooth(clamp(abs(facing - _Gh3Char1.w) / _Gh3Char2.w, 0.0, 1.0)));
         edge = Smooth(clamp((pow(viewFacing, _Gh3Char0.w) * 0.592 + 0.083) * 1.797, 0.0, 1.0));
         albedo.a *= surfaceColor.a;
+        if (_Gh3Char4.w > 0.0)
+        {
+            float highlight = pow(clamp(dot(reflect(-view, normal), -Light(1).xyz), 0.0, 1.0), _Gh3Char4.w);
+            vec3 mask = _Gh3Char5.z > 0.5 ? texture(_Gh3SpecularTex, surfaceUv).rgb : vec3(1.0);
+            specular = highlight * key.rgb * surfaceColor.rgb * detail * mask * _Gh3Char4.rgb;
+        }
     }
     else
     {
         light = max(sh + key.rgb * clamp((facing + _Gh3Char2.w) / (1.0 + _Gh3Char2.w), 0.0, 1.0) + Light(0).xyz, vec3(_Gh3Char1.w));
         edge = Smooth(clamp((viewFacing * 0.592 + 0.083) * 1.797, 0.0, 1.0));
     }
-    return vec4(mix(rim, base, edge) * light, albedo.a);
+    return vec4(mix(rim, base, edge) * light + specular, albedo.a);
 }
 void main()
 {

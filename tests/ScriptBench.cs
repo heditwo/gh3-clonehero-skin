@@ -57,6 +57,8 @@ internal static class ScriptBench
         var step = 1.0 / 144;
         for (var time = -1.0; time < start; time += step) state.Update(time, rock);
         if (sampler != null) sampler.Active = true;
+        var housings = new Dictionary<uint, StageHousingRotation>();
+        var previousRotations = new Dictionary<uint, System.Numerics.Quaternion>();
         var ranges = new[] { new List<float>(), new List<float>(), new List<float>() };
         var clock = Stopwatch.StartNew();
         var allocated = GC.GetTotalAllocatedBytes(true);
@@ -69,6 +71,22 @@ internal static class ScriptBench
             state.Update(time, rock);
             foreach (var (id, _) in state.Objects) state.Sample(id, time);
             busy += Stopwatch.GetElapsedTime(before).TotalMilliseconds;
+            if (Environment.GetEnvironmentVariable("GH3_BENCH_JUMPS") == "1")
+                foreach (var (sourceId, beam) in bank.LightVolumes)
+                {
+                    var source = Gh3QbText.Key(sourceId);
+                    var index = Array.IndexOf(lighting.BeamIds, Gh3QbText.Key(beam).ToString("x8"));
+                    if (index < 0 || !state.Objects.TryGetValue(source, out var obj)) continue;
+                    var snapshot = lighting.At(time).SampleBeam(index, time).Rotation;
+                    if (!housings.TryGetValue(source, out var housing)) housings[source] = housing = new();
+                    var rotation = housing.Update(time, snapshot, state.Sample(source, time).Rotation, obj.RotationChanged, obj.RotationTime);
+                    if (previousRotations.TryGetValue(source, out var previous))
+                    {
+                        var degrees = 2 * MathF.Acos(Math.Min(1, Math.Abs(System.Numerics.Quaternion.Dot(previous, rotation)))) * 180 / MathF.PI;
+                        if (degrees > 3) Console.WriteLine($"  jump {time:0.000}s {source:x8} {degrees:0.0} deg");
+                    }
+                    previousRotations[source] = rotation;
+                }
             if (Environment.GetEnvironmentVariable("GH3_BENCH_RANGE") is { } range && frames % 4 == 0)
             {
                 var at = range.Split(',').Select(float.Parse).ToArray();
@@ -111,7 +129,7 @@ internal static class ScriptBench
             foreach (var group in new[] { "None", "Band", "Crowd", "Stage" })
             {
                 var set = state.LightScene.Sample(new(parts[0], parts[1], -parts[2]), Gh3Checksum.Value(group)).Lighting;
-                Console.WriteLine($"  {group}: ambient {set.Ambient} key {set.Color} sh0 {set.Harmonics[0]}");
+                Console.WriteLine($"  {group}: ambient {set.Ambient} key {set.Color} dir {set.Direction} sh0 {set.Harmonics[0]}");
                 if (group != "Band") continue;
                 var sample = state.LightScene.Sample(new(parts[0], parts[1], -parts[2]), Gh3Checksum.Value(group));
                 foreach (var index in sample.Candidates)
