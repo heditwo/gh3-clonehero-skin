@@ -171,6 +171,18 @@ Result (My Curse, 60 Hz pose samples from `PerformancePlayer`, fingertip distanc
 
 Open items: the video check is weak. The forced shot `d104c522` does not give GH3's framing at 37.3–41 s (`cmp-fingers-38.9s.jpg`), so no matched close-up of the fret hand was compared frame by frame.
 
+### Node flags in all venues (fix-nodeflags)
+
+GH3 creates and kills nodes that have `CreatedFromVariable` or `CreatedOnProgress` when their node flag changes. The flag names are `LS_PERF_POOR/MEDIUM/GOOD`, `LS_PERF_POOR_MEDIUM`, `LS_PERF_MEDIUM_GOOD`, `LS_PERF_POOR_MEDIUM_GOOD`, `LS_MOOD_FLARE/BLACKOUT/STROBE`, `LS_ALWAYS`, `LS_3_5_PRE/POST`, `LS_ENCORE_PRE/POST`, and two follow-spot flags (`0xfb1a2bba` guitarist, `0x0fcd6094` bassist). Before this fix, many of these nodes were not exported, and some flags were never set.
+
+- **Flag sources.** The table `0x1a22a5e6` sets the performance and mood flags (fix-dive). `Progression_SetProgressionNodeFlags` (called by `start_gem_scroller`) sets `LS_ALWAYS`, `LS_3_5_*`, and `LS_ENCORE_*` from the game mode. `LightShow_InitEventMappings` always sets the guitarist spot flag and sets the bassist spot flag only when `current_num_players` is not 1. The mod now runs or copies these at stage start. The runtime now supports `AddParams` and line breaks inside parentheses in QB expressions. `Progression_SetProgressionNodeFlags` uses both.
+- **Flare cards.** The flag-driven `_gfx_NodeArray` geometry is in the second, small `.scn` of each zone pak. Clone nodes give their source sector in field `0xedc063b9`, with `Pos`, `Angles`, and `Scale`. All of these meshes are `Flare` cards (template `379bed00`, additive, texture `f4f1e9d2` or the venue lens glow). The `Flare` vertex shader draws each quad around its centre along the camera axes. The export reads them (`flag_scenery`), and the material flag `billboard` makes the stage shader turn them to the camera (same path as crowd cards). Most are `LS_MOOD_FLARE` lens bursts. In Wikker, 11 are `LS_PERF_MEDIUM_GOOD` glows over the side towers.
+- **Flare housings.** Party has 8 `GO_NoHousing01_Flare01` GameObjects (type `0x47685986`) on `LS_ENCORE_PRE/POST`. They are exported as fixtures with only their flare card. Fixtures that are not created at start get `created: false`.
+- **Not visual, not exported.** The `GO_NoHousing01` follow spots (type `0xd33be42c`, 2 per venue) have no visible body. The model is a placeholder, and they have `FollowTarget` = guitarist or bassist. Their light is the `_Projector_StageOnly` projected spot, which the mod does not render. Two Dive `LevelLight` nodes (`LS_ENCORE_POST`) are light objects, not geometry. The Video node `0xfa7ff751` has `Model = none`.
+- `tests/StageScriptAssetTests.cs` (with `GH3_PACK_ASSETS`) checks that each flag-driven visual node is exported, and that its object exists or is killed after a flare, strobe, blackout, and performance change.
+
+Evidence: contact sheets in `~/.cache/gh3ref/agent-dive/nf/sheets/` (poor, medium, and good runs with `GH3_SKIN_FORCE_ROCK`; columns are blackout, chorus, verse, solo, flare, and strobe cues of My Curse). `perf-verse.jpg` shows Dive and Wikker neon that changes with performance.
+
 ### Performance findings
 
 Measured with `GH3_SKIN_PROFILE=1`, which logs per-subsystem milliseconds per frame once a second. The test case is My Curse in Kaiju Megadome: about 14,000 live pyro particles at 48–51 s.

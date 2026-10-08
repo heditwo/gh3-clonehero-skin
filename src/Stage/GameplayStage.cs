@@ -140,6 +140,7 @@ internal sealed class GameplayStage
                 _camera.fieldOfView = pose.FieldOfView;
             }
             if (_camera != null) _crowd?.Face(_camera);
+            if (_camera != null) _assets?.FaceBillboards(_camera);
             if (_camera != null && _assets != null && _assets.CharacterMaterials.Count > 0)
             {
                 var eye = _camera.transform.position;

@@ -109,7 +109,16 @@ internal sealed class StageScriptState : IDisposable
                 if (_objects.TryGetValue(pulse.Object, out var obj) && obj.Exists) obj.Pulse(pulse.Scale, pulse.Amount, pulse.Duration, _runtime.Time);
         };
         _next = 0;
-        if (_runtime.HasScript(Gh3Checksum.Value("LightShow_AddNodeFlags"))) _runtime.Start(Gh3Checksum.Value("LightShow_AddNodeFlags"));
+        if (_runtime.HasScript(Gh3Checksum.Value("LightShow_AddNodeFlags")))
+        {
+            _runtime.Start(Gh3Checksum.Value("LightShow_AddNodeFlags"));
+            // LightShow_InitEventMappings always enables the guitarist follow spot and enables the bassist spot only with two players.
+            var players = _bank.Values.TryGetValue(Gh3Checksum.Value("current_num_players"), out var count) ? Gh3ScriptRuntime.Numeric(count) : 1;
+            ChangeNodeFlag(GuitaristSpotFlag, true);
+            ChangeNodeFlag(BassistSpotFlag, players != 1);
+            // start_gem_scroller sets the progression flags (LS_ALWAYS, LS_3_5_*, LS_ENCORE_*) from the game mode.
+            if (_runtime.HasScript(Gh3Checksum.Value("Progression_SetProgressionNodeFlags"))) _runtime.Start(Gh3Checksum.Value("Progression_SetProgressionNodeFlags"));
+        }
         foreach (var (id, placement) in _placements.Where(pair => pair.Value.Created && pair.Value.Script.Length > 0))
             _runtime.Start(Gh3QbText.Key(placement.Script), target: Convert.ToUInt32(id, 16));
         foreach (var script in _bank.Startup) _runtime.Start(Gh3QbText.Key(script));
@@ -264,6 +273,9 @@ internal sealed class StageScriptState : IDisposable
         Cycle(actor.Start, actor.Offset);
     }
 
+    private const uint GuitaristSpotFlag = 0xfb1a2bba;
+    private const uint BassistSpotFlag = 0x0fcd6094;
+
     private void ChangeNodeFlag(uint flag, bool enabled)
     {
         if (!_knownNodeFlags.Contains(flag) || enabled == _nodeFlags.Contains(flag)) return;
@@ -278,9 +290,7 @@ internal sealed class StageScriptState : IDisposable
         {
             var flags = new[] { node.Field("CreatedFromVariable")?.Integer, node.Field("CreatedOnProgress")?.Integer };
             if (!flags.Contains(flag)) continue;
-            // The export skips geometry in the separate _gfx scene, so those nodes have no object to create.
-            var geometry = node.Field("Class")?.Integer is var type && (type == Gh3Checksum.Value("LevelGeometry") || type == Gh3Checksum.Value("LevelObject"));
-            if (geometry && !_objects.ContainsKey(id)) continue;
+            if (!_objects.ContainsKey(id)) continue;
             var create = flags.All(item => item is not { } other || !_knownNodeFlags.Contains(other) || _nodeFlags.Contains(other));
             var args = Gh3ScriptRuntime.Structure(new[] { new Gh3QbField(Gh3Checksum.Value("nodeName"), new(13, -1, id)) });
             _runtime.Start(Gh3Checksum.Value(create ? "SafeCreate" : "SafeKill"), args);

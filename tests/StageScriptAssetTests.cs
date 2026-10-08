@@ -64,6 +64,7 @@ internal static class StageScriptAssetTests
                     Console.WriteLine($"{venue} {position}: ambient {set.Ambient} key {set.Color} dir {set.Direction} sh0 {set.Harmonics[0]} sh1 {set.Harmonics[1]}");
                 }
             state.Update(3, .9f);
+            CheckNodeFlags(venue, bank, placements, directory, beams, actors);
             if (venue == "gh3.prison")
             {
                 state.Update(7.6, .9f);
@@ -152,5 +153,43 @@ internal static class StageScriptAssetTests
         if (Environment.GetEnvironmentVariable("GH3_STAGE_SCRIPT_REPORT") is { } output)
             File.WriteAllText(output, JsonSerializer.Serialize(reports, new JsonSerializerOptions { WriteIndented = true }) + "\n");
         if (unexpected.Count > 0) throw new Exception("New source-script failures: " + string.Join("; ", unexpected));
+    }
+
+    // GH3.exe applies the node-flag table after each lightshow mood or performance change; every flag-driven visual node must follow it.
+    private static void CheckNodeFlags(string venue, StageScriptBank bank, Dictionary<string, StageObjectPlacement> placements, string directory,
+        Dictionary<uint, StageBeamValue> beams, Dictionary<uint, StageScriptActorDefinition> actors)
+    {
+        uint Flag(Gh3QbValue node) => node.Field("CreatedFromVariable")?.Integer ?? node.Field("CreatedOnProgress")?.Integer ?? 0;
+        var driven = bank.NodeValues.Where(pair => Flag(pair.Value) != 0).ToDictionary(pair => pair.Key, pair => Flag(pair.Value));
+        // Not visual: LevelLight nodes (light objects, not geometry) and a model-less GameObject.
+        var missing = driven.Keys.Where(id => !placements.ContainsKey(id.ToString("x8")) &&
+            bank.NodeValues[id].Field("Class")?.Integer != Gh3Checksum.Value("LevelLight") &&
+            !(bank.NodeValues[id].Field("Model")?.Data is string name && name.Equals("none", StringComparison.OrdinalIgnoreCase))).ToArray();
+        if (missing.Length > 0) throw new Exception($"Flag-driven nodes are not exported: {venue}: {string.Join(", ", missing.Select(id => id.ToString("x8")))}");
+        if (driven.Count == 0) return;
+        var timeline = new StageTimeline(new[] { (1.0, 76), (2, 71), (3, 70), (4, 72), (5, 74) }
+            .Select(cue => new StageCue(cue.Item1, "gh3-note", cue.Item2.ToString())), "node flags");
+        var lighting = new StageLighting(StageLightingBank.Load(directory)!, timeline);
+        using var state = new StageScriptState(bank, placements, timeline, venue, (id, time) => beams.GetValueOrDefault(id), actors, lighting);
+        void Expect(double time, float rock, string flag, bool exists)
+        {
+            state.Update(time, rock);
+            foreach (var (id, value) in driven.Where(pair => pair.Value == Gh3Checksum.Value(flag) && state.Objects.ContainsKey(pair.Key)))
+                if (state.Objects[id].Exists != exists) throw new Exception($"{venue}/{id:x8} ({flag}) must {(exists ? "exist" : "be killed")} at {time} s, rock {rock}");
+        }
+        state.Update(0, .9f);
+        Expect(1.5, .9f, "LS_PERF_GOOD", true);
+        Expect(1.5, .9f, "LS_MOOD_FLARE", false);
+        Expect(2.5, .9f, "LS_MOOD_FLARE", true);
+        Expect(3.5, .9f, "LS_MOOD_FLARE", false);
+        Expect(4.5, .9f, "LS_MOOD_BLACKOUT", true);
+        Expect(5.5, .5f, "LS_MOOD_BLACKOUT", false);
+        Expect(5.5, .5f, "LS_PERF_GOOD", false);
+        Expect(5.5, .5f, "LS_PERF_MEDIUM", true);
+        Expect(6.5, .1f, "LS_PERF_POOR", true);
+        Expect(6.5, .1f, "LS_PERF_MEDIUM", false);
+        Expect(6.5, .1f, "LS_ENCORE_PRE", true);
+        Expect(6.5, .1f, "LS_ENCORE_POST", false);
+        Console.WriteLine($"Node flags checked: {venue}; {driven.Count} flag-driven nodes");
     }
 }

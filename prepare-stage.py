@@ -291,6 +291,19 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
     return materials, meshes
 
 
+def mesh_sectors(data):
+    """Map each mesh index of a GH3 scene to the checksum name of its sector."""
+    end = 32 + word(data, 36)
+    base = end + 8 + word(data, end + 4) if word(data, end) == 0xBABEFACE else (end + 127) // 128 * 128
+    result = {}
+    for index in range(word(data, base + 108)):
+        sector = word(data, base + word(data, base + 112) + index * 96 + 4)
+        geom = base + word(data, base + 116) + index * 96
+        for mesh in range(word(data, geom + 72), word(data, geom + 72) + word(data, geom + 76)):
+            result[mesh] = sector
+    return result
+
+
 def convert(pak_path, destination):
     source = pak_path.read_bytes()
     entries = list(pak_entries(source))

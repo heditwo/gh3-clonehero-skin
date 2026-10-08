@@ -31,6 +31,7 @@ internal sealed class StageMaterial
     public int Blend { get; set; }
     public float Cutoff { get; set; }
     public bool Crowd { get; set; }
+    public bool Billboard { get; set; }
     public bool SortedTransparency { get; set; }
     public string Shading { get; set; } = "";
     public string Lightmap { get; set; } = "";
@@ -70,6 +71,7 @@ internal sealed class StageAssets : IDisposable
     public List<Material> SurfaceMaterials { get; } = new();
     public List<Material> CharacterMaterials { get; } = new();
     public List<Material> CrowdMaterials { get; } = new();
+    public List<Material> BillboardMaterials { get; } = new();
     public List<Renderer> CrowdCards { get; } = new();
     public Dictionary<Material, string> CrowdRoles { get; } = new();
     public List<LitMesh> LitMeshes { get; } = new();
@@ -131,6 +133,21 @@ internal sealed class StageAssets : IDisposable
         if (source.Character is { } character) ConfigureCharacter(material, character);
         material.renderQueue = transparent ? 3000 : cutout ? 2450 : 2000;
         return material;
+    }
+
+    private static readonly int CamRightId = Shader.PropertyToID("_Gh3CamRight");
+    private static readonly int CamUpId = Shader.PropertyToID("_Gh3CamUp");
+
+    // GH3's Flare shader draws each quad around its centre along the camera axes, like Billboard_Fast.
+    public void FaceBillboards(Camera view)
+    {
+        var right = view.transform.right;
+        var up = view.transform.up;
+        foreach (var material in BillboardMaterials)
+        {
+            material.SetVector(CamRightId, new Vector4 { x = right.x, y = right.y, z = right.z, w = 1 });
+            material.SetVector(CamUpId, new Vector4 { x = up.x, y = up.y, z = up.z, w = 0 });
+        }
     }
 
     // Each crowd card is an independent quad; its pivot is the centre of its connected vertices.
@@ -296,6 +313,7 @@ internal sealed class StageAssets : IDisposable
                 material.SetVector("_Gh3Char5", flags);
             }
             if (source.Crowd) CrowdMaterials.Add(material);
+            if (source.Billboard && shaded) BillboardMaterials.Add(material);
             if (source.Crowd && source.CrowdRole.Length > 0) CrowdRoles[material] = source.CrowdRole;
             if (source.MovieSlot is < -1 or > 31) throw new InvalidDataException("Invalid movie surface slot");
             if (source.MovieSlot >= 0) MovieSurfaces.Add((source.MovieSlot, material, material.mainTexture));
@@ -380,7 +398,8 @@ internal sealed class StageAssets : IDisposable
             mesh.name = "GH3 Stage Mesh " + part;
             mesh.vertices = new Il2CppStructArray<Vector3>(vertices);
             var crowdCards = bones == null && surfaceShader != null && Definition.Materials[materialId.ToString("x8")].Crowd;
-            mesh.normals = new Il2CppStructArray<Vector3>(crowdCards ? CardPivots(vertices, indices) : normals);
+            var cards = crowdCards || bones == null && surfaceShader != null && Definition.Materials[materialId.ToString("x8")].Billboard;
+            mesh.normals = new Il2CppStructArray<Vector3>(cards ? CardPivots(vertices, indices) : normals);
             mesh.uv = new Il2CppStructArray<Vector2>(uv);
             if (lightmapUv != null) mesh.uv2 = new Il2CppStructArray<Vector2>(lightmapUv);
             var partMaterial = Definition.Materials[materialId.ToString("x8")];
@@ -395,10 +414,10 @@ internal sealed class StageAssets : IDisposable
                     bone.worldToLocalMatrix * root.transform.localToWorldMatrix).ToArray());
             }
             mesh.RecalculateBounds();
-            if (crowdCards)
+            if (cards)
             {
                 var bounds = mesh.bounds;
-                bounds.Expand(4);
+                bounds.Expand(crowdCards ? 4 : bounds.size.magnitude);
                 mesh.bounds = bounds;
             }
             if (bones != null && surfaceShader != null && Definition.Materials[materialId.ToString("x8")].Character != null)

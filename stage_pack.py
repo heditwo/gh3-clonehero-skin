@@ -272,6 +272,7 @@ def import_materials(glb, folder):
         if "gh3UvWibble" in extras:
             materials[name]["uvWibble"] = [float(number(v, -1000, 1000)) for v in vector(extras["gh3UvWibble"], 11)]
         if materials[name]["crowd"]: materials[name].update(blend=3, cutoff=0.3)
+        if extras.get("gh3Billboard"): materials[name]["billboard"] = True
         role = extras.get("gh3CrowdRole", "")
         if role and not re.fullmatch(r"crowd[1-8]", role): raise ValueError("Invalid crowd card role")
         if role: materials[name]["crowdRole"] = role
@@ -388,6 +389,7 @@ def compile_stage(source, destination):
                 fixture_models.setdefault(model, local_meshes)
                 fixtures.append({"id": id, "model": model, "position": world[:3, 3].tolist(), "rotation": fixture_rotation,
                                  "fixedPosition": bool(extras.get("gh3FixtureFixedPosition")), "object": extras.get("gh3FixtureObject", fixture)})
+                if extras.get("gh3FixtureCreated") is False: fixtures[-1]["created"] = False
                 if not isinstance(fixtures[-1]["object"], str) or not 1 <= len(fixtures[-1]["object"]) <= 256: raise ValueError("Invalid fixture object name")
             else:
                 meshes.extend(local_meshes)

@@ -113,6 +113,7 @@ class GlbWriter:
         if "textureAnimation" in definition: extras["gh3TextureAnimation"] = definition["textureAnimation"]
         if blend == 1: extras["gh3Additive"] = True
         if definition.get("crowd"): extras["gh3CrowdAtlas"] = True
+        if definition.get("billboard"): extras["gh3Billboard"] = True
         if definition.get("crowdRole"): extras["gh3CrowdRole"] = definition["crowdRole"]
         if definition.get("sortedTransparency"): extras["gh3SortedTransparency"] = True
         if definition.get("shading"): extras["gh3Shading"] = definition["shading"]

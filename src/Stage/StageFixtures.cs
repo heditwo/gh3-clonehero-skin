@@ -19,6 +19,7 @@ internal sealed class StageHousing
     public float[] Rotation { get; set; } = Array.Empty<float>();
     public bool FixedPosition { get; set; }
     public string Object { get; set; } = "";
+    public bool Created { get; set; } = true;
 }
 
 internal sealed class StageFixtures : IDisposable
@@ -83,9 +84,10 @@ internal sealed class StageFixtures : IDisposable
                     flares.Add(renderer);
                 }
             }
+            obj.SetActive(housing.Created);
             _housings.Add(housing.Id, (obj.transform, housing.FixedPosition));
             var source = housing.Object.Length == 0 ? Convert.ToUInt32(housing.Id, 16) : Gh3QbText.Key(housing.Object);
-            if (!Placements.TryAdd(source.ToString("x8"), new() { Position = housing.Position, Rotation = housing.Rotation }))
+            if (!Placements.TryAdd(source.ToString("x8"), new() { Position = housing.Position, Rotation = housing.Rotation, Created = housing.Created }))
                 throw new InvalidDataException($"Duplicate light housing object {source:x8} in {path}: housing {housing.Id}, source '{housing.Object}', prior beams {string.Join(", ", ObjectBeams.Select(pair => $"{pair.Key:x8}={pair.Value}"))}");
             ObjectBeams.Add(source, housing.Id);
         }

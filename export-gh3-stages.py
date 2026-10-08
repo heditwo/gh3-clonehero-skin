@@ -7,6 +7,7 @@ from io import BytesIO
 import importlib.util
 import json
 from pathlib import Path
+import struct
 
 import numpy as np
 from PIL import Image
@@ -35,6 +36,11 @@ VENUES = {
     "z_artdeco": "Ye Olde Royal Odeon", "z_prison": "Shanker's Island", "z_wikker": "Desert Rock Tour",
     "z_budokan": "Kaiju Megadome", "z_hell": "Lou's Inferno", "z_soundcheck": "Soundcheck", "z_credits": "Credits",
 }
+FLARE_TEMPLATE = "379bed00"
+# GO_NoHousing01 flare models show only their lens flare card; the housing body is a hidden placeholder.
+FLARE_HOUSINGS = ["GO_NoHousing01_Flare01", "GO_NoHousing01_SmallFlare01"]
+# Unnamed node field: the sector that a _gfx_NodeArray clone node instances.
+CLONE_SOURCE = 0xedc063b9
 HOUSINGS = ["GO_LightHousing01", "GO_LightHousing01_SmallFlare01", "GO_LightHousing02", "GO_LightHousing02_Small01",
             "GO_LightHousing02_SmallFlare01", "GO_BarnHousing01", "GO_TankHousing01"]
 PROP_CLIPS = {
@@ -65,10 +71,39 @@ def decode_textures(materials, texture_blobs):
         if material.get("lightmap") not in texture_blobs: material.pop("lightmap", None)
         if material.get("mask") not in texture_blobs: material.pop("mask", None)
         if material.get("layer", {}).get("texture") not in texture_blobs: material.pop("layer", None)
+        if material["template"] == FLARE_TEMPLATE: material.update(billboard=True, doubleSided=True)
         for name in (texture, material.get("lightmap"), material.get("mask"), material.get("layer", {}).get("texture")):
             if name and name not in images:
                 images[name] = Image.open(BytesIO(texture_blobs[name])).convert("RGBA")
     return images
+
+
+def flag_scenery(entries, primary, gfx):
+    """Return the flag-driven _gfx_NodeArray geometry, which GH3 keeps in the venue's second scene."""
+    flagged = [n for n in gfx if n.get(key("Class")) == key("LevelGeometry") and
+               (key("CreatedFromVariable") in n or key("CreatedOnProgress") in n) and key("CreatedAtStart") not in n.get(0, [])]
+    materials = {}; parts = []
+    for data in (b for k, _, b in entries if k == key(".scn") and b is not primary):
+        scene_materials, meshes = stage.scene(data)
+        sectors = stage.mesh_sectors(data)
+        for node in flagged:
+            source = node.get(CLONE_SOURCE)
+            for index, (material, count, vertices, faces) in enumerate(meshes):
+                if sectors[index] != (source or node[key("Name")]): continue
+                if source:
+                    # A clone node places its source sector's local geometry at the node's position, angles, and scale.
+                    vertices = bytearray(vertices); stride = len(vertices) // count
+                    scale = node.get(key("Scale"), (1, 1, 1)); angles = node.get(key("Angles"), (0, 0, 0)); origin = node[key("Pos")]
+                    for vertex in range(count):
+                        x, y, z, nx, ny, nz = struct.unpack_from("<6f", vertices, vertex*stride)
+                        position = stage.rotate((x*scale[0], y*scale[1], -z*scale[2]), angles)
+                        normal = stage.rotate((nx, ny, -nz), angles)
+                        struct.pack_into("<6f", vertices, vertex*stride, position[0]+origin[0], position[1]+origin[1], -(position[2]+origin[2]),
+                                         normal[0], normal[1], -normal[2])
+                    vertices = bytes(vertices)
+                materials[material] = scene_materials[material]
+                parts.append(((material, count, vertices, faces), f"{node.get(key('LightGroup'), key('None')):08x}", node))
+    return materials, parts
 
 
 def label_group(value):
@@ -247,6 +282,10 @@ def export(source, scripts, global_entries, zone, directory, global_references=N
     # GH3 crowd cards keep their 0..1 UVs; each card material shows one crowd model's render (see crowd_role below).
     materials, meshes = stage.scene(primary, nodes, light_groups=groups, mesh_nodes=mesh_nodes, crowd_cards=False,
                                    include_nodes=scenery_ids | (lighter_ids if zone != "z_artdeco" else set()))
+    flag_materials, flag_parts = flag_scenery(entries, primary, gfx)
+    materials.update(flag_materials)
+    for mesh, group, node in flag_parts:
+        meshes.append(mesh); groups.append(group); mesh_nodes.append(node)
     crowd_rows = next((rows for qb in scripts.values() if (rows := find_array(qb, zone+"_crowd_models")) is not None), [])
     crowd_textures = {f'{row[0xc9c7838a]:08x}': f'crowd{i}' for row in crowd_rows
                       for i in range(1, 9) if row.get(key("name")) == key(f"crowd{i}") and 0xc9c7838a in row}
@@ -292,8 +331,9 @@ def export(source, scripts, global_entries, zone, directory, global_references=N
     initial = lights["snapshots"][lights["moods"]["intro"][0]]["beams"]
     models = {}; fixture_count = 0; fixtures = set()
     for node in volumes:
-        model = next((m for m in HOUSINGS if key(m) == node.get(key("Type"))), None)
-        if not model or key("CreatedAtStart") not in node.get(0, []): continue
+        model = next((m for m in HOUSINGS + FLARE_HOUSINGS if key(m) == node.get(key("Type"))), None)
+        created = key("CreatedAtStart") in node.get(0, [])
+        if not model or not created and key("CreatedFromVariable") not in node and key("CreatedOnProgress") not in node: continue
         beam = "beam-"+f'{node[key("Name")]:08x}'
         if beam not in initial: continue
         if model not in models:
@@ -301,7 +341,7 @@ def export(source, scripts, global_entries, zone, directory, global_references=N
             geometry = global_entries[(key(".mdl"), key(stem+".mdl"))]
             texture_blob = global_entries[(key(".tex"), key(stem+".tex"))]
             mat, parts = stage.scene(geometry)
-            parts = [p for p in parts if mat[p[0]]["blend"] in (0, 1)]
+            parts = [p for p in parts if mat[p[0]]["blend"] in ((1,) if model in FLARE_HOUSINGS else (0, 1))]
             mat = {n:v for n,v in mat.items() if n in {p[0] for p in parts}}
             images = decode_textures(mat, texture_dictionary(texture_blob))
             renamed = {model+"-"+n:v for n,v in mat.items()}
@@ -310,7 +350,8 @@ def export(source, scripts, global_entries, zone, directory, global_references=N
         matrix = np.eye(4); matrix[:3, :3] = quaternion_matrix(initial[beam]["rotation"])
         fixed = key("IgnoreSnapshotPositions") in node.get(0, [])
         matrix[:3, 3] = vector(node[key("Pos")]) if fixed else initial[beam]["position"]
-        writer.node(beam, models[model], matrix, {"gh3FixtureId": beam, "gh3FixtureFixedPosition": fixed, "gh3FixtureObject": f"0x{node[key('Name')]:08x}"})
+        writer.node(beam, models[model], matrix, {"gh3FixtureId": beam, "gh3FixtureFixedPosition": fixed, "gh3FixtureObject": f"0x{node[key('Name')]:08x}",
+                                                  **({} if created else {"gh3FixtureCreated": False})})
         fixtures.add(node[key("Name")])
         fixture_count += 1
     for node in volumes:

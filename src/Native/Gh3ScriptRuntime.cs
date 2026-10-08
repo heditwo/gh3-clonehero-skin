@@ -423,6 +423,13 @@ internal sealed class Gh3ScriptRuntime : IDisposable
             }
             return new(true);
         }
+        if (Is("AddParams"))
+        {
+            foreach (var field in parameters.Fields.Where(field => field.Name != 0)) caller.Locals[field.Name] = field.Value;
+            foreach (var value in unnamed.Where(value => value.Type == 10))
+                foreach (var field in value.Fields.Where(field => field.Name != 0)) caller.Locals[field.Name] = field.Value;
+            return new(true);
+        }
         if (Is("GotParam")) return new(unnamed.Any(value => value.Type == 13 && (caller.Locals.ContainsKey(value.Integer) || caller.Parameters.Any(field => field.Name == 0 && field.Value.Type == 13 && field.Value.Integer == value.Integer))));
         if (Is("RequireParams"))
         {
@@ -686,6 +693,8 @@ internal sealed class Gh3ScriptRuntime : IDisposable
             if (++_expressionDepth > 64) throw new InvalidDataException("Script expression exceeds its nesting limit");
             try
             {
+                // Compiled QB keeps line breaks inside parentheses, for example after "||" (Progression_SetProgressionNodeFlags).
+                while (Op == 1 && _at > 0 && _code.Tokens[_at - 1].Op is 0x0e or 0x32 or 0x33) _at++;
                 var token = Take();
                 Gh3QbValue value;
                 switch (token.Op)
