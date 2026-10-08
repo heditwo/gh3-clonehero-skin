@@ -106,8 +106,22 @@ vec4 Character(vec4 albedo)
     }
     else
     {
-        light = max(sh + key.rgb * clamp((facing + _Gh3Char2.w) / (1.0 + _Gh3Char2.w), 0.0, 1.0) + Light(0).xyz, vec3(_Gh3Char1.w));
+        float wrap = clamp((facing + _Gh3Char2.w) / (1.0 + _Gh3Char2.w), 0.0, 1.0);
+        light = max(sh + key.rgb * wrap + Light(0).xyz, vec3(_Gh3Char1.w));
         edge = Smooth(clamp((viewFacing * 0.592 + 0.083) * 1.797, 0.0, 1.0));
+        // Two-lobe strand highlight; the mask alpha shifts the strand tangent toward the vertex normal.
+        vec4 mask = _Gh3Char5.z > 0.5 ? texture(_Gh3SpecularTex, surfaceUv) : vec4(1.0, 1.0, 1.0, 0.5);
+        vec3 tangent = normalize(surfaceTangent.xyz - vertexNormal * dot(vertexNormal, surfaceTangent.xyz));
+        vec3 strand = cross(vertexNormal, tangent) * (surfaceTangent.w < 0.0 ? -1.0 : 1.0);
+        float shift = mask.a * 2.0 - 1.0;
+        strand = strand * sqrt(max(0.0, 1.0 - shift * shift)) + vertexNormal * shift;
+        vec3 halfway = normalize(view - Light(1).xyz);
+        float along = dot(strand, halfway);
+        float across = dot(halfway, normalize(halfway - strand * along));
+        float grazing = Smooth(clamp((clamp(dot(normal, view), 0.0, 1.0) - _Gh3Char4.w) / (_Gh3Char5.w - _Gh3Char4.w), 0.0, 1.0));
+        vec2 exponents = mix(_Gh3Char4.xy, vec2(_Gh3Char4.z), grazing);
+        vec3 lobes = pow(max(across, 0.0), exponents.x) * _Gh3Char1.rgb + pow(max(across, 0.0), exponents.y) * _Gh3Char2.rgb;
+        specular = lobes * wrap * key.rgb * detail * mask.rgb;
     }
     return vec4(mix(rim, base, edge) * light + specular, albedo.a);
 }

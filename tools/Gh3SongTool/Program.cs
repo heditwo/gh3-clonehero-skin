@@ -74,6 +74,14 @@ try
         }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
         return 0;
     }
+    if (args.Length is 3 or 4 && args[0] == "chart")
+    {
+        var song = Gh3Song.Load(args[1]);
+        var difficulty = args.Length == 4 ? args[3] : "expert";
+        File.WriteAllText(args[2], Gh3ChartExport.Write(song, difficulty));
+        Console.WriteLine($"Wrote {args[2]} from {song.Id} ({difficulty})");
+        return 0;
+    }
     if (args.Length < 2 || args[0] is not ("inspect" or "camera"))
         throw new ArgumentException("Usage: inspect <song_song.pak.xen> | events <song_song.pak.xen> | audit <DATA> <new output directory> [checksum files...] | camera <song_song.pak.xen> <index> <expected-note> <new-note> <output/song_song.pak.xen>");
     var source = Gh3Song.Load(args[1]);

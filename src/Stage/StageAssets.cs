@@ -125,7 +125,7 @@ internal sealed class StageAssets : IDisposable
     private static void ConfigureCharacter(Material material, StageCharacterMaterial character)
     {
         var c = character.Constants;
-        if (c.Length != 11 || c.Any(row => row.Length != 4 || !row.All(float.IsFinite)) || character.Model is not ("skin" or "hair"))
+        if (c.Length != (character.Model == "hair" ? 13 : 11) || c.Any(row => row.Length != 4 || !row.All(float.IsFinite)) || character.Model is not ("skin" or "hair"))
             throw new InvalidDataException("Invalid GH3 character material constants");
         static Vector4 V(float x, float y, float z, float w) => new() { x = x, y = y, z = z, w = w };
         var surface = material.GetVector("_Gh3Surface");
@@ -143,11 +143,11 @@ internal sealed class StageAssets : IDisposable
         else
         {
             material.SetVector("_Gh3Char0", V(c[1][0], c[1][1], c[1][2], 1));
-            material.SetVector("_Gh3Char1", V(0, 0, 0, c[6][0]));
-            material.SetVector("_Gh3Char2", V(0, 0, 0, c[0][0]));
+            material.SetVector("_Gh3Char1", V(c[2][0], c[2][1], c[2][2], c[6][0]));
+            material.SetVector("_Gh3Char2", V(c[4][0], c[4][1], c[4][2], c[0][0]));
             material.SetVector("_Gh3Char3", V(c[8][0], c[8][1], c[8][2], c[9][0]));
-            material.SetVector("_Gh3Char4", V(0, 0, 0, 0));
-            material.SetVector("_Gh3Char5", V(c[7][0], 0, 0, 0));
+            material.SetVector("_Gh3Char4", V(c[3][0], c[5][0], c[10][0], c[11][0]));
+            material.SetVector("_Gh3Char5", V(c[7][0], 0, 0, c[12][0]));
         }
     }
 
@@ -202,9 +202,9 @@ internal sealed class StageAssets : IDisposable
             if (shaded && source.Character != null)
             {
                 CharacterMaterials.Add(material);
-                // GH3 character samplers: s0 normal map, s1 diffuse, s2 specular mask.
+                // GH3 character samplers: s0 normal map, s1 diffuse, s2 specular mask (hair: alpha shifts the strand tangent).
                 var normal = source.Textures.Length > 0 && File.Exists(Path.Combine(directory, "textures", source.Textures[0] + ".png")) ? source.Textures[0] : "";
-                var specular = source.Character.Model == "skin" && source.Textures.Length > 2 &&
+                var specular = source.Textures.Length > 2 &&
                     File.Exists(Path.Combine(directory, "textures", source.Textures[2] + ".png")) ? source.Textures[2] : "";
                 if (normal.Length > 0) material.SetTexture("_Gh3NormalTex", LoadTexture(normal, TextureWrapMode.Repeat, true));
                 if (specular.Length > 0) material.SetTexture("_Gh3SpecularTex", LoadTexture(specular, TextureWrapMode.Repeat, true));

@@ -115,8 +115,9 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
             if slot is not None:
                 materials[name]["lightmap"] = materials[name]["textures"][slot]
             model = "skin" if template["name"].startswith("SkinShader") else "hair" if template["name"] == "HairShader" else None
-            if model and len(constants) >= 11:
-                materials[name]["character"] = {"model": model, "constants": [list(c) for c in constants[:11]]}
+            count = 13 if model == "hair" else 11
+            if model and len(constants) >= count:
+                materials[name]["character"] = {"model": model, "constants": [list(c) for c in constants[:count]]}
         if materials[name]["template"] == "f76185ad":
             constant_count, constant_offset = values(data, offset + 168, "II")
             if constant_count != 4: raise ValueError("Animated texture has an invalid vertex constant bank")
