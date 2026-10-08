@@ -203,6 +203,18 @@ The user reported that the Dive neon dancer and other neon lights disappear many
 
 No code change. If the visible effect must be softer than GH3, the cause to examine is how dark the mod's blackout lighting is when the neon disappears. The GH3 blackout fades the stage over about 0.8 s.
 
+### Fret-hand fingers, second check (fix-fingers2, no code change)
+
+The user reports that the fingers still move more than in GH3. These parts were checked against GH3.exe and the QB data. All of them agree with the mod:
+
+- Events: `FretFingers_iterator_CFunc` (`0x42d0d0`) presses a chord on each note of `<song>_song_expert`, 250 ms before the note. The chord name is the set gem colours (at most 4). It skips a colour only when the note length is 0. It releases (`None`) when `now − press > note length + finger_note_padding × 1000` and the next note has not started. My Curse normal notes have lengths of 41–87 ms in the GH3 note array, so GH3 also releases between notes at 170 ms spacing. There is no check for a repeated chord and no hold through runs.
+- Blend: `DegenerateBlend` with the linear curve (see the drummer section). Press 0.07 s, release 0.2 s.
+- Clips: `guitarist_finger_anims_Axel`; blue and orange use `roll3_4`, which curls all four fingers. `None` is `chord_axl_empty`.
+- Weights: `applydifference` (`0x4a3550`) and `blendtopartial` (`0x4a3380`) use per-bone weights at `+0x1040`. The finger clip header has two 1.0 fields and a partial-bone mask; no per-bone weight table was found. The sampler that writes the weights (`0x5fed70`) was not decoded.
+- Other layers: in the mod the palm stays still relative to the neck during notes (range 0.5 × 2.9 × 1.3 cm over 37.3–41.6 s); the motion is in the fingers.
+
+Mod numbers (60 Hz pose, fingertip distance from the neck axis): mean travel in each note 2.2, 2.1, 2.9, 2.3 cm (index, middle, ring, pinky) at 12.3–20.7 s and 1.8, 1.6, 1.6, 1.3 cm at 37.3–41.6 s; largest 5.7 cm. GH3 footage was not measured: the body idle clip is random, so the fret hand is at a different place in the two videos, and a motion measure needs hand tracking. The missing piece is not found. Next: decode `0x5fed70` (compressed clip sampler, per-bone weights), and check the quaternion byte decode in `gh3_band_formats.animation` (bytes are read unsigned).
+
 ### Performance findings
 
 Measured with `GH3_SKIN_PROFILE=1`, which logs per-subsystem milliseconds per frame once a second. The test case is My Curse in Kaiju Megadome: about 14,000 live pyro particles at 48–51 s.
