@@ -84,7 +84,11 @@ internal sealed class StageCameraBank
 
 internal sealed class StageCameraPath
 {
-    private sealed record Cut(double Time, double Duration, OriginalCameraShot Shot, uint Seed);
+    private sealed record Cut(double Time, double Duration, OriginalCameraShot Shot, int Zoom);
+    // GH3.exe seeds its script random generator with this value at boot (0x4016f3).
+    private const int BootSeed = 0x06680bf3;
+    // GH3 starts a cut on the first frame at or after a note, so a timer that ends within a frame of a note does not cut first.
+    private const double FrameTolerance = 1.0 / 60;
     private readonly StageCameraPose _fixed;
     private readonly IReadOnlyDictionary<string, Vector3> _band;
     private readonly string _mode;
@@ -96,9 +100,10 @@ internal sealed class StageCameraPath
     private bool _enabled = true;
     private int _cueIndex;
     private double _next;
-    private uint _random = 0x47334833;
+    private Gh3Random _random = new(BootSeed);
     private readonly string _forcedShot = Environment.GetEnvironmentVariable("GH3_SKIN_CAMERA_SHOT") ?? "";
     public float Aspect { get; set; } = 16f / 9;
+    public int Seed { get; init; } = BootSeed;
     private static readonly bool LogCuts = Environment.GetEnvironmentVariable("GH3_SKIN_CAMERA_LOG") == "1";
 
     public StageCameraPath(StageCameraPose fixedPose, IReadOnlyDictionary<string, Vector3> band, string mode = "auto",
@@ -124,7 +129,7 @@ internal sealed class StageCameraPath
             _cueIndex = 0;
             _enabled = true;
             _selector = new() { Array = "cameras" };
-            _random = 0x47334833;
+            _random = new(Seed);
         }
         while (_next <= time && _cuts.Count < 100000) AddCut(timeline);
         var index = StageTimeline.UpperBound(_cuts, time, c => c.Time) - 1;
@@ -173,64 +178,76 @@ internal sealed class StageCameraPath
         }
         if (shot.Control == "SpecialStepMove" && age < shot.StepTime)
             position += Vector(shot.StepDirection) * MathF.Sin((float)(age / shot.StepTime) * shot.StepCount * 2 * MathF.PI);
-        if (shot.Control == "HandCam" || shot.HandCam)
+        if (cut.Zoom >= 0)
         {
-            var random = cut.Seed % 101;
-            var zoom = shot.Type == "longshot" ? random < 25 ? 62 : random > 95 ? 78 : a.Fov :
-                shot.Type == "mid" ? random < 5 ? 64 : random > 85 ? 82 : a.Fov : a.Fov;
+            var zoom = shot.Type == "longshot" ? cut.Zoom < 25 ? 62 : cut.Zoom > 95 ? 78 : a.Fov :
+                cut.Zoom < 5 ? 64 : cut.Zoom > 85 ? 82 : a.Fov;
             fov = a.Fov + (zoom - a.Fov) * t;
         }
         var vertical = 2 * MathF.Atan(MathF.Tan(fov * MathF.PI / 360) / Aspect) * 180 / MathF.PI;
         return new(position, position + Vector3.Transform(Vector3.UnitZ, rotation), vertical, shot.Name) { Rotation = rotation };
     }
 
+    // CameraCuts_StartCallback and CameraCuts_CalcTime (guitar_cameras.qb) with CameraCut_GetArraySize (GH3.exe 0x41d770).
     private void AddCut(StageTimeline timeline)
     {
         var start = _next;
-        var duration = 0.0;
-        while (_cueIndex < timeline.Cameras.Length && timeline.Cameras[_cueIndex].Time <= start)
+        var length = 0.0;
+        while (_cueIndex < timeline.Cameras.Length && timeline.Cameras[_cueIndex].Time <= start + FrameTolerance)
         {
             var cue = timeline.Cameras[_cueIndex++];
+            start = Math.Max(start, cue.Time);
             if (cue.Type == "camera") _selector = Named(cue.Value);
             else if (_bank!.Notes.TryGetValue(int.Parse(cue.Value), out var selector))
             {
                 if (selector.Array.Length == 0) _enabled = selector.Enable;
                 else { _selector = selector; _enabled = true; }
             }
-            if (cue.Duration > 0.2) duration = cue.Duration;
+            if (cue.Duration > 0.2) length = cue.Duration;
+        }
+        if (!_enabled && _cuts.Count > 0)
+        {
+            _next = NextCue(timeline, double.PositiveInfinity);
+            return;
         }
         var selected = _mode == "auto" ? _selector : Named(_mode);
         var array = _bank!.Arrays.GetValueOrDefault(selected.Array, _bank.Arrays["cameras"]);
-        var node = "guitarist_start";
-        var walks = timeline.Track("walk", "guitarist");
-        var walk = StageTimeline.UpperBound(walks, start, c => c.Time) - 1;
-        if (walk >= 0) node = walks[walk].Value;
-        var candidates = array.Where(s => s.Nodes.Length == 0 || s.Nodes.Contains(node)).ToArray();
-        if (candidates.Length == 0) candidates = _bank.Arrays.GetValueOrDefault("cameras_wide", array).Where(s => s.Nodes.Length == 0).ToArray();
-        if (candidates.Length == 0) throw new InvalidDataException("Stage has no unrestricted camera");
-        var filtered = candidates.Where(s => (selected.Name.Length == 0 || s.Name == selected.Name) &&
-            (selected.Type.Length == 0 || s.Type == selected.Type)).ToArray();
-        if (filtered.Length > 0) candidates = filtered;
-        if (selected.Type.Length == 0 && selected.Name.Length == 0 && _cuts.Count > 0)
-        {
-            filtered = candidates.Where(s => s.Type != _cuts[^1].Shot.Type).ToArray();
-            if (filtered.Length > 0) candidates = filtered;
-        }
-        if (_forcedShot.Length > 0 && candidates.Any(s => s.Name == _forcedShot)) candidates = candidates.Where(s => s.Name == _forcedShot).ToArray();
-        var seed = Random();
-        var shot = candidates[seed % candidates.Length];
+        var node = Node(timeline, start);
+        var excluded = selected.Type.Length == 0 && selected.Name.Length == 0 && _cuts.Count > 0 ? LastType(_cuts[^1].Shot) : "";
+        var matches = Enumerable.Range(0, array.Length).Where(i => (array[i].Nodes.Length == 0 || array[i].Nodes.Contains(node)) &&
+            (selected.Name.Length == 0 || array[i].Name == selected.Name) && (selected.Type.Length == 0 || array[i].Type == selected.Type) &&
+            (excluded.Length == 0 || array[i].Type != excluded)).ToArray();
+        if (_forcedShot.Length > 0 && matches.Any(i => array[i].Name == _forcedShot)) matches = matches.Where(i => array[i].Name == _forcedShot).ToArray();
+        var shot = array[matches.Length == 0 ? 0 : matches[_random.Next(matches.Length)]];
+        var duration = length;
         if (duration <= 0)
         {
-            duration = 3 + Random() / (double)uint.MaxValue * 5;
+            duration = 3 + _random.Next(6);
             var downbeat = timeline.Cues.FirstOrDefault(c => c.Type == "gh3-note" && c.Value == "58" && c.Time > start + duration);
             if (downbeat != null) duration = downbeat.Time - start;
         }
-        _cuts.Add(new(start, Math.Max(0.001, duration), shot, seed));
+        _cuts.Add(new(start, Math.Max(0.001, duration), shot, Zoom(shot)));
         if (LogCuts) Console.WriteLine($"GH3 camera cut {start:0.00}s {duration:0.00}s {selected.Array}/{selected.Type}/{selected.Name} -> {shot.Name} ({shot.Type}, {shot.Control})");
         _next = _enabled ? start + duration : double.PositiveInfinity;
-        if (_mode == "auto" && _cueIndex < timeline.Cameras.Length) _next = Math.Min(_next, timeline.Cameras[_cueIndex].Time);
+        if (_mode == "auto") _next = NextCue(timeline, _next);
         if (_next <= start) _next = start + 0.001;
     }
+
+    // CameraCuts_HandCam draws the zoom after CameraCuts_CalcTime, and only for LongShot and Mid shots.
+    private int Zoom(OriginalCameraShot shot) => shot.Control == "HandCam" && shot.Type is "longshot" or "mid" ? _random.Next(101) : -1;
+
+    // The exporter writes "normal" for shots without a GH3 Type, and GH3 then stores None as the last type.
+    private static string LastType(OriginalCameraShot shot) => shot.Type == "normal" ? "" : shot.Type;
+
+    private static string Node(StageTimeline timeline, double time)
+    {
+        var walks = timeline.Track("walk", "guitarist");
+        var walk = StageTimeline.UpperBound(walks, time, c => c.Time) - 1;
+        return walk >= 0 ? walks[walk].Value : "guitarist_start";
+    }
+
+    private double NextCue(StageTimeline timeline, double next) =>
+        _cueIndex < timeline.Cameras.Length ? Math.Min(next, timeline.Cameras[_cueIndex].Time) : next;
 
     private Vector3 OrbitPosition(OriginalCameraShot shot, double time)
     {
@@ -269,14 +286,6 @@ internal sealed class StageCameraPath
 
     private BandPose Anchor(string role, string bone) => _anchor?.Invoke(role, bone) ??
         new BandPose(_band.GetValueOrDefault(role, Vector3.Zero), Quaternion.Identity);
-
-    private uint Random()
-    {
-        _random ^= _random << 13;
-        _random ^= _random >> 17;
-        _random ^= _random << 5;
-        return _random;
-    }
 
     private static OriginalCameraSelector Named(string name) => name switch
     {

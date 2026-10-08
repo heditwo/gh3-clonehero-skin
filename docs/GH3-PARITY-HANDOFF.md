@@ -140,7 +140,7 @@ Visible change: the Budokan stage diver (Crowd light group) now uses native GH3 
 
 Original GH3 now records on the GPU: `~/.cache/gh3ref/start-gh3-gpu.sh :9310` starts it on a nested Xwayland, and `pin-window.sh :9310 <seconds>` keeps the window at 1600×900. GH3's built-in bot is enabled by setting `bot_play` to 1 in the two `player*_status` defaults of `DATA/PAK/qb.pab.xen` (offsets 0x5026c and 0x508dc + 4); keep a copy of the original. In this install the fret keys are 1–5 and the red fret is "back". The "unlock all songs" cheat opens the bonus list. Quickplay plays in The Dive. `Gh3SongTool chart <song_song.pak.xen> <notes.chart>` writes a Clone Hero chart with GH3's notes and Star Power phrases; `~/.cache/gh3ref/full/sbs.sh` builds a side-by-side synced on the music.
 
-Fixed from that comparison: back-face culling (GH3 material flag +220 marks two-sided materials), Axel's highway texture, venue posters from `global_ad_tex.pak`, housing lens flares, and the "Note Streak!" and "Star Power Ready" messages. Remaining visible gaps: GH3's shadow map, the camera-shot choice (GH3 picks shots at random), bloom around bright lights, and overall stage brightness in some snapshots.
+Fixed from that comparison: back-face culling (GH3 material flag +220 marks two-sided materials), Axel's highway texture, venue posters from `global_ad_tex.pak`, housing lens flares, and the "Note Streak!" and "Star Power Ready" messages. Remaining visible gaps: GH3's shadow map, bloom around bright lights, and overall stage brightness in some snapshots.
 
 #### Highway speed and crowd (0.9.7)
 
@@ -160,6 +160,13 @@ Fixed from that comparison: back-face culling (GH3 material flag +220 marks two-
 
 MelonLoader's assembly generator contacted `api.melonloader.com` on every launch, and the leftover HTTPS connection crashed the CLR later. The installed game now has `force_offline_generation = true` in `UserData/Loader.cfg`; the original file is backed up as `~/.cache/gh3-install-backup-0.8.115/Loader.cfg.bak`.
 
+
+#### Camera shot selection (fix-cameras)
+
+- **GH3 logic.** `CameraCuts_StartCallback` (`guitar_cameras.qb`) calls `CameraCut_GetArraySize` (GH3.exe `0x41d770`). This function keeps the entries of the camera array that pass all filters: `includenodes` and `excludenodes` against the guitarist's target node, `Name` (from the note), `includetype` (the note's forced type), and `excludetype` (the type of the last shot, only when the note gives no name and no type). The filters apply together. If no entry passes, GH3 uses entry 0 and makes no random draw. Otherwise `GetRandomValue` (`0x52fba0`) draws `Rnd(count)` and `CameraCut_GetCameraIndex` (`0x41dc10`) maps it to the entry. A shot without a `Type` sets the last type to None. Then the control script calls `CameraCuts_CalcTime`: a camera note longer than 200 ms gives the duration. Else the duration is `RandomRange(3, 8)`, an integer of 3 to 8 seconds, extended to the next lightshow note 58. `CameraCuts_HandCam` makes a third draw (`0..100`) for the zoom, but only for LongShot and Mid shots. `TwoCam` shots with `UseHandCam` do not zoom. A note that only disables cuts (78) does not cut.
+- **Random generator.** `Rnd` (`0x477120`) is the generator in `Gh3Random`. GH3 seeds it with `0x6680bf3` at boot (`0x4016f3`). The song start does not seed it again (only replays call `SetRandomSeeds`). All scripts share this generator: crowd, band, lightshow, particle, and menu scripts draw from it every frame. The startup ID code (`0x489a30`) can also seed it from the time since boot. Thus the shot sequence of one GH3 run cannot be reproduced.
+- **Change.** `StageCameraPath` now does the same filters, draw order, integer timer, and zoom draw, with its own `Gh3Random` (boot seed). The exporter writes `normal` for shots without a type; these do not set a last type. A cue within one frame after the end of a timer starts the cut at the cue, as in GH3 (before, this gave a second, zero-length cut).
+- **Check against the My Curse recording.** Each GH3 shot was found with matched mod renders. All 51 identified GH3 shots are in the candidate set that the mod uses for that cut (types 51 of 51). Per-shot matches with the mod's default seed: 17 of 51, expected by chance 18.3. A chi-square test of the GH3 shots against the uniform choice gives p = 0.21 (close-up), 0.22 (mid), 0.10 (stage).
 
 #### Score and note-streak digits
 

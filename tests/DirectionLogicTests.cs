@@ -79,8 +79,50 @@ internal static class DirectionLogicTests
         var chord = chart.Track("strum", "guitarist").Single();
         Check(chord.Value == "5" && chord.Duration == 1.5, "chart chords merge and sustains span tempo changes");
         Check(chart.TempoAt(0.6) == 60, "performance tempo comes from the chart");
+        CheckCameraSelection();
         if (Environment.GetEnvironmentVariable("GH3_DIRECTION_ASSETS") is { } assets) CheckConvertedAssets(assets);
         Console.WriteLine("Original camera, performance scheduling, clip masks, and instrument timing checks passed.");
+    }
+
+    private static void CheckCameraSelection()
+    {
+        OriginalCameraShot Shot(string name, string type) => new() { Name = name, Type = type, Control = "TwoCam", Points = new[] {
+            new OriginalCameraPoint { Position = new float[] { 0, 2, -10 }, Rotation = new float[] { 0, 0, 0, 1 } },
+            new OriginalCameraPoint { Position = new float[] { 10, 2, -10 }, Rotation = new float[] { 0, 0, 0, 1 } } } };
+        var bank = new StageCameraBank { Version = 1,
+            Arrays = new() { ["cameras"] = new[] { Shot("mid", "mid"), Shot("closeup", "closeup") },
+                ["cameras_drummer"] = new[] { Shot("drummer1", "stage"), Shot("drummer2", "stage") } },
+            Notes = new() { [79] = new() { Array = "cameras" }, [85] = new() { Array = "cameras", Type = "mid" },
+                [87] = new() { Array = "cameras", Type = "stage" }, [89] = new() { Array = "cameras_drummer" } } };
+        StageCameraPath Path() => new(new(Vector3.Zero, Vector3.UnitZ, 55, "fixed"), new Dictionary<string, Vector3>(), bank: bank);
+        var timeline = new StageTimeline(new[] { new StageCue(0, "gh3-camera", "85", 2), new StageCue(2, "gh3-camera", "79", 2),
+            new StageCue(4, "gh3-camera", "79", 2), new StageCue(6, "gh3-camera", "87", 2), new StageCue(8, "gh3-camera", "89", 2) }, "selection");
+        var path = Path();
+        Check(path.Sample(timeline, 1).Shot == "mid" && path.Sample(timeline, 3).Shot == "closeup" && path.Sample(timeline, 5).Shot == "mid",
+            "an untyped camera note excludes the type of the previous shot");
+        Check(path.Sample(timeline, 9).Shot == "drummer1", "GH3 uses the first array entry when the filters exclude every shot");
+
+        var timer = new StageTimeline(new[] { new StageCue(0, "gh3-camera", "79") }, "timer");
+        path = Path();
+        var first = path.Sample(timer, 0).Shot;
+        var cut = Enumerable.Range(1, 1000).Select(step => step / 100.0).First(time => path.Sample(timer, time).Shot != first);
+        Check(cut >= 3 && cut <= 8 && Math.Abs(cut - Math.Round(cut)) < 0.0001, "the camera timer is a whole number of seconds from 3 to 8");
+
+        var three = new StageCameraBank { Version = 1, Arrays = new() { ["cameras"] = new[] { Shot("a", "mid"), Shot("b", "stage"), Shot("c", "longshot") } },
+            Notes = bank.Notes };
+        var expected = new Gh3Random(77);
+        var firstIndex = expected.Next(3);
+        var firstLength = 3 + expected.Next(6);
+        var remaining = Enumerable.Range(0, 3).Where(i => i != firstIndex).ToArray();
+        var secondIndex = remaining[expected.Next(2)];
+        path = new(new(Vector3.Zero, Vector3.UnitZ, 55, "fixed"), new Dictionary<string, Vector3>(), bank: three) { Seed = 77 };
+        Check(path.Sample(timer, 0).Shot == "abc"[firstIndex].ToString() && path.Sample(timer, firstLength - 0.01).Shot == "abc"[firstIndex].ToString() &&
+            path.Sample(timer, firstLength).Shot == "abc"[secondIndex].ToString(), "camera draws follow GH3's order: shot index, then timer, then the next shot");
+
+        var close = new StageTimeline(new[] { new StageCue(0, "gh3-camera", "85", 1.999), new StageCue(2, "gh3-camera", "79", 2) }, "close");
+        path = Path();
+        Check(path.Sample(close, 1.9995).Position.X == 10 && path.Sample(close, 2).Shot == "closeup",
+            "a note one millisecond after the camera timer does not add a second cut");
     }
 
     private static void CheckConvertedAssets(string assets)
