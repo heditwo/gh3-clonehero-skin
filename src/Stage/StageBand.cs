@@ -113,7 +113,7 @@ internal sealed class StageBand : IDisposable
         {
             if (!_performance.Members.TryGetValue(player.Role, out var definition)) continue;
             player.Definition = definition;
-            player.Performance = new PerformancePlayer(player.Role, directory, definition, player.Animation.BindPose, timeline);
+            player.Performance = new PerformancePlayer(player.Role, directory, definition, player.Animation.BindPose, timeline, _performance.Constants);
             player.Performance.Prepare();
             var position = player.Start;
             var speed = 1.0;

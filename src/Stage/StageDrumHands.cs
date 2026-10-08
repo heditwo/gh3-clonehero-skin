@@ -6,6 +6,7 @@ internal static class StageDrumHands
 {
     private const float MinimumHingeCosine = -0.97f;
     private const float MaximumHingeCosine = 0.97f;
+    private static readonly Vector3 HingeAxis = -Vector3.UnitZ;
 
     public static void Apply(int[] parents, BandPose[] pose)
     {
@@ -24,28 +25,28 @@ internal static class StageDrumHands
         var first = Vector3.Distance(shoulder.Position, elbow.Position);
         var second = Vector3.Distance(elbow.Position, wrist.Position);
         if (first < 0.00001f || second < 0.00001f) return;
-        var toward = goal.Position - shoulder.Position;
-        var distance = toward.Length();
-        var direction = distance > 0.00001f ? toward / distance : Vector3.Normalize(elbow.Position - shoulder.Position);
         var squaredLengths = first * first + second * second;
         var doubledProduct = 2 * first * second;
-        distance = Math.Clamp(distance, MathF.Sqrt(squaredLengths + doubledProduct * MinimumHingeCosine),
+        var distance = Math.Clamp(Vector3.Distance(shoulder.Position, goal.Position), MathF.Sqrt(squaredLengths + doubledProduct * MinimumHingeCosine),
             MathF.Sqrt(squaredLengths + doubledProduct * MaximumHingeCosine));
-        var along = (first * first - second * second + distance * distance) / (2 * distance);
-        var height = MathF.Sqrt(Math.Max(0, first * first - along * along));
-        var hinge = Vector3.Transform(-Vector3.UnitZ, elbow.Rotation);
-        var pole = Vector3.Cross(hinge, direction);
-        var bend = elbow.Position - shoulder.Position;
-        bend -= direction * Vector3.Dot(bend, direction);
-        if (pole.LengthSquared() < 0.000001f) pole = bend;
-        if (pole.LengthSquared() < 0.000001f) pole = Perpendicular(direction);
-        if (Vector3.Dot(pole, bend) < 0) pole = -pole;
-        var elbowGoal = shoulder.Position + direction * along + Vector3.Normalize(pole) * height;
-        var wristGoal = shoulder.Position + direction * distance;
-        SetRotation(parents, pose, upper, Turn(elbow.Position - shoulder.Position, elbowGoal - shoulder.Position) * shoulder.Rotation);
-        elbow = World(parents, pose, lower);
+        var hinge = Vector3.Normalize(Vector3.Transform(HingeAxis, elbow.Rotation));
+        var toShoulder = shoulder.Position - elbow.Position;
+        var toWrist = wrist.Position - elbow.Position;
+        var shoulderAlong = Vector3.Dot(toShoulder, hinge);
+        var wristAlong = Vector3.Dot(toWrist, hinge);
+        var shoulderPlane = toShoulder - hinge * shoulderAlong;
+        var wristPlane = toWrist - hinge * wristAlong;
+        var planar = shoulderPlane.Length() * wristPlane.Length();
+        if (planar > 0.000001f)
+        {
+            var current = MathF.Atan2(Vector3.Dot(Vector3.Cross(shoulderPlane, wristPlane), hinge), Vector3.Dot(shoulderPlane, wristPlane));
+            var cosine = (squaredLengths - distance * distance - 2 * shoulderAlong * wristAlong) / (2 * planar);
+            var desired = MathF.Acos(Math.Clamp(cosine, -1, 1)) * (current < 0 ? -1 : 1);
+            SetRotation(parents, pose, lower, Quaternion.CreateFromAxisAngle(hinge, desired - current) * elbow.Rotation);
+        }
         wrist = World(parents, pose, hand);
-        SetRotation(parents, pose, lower, Turn(wrist.Position - elbow.Position, wristGoal - elbow.Position) * elbow.Rotation);
+        if ((goal.Position - shoulder.Position).LengthSquared() > 0.0000000001f)
+            SetRotation(parents, pose, upper, Turn(wrist.Position - shoulder.Position, goal.Position - shoulder.Position) * shoulder.Rotation);
         SetRotation(parents, pose, hand, goal.Rotation);
         var correction = World(parents, pose, hand).Position - goal.Position;
         var stickParent = World(parents, pose, parents[stick]);

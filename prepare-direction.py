@@ -33,7 +33,7 @@ def flatten(data, prefix=""):
     return result
 
 
-def write_clip(path, data, rig, source_rig=None):
+def write_clip(path, data, rig, source_rig=None, rotations_only=False):
     names, parents, positions, rotations = rig
     source_names, _, source_positions, source_rotations = source_rig or rig
     clip = animation(data, len(source_names))
@@ -56,7 +56,7 @@ def write_clip(path, data, rig, source_rig=None):
     with path.open("wb") as raw, gzip.GzipFile(fileobj=raw, mode="wb", mtime=0, compresslevel=3) as stream:
         stream.write(b"GH3CLP01" + struct.pack("<IIIf", len(names), frames, len(mapping), duration))
         for source_index, target in mapping:
-            stream.write(struct.pack("<II", target, (1 if source_index in clip[2] else 0) | (2 if source_index in clip[1] else 0)))
+            stream.write(struct.pack("<II", target, (1 if source_index in clip[2] and not rotations_only else 0) | (2 if source_index in clip[1] else 0)))
         stream.write(packed.astype("<f4").tobytes())
     return {"duration": duration, "frames": frames, "rootDistance": distance}
 
@@ -79,7 +79,13 @@ def convert(data_directory, output, shared=False):
         ("slow_tempo", 75), ("med_tempo", 115), ("fast_tempo", 145),
         ("short_strum_max_gem_length", 150), ("med_strum_max_gem_length", 600),
         ("strum_anim_lead_time", 250), ("drum_blend_time", 0.1), ("fret_blend_time", 0.1),
+        ("drum_anim_lead_time", 150), ("drummer_arm_blend_out_delay", 0.25), ("drummer_clear_arm_twist_value_delay", 0),
+        ("drummer_twist_rate", 0.05),
     ]}}
+    for table in ["drummer_left_arm_twist_factors", "drummer_right_arm_twist_factors"]:
+        for pitch in range(36, 58):
+            factor = find_struct(common, table).get(key(f"track_{pitch}"))
+            if factor is not None: definition["constants"][f"{table}/{pitch}"] = factor
     for kind, _, data in ([] if shared else source.load("ZONES/z_budokan.pak.xen")):
         if len(data) < 28 or data[8:12] != bytes.fromhex("1c080204"): continue
         nodes = find_array(data, "z_budokan_NodeArray")
@@ -115,6 +121,8 @@ def convert(data_directory, output, shared=False):
                 layers[field] = [f"{drums[key(field)]:08x}"]
             for i, ref in enumerate(find_array(common, "cymbal_anims")):
                 layers[f"cymbal/{i}"] = [f"{ref:08x}"]
+            # Difference clip of applydifference in drummer_static_tree; its translations are deltas, not poses.
+            layers["bodytwist"] = [f"{key('Test_Drum_BodyTwist_D'):08x}"]
         bank = {n: b for k, n, b in source.load(f"PAK/{pak}.pak.xen") if k == key(".ska")}
         bank.update({n: b for n, b in hands.items() if values(b, 44, "H")[0] == len(rig[0])})
         missing = []
@@ -126,7 +134,8 @@ def convert(data_directory, output, shared=False):
             elif int(ref, 16) not in bank:
                 missing.append(ref)
             else:
-                clips[ref] = write_clip(output / role / f"{ref}.bin.gz", bank[int(ref, 16)], rig)
+                clips[ref] = write_clip(output / role / f"{ref}.bin.gz", bank[int(ref, 16)], rig,
+                                        rotations_only=ref in layers.get("bodytwist", []))
         for table in [groups, layers]:
             for field in list(table):
                 table[field] = [ref for ref in table[field] if ref in clips]

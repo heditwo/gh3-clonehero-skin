@@ -115,7 +115,7 @@ internal sealed class PerformancePlayer
     private readonly List<Segment> _segments = new();
     private readonly StageCue[] _commands;
     private readonly StageCue[] _frets;
-    private readonly StageCue[][] _drumTracks;
+    private readonly StageDrummer? _drummer;
     private int _commandIndex;
     private string _stance = "stance_a";
     private string _action = "idle";
@@ -129,7 +129,8 @@ internal sealed class PerformancePlayer
     public bool ArmsEnabled { get; private set; } = true;
     public bool StrumEnabled { get; private set; } = true;
 
-    public PerformancePlayer(string role, string directory, PerformanceMember member, BandPose[] bind, StageTimeline timeline)
+    public PerformancePlayer(string role, string directory, PerformanceMember member, BandPose[] bind, StageTimeline timeline,
+        IReadOnlyDictionary<string, float>? constants = null)
     {
         _role = role;
         _directory = directory;
@@ -143,10 +144,7 @@ internal sealed class PerformancePlayer
         _commands = timeline.PlaybackCues.Where(c => c.Role == role && c.Type is "stance" or "perform" or "clip").ToArray();
         _frets = timeline.Track("fret").Where(c => int.TryParse(c.Value, out var note) &&
             (role == "guitarist" ? note is >= 118 and <= 127 : note is >= 101 and <= 110)).ToArray();
-        var drums = timeline.Track("drum");
-        _drumTracks = new[] { new[] { 36, 48 }, Enumerable.Range(37, 9).ToArray(), Enumerable.Range(49, 9).ToArray(),
-            new[] { 44, 56 }, new[] { 45, 57 }, new[] { 43, 55 }, new[] { 41, 42, 53, 54 } }
-            .Select(pitches => drums.Where(c => int.TryParse(c.Value, out var note) && pitches.Contains(note)).ToArray()).ToArray();
+        if (role == "drummer") _drummer = new StageDrummer(member, timeline, constants ?? new Dictionary<string, float>());
     }
 
     public Segment At(double time)
@@ -200,7 +198,7 @@ internal sealed class PerformancePlayer
         ArmsEnabled = disabled < 2 && !segment.Stance.StartsWith("intro");
         StrumEnabled = disabled == 0;
         if (_role is "guitarist" or "bassist" && ArmsEnabled) Hands(time);
-        if (_role == "drummer") Drums(time);
+        _drummer?.Apply(Pose, _bind, time, Clip);
         var face = Last(_timeline.Track("face", _role), time);
         if (face != null && _member.Clips.TryGetValue(face.Value, out var info) && time < face.Time + info.Duration)
             Clip(face.Value).Apply(Pose, _bind, time - face.Time, weight: (float)Math.Clamp((time - face.Time) / 0.1, 0, 1));
@@ -265,22 +263,6 @@ internal sealed class PerformancePlayer
             }
         }
         Layer("strum/normal/no_strum_anim", 0, true);
-    }
-
-    private void Drums(double time)
-    {
-        for (var group = 0; group < _drumTracks.Length; group++)
-        {
-            var note = Last(_drumTracks[group], time);
-            if (note == null) continue;
-            var layer = group < 3 ? "drum/" + note.Value : "cymbal/" + (group - 3);
-            var refs = _member.Layers.GetValueOrDefault(layer, Array.Empty<string>());
-            if (refs.Length == 0) continue;
-            var clip = Clip(refs[0]);
-            var age = time - note.Time;
-            if (age < clip.Duration + 0.25)
-                clip.Apply(Pose, _bind, age, weight: (float)Math.Clamp((clip.Duration + 0.25 - age) / 0.25, 0, 1));
-        }
     }
 
     private void Layer(string name, double time, bool additive)

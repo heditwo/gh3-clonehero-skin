@@ -85,6 +85,26 @@ Open items:
 - GH3 changes a held Star Power phrase sustain to the Star Power texture while the player uses the whammy (qb script `0x8fc2ccad`, which calls `MakeStarWhammy` and `MakeNormalWhammy`). Each 60 Hz frame, a whammy change of more than 0.03 sets a 5-frame counter. After 5 frames with the counter on, the bar turns blue. After 5 frames with the counter off, the bar goes back to the lane colour. `StarWhammy` (`src/SustainVariant.cs`) does the same. The mod finds held phrase notes in `GuitarNoteRenderer.HeldSustainNotes`: the note flags have `StarPower` (128), and `field_Public_UInt16_0` is the lane mask (bit = lane + 1, the same as the whammy channel).
 - Dead (dropped) sustains are not verified in a capture.
 
+### Drummer arms (fix-drumik)
+
+Before this fix, the drummer arms moved too fast, went up behind the head, and the elbows jumped. There were three causes:
+
+1. Each new drum note replaced the arm clip immediately at its first frame. There was no blend from the previous clip.
+2. After a hit, the arm went back to the arm pose of the idle clip. The idle clip holds the sticks high, so the arm moved up after most hits.
+3. The arm IK put the elbow on a pole that it calculated again each frame. For targets near the shoulder, the pole changed side and the elbow jumped by up to 14 m/s.
+
+GH3 data and code that the fix uses:
+
+- `Drum_iterator` (`guitar_hand_events.qb`, GH3.exe `0x42d730`) starts the hit clips `drum_anim_lead_time` (150 ms) before the note. `gem_scroller` adds this value to `time_offset`. Notes 37–45 play on the left arm and notes 49–57 on the right arm. Note 48 plays the kick foot. Note 70 plays the count-off stick taps (`sticktap_l`, `sticktap_r`), or `Test_Drum_HitHat_R` for a hi-hat count-off.
+- Each arm, the foot, and each cymbal is a `DegenerateBlend` slot in `drummer_static_tree` (`guitar_anim_tree.qb`). A new clip blends in over the old output and plays one time. GH3.exe gives `drum_blend_time` (0.1 s) only to the left arm; the right arm and the stick taps use the `hero_play_anim` default of 0.2 s.
+- `play_drummer_left_arm_anim` and `play_drummer_right_arm_anim` wait until the clip ends, then wait `drummer_arm_blend_out_delay` (0.25 s), then blend to `stickdown_l` or `stickdown_r` over 0.6 s.
+- `drummer_autotwist` (`guitar_character.qb`) moves the twist strength toward the mean of `drummer_left_arm_twist_factors` and `drummer_right_arm_twist_factors` for the last note of each arm, by `drummer_twist_rate` (0.05) each frame. The twist clip `Test_Drum_BodyTwist_D` is a difference clip (`applydifference`) with this strength. The count-off and the arm return to sticks-down set the arm factor to 0.
+- `drummer_IK_params` uses a hinge on the forearm axis (0, 0, −1) with cosine limits ±0.97. The fix turns the elbow only about this hinge axis to get the shoulder-to-wrist distance, then turns the upper arm to the target. The elbow does not jump to the other side.
+
+`StageDrummer` keeps these slots. `prepare-direction.py` writes the new constants and the `bodytwist` layer. In My Curse (45–60 s), the 99th percentile hand speed went from 20 m/s to 4 m/s, and the 99th percentile elbow speed from 17 m/s to 3.6 m/s.
+
+Not verified: the exact blend curve of a GH3 `DegenerateBlend` (the fix uses a linear blend) and the multiplication order of a GH3 difference clip. The ragdoll and `hero_ConstraintBones` steps of the drummer tree are not ported.
+
 ### Performance findings
 
 Measured with `GH3_SKIN_PROFILE=1`, which logs per-subsystem milliseconds per frame once a second. The test case is My Curse in Kaiju Megadome: about 14,000 live pyro particles at 48–51 s.
