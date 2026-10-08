@@ -77,5 +77,8 @@
     <Compile Include="../src/Stage/StageChartReader.cs" Link="StageChartReader.cs" />
     <Compile Include="../src/Stage/StageNativeSong.cs" Link="StageNativeSong.cs" />
     <Compile Include="../src/Stage/StageSongDirection.cs" Link="StageSongDirection.cs" />
+    <Compile Include="../src/Stage/StageShowFlow.cs" Link="StageShowFlow.cs" />
+    <Compile Include="../src/YouRockAnimation.cs" Link="YouRockAnimation.cs" />
+    <Compile Include="../src/IntroHudAnimation.cs" Link="IntroHudAnimation.cs" />
   </ItemGroup>
 </Project>

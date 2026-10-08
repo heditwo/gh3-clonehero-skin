@@ -49,6 +49,7 @@ SongDirectionLogicTests.Run();
 BandLogicTests.Run();
 HairLogicTests.Run();
 DirectionLogicTests.Run();
+ShowFlowLogicTests.Run();
 DrumHandLogicTests.Run();
 HandFireLogicTests.Run();
 LightingLogicTests.Run();

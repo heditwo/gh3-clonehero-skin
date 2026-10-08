@@ -11,6 +11,7 @@ internal sealed class StageAudioState
     private readonly StageCue[] _commands;
     private readonly string _venue;
     private readonly string _countoff;
+    private readonly double _start;
     private readonly List<HealthChange> _health = new() { new(double.NegativeInfinity, .5f) };
     private readonly Dictionary<uint, GainChange> _gains = new();
     private readonly HashSet<uint> _lockedBusses = new();
@@ -33,6 +34,7 @@ internal sealed class StageAudioState
         _commands = timeline.PlaybackCues.Where(cue => cue.Type == "gh3-audio").ToArray();
         _venue = venue;
         _countoff = countoff;
+        _start = timeline.Start;
         _events = new(bank);
         Reset();
     }
@@ -59,8 +61,8 @@ internal sealed class StageAudioState
             foreach (var field in settings.Fields.Where(field => field.Value.Type == 10))
                 _gains[field.Name] = new(double.NegativeInfinity, 0, StageSoundBank.Number(field.Value.Field("vol"), 0), 0);
         foreach (var health in _health)
-            Schedule(health.Time, time => { _rock = health.Rock; if (time >= 0) Bed(time); }, 0);
-        Schedule(0, Bed);
+            Schedule(health.Time, time => { _rock = health.Rock; if (time >= _start) Bed(time); }, 0);
+        Schedule(_start, Bed);
         foreach (var cue in _commands)
             Schedule(cue.Time, time =>
             {

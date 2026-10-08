@@ -172,7 +172,7 @@ internal sealed class PerformancePlayer
     public Segment At(double time)
     {
         if (!double.IsFinite(time) || time > 86400) throw new ArgumentOutOfRangeException(nameof(time));
-        time = Math.Max(0, time);
+        time = Math.Max(_timeline.Start, time);
         while ((_segments.Count == 0 || _segments[^1].End <= time + 3) && _segments.Count < 100000) AddSegment();
         return _segments[Math.Max(0, StageTimeline.UpperBound(_segments, time, s => s.Time) - 1)];
     }
@@ -189,7 +189,7 @@ internal sealed class PerformancePlayer
 
     public void Sample(double time, double walkAge = -1, float walkWeight = 1)
     {
-        time = Math.Max(0, time);
+        time = Math.Max(_timeline.Start, time);
         var segment = At(time);
         CurrentClip = segment.Clip;
         CurrentStance = segment.Stance;
@@ -227,7 +227,7 @@ internal sealed class PerformancePlayer
 
     private void AddSegment()
     {
-        var start = _segments.Count == 0 ? Math.Min(0, _timeline.Cues.FirstOrDefault()?.Time ?? 0) : _segments[^1].End;
+        var start = _segments.Count == 0 ? _timeline.Start : _segments[^1].End;
         var previousStance = _stance;
         while (_commandIndex < _commands.Length && _commands[_commandIndex].Time <= start)
         {
@@ -237,7 +237,9 @@ internal sealed class PerformancePlayer
         }
         var bpm = _timeline.TempoAt(start);
         var speed = bpm < 95 ? "slow" : bpm < 130 ? "med" : "fast";
-        var options = previousStance != _stance ? Group($"{previousStance}/transitions/{_stance}") : Array.Empty<string>();
+        // play_special_anim switches to the win and lose stances without a transition animation.
+        var special = _stance.StartsWith("win") || _stance.StartsWith("lose");
+        var options = previousStance != _stance && !special ? Group($"{previousStance}/transitions/{_stance}") : Array.Empty<string>();
         var transition = options.Length > 0;
         if (!transition && _member.Clips.ContainsKey(_action)) options = new[] { _action };
         if (options.Length == 0) options = Group($"{_stance}/{_action}/normal/{speed}");
@@ -307,7 +309,8 @@ internal sealed class PerformancePlayer
     private int ArmCount(double time)
     {
         var segment = At(Math.Max(0, time));
-        if (segment.Stance.StartsWith("intro")) return 0;
+        // GH3 holds the arms in the intro stances, and play_special_anim disables them for the win and lose animations.
+        if (segment.Stance.StartsWith("intro") || segment.Stance.StartsWith("win") || segment.Stance.StartsWith("lose")) return 0;
         var arms = Last(_timeline.Track("arms", _role), time);
         var disabled = arms != null && arms.Time >= segment.Time ? int.Parse(arms.Value) : segment.DisableArms;
         return Math.Clamp(2 - disabled, 0, 2);

@@ -13,11 +13,12 @@ from gh3_direction import Source, cameras, name, script, scalar
 from gh3_formats import find_array, find_struct, key, values
 
 
+# The last column lists extra paks with clips: Axel's model pak holds his intro and win animations.
 MEMBERS = [
-    ("guitarist", "GH3_guitarist_axel", "axel_1_anims", "guitar_animation_data_axel", "axel_animations"),
-    ("bassist", "GH3_bassist", "Bassist_anims", "guitar_animation_data_bassist", "bassist_animations"),
-    ("singer", "GH3_singer_male", "Singer_Male_Anims", "guitar_animation_data_singer_male", "singer_male_animations"),
-    ("drummer", "GH3_drummer", "Drummer_anims", "guitar_animation_data", "drummer_animations"),
+    ("guitarist", "GH3_guitarist_axel", "axel_1_anims", "guitar_animation_data_axel", "axel_animations", ["axel_1"]),
+    ("bassist", "GH3_bassist", "Bassist_anims", "guitar_animation_data_bassist", "bassist_animations", []),
+    ("singer", "GH3_singer_male", "Singer_Male_Anims", "guitar_animation_data_singer_male", "singer_male_animations", []),
+    ("drummer", "GH3_drummer", "Drummer_anims", "guitar_animation_data", "drummer_animations", []),
 ]
 
 
@@ -95,7 +96,7 @@ def convert(data_directory, output, shared=False):
                 -node.get(key("Angles"), [0, 0, 0])[1] * 180 / np.pi] for node in nodes if key("Name") in node and key("Pos") in node}
     member_rigs = {}
     profiles = find_array(script(scripts, "guitar_band_profile"), "Musician_Profiles")
-    for role, rig_name, pak, qb, group in MEMBERS:
+    for role, rig_name, pak, qb, group, extra in MEMBERS:
         rig = skeleton(rigs[key(rig_name)])
         member_rigs[role] = rig
         body = find_struct(script(scripts, qb), group)
@@ -131,6 +132,7 @@ def convert(data_directory, output, shared=False):
             # Difference clip of applydifference in drummer_static_tree; its translations are deltas, not poses.
             layers["bodytwist"] = [f"{key('Test_Drum_BodyTwist_D'):08x}"]
         bank = {n: b for k, n, b in source.load(f"PAK/{pak}.pak.xen") if k == key(".ska")}
+        for name in extra: bank.update({n: b for k, n, b in source.load(f"PAK/{name}.pak.xen") if k == key(".ska")})
         bank.update({n: b for n, b in hands.items() if values(b, 44, "H")[0] == len(rig[0])})
         missing = []
         needed = {ref for refs in [*groups.values(), *layers.values()] for ref in refs}

@@ -120,12 +120,12 @@ internal sealed class StageCameraPath
     {
         if (!double.IsFinite(time)) throw new ArgumentOutOfRangeException(nameof(time));
         if (_mode == "fixed" || _bank == null) return _fixed;
-        time = Math.Max(0, time);
+        time = Math.Max(timeline.Start, time);
         if (_timeline != timeline)
         {
             _timeline = timeline;
             _cuts.Clear();
-            _next = Math.Min(0, timeline.Cues.FirstOrDefault()?.Time ?? 0);
+            _next = timeline.Start;
             _cueIndex = 0;
             _enabled = true;
             _selector = new() { Array = "cameras" };
@@ -291,9 +291,11 @@ internal sealed class StageCameraPath
     {
         "wide" => new() { Array = "cameras_wide", Type = "stage" },
         "guitarist" => new() { Array = "cameras_guitar_closeup" },
+        "default" => new() { Array = "cameras" },
         _ => new() { Array = "cameras_" + name },
     };
     private static float Smooth(float value) => value * value * (3 - 2 * value);
     private static Vector3 Vector(float[] value) => new(value[0], value[1], value[2]);
-    public static bool ValidShot(string shot) => shot is "wide" or "singer" or "guitarist" or "bassist" or "drummer" or "orbit";
+    public static bool ValidShot(string shot) => shot is "wide" or "singer" or "guitarist" or "bassist" or "drummer" or "orbit" or
+        "intro" or "win" or "default";
 }

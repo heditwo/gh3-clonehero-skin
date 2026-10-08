@@ -87,7 +87,7 @@ internal sealed class StageScriptState : IDisposable
         _knownNodeFlags.Clear();
         _beamParameters.Clear();
         foreach (var (id, placement) in _placements) _objects.Add(Convert.ToUInt32(id, 16), new(placement));
-        _runtime = new(_bank.Values, Native, time: Math.Min(0, _commands.FirstOrDefault()?.Time ?? 0)) { Failed = (_, error) => _diagnostics.Add(error.Message) };
+        _runtime = new(_bank.Values, Native, time: Math.Min(_timeline.Start, _commands.FirstOrDefault()?.Time ?? 0)) { Failed = (_, error) => _diagnostics.Add(error.Message) };
         _runtime.Tempo = _timeline.TempoAt;
         var zone = _venue.StartsWith("gh3.") ? "z_" + _venue.Substring(4) : _venue;
         _lightShow = _sourceLighting ? new(_bank, _runtime, _lighting!, zone, message => _diagnostics.Add(message)) { NodeFlagChanged = ChangeNodeFlag } : null;

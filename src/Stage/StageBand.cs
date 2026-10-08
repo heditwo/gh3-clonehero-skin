@@ -37,6 +37,7 @@ internal sealed class StageBand : IDisposable
     private readonly List<StageAssets> _assets = new();
     private readonly List<Performer> _players = new();
     private StagePerformance? _performance;
+    private double _start;
     public Dictionary<string, Vector3> Positions { get; } = new();
 
     public void Load(string directory, StageAssets stage, GameObject root, int layer, bool lighting = false,
@@ -103,6 +104,7 @@ internal sealed class StageBand : IDisposable
     public void SetTimeline(string directory, StageTimeline timeline, IReadOnlyDictionary<string, StagePlacement>? waypoints = null,
         StagePerformance? performance = null)
     {
+        _start = timeline.Start;
         _performance = performance ?? StagePerformance.Load(Path.Combine(directory, "performance.json"));
         if (_performance == null)
         {
@@ -159,7 +161,7 @@ internal sealed class StageBand : IDisposable
     {
         foreach (var player in _players)
         {
-            player.Hair?.Sample(time);
+            player.Hair?.Sample(time - _start);
             var root = SamplePose(player, time, player.Pose);
             Apply(player.Root, root);
             player.Hair?.Apply(player.Pose);

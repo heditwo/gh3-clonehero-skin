@@ -110,7 +110,7 @@ def cameras(source, scripts, venue="z_budokan"):
                 "QuickZoom", "HandCamZoom2", "SplineMorph", "NewIntro"]
     mapping = find_array(script(scripts, "guitar_cameras"), "CameraCuts_NoteMapping")
     selectors = {}
-    prefixes = {"cameras", "cameras_intro", "cameras_fastintro", "cameras_pan", "cameras_dolly", "cameras_zoom_slow", "cameras_zoom_fast", "cameras_zoom_out"}
+    prefixes = {"cameras", "cameras_intro", "cameras_fastintro", "cameras_win", "cameras_pan", "cameras_dolly", "cameras_zoom_slow", "cameras_zoom_fast", "cameras_zoom_out"}
     for row in mapping:
         params = row[key("params")]
         note = row[key("MidiNote")]

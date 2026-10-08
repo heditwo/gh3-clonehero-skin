@@ -51,6 +51,8 @@ internal sealed class StageTimeline
     public StageCue[] Cues { get; }
     public StageCue[] PlaybackCues { get; }
     public double[] Beats { get; }
+    // The earliest time that the stage plays: song time 0, or an earlier cue such as GH3's pre-song transition.
+    public double Start => Math.Min(0, Cues.Length > 0 ? Cues[0].Time : 0);
     private readonly Dictionary<string, StageCue[]> _tracks;
 
     public StageTimeline(IEnumerable<StageCue> cues, string source)

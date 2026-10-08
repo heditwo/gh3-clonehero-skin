@@ -72,7 +72,7 @@ internal sealed class CrowdAnimationPlayer
     public Segment At(double time)
     {
         if (!double.IsFinite(time) || time > 86400) throw new ArgumentOutOfRangeException(nameof(time));
-        time = Math.Max(0, time);
+        time = Math.Max(_timeline.Start, time);
         if (_revision != _state.Revision) { _segments.Clear(); _revision = _state.Revision; }
         while (_segments.Count == 0 || _segments[^1].End <= time)
         {
@@ -84,7 +84,7 @@ internal sealed class CrowdAnimationPlayer
 
     public void Sample(double time, BandPose[] pose, BandPose[] previous, BandPose[] bind, Func<string, PerformanceClip> clip)
     {
-        time = Math.Max(0, time);
+        time = Math.Max(_timeline.Start, time);
         var segment = At(time);
         Array.Copy(bind, pose, bind.Length);
         clip(segment.Clip).Apply(pose, bind, time - segment.Time);
@@ -100,7 +100,7 @@ internal sealed class CrowdAnimationPlayer
     private void Add()
     {
         var requests = _state.Animations(_memberIndex);
-        var time = _segments.Count == 0 ? Math.Min(0, requests.FirstOrDefault()?.Time ?? 0) : _segments[^1].End;
+        var time = _segments.Count == 0 ? Math.Min(_timeline.Start, requests.FirstOrDefault()?.Time ?? 0) : _segments[^1].End;
         var request = StageTimeline.UpperBound(requests, time, item => item.Time) - 1;
         var action = request < 0 ? "idle" : requests[request].Animation;
         var skill = _state.SkillAt(time);

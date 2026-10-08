@@ -12,8 +12,13 @@ internal sealed class GameplayHud
     private RockMeterHud? _rock;
     private ScorePanelHud? _score;
     private MessageHud? _message;
+    private RectTransform? _overlayRoot;
+    private YouRockHud? _youRock;
     private HudViewport? _screenViewport;
     private HudViewport? _highwayViewport;
+    private float _highwayRise = float.NaN;
+    private static readonly Vector2 RockPosition = new(1326, 752.4f);
+    private static readonly Vector2 ScorePosition = new(322, 714);
 
     public GameplayHud(SkinAssets assets, HudTuning tuning)
     {
@@ -30,8 +35,11 @@ internal sealed class GameplayHud
         _rock = null;
         _score = null;
         _message = null;
+        _overlayRoot = null;
+        _youRock = null;
         _screenViewport = null;
         _highwayViewport = null;
+        _highwayRise = float.NaN;
     }
 
     public void EnsureCreated()
@@ -44,33 +52,58 @@ internal sealed class GameplayHud
         _highway = new HighwayHud(_canvas.transform, _assets);
         _screenRoot = HudVisual.Group("Screen HUD", _canvas.transform);
         _rock = new RockMeterHud(_screenRoot, _tuning, _assets.Textures);
-        HudVisual.Position(_rock.Root, new Vector2(1326, 752.4f));
+        HudVisual.Position(_rock.Root, RockPosition);
         _score = new ScorePanelHud(_screenRoot, _tuning, _assets.Textures, _assets.AmpMaterial,
             new HudFont(_assets.Root, "score-font"), new HudFont(_assets.Root, "counter-font"));
-        HudVisual.Position(_score.Root, new Vector2(322, 714));
+        HudVisual.Position(_score.Root, ScorePosition);
         if (File.Exists(Path.Combine(_assets.Root, "message-font.png"))) _message = new MessageHud(_screenRoot, _assets.Root);
+        _overlayRoot = HudVisual.Group("Screen overlay", _canvas.transform);
+        if (File.Exists(Path.Combine(_assets.Root, "yourock-font.png"))) _youRock = new YouRockHud(_overlayRoot, _assets.Root);
     }
 
-    public void Update(GameplayState state, Camera camera)
+    // With intro set, the highway and HUD enter as in GH3's intro transition. winTime is the song time of GH3's
+    // song_won event; play_outro removes the HUD then, and the highway follows.
+    public void Update(GameplayState state, Camera camera, double songTime, bool intro, double winTime)
     {
         var screen = HudViewport.For(Screen.width, Screen.height);
         if (_screenViewport != screen)
         {
             HudVisual.Viewport(_screenRoot!, screen, screen.BottomOffsetY);
+            HudVisual.Viewport(_overlayRoot!, screen, screen.CenterOffsetY);
             _score!.Layout(screen.Scale);
             _screenViewport = screen;
         }
         var rect = camera.pixelRect;
         var highway = HudViewport.ForHighway(Screen.height, rect.x, rect.y, rect.width, rect.height, camera.fieldOfView);
-        if (_highwayViewport != highway)
+        var rise = intro ? IntroHudAnimation.HighwayOffset(songTime) * Screen.height / 720f : 0;
+        if (_highwayViewport != highway || rise != _highwayRise)
         {
-            HudVisual.Viewport(_highway!.Root, highway, highway.CenterOffsetY);
+            HudVisual.Viewport(_highway!.Root, highway, highway.CenterOffsetY + rise);
             _highwayViewport = highway;
+            _highwayRise = rise;
         }
+        if (intro && songTime < 1)
+        {
+            // GH3 career HUD units are 1.05 canvas units (HudVisual.Gh3Scale).
+            var (rock, rotation, score) = IntroHudAnimation.HudOffsets(songTime);
+            HudVisual.Position(_rock!.Root, RockPosition + new Vector2(rock.X, rock.Y) * HudVisual.Gh3Scale);
+            _rock.Root.localEulerAngles = new Vector3(0, 0, -rotation);
+            HudVisual.Position(_score!.Root, ScorePosition + new Vector2(score.X, score.Y) * HudVisual.Gh3Scale);
+        }
+        var won = songTime >= winTime;
+        SetActive(_screenRoot!, !won);
+        SetActive(_highway!.Root, songTime < winTime + StageShowFlow.HighwayHideDelay);
+        _youRock?.Update(songTime - winTime);
+        if (won) return;
         var time = Time.time;
         _highway!.Update(state, time);
         _rock!.Update(state, time);
         _score!.Update(state, time);
         _message?.Update(state, time);
+    }
+
+    private static void SetActive(Component component, bool active)
+    {
+        if (component.gameObject.activeSelf != active) component.gameObject.SetActive(active);
     }
 }

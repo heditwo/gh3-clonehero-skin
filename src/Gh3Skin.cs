@@ -86,7 +86,7 @@ public sealed class SkinMod : MelonMod
         FrameProfile.Measure("state", () => state = GameplayStateReader.Read(player, score, _options, _comboOverride!));
         FrameProfile.Measure("notes", () => _renderer.Update(player, score, state.StarPowerActive));
         _stage?.Update(player, state.Combo, state.Rock);
-        FrameProfile.Measure("hud", () => _hud.Update(state, player.mainCamera));
+        FrameProfile.Measure("hud", () => _hud.Update(state, player.mainCamera, songTime, _stage?.ShowFlow == true, _stage?.WinTime ?? double.PositiveInfinity));
         _capture.Update(songTime);
         FrameProfile.EndFrame(songTime);
     }

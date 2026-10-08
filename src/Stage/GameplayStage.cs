@@ -37,7 +37,12 @@ internal sealed class GameplayStage
     private float _lastRock = float.NaN;
     private Camera? _playerCamera;
     private CameraClearFlags _playerClearFlags;
+    private int _playerCullingMask;
     private bool _attempted;
+    private bool _leadInExtended;
+    private float _highwayRise;
+    public double WinTime { get; private set; } = double.PositiveInfinity;
+    public bool ShowFlow { get; private set; }
 
     public GameplayStage(string assetsDirectory)
     {
@@ -54,8 +59,17 @@ internal sealed class GameplayStage
         _screenEffects?.Dispose();
         _screenEffects = null;
         _noteHits.Reset();
-        if (_playerCamera != null) _playerCamera.clearFlags = _playerClearFlags;
+        if (_playerCamera != null)
+        {
+            _playerCamera.clearFlags = _playerClearFlags;
+            _playerCamera.cullingMask = _playerCullingMask;
+            _playerCamera.ResetProjectionMatrix();
+        }
+        _highwayRise = 0;
         _playerCamera = null;
+        WinTime = double.PositiveInfinity;
+        ShowFlow = false;
+        _leadInExtended = false;
         foreach (var (camera, mask) in _cameras)
             if (camera != null) camera.cullingMask = mask;
         _cameras.Clear();
@@ -99,10 +113,13 @@ internal sealed class GameplayStage
     public void Update(BasePlayer player, int combo, float rock)
     {
         if (!_attempted) Create(player);
+        if (_effects == null || _timeline == null) return;
+        ExtendLeadIn(player.gameManager);
         var time = player.gameManager.songTime;
-        if (_effects == null || _timeline == null || !double.IsFinite(time)) return;
+        if (!double.IsFinite(time)) return;
         try
         {
+            if (_playerCamera != null && ShowFlow) ShowHighway(time);
             _audio?.Update(time, rock, time == _lastTime);
             _highwayMask?.Update(player);
             if (time == _lastTime && combo == _lastCombo && rock == _lastRock) return;
@@ -146,6 +163,53 @@ internal sealed class GameplayStage
             _attempted = true;
             MelonLogger.Warning($"GH3 stage stopped: {error.Message}");
         }
+    }
+
+    // Clone Hero holds the song clock at -1 s while the song loads. GH3's intro transition starts 8 s before the song,
+    // so the clock starts there instead; the audio still starts at song time 0.
+    private void ExtendLeadIn(GameManager manager)
+    {
+        if (_leadInExtended || GlobalVariables.instance?.isPracticeEnabled == true) return;
+        var time = manager.songTime;
+        if (manager.isSongPlaying || time >= 0) { _leadInExtended = true; return; }
+        if (!manager.isPaused || time <= -StageShowFlow.IntroLength) return;
+        // The song clock (GameManager.sync) restarts from its own start time when playback begins.
+        var clock = manager.sync;
+        if (clock == null || clock.field_Private_Double_2 != time) return;
+        clock.field_Private_Double_2 = clock.field_Private_Double_3 = -StageShowFlow.IntroLength;
+        manager.songTime = -StageShowFlow.IntroLength;
+        _leadInExtended = true;
+    }
+
+    // GH3 draws the highway in a screen element that rises from below before the song (move_highway_2d) and hides it
+    // 0.5 s after the song is won (waitAndKillHighway). A vertical projection offset moves Clone Hero's highway the same way.
+    private void ShowHighway(double time)
+    {
+        var camera = _playerCamera!;
+        var hidden = time >= WinTime + StageShowFlow.HighwayHideDelay || IntroHudAnimation.HighwayOffset(time) >= 720;
+        camera.cullingMask = hidden ? 0 : _playerCullingMask;
+        var rise = IntroHudAnimation.HighwayOffset(time);
+        if (rise == _highwayRise) return;
+        _highwayRise = rise;
+        camera.ResetProjectionMatrix();
+        if (rise <= 0) return;
+        var projection = camera.projectionMatrix;
+        projection.m12 += rise / 360;
+        camera.projectionMatrix = projection;
+    }
+
+    private static double? LastNoteEnd(BasePlayer player)
+    {
+        var notes = player.engine?.prop_List_1_ObjectPublicObInObDoSiDoUIInBoInUnique_0;
+        if (notes == null || notes.Count == 0) return null;
+        var end = double.NegativeInfinity;
+        for (var index = 0; index < notes.Count; index++)
+        {
+            var note = notes[index];
+            // The second time is the end of a sustain; it equals the note time for other notes.
+            end = Math.Max(end, Math.Max(note.field_Public_Double_0, note.field_Public_Double_1));
+        }
+        return double.IsFinite(end) ? end : null;
     }
 
     private Shader? LoadSurfaceShader(string library)
@@ -209,6 +273,7 @@ internal sealed class GameplayStage
             _camera.depth = player.mainCamera.depth - 0.1f;
             _playerCamera = player.mainCamera;
             _playerClearFlags = _playerCamera.clearFlags;
+            _playerCullingMask = _playerCamera.cullingMask;
             _playerCamera.clearFlags = CameraClearFlags.Depth;
             _camera.clearFlags = CameraClearFlags.SolidColor;
             _camera.backgroundColor = new Color(0.006f, 0.008f, 0.015f, 1);
@@ -230,6 +295,17 @@ internal sealed class GameplayStage
             {
                 _timeline = new StageTimeline(Array.Empty<StageCue>(), "invalid venue cues");
                 MelonLogger.Warning($"GH3 stage cues could not load: {error.Message}");
+            }
+            if (GlobalVariables.instance?.isPracticeEnabled != true)
+            {
+                var lastNote = LastNoteEnd(player);
+                if (lastNote is { } end) WinTime = StageShowFlow.WinTime(end);
+                _timeline = StageShowFlow.Apply(_timeline, pack.Id, lastNote == null ? null : WinTime);
+                ShowFlow = true;
+                var manager = player.gameManager;
+                // Clone Hero ends the song at songLength; the win transition needs its full 8 s first.
+                if (double.IsFinite(WinTime) && manager.songLength < WinTime + StageShowFlow.WinLength)
+                    manager.songLength = WinTime + StageShowFlow.WinLength;
             }
             _band.SetTimeline(Path.Combine(library, "direction"), _timeline, pack.Waypoints, performance);
             _actors.SetTimeline(_timeline);
