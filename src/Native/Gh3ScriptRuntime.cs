@@ -263,7 +263,8 @@ internal sealed class Gh3ScriptRuntime : IDisposable
 
     private void ReleaseRandomHistory(Task task)
     {
-        foreach (var history in _randomHistory.Where(history => history.Owner == task)) history.Owner = null;
+        foreach (var history in _randomHistory)
+            if (history.Owner == task) history.Owner = null;
     }
 
     private Gh3ScriptCode Code(uint key)

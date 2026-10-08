@@ -95,7 +95,7 @@ internal sealed class StageEffects
                 if (cue.Type is "smoke" or "pyro") Smoke(origin, rotation, age, duration, seed, cue.Type == "pyro");
             }
         }
-        _lighting?.Update(time);
+        FrameProfile.Measure("e.lighting", () => _lighting?.Update(time));
         if (_lighting == null) foreach (var material in _assets.SurfaceMaterials)
         {
             var strength = Math.Max(light.R, Math.Max(light.G, light.B));
@@ -233,7 +233,17 @@ internal sealed class StageEffects
         public N3 LightNormal { get; set; }
         public N3 LightTangent { get; set; }
         public N3 LightBitangent { get; set; }
-        private readonly int[] _indices;
+        private readonly Il2CppStructArray<int> _indices;
+        private readonly Il2CppSystem.Array _indexArray;
+        private readonly Il2CppSystem.Array _vertexArray;
+        private readonly Il2CppSystem.Array _colorArray;
+        private readonly Il2CppSystem.Array _uvArray;
+        private readonly Il2CppSystem.Array? _particleDataArray;
+        private readonly Il2CppSystem.Array? _normalArray;
+        private readonly Il2CppSystem.Array? _tangentArray;
+        private readonly Il2CppSystem.Array? _bitangentArray;
+        private const MeshUpdateFlags UploadFlags = MeshUpdateFlags.DontValidateIndices | MeshUpdateFlags.DontResetBoneBounds | MeshUpdateFlags.DontRecalculateBounds;
+        private int _vertexCount;
         private readonly int _atlas;
         private readonly int _capacity;
         private N3 _right;
@@ -271,26 +281,27 @@ internal sealed class StageEffects
             Upload(_uv, _uvBuffer, _uv.Length);
             _mesh = assets.Own(new Mesh { name = name ?? (additive ? "GH3 Stage Sparks" : "GH3 Stage Smoke") });
             _mesh.MarkDynamic();
-            _mesh.vertices = _vertexBuffer;
-            _mesh.colors = _colorBuffer;
-            _mesh.uv = _uvBuffer;
             if (sourceMaterial != null)
             {
                 _particleData = new N2[capacity * 4];
                 _particleDataBuffer = new Il2CppStructArray<Vector2>(capacity * 4);
-                _mesh.uv2 = _particleDataBuffer;
                 _normals = new N3[capacity * 4];
                 _normalBuffer = new Il2CppStructArray<Vector3>(capacity * 4);
-                _mesh.normals = _normalBuffer;
                 _tangents = new N4[capacity * 4];
                 _tangentBuffer = new Il2CppStructArray<Vector4>(capacity * 4);
-                _mesh.tangents = _tangentBuffer;
                 _bitangents = new N2[capacity * 4];
                 _bitangentBuffer = new Il2CppStructArray<Vector2>(capacity * 4);
-                _mesh.uv3 = _bitangentBuffer;
             }
-            _indices = indices;
-            _mesh.triangles = new Il2CppStructArray<int>(Array.Empty<int>());
+            _indices = new Il2CppStructArray<int>(indices.Length);
+            indices.CopyTo(_indices.AsSpan());
+            _indexArray = new(_indices.Pointer);
+            _vertexArray = new(_vertexBuffer.Pointer);
+            _colorArray = new(_colorBuffer.Pointer);
+            _uvArray = new(_uvBuffer.Pointer);
+            if (_particleDataBuffer != null) _particleDataArray = new(_particleDataBuffer.Pointer);
+            if (_normalBuffer != null) _normalArray = new(_normalBuffer.Pointer);
+            if (_tangentBuffer != null) _tangentArray = new(_tangentBuffer.Pointer);
+            if (_bitangentBuffer != null) _bitangentArray = new(_bitangentBuffer.Pointer);
             _mesh.bounds = new Bounds(Vector3.zero, new Vector3(100, 100, 100));
             var material = sourceMaterial ?? assets.Own(StageAssets.MakeMaterial(shader, true, additive));
             Material = material;
@@ -303,6 +314,7 @@ internal sealed class StageEffects
             renderer.sharedMaterial = material;
             renderer.shadowCastingMode = ShadowCastingMode.Off;
             renderer.receiveShadows = false;
+            renderer.enabled = false;
         }
 
         private static N3 Numeric(Vector3 value) => new(value.x, value.y, value.z);
@@ -343,23 +355,39 @@ internal sealed class StageEffects
 
         public void End()
         {
-            if (Count != _previousCount) _mesh.triangles = new Il2CppStructArray<int>(_indices[..(Count * 6)]);
-            for (var i = Count * 4; i < _previousCount * 4; i++) _colors[i] = N4.Zero;
-            if (Count != 0 || _previousCount != 0)
+            if (Count == 0)
             {
-                var used = Math.Max(Count, _previousCount) * 4;
-                Upload(_vertices, _vertexBuffer, used);
-                Upload(_colors, _colorBuffer, used);
-                _mesh.vertices = _vertexBuffer;
-                _mesh.colors = _colorBuffer;
-                if (_atlas > 1 || _customUv) { Upload(_uv, _uvBuffer, used); _mesh.uv = _uvBuffer; }
-                if (_particleData != null) { Upload(_particleData, _particleDataBuffer!, used); _mesh.uv2 = _particleDataBuffer; }
-                if (_normals != null) { Upload(_normals, _normalBuffer!, used); _mesh.normals = _normalBuffer; }
-                if (_tangents != null) { Upload(_tangents, _tangentBuffer!, used); _mesh.tangents = _tangentBuffer; }
-                if (_bitangents != null) { Upload(_bitangents, _bitangentBuffer!, used); _mesh.uv3 = _bitangentBuffer; }
+                if (_previousCount != 0) _renderer.enabled = false;
+                _previousCount = 0;
+                return;
             }
+            // Vertex counts grow in 64-quad steps so the GPU buffer is rarely reallocated; only indexed quads are drawn.
+            var vertices = Math.Min(_capacity, (Count + 63) / 64 * 64) * 4;
+            var used = Count * 4;
+            var resized = vertices != _vertexCount;
+            if (vertices < _vertexCount) SetIndices();
+            if (resized) used = vertices;
+            var length = _capacity * 4;
+            Upload(_vertices, _vertexBuffer, used);
+            SetChannel(VertexAttribute.Position, 3, _vertexArray, length, vertices);
+            Upload(_colors, _colorBuffer, used);
+            SetChannel(VertexAttribute.Color, 4, _colorArray, length, vertices);
+            if (_atlas > 1 || _customUv || resized) { Upload(_uv, _uvBuffer, used); SetChannel(VertexAttribute.TexCoord0, 2, _uvArray, length, vertices); }
+            if (_particleData != null) { Upload(_particleData, _particleDataBuffer!, used); SetChannel(VertexAttribute.TexCoord1, 2, _particleDataArray!, length, vertices); }
+            if (_normals != null) { Upload(_normals, _normalBuffer!, used); SetChannel(VertexAttribute.Normal, 3, _normalArray!, length, vertices); }
+            if (_tangents != null) { Upload(_tangents, _tangentBuffer!, used); SetChannel(VertexAttribute.Tangent, 4, _tangentArray!, length, vertices); }
+            if (_bitangents != null) { Upload(_bitangents, _bitangentBuffer!, used); SetChannel(VertexAttribute.TexCoord2, 2, _bitangentArray!, length, vertices); }
+            if (vertices > _vertexCount || !resized && Count != _previousCount) SetIndices();
+            _vertexCount = vertices;
+            if (_previousCount == 0) _renderer.enabled = true;
             _previousCount = Count;
         }
+
+        // The public ranged Mesh overloads are stripped from this game; these internal calls back them and are always present.
+        private void SetIndices() => _mesh.SetIndicesImpl(0, MeshTopology.Triangles, IndexFormat.UInt32, _indexArray, 0, Count * 6, false, 0);
+
+        private void SetChannel(VertexAttribute channel, int dimension, Il2CppSystem.Array values, int length, int count) =>
+            _mesh.SetArrayForChannelImpl(channel, VertexAttributeFormat.Float32, dimension, values, length, 0, count, UploadFlags);
 
         public void AddQuad(N3 position, N3 right, N3 up, N4 color, N4 uv)
             => AddQuadVertices(position - right - up, position + right - up, position + right + up, position - right + up, color, color, uv);

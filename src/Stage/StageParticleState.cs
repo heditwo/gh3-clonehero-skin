@@ -71,6 +71,7 @@ internal sealed class StageParticleState
     public bool JobQueueEnabled { get; private set; }
     public Func<Vector3, StageParticleVisibility, double, (float? Distance, bool Visible)>? View { get; set; }
     private readonly Gh3ScriptRuntime _runtime;
+    private readonly Func<int, int> _random;
     private readonly IReadOnlyDictionary<uint, Gh3QbValue> _values;
     private readonly Func<uint, bool> _objectExists;
     private readonly Func<uint, uint, double, StageObjectPose?> _pose;
@@ -89,6 +90,7 @@ internal sealed class StageParticleState
         Func<uint, uint, double, StageObjectPose?> pose, Action<string> gap)
     {
         _runtime = runtime;
+        _random = runtime.NextRandom;
         _values = bank.Values;
         _objectExists = objectExists;
         _pose = pose;
@@ -245,7 +247,7 @@ internal sealed class StageParticleState
                     (particle.Age == 0 ? Vector3.Zero : displacement));
                 particle.Motion = particle.Motion.Step(duration, particleForce, definition.Bounce, definition.BounceHeight, definition.BounceCoefficient, out var collision,
                     particle.Age == 0 ? Vector3.Zero : displacement);
-                if (StageParticleMotion.Callback(collision, definition.BounceCallbackRate, emitter.BounceScript != null, _runtime.NextRandom))
+                if (StageParticleMotion.Callback(collision, definition.BounceCallbackRate, emitter.BounceScript != null, _random))
                 {
                     _runtime.UpdateComponent(emitter.BounceScript!.Value);
                     if (!Current(emitter)) return;
@@ -323,7 +325,7 @@ internal sealed class StageParticleState
         var pose = Pose(emitter, _runtime.Time);
         var path = emitter.PathPosition - pose.Position;
         var pathLength = path.Y * path.Y + path.Z * path.Z + path.X * path.X;
-        var birth = emitter.Shape.Emit(emitter.Range, emitter.Speed, emitter.Life, _runtime.NextRandom, Reflect(pose.Velocity), d.EmitterVelocityWeight, d.FillPath && pathLength != 0);
+        var birth = emitter.Shape.Emit(emitter.Range, emitter.Speed, emitter.Life, _random, Reflect(pose.Velocity), d.EmitterVelocityWeight, d.FillPath && pathLength != 0);
         var history = emitter.Histories[slot] ??= new Vector4[d.History];
         Array.Clear(history, 0, history.Length);
         var particle = new StageParticle(emitter, _runtime.Time, birth.Life, pose.Position + (Vector3.Transform(birth.Position * pose.Scale, pose.Rotation) + path * birth.PathFraction),

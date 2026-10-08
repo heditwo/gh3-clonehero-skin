@@ -58,13 +58,13 @@ def convert(game, output, kind='screen-color'):
         '_Gh3Particle', '_Gh3SoftEdge', '_Gh3CameraForward', '_Gh3Lighting', '_Gh3AmbientWeights', '_Gh3LightDirection', '_Gh3LightColor',
         '_Gh3SH0', '_Gh3SH1', '_Gh3SH2', '_Gh3SH3', '_Gh3Maps', '_Gh3Eye') if particle else (
         '_Gh3TeslaAnimation', '_Gh3TeslaShape', '_Gh3TeslaColor') if tesla else (
-        '_Color', '_Gh3Surface', '_Gh3Ambient', '_Gh3LightDirection', '_Gh3LightColor', '_Gh3SH0', '_Gh3SH1', '_Gh3SH2', '_Gh3SH3') if surface else (
+        '_Color', '_Gh3Surface', '_Gh3LightIndex') if surface else (
         '_Gh3Red', '_Gh3Green', '_Gh3Blue')
     variables = b''.join(aligned(name) + parameters[0x38:0x4c] + struct.pack('<I', index * 16) for index, name in enumerate(names))
     if surface:
         parameters = parameters[:0x74] + struct.pack('<I', 16 * len(names)) + parameters[0x78:0xa0] + struct.pack('<I', 16 * len(names) + 16) + parameters[0xa4:]
     if particle or surface:
-        extra = ('_CameraDepthTexture', '_Gh3NormalTex', '_Gh3SpecularTex') if particle else ('_Gh3Lightmap',)
+        extra = ('_CameraDepthTexture', '_Gh3NormalTex', '_Gh3SpecularTex') if particle else ('_Gh3Lightmap', '_Gh3LightData')
         textures = b''.join(aligned(name) + struct.pack('<4I', 0, index, index, 4) for index, name in enumerate(extra, 1))
         parameters = parameters[:0xa8] + struct.pack('<I', 2 + len(extra)) + parameters[0xac:0xc8] + textures + parameters[0xc8:]
     parameters = parameters[:0x24] + struct.pack('<2I', 16 * len(names), len(names) + 2) + variables + parameters[0x50:]
@@ -77,7 +77,7 @@ def convert(game, output, kind='screen-color'):
     color = properties.pop()
     if particle or surface:
         texture_property = next(prop for prop in properties if prop['m_Name'] == '_MainTex')
-        for name in ('_Gh3NormalTex', '_Gh3SpecularTex') if particle else ('_Gh3Lightmap',):
+        for name in ('_Gh3NormalTex', '_Gh3SpecularTex') if particle else ('_Gh3Lightmap', '_Gh3LightData'):
             prop = deepcopy(texture_property)
             prop['m_Name'] = prop['m_Description'] = name
             properties.append(prop)

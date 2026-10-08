@@ -15,7 +15,7 @@ internal sealed class StageActors : IDisposable
     public Dictionary<string, StageObjectPlacement> Placements { get; } = new();
     public Dictionary<uint, Transform> Objects { get; } = new();
 
-    public void Load(string directory, StageAssets stage, GameObject root, int layer)
+    public void Load(string directory, StageAssets stage, GameObject root, int layer, Shader? surfaceShader = null)
     {
         var path = Path.Combine(directory, "actors.json");
         if (!File.Exists(path)) return;
@@ -40,7 +40,9 @@ internal sealed class StageActors : IDisposable
             }
             var assets = new StageAssets();
             _assets.Add(assets);
-            assets.Load(folder, obj, layer, bones, lighting: true, lightGroup: actor.LightGroup);
+            assets.Load(folder, obj, layer, bones, lighting: true, lightGroup: actor.LightGroup, surfaceShader: surfaceShader);
+            stage.SurfaceMaterials.AddRange(assets.SurfaceMaterials);
+            stage.ShadedSurfaces.AddRange(assets.ShadedSurfaces);
             stage.BandMeshes.AddRange(assets.BandMeshes);
             stage.TransparentMeshes.AddRange(assets.TransparentMeshes);
             obj.SetActive(actor.InitiallyVisible);

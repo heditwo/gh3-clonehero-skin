@@ -42,7 +42,7 @@ internal sealed class StageAssets : IDisposable
 {
     internal sealed record LitMesh(Mesh Mesh, string Group, Vector3[] Positions, Vector3[] Normals, Color32[] Colors, Transform Transform);
     internal sealed record LitBandMesh(SkinnedMeshRenderer Renderer, Color32[] Colors, string Group);
-    internal sealed record ShadedSurface(Renderer Renderer, int Mode, string Group);
+    internal sealed record ShadedSurface(Renderer Renderer, int Mode, string Group, bool Dynamic);
     [StructLayout(LayoutKind.Sequential)]
     private struct SkinWeight
     {
@@ -283,7 +283,7 @@ internal sealed class StageAssets : IDisposable
             }
             renderer.sharedMaterial = material;
             if (shadedMode > 0) ShadedSurfaces.Add(new(renderer, shadedMode, bones != null ? lightGroup ?? Gh3Checksum.Of("Band") :
-                Definition.LightGroups.Length == 0 ? "" : Definition.LightGroups[part]));
+                Definition.LightGroups.Length == 0 ? "" : Definition.LightGroups[part], bones != null || objectId.Length > 0));
             var sourceMaterial = Definition.Materials[materialId.ToString("x8")].Source;
             if (objectId.Length > 0 && sourceMaterial.Length > 0)
                 MaterialSurfaces.Add((Convert.ToUInt32(objectId, 16), Gh3QbText.Key(sourceMaterial), renderer, Definition.Materials[materialId.ToString("x8")]));

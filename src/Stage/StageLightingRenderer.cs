@@ -59,6 +59,23 @@ internal sealed class StageLightingRenderer
         _fixtures = fixtures;
         _root = root;
         _shaded = assets.ShadedSurfaces.Select(surface => (surface, new MaterialPropertyBlock(), new Vec(float.NaN))).ToList();
+        if (_shaded.Count > 0)
+        {
+            _lightData = assets.Own(new Texture2D(7, _shaded.Count, TextureFormat.RGBAHalf, false, true));
+            _lightData.filterMode = FilterMode.Point;
+            _lightData.wrapMode = TextureWrapMode.Clamp;
+            _lightRows = new System.Numerics.Vector4[7 * _shaded.Count];
+            _lightUpload = new Il2CppStructArray<Color>(_lightRows.Length);
+            foreach (var material in _shaded.Select(entry => entry.Surface.Renderer.sharedMaterial).Distinct()) material.SetTexture(LightDataId, _lightData);
+            for (var i = 0; i < _shaded.Count; i++)
+            {
+                var (surface, properties, _) = _shaded[i];
+                surface.Renderer.GetPropertyBlock(properties);
+                properties.SetVector(LightIndexId, new Vector4 { x = i });
+                properties.SetTexture(LightDataId, _lightData);
+                surface.Renderer.SetPropertyBlock(properties);
+            }
+        }
         _lightGroups = lighting.Bank.Lights.Select(light => light.Group).ToArray();
         _lightPoses = new StageLightPose?[lighting.Bank.Lights.Length];
         foreach (var source in assets.LitMeshes)
@@ -131,6 +148,13 @@ internal sealed class StageLightingRenderer
 
     public void Update(double time)
     {
+        var mark = System.Diagnostics.Stopwatch.GetTimestamp();
+        void Mark(string name)
+        {
+            var now = System.Diagnostics.Stopwatch.GetTimestamp();
+            FrameProfile.Add(name, (now - mark) * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
+            mark = now;
+        }
         var scene = _fixtures?.Scripts?.LightScene;
         var poses = _lighting.Bank.Lights.Select(light => light.Object.Length > 0 ? scene?.RenderPose(Gh3QbText.Key(light.Object)) : null).ToArray();
         var posesChanged = !poses.SequenceEqual(_lightPoses);
@@ -158,6 +182,7 @@ internal sealed class StageLightingRenderer
                 actorLights.Samples = new StageLightSample[indices.Length];
             }
         }
+        Mark("l.prepare");
         var frame = _lighting.At(time);
         var amount = frame.Amount(time);
         var state = frame.Sample(time);
@@ -171,8 +196,11 @@ internal sealed class StageLightingRenderer
                 state.Lights[i] = scene.Apply(Gh3QbText.Key(id), state.Lights[i]);
             if (!visibility[i]) state.Lights[i] = state.Lights[i] with { Intensity = 0, Specular = 0 };
         }
+        Mark("l.sample");
         ShadeBand(state);
+        Mark("l.band");
         ShadeSurfaces(state, scene);
+        Mark("l.surfaces");
         var lightChanged = _frame != frame || _amount != amount || visibilityChanged || groupsChanged || posesChanged || !state.Lights.SequenceEqual(_lightValues);
         _lightValues = state.Lights;
         foreach (var surface in _surfaces)
@@ -197,10 +225,11 @@ internal sealed class StageLightingRenderer
             for (var v = 0; v < colors.Length; v++)
             {
                 var rgb = surface.Lighting[v];
-                colors[v] = new Color(rgb.X, rgb.Y, rgb.Z, surface.Source.Colors[v].a / 255f);
+                colors[v] = new Color { r = rgb.X, g = rgb.Y, b = rgb.Z, a = surface.Source.Colors[v].a / 255f };
             }
             surface.Source.Mesh.colors = surface.Colors;
         }
+        Mark("l.legacy");
         for (var i = 0; i < _beams.Count; i++)
         {
             var value = _fixtures?.Resolve(_lighting.BeamIds[i], state.Beams[i], time) ?? state.Beams[i];
@@ -224,6 +253,7 @@ internal sealed class StageLightingRenderer
             beam.Mesh.vertices = beam.Vertices;
             beam.Material.color = new(value.Color.X, value.Color.Y, value.Color.Z, value.Density * 0.08f);
         }
+        Mark("l.beams");
         _frame = frame;
         _amount = amount;
     }
@@ -262,7 +292,7 @@ internal sealed class StageLightingRenderer
                 for (var i = 0; i < light.Count; i++)
                     energy += light.Samples[i].Energy * light.Samples[i].Weight(position, normal);
                 var vertex = source.Colors[v];
-                colors[v] = new(energy.X * vertex.r / 255f, energy.Y * vertex.g / 255f, energy.Z * vertex.b / 255f, vertex.a / 255f);
+                colors[v] = new Color { r = energy.X * vertex.r / 255f, g = energy.Y * vertex.g / 255f, b = energy.Z * vertex.b / 255f, a = vertex.a / 255f };
             }
             source.Renderer.sharedMesh.colors = surface.Colors;
         }
@@ -317,14 +347,12 @@ internal sealed class StageLightingRenderer
         return StageParticleLights.Select(lights, new(position, 1));
     }
 
-    private static readonly int AmbientId = Shader.PropertyToID("_Gh3Ambient");
-    private static readonly int DirectionId = Shader.PropertyToID("_Gh3LightDirection");
-    private static readonly int ColorId = Shader.PropertyToID("_Gh3LightColor");
-    private static readonly int[] HarmonicIds = { Shader.PropertyToID("_Gh3SH0"), Shader.PropertyToID("_Gh3SH1"), Shader.PropertyToID("_Gh3SH2"), Shader.PropertyToID("_Gh3SH3") };
+    private static readonly int LightDataId = Shader.PropertyToID("_Gh3LightData");
+    private static readonly int LightIndexId = Shader.PropertyToID("_Gh3LightIndex");
+    private readonly Texture2D? _lightData;
+    private readonly System.Numerics.Vector4[] _lightRows = Array.Empty<System.Numerics.Vector4>();
+    private readonly Il2CppStructArray<Color>? _lightUpload;
     private long _lightSignature = long.MinValue;
-
-    // Unity struct constructors are native calls in this game; field initialization avoids them.
-    private static Vector4 Unity4(float x, float y, float z, float w) => new() { x = x, y = y, z = z, w = w };
 
     private long LightSignature(StageLightingValues state, StageLightScene? scene)
     {
@@ -349,33 +377,39 @@ internal sealed class StageLightingRenderer
         var inverse = System.Numerics.Quaternion.Inverse(rotation);
         var native = scene != null;
         Vec Direction(float x, float y, float z) => Vec.Transform(new Vec(x, y, native ? -z : z), rotation);
+        var changed = false;
         for (var i = 0; i < _shaded.Count; i++)
         {
             var (surface, properties, center) = _shaded[i];
-            var world = surface.Renderer.bounds.center;
-            var local = Vec.Transform(new Vec(world.x - origin.x, world.y - origin.y, world.z - origin.z), inverse);
+            var local = center;
+            if (surface.Dynamic || float.IsNaN(center.X))
+            {
+                var world = surface.Renderer.bounds.center;
+                local = Vec.Transform(new Vec(world.x - origin.x, world.y - origin.y, world.z - origin.z), inverse);
+            }
             if (!lightsChanged && local == center) continue;
             _shaded[i] = (surface, properties, local);
             var lights = native ? scene!.Sample(new(local.X, local.Y, -local.Z), NativeGroup(scene, surface.Group)).Lighting :
                 PackLights(state, local, surface.Group);
-            surface.Renderer.GetPropertyBlock(properties);
-            properties.SetVector(AmbientId, Unity4(lights.Ambient.X, lights.Ambient.Y, lights.Ambient.Z, lights.Ambient.W));
-            if (surface.Mode == 2)
-            {
-                var direction = Direction(lights.Direction.X, lights.Direction.Y, lights.Direction.Z);
-                properties.SetVector(DirectionId, Unity4(direction.X, direction.Y, direction.Z, 0));
-                properties.SetVector(ColorId, Unity4(lights.Color.X, lights.Color.Y, lights.Color.Z, lights.Color.W));
-                var h = lights.Harmonics;
-                properties.SetVector(HarmonicIds[0], Unity4(h[0].X, h[0].Y, h[0].Z, h[0].W));
-                var red = Direction(h[1].X, h[2].X, h[3].X);
-                var green = Direction(h[1].Y, h[2].Y, h[3].Y);
-                var blue = Direction(h[1].Z, h[2].Z, h[3].Z);
-                properties.SetVector(HarmonicIds[1], Unity4(red.X, green.X, blue.X, 0));
-                properties.SetVector(HarmonicIds[2], Unity4(red.Y, green.Y, blue.Y, 0));
-                properties.SetVector(HarmonicIds[3], Unity4(red.Z, green.Z, blue.Z, 0));
-            }
-            surface.Renderer.SetPropertyBlock(properties);
+            var row = _lightRows.AsSpan(i * 7, 7);
+            row[0] = lights.Ambient;
+            var direction = Direction(lights.Direction.X, lights.Direction.Y, lights.Direction.Z);
+            row[1] = new(direction, 0);
+            row[2] = lights.Color;
+            var h = lights.Harmonics;
+            row[3] = h[0];
+            var red = Direction(h[1].X, h[2].X, h[3].X);
+            var green = Direction(h[1].Y, h[2].Y, h[3].Y);
+            var blue = Direction(h[1].Z, h[2].Z, h[3].Z);
+            row[4] = new(red.X, green.X, blue.X, 0);
+            row[5] = new(red.Y, green.Y, blue.Y, 0);
+            row[6] = new(red.Z, green.Z, blue.Z, 0);
+            changed = true;
         }
+        if (!changed || _lightData == null || _lightUpload == null) return;
+        System.Runtime.InteropServices.MemoryMarshal.Cast<System.Numerics.Vector4, Color>(_lightRows).CopyTo(_lightUpload.AsSpan());
+        _lightData.SetPixels(_lightUpload);
+        _lightData.Apply(false);
     }
 
     private static Vec Numeric(Vector3 v) => new(v.x, v.y, v.z);

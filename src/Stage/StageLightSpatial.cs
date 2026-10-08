@@ -68,6 +68,25 @@ internal sealed class StageLightSpatial
         return x.Intersect(y).Intersect(z).Concat(_unbounded).Take(Math.Max(0, limit)).ToArray();
     }
 
+    // Same order as Query: distinct first-axis members present on all axes, then unbounded lights.
+    public void QueryInto(Vector3 position, List<int> output, int limit = 256)
+    {
+        output.Clear();
+        var x = Find(_axes[0], position.X);
+        var y = Find(_axes[1], position.Y);
+        var z = Find(_axes[2], position.Z);
+        foreach (var member in x)
+        {
+            if (output.Count >= limit) return;
+            if (Array.IndexOf(y, member) >= 0 && Array.IndexOf(z, member) >= 0 && !output.Contains(member)) output.Add(member);
+        }
+        foreach (var member in _unbounded)
+        {
+            if (output.Count >= limit) return;
+            output.Add(member);
+        }
+    }
+
     private static int[] Find(IReadOnlyList<StageLightInterval> intervals, float value)
     {
         var start = 0;

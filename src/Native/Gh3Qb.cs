@@ -12,8 +12,22 @@ internal sealed record Gh3QbValue(uint Type, int Offset, object Data)
     public IReadOnlyList<Gh3QbValue> Items => Data as IReadOnlyList<Gh3QbValue> ?? throw new InvalidDataException("Expected a QB array.");
     public IReadOnlyList<Gh3QbField> Fields => Data as IReadOnlyList<Gh3QbField> ?? throw new InvalidDataException("Expected a QB structure.");
     public Gh3QbValue? Field(string name) => Field(Gh3Checksum.Value(name));
-    public Gh3QbValue? Field(uint name) => Fields.FirstOrDefault(field => field.Name == name)?.Value;
-    public bool Flag(string name) => Fields.Any(field => field.Name == 0 && field.Value.Data is uint value && value == Gh3Checksum.Value(name));
+    public Gh3QbValue? Field(uint name)
+    {
+        var fields = Fields;
+        for (var i = 0; i < fields.Count; i++)
+            if (fields[i].Name == name) return fields[i].Value;
+        return null;
+    }
+
+    public bool Flag(string name)
+    {
+        var fields = Fields;
+        var key = Gh3Checksum.Value(name);
+        for (var i = 0; i < fields.Count; i++)
+            if (fields[i].Name == 0 && fields[i].Value.Data is uint value && value == key) return true;
+        return false;
+    }
 }
 
 internal sealed class Gh3Qb

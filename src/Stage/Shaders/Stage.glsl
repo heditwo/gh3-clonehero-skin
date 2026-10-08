@@ -31,18 +31,19 @@ uniform sampler2D _MainTex;
 uniform sampler2D _Gh3Lightmap;
 uniform vec4 _Color;
 uniform vec4 _Gh3Surface;
-uniform vec4 _Gh3Ambient;
-uniform vec4 _Gh3LightDirection;
-uniform vec4 _Gh3LightColor;
-uniform vec4 _Gh3SH0;
-uniform vec4 _Gh3SH1;
-uniform vec4 _Gh3SH2;
-uniform vec4 _Gh3SH3;
+uniform sampler2D _Gh3LightData;
+uniform vec4 _Gh3LightIndex;
 in vec4 surfaceColor;
 in vec2 surfaceUv;
 in vec2 surfaceLightmapUv;
 in vec3 surfaceNormal;
 layout(location = 0) out vec4 SV_Target0;
+// Each lit surface owns one row: ambient, key direction, key color, then four SH coefficients.
+vec4 Light(int column)
+{
+    vec2 size = vec2(textureSize(_Gh3LightData, 0));
+    return texture(_Gh3LightData, (vec2(float(column), _Gh3LightIndex.x) + 0.5) / size);
+}
 void main()
 {
     vec4 albedo = texture(_MainTex, surfaceUv) * _Color;
@@ -52,13 +53,13 @@ void main()
     {
         vec3 normal = normalize(surfaceNormal);
         vec3 lightmap = _Gh3Surface.z > 0.0 ? texture(_Gh3Lightmap, surfaceLightmapUv).rgb : vec3(1.0);
-        vec3 ambient = _Gh3SH0.xyz + _Gh3SH1.xyz * normal.x + _Gh3SH2.xyz * normal.y + _Gh3SH3.xyz * normal.z;
-        float facing = clamp(dot(normal, -_Gh3LightDirection.xyz), 0.0, 1.0);
-        vec3 light = ambient * lightmap
-            + _Gh3LightColor.xyz * facing * mix(vec3(1.0), lightmap, _Gh3LightColor.w) + _Gh3Ambient.xyz;
+        vec3 ambient = Light(3).xyz + Light(4).xyz * normal.x + Light(5).xyz * normal.y + Light(6).xyz * normal.z;
+        vec4 keyColor = Light(2);
+        float facing = clamp(dot(normal, -Light(1).xyz), 0.0, 1.0);
+        vec3 light = ambient * lightmap + keyColor.xyz * facing * mix(vec3(1.0), lightmap, keyColor.w) + Light(0).xyz;
         color.rgb *= light;
     }
-    else if (_Gh3Surface.x > 0.5) color.rgb *= _Gh3Ambient.xyz;
+    else if (_Gh3Surface.x > 0.5) color.rgb *= Light(0).xyz;
     color.rgb *= _Gh3Surface.w;
     SV_Target0 = color;
 }

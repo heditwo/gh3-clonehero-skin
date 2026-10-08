@@ -93,43 +93,6 @@ internal sealed class GameplayStage
         _attempted = false;
     }
 
-    private static readonly bool Profile = Environment.GetEnvironmentVariable("GH3_SKIN_PROFILE") == "1";
-    private readonly Dictionary<string, double> _profile = new();
-    private readonly System.Diagnostics.Stopwatch _profileClock = new();
-    private int _profileFrames;
-    private double _profileStart = double.NaN;
-    private int _lastCollections;
-    private long _lastAllocated;
-
-    private void Measure(string name, Action action)
-    {
-        if (!Profile) { action(); return; }
-        var start = System.Diagnostics.Stopwatch.GetTimestamp();
-        action();
-        _profile[name] = _profile.GetValueOrDefault(name) + (System.Diagnostics.Stopwatch.GetTimestamp() - start) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
-    }
-
-    private void ReportProfile(double time)
-    {
-        if (!Profile) return;
-        _profileFrames++;
-        if (double.IsNaN(_profileStart)) { _profileStart = time; _profileClock.Restart(); }
-        if (_profileClock.Elapsed.TotalSeconds < 1) return;
-        var collections = GC.CollectionCount(0);
-        var allocated = GC.GetTotalAllocatedBytes();
-        _profile["gc.gen0"] = (collections - _lastCollections) * (double)_profileFrames;
-        _profile["gc.mb"] = (allocated - _lastAllocated) / 1048576.0 * _profileFrames;
-        _lastCollections = collections;
-        _lastAllocated = allocated;
-        var seconds = _profileClock.Elapsed.TotalSeconds;
-        MelonLogger.Msg($"GH3 profile song {_profileStart:0.0}s: {_profileFrames / seconds:0} fps; ms/frame " +
-            string.Join(", ", _profile.OrderByDescending(pair => pair.Value).Select(pair => $"{pair.Key} {pair.Value / _profileFrames:0.00}")) +
-            $"; particles {_particles?.ActiveParticles ?? 0}");
-        _profile.Clear();
-        _profileFrames = 0;
-        _profileStart = double.NaN;
-    }
-
     public void Update(BasePlayer player, int combo, float rock)
     {
         if (!_attempted) Create(player);
@@ -142,10 +105,10 @@ internal sealed class GameplayStage
             _lastTime = time;
             _lastCombo = combo;
             _lastRock = rock;
-            Measure("band", () => _band?.Update(time));
-            Measure("scripts", () => _scripts?.Update(time, rock, _noteHits.Update(player, time)));
-            Measure("actors", () => _actors?.Update(time));
-            Measure("crowd", () => _crowd?.Update(time, rock));
+            FrameProfile.Measure("band", () => _band?.Update(time));
+            FrameProfile.Measure("scripts", () => _scripts?.Update(time, rock, _noteHits.Update(player, time)));
+            FrameProfile.Measure("actors", () => _actors?.Update(time));
+            FrameProfile.Measure("crowd", () => _crowd?.Update(time, rock));
             if (_cameraPath != null && _camera != null && _root != null)
             {
                 var pose = _cameraPath.Sample(_timeline, time);
@@ -154,18 +117,17 @@ internal sealed class GameplayStage
                 else _camera.transform.LookAt(_root.transform.position + new Vector3(pose.Target.X, pose.Target.Y, pose.Target.Z));
                 _camera.fieldOfView = pose.FieldOfView;
             }
-            Measure("effects", () => _effects.Update(_timeline, time));
-            Measure("particles", () => _particles?.Update(time));
-            Measure("movies", () => _movies?.Update(time));
-            Measure("screen", () => _screenEffects?.Update(time));
-            Measure("outlines", () => _outlines?.Update(time));
-            Measure("handfire", () => _handFire?.Update(time, combo));
-            Measure("transparency", () =>
+            FrameProfile.Measure("effects", () => _effects.Update(_timeline, time));
+            FrameProfile.Measure("particles", () => _particles?.Update(time));
+            FrameProfile.Measure("movies", () => _movies?.Update(time));
+            FrameProfile.Measure("screen", () => _screenEffects?.Update(time));
+            FrameProfile.Measure("outlines", () => _outlines?.Update(time));
+            FrameProfile.Measure("handfire", () => _handFire?.Update(time, combo));
+            FrameProfile.Measure("transparency", () =>
             {
                 if (_camera != null && _assets != null)
                     foreach (var mesh in _assets.TransparentMeshes) mesh.Update(_camera);
             });
-            ReportProfile(time);
         }
         catch (Exception error)
         {
@@ -213,7 +175,7 @@ internal sealed class GameplayStage
             _fixtures = new StageFixtures();
             _fixtures.Load(Path.Combine(_directory, "fixtures"), _root, Layer);
             _actors = new StageActors();
-            _actors.Load(_directory, _assets, _root, Layer);
+            _actors.Load(_directory, _assets, _root, Layer, surfaceShader);
             var definition = _assets.Definition;
             _cameraPath = new StageCameraPath(new StageCameraPose(
                 new System.Numerics.Vector3(definition.CameraPosition[0], definition.CameraPosition[1], definition.CameraPosition[2]),
@@ -264,11 +226,19 @@ internal sealed class GameplayStage
             _scripts = StageScripts.Load(_directory, library, _assets, _fixtures, _actors, stageLighting, _timeline, pack.Id);
             if (_scripts != null)
             {
+                var viewTime = double.NaN;
+                var viewPlanes = Array.Empty<System.Numerics.Vector4>();
+                var viewPosition = System.Numerics.Vector3.Zero;
                 _scripts.State.ParticleView = (position, visibility, time) =>
                 {
-                    var prior = _cameraPath.Sample(_timeline, time - 1.0 / 60);
-                    var planes = StageParticleVisibility.Planes(prior, _cameraPath.Aspect, _camera.nearClipPlane, _camera.farClipPlane);
-                    return (System.Numerics.Vector3.Distance(position, _cameraPath.Sample(_timeline, time).Position), visibility.Test(planes));
+                    if (time != viewTime)
+                    {
+                        var prior = _cameraPath.Sample(_timeline, time - 1.0 / 60);
+                        viewPlanes = StageParticleVisibility.Planes(prior, _cameraPath.Aspect, _camera.nearClipPlane, _camera.farClipPlane);
+                        viewPosition = _cameraPath.Sample(_timeline, time).Position;
+                        viewTime = time;
+                    }
+                    return (System.Numerics.Vector3.Distance(position, viewPosition), visibility.Test(viewPlanes));
                 };
                 _particles = new(_scripts, _assets, _root, _camera, Layer, Path.Combine(library, "render", "particle.bundle"));
                 _movies = new(_assets, _scripts);

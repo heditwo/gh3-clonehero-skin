@@ -60,6 +60,13 @@ internal sealed class StageParticles : IDisposable
         Vector3 Unity(System.Numerics.Vector3 value) => new(value.X, value.Y, value.Z);
         var right = Numeric(_root.transform.InverseTransformDirection(_camera.transform.right));
         var up = Numeric(_root.transform.InverseTransformDirection(_camera.transform.up));
+        var mark = System.Diagnostics.Stopwatch.GetTimestamp();
+        void Mark(string name)
+        {
+            var now = System.Diagnostics.Stopwatch.GetTimestamp();
+            FrameProfile.Add(name, (now - mark) * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
+            mark = now;
+        }
         ActiveParticles = 0;
         _lighting.Clear();
         var bound = new HashSet<Material>();
@@ -81,16 +88,26 @@ internal sealed class StageParticles : IDisposable
         }
         DrawOrder = StageParticleRenderOrder.Sort(RenderedEmitters.Select(id => RenderKeys[id]).ToArray()).Select(index => RenderedEmitters[index]).ToArray();
 
+        Mark("p.order");
         var submission = new List<StageEffects.ParticleBatch>();
         var current = new Dictionary<(uint Emitter, uint Texture, bool Lit), StageEffects.ParticleBatch>();
         var submitted = new HashSet<StageEffects.ParticleBatch>();
+        (uint, uint, bool) lastKey = default;
+        StageEffects.ParticleBatch? lastBatch = null;
         StageEffects.ParticleBatch ParticleBatch(uint texture, in StageParticleSample particle, StageParticleAxes lighting, bool allowLighting = true)
         {
             var definition = particle.Definition;
             var lit = definition.Material.Lighting && allowLighting;
-            if (!current.TryGetValue((particle.Emitter, texture, lit), out var batch) || batch.Full)
-                current[(particle.Emitter, texture, lit)] = batch = Batch(particle.Emitter, texture, definition, lit);
-            if (submitted.Add(batch)) submission.Add(batch);
+            var key = (particle.Emitter, texture, lit);
+            StageEffects.ParticleBatch batch;
+            if (lastBatch != null && key == lastKey && !lastBatch.Full) batch = lastBatch;
+            else
+            {
+                if (!current.TryGetValue(key, out batch!) || batch.Full) current[key] = batch = Batch(particle.Emitter, texture, definition, lit);
+                if (submitted.Add(batch)) submission.Add(batch);
+                lastKey = key;
+                lastBatch = batch;
+            }
             if (lit && bound.Add(batch.Material))
             {
                 if (!_lighting.TryGetValue(particle.Emitter, out var lights))
@@ -164,10 +181,13 @@ internal sealed class StageParticles : IDisposable
             var uv = StageParticleGeometry.TextureBounds(definition.AtlasColumns, definition.AtlasRows, particle.Frame);
             ParticleBatch(definition.Texture, particle, lighting).AddQuad(p, basis.Right, basis.Up, c, uv);
         }
+        Mark("p.build");
         foreach (var batch in _batches.Values.SelectMany(batches => batches)) batch.End();
+        Mark("p.upload");
         for (var index = 0; index < submission.Count; index++) submission[index].SortingOrder = index;
         RenderedQuads = _batches.Values.Sum(batches => batches.Sum(batch => batch.Count));
         _tesla.Update(_scripts.State.Tesla, time);
+        Mark("p.tesla");
     }
 
     private StageEffects.ParticleBatch Batch(uint emitter, uint textureId, StageParticleDefinition particle, bool lit)

@@ -246,19 +246,47 @@ internal sealed class StageLightScene
         return null;
     }
 
+    private readonly List<int> _query = new();
+    private StageParticleLight?[] _records = Array.Empty<StageParticleLight?>();
+
+    private StageParticleLight Record(int index)
+    {
+        if (_records.Length != Lights.Count) _records = new StageParticleLight?[Lights.Count];
+        var light = Lights[index];
+        var value = _transitions[index].Value;
+        var transform = _transforms[index];
+        var weight = _groups[_lightGroups[index]].Weight;
+        var cached = _records[index];
+        if (cached != null && cached.Color == value.Color && cached.Position == transform.Position && cached.Direction == transform.Direction &&
+            cached.Intensity == value.Intensity && cached.Weight == weight && cached.SpecularPower == value.Shadow && cached.Flags == _flags[index])
+            return cached;
+        return _records[index] = new StageParticleLight(light.Type, value.Color, transform.Position, transform.Direction, value.Intensity,
+            weight, value.Shadow, light.Attenuation.X, light.Attenuation.Y, _flags[index], light.Harmonics);
+    }
+
     public StageLightSceneSample Sample(Vector3 position, uint group)
     {
-        var candidates = _spatial.Query(position).Where(index =>
-            StageParticleLights.Accepts(group, _lightGroups[index], _groups[_lightGroups[index]].Flags, _flags[index])).Take(32).ToArray();
-        var lights = candidates.Select(index => {
-            var light = Lights[index];
-            var value = _transitions[index].Value;
-            var transform = _transforms[index];
-            return new StageParticleLight(light.Type, value.Color, transform.Position, transform.Direction, value.Intensity,
-                _groups[_lightGroups[index]].Weight, value.Shadow, light.Attenuation.X, light.Attenuation.Y, _flags[index], light.Harmonics);
-        }).ToArray();
+        _spatial.QueryInto(position, _query);
+        var count = 0;
+        foreach (var index in _query)
+            if (StageParticleLights.Accepts(group, _lightGroups[index], _groups[_lightGroups[index]].Flags, _flags[index]) && ++count == 32) break;
+        var candidates = new int[count];
+        var lights = new StageParticleLight[count];
+        count = 0;
+        foreach (var index in _query)
+        {
+            if (count == candidates.Length) break;
+            if (!StageParticleLights.Accepts(group, _lightGroups[index], _groups[_lightGroups[index]].Flags, _flags[index])) continue;
+            candidates[count] = index;
+            lights[count++] = Record(index);
+        }
         var selected = StageParticleLights.Select(lights, new(position, 1));
-        if ((selected.Flags & 7) != 0) selected = selected with { Indices = selected.Indices.Select(index => candidates[index]).ToArray() };
+        if ((selected.Flags & 7) != 0)
+        {
+            var indices = new int[selected.Indices.Length];
+            for (var i = 0; i < indices.Length; i++) indices[i] = candidates[selected.Indices[i]];
+            selected = selected with { Indices = indices };
+        }
         return new(candidates, selected);
     }
 }

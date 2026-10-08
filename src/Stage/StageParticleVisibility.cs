@@ -18,8 +18,8 @@ internal sealed class StageParticleVisibility
 
     public bool Test(IReadOnlyList<Vector4> planes)
     {
-        foreach (var plane in planes)
-            if ((-plane.W + plane.Z * Center.Z) + plane.Y * Center.Y + plane.X * Center.X < -Radius) return false;
+        for (var i = 0; i < planes.Count; i++)
+            if (planes[i] is var plane && (-plane.W + plane.Z * Center.Z) + plane.Y * Center.Y + plane.X * Center.X < -Radius) return false;
         return true;
     }
 

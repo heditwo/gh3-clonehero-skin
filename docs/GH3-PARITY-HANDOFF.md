@@ -47,11 +47,41 @@ Measured with `GH3_SKIN_PROFILE=1`, which logs per-subsystem milliseconds per fr
 
 Worst-case frame rate in that section went from 1 to about 43 fps on the RTX 3060 laptop. The laptop also throttles after heavy sections, roughly doubling all subsystem times. Rule for future code: avoid Unity struct constructors and operators in per-frame loops; use field initializers (`new Vector4 { x = ... }`) and `System.Numerics`.
 
+#### Second optimization pass (0.9.1)
+
+All ten venues were profiled with My Curse (64 s each) on the laptop GPU. `GH3_SKIN_PROFILE=1` now also logs managed kilobytes per frame and gen-0 collections per subsystem (`src/FrameProfile.cs`); `tools/summarize-profile.py <log>...` summarizes the logs. `GH3_BENCH=<venue> GH3_BENCH_SONG=<chart folder>` runs a venue's scripts and particles against a chart outside the game (`tests/ScriptBench.cs`); `GH3_BENCH_ALLOC=1` adds sampled allocation types.
+
+| Cause | Fix |
+| --- | --- |
+| Stage actors (for example, Lou's Inferno props) used the CPU vertex-lighting path: `BakeMesh` plus per-vertex lighting every frame (2.4 ms) | Actors use the GPU surface shader with their light group |
+| Per-surface light constants: seven `SetVector` calls and a property block per surface | One 7×N `RGBAHalf` texture (`_Gh3LightData`) per venue, indexed by `_Gh3LightIndex`, uploaded once per change |
+| Light selection allocated query, candidate, and scratch arrays per sample | `StageLightSpatial.QueryInto`, cached light records, `stackalloc` scratch |
+| `ParticleBatch.End` assigned full-capacity arrays for seven vertex streams (about 26 MB per frame in the Budokan pyro) | Upload only the used range through `Mesh.SetArrayForChannelImpl` and `SetIndicesImpl`; vertex counts grow in 64-quad steps; empty batches disable their renderer |
+| A delegate per particle per step (`_runtime.NextRandom` method group), `Gh3Checksum` string and byte copies, LINQ in `Gh3QbValue.Field` | Cached delegate, table CRC without copies for ASCII, index loops |
+| Particle view: two camera-path samples and new frustum planes per emitter per step | Cached per time step |
+
+The public ranged `Mesh` overloads (`SetVertices(array, start, length)`, `SetIndices(array, start, length, ...)`, `SetVertexBufferData`, and similar) are stripped from this game and fail with "Method unstripping failed". Use the internal calls above.
+
+| Venue | Median fps before → after | Minimum fps before → after |
+| --- | --- | --- |
+| Backyard Bash | 178 → 230 | 119 → 150 |
+| Dive | 173 → 225 | 134 → 188 |
+| Video shoot | 190 → 214 | 84 → 209 |
+| Art Deco | 158 → 222 | 121 → 180 |
+| Prison | 154 → 213 | 88 → 142 |
+| Wikker | 186 → 208 | 165 → 190 |
+| Budokan | 162 → 183 | 44 → 71 |
+| Lou's Inferno | 116 → 198 | 100 → 172 |
+
+Soundcheck and Credits stay at the 241 fps cap. Gen-0 collections fell from about 1 per second to about 0.2. The Budokan pyro peak (about 12,000 particles) still spends about 2.6 ms building quads, 2 ms uploading them, and 1.3 ms in scripts. The remaining CPU vertex-lit meshes (`LitMeshes`, materials without a GPU shading mode) cost about 0.7 ms.
+
+Visible change: the Budokan stage diver (Crowd light group) now uses native GH3 light selection (cyan ambient, red key) instead of the earlier purple approximation.
+
 MelonLoader's assembly generator contacted `api.melonloader.com` on every launch, and the leftover HTTPS connection crashed the CLR later. The installed game now has `force_offline_generation = true` in `UserData/Loader.cfg`; the original file is backed up as `~/.cache/gh3-install-backup-0.8.115/Loader.cfg.bak`.
 
 ### Installation state
 
-- Version `0.9.0` is installed in `~/games/clonehero-gh3-melon` with all ten re-exported venues and the regenerated band library. DLL SHA-256 after the performance fixes: `7ab9abcc42c740f0ce377a42e9bf81d4b3f1b7f759ccde06ffa0e7c68aa98b16`.
+- Version `0.9.1` is installed in `~/games/clonehero-gh3-melon` with all ten re-exported venues, the regenerated band library, and the rebuilt `render/stage.bundle` (the light-data texture needs it). DLL SHA-256: `9ae7d8301ae3ff2880ba14973b2716a82f97f295c3e542b750213e98c4bfedd7`.
 - The previous `0.8.115` install (DLL and `Mods/GH3Skin`) is backed up in `~/.cache/gh3-install-backup-0.8.115`.
 - Verification for this build: logic tests, asset-driven venue script checks, Python tests, and the 33-set regression pass. Headless captures of all ten venues load and render; with network isolation, Video and Budokan passed three of three runs each. Captures end by timeout, so they do not establish a clean process exit.
 - Evidence (not in Git): `~/.cache/gh3ref/` holds the GH3 Slow Ride recording (`gh3-slowride.mp4`), the Dive constant trace (`dive-slowride-ps-constants.log.zst`), matched frames, and comparison sheets.
