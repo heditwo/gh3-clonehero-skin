@@ -2,10 +2,11 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
-// GH3 DegenerateBlend node (GH3.exe 0x659d40 update, 0x659f50 evaluate). A new branch enters with weight 1 and keeps it;
-// the branch it replaces gets the "linear" blend curve, and every older branch loses dt / BlendDuration of the newest
-// blend per update until it is dropped at 0. The output is the weighted mean, built from the oldest branch with lerp
-// factor weight / running sum, so two branches give the new one 1 / (2 - u) at blend progress u.
+// GH3 DegenerateBlend node (CDegenerateBlendAnimNode: GH3.exe 0x6599b0 add, 0x659730 update, 0x659860 evaluate).
+// Each branch keeps a weight that starts at 1 when the next branch is added. Every update lowers all weights except the
+// newest by dt / BlendDuration of the newest branch, and a branch is dropped with its weight at 0. The output starts at
+// the oldest branch and lerps to each newer branch with factor 1 - weight of the branch before it (linear blend curve).
+// CDegeneratePartialAnimNode (0x659d40, 0x659f50) uses a weighted mean instead; the band anim trees do not use it.
 internal sealed class StageBlendTrack
 {
     internal readonly record struct Branch(double Time, string Clip, double Blend);
@@ -27,26 +28,20 @@ internal sealed class StageBlendTrack
     // Writes the lerp factor of branch k to factors[k - oldest] and returns the oldest branch that still has weight.
     public static int Factors(IReadOnlyList<Branch> branches, int newest, double time, Span<float> factors)
     {
-        Span<double> weights = stackalloc double[MaxDepth + 1];
+        Span<double> progress = stackalloc double[MaxDepth + 1];
         var oldest = newest;
         var decay = 0.0;
-        weights[0] = 1;
         for (var k = newest - 1; k >= 0 && newest - k <= MaxDepth; k--)
         {
             var next = branches[k + 1];
             if (next.Blend <= 0) break;
             decay += ((k + 1 == newest ? time : branches[k + 2].Time) - next.Time) / next.Blend;
             if (decay >= 1) break;
-            weights[newest - k] = 1 - decay;
+            progress[newest - 1 - k] = decay;
             oldest = k;
         }
-        var sum = 0.0;
-        for (var k = oldest; k <= newest; k++)
-        {
-            var weight = weights[newest - k];
-            sum += weight;
-            factors[k - oldest] = (float)(weight / sum);
-        }
+        factors[0] = 1;
+        for (var k = oldest; k < newest; k++) factors[k + 1 - oldest] = (float)progress[newest - 1 - k];
         return oldest;
     }
 

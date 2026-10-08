@@ -8,10 +8,10 @@ internal static class DrumHandLogicTests
         var branches = new[] { new StageBlendTrack.Branch(0, "a", 0.2), new StageBlendTrack.Branch(1, "b", 0.2), new StageBlendTrack.Branch(1.1, "c", 0.1) };
         Span<float> factors = stackalloc float[StageBlendTrack.MaxDepth + 1];
         var oldest = StageBlendTrack.Factors(branches, 1, 1.1, factors);
-        Check(oldest == 0 && factors[0] == 1 && Math.Abs(factors[1] - 1 / 1.5f) < 1e-5f, "two GH3 DegenerateBlend branches give the new branch 1 / (2 - u)");
+        Check(oldest == 0 && factors[0] == 1 && Math.Abs(factors[1] - 0.5f) < 1e-5f, "a GH3 DegenerateBlend branch fades in linearly over its blend time");
         oldest = StageBlendTrack.Factors(branches, 2, 1.12, factors);
-        Check(oldest == 0 && Math.Abs(factors[1] - 0.8f / 1.1f) < 1e-5f && Math.Abs(factors[2] - 1 / 2.1f) < 1e-5f,
-            "older GH3 branches decay at the newest blend rate and mix by running weight");
+        Check(oldest == 0 && Math.Abs(factors[1] - 0.7f) < 1e-5f && Math.Abs(factors[2] - 0.2f) < 1e-5f,
+            "older GH3 branches decay at the newest blend rate");
         oldest = StageBlendTrack.Factors(branches, 2, 1.25, factors);
         Check(oldest == 2 && factors[0] == 1, "branches leave the blend when their weight reaches zero");
 

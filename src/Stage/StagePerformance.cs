@@ -199,7 +199,7 @@ internal sealed class PerformancePlayer
         Clip(segment.Clip).Apply(Pose, _bind, (time - segment.Time) * segment.Rate);
         var index = StageTimeline.UpperBound(_segments, time, s => s.Time) - 1;
         // Body DegenerateBlend with BlendDuration 0.2 (hero_play_adjusting_random_anims); see StageBlendTrack.
-        var weight = (float)(1 / (2 - Math.Clamp((time - segment.Time) / 0.2, 0, 1)));
+        var weight = (float)Math.Clamp((time - segment.Time) / 0.2, 0, 1);
         if (index > 0 && weight < 1)
         {
             var previous = _segments[index - 1];
