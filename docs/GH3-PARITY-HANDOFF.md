@@ -171,7 +171,7 @@ MelonLoader's assembly generator contacted `api.melonloader.com` on every launch
 
 ### Installation state
 
-- Version `0.9.7` is installed in `~/games/clonehero-gh3-melon` with all ten re-exported venues, the regenerated band library, and the rebuilt `render/stage.bundle` (the light-data texture needs it). DLL SHA-256: `5c88b784a552f9c85ce4464f52e932584caabf20ffef72051d4a330ea56bf7a0`.
+- Version `0.9.8` is installed in `~/games/clonehero-gh3-melon` with all ten re-exported venues, the regenerated band library, and the rebuilt `render/stage.bundle` (the light-data texture needs it). DLL SHA-256: `6355e437839341495fc084bfebfc49adb0a193f0964ec12db090c767899a5d52`.
 - The previous `0.8.115` install (DLL and `Mods/GH3Skin`) is backed up in `~/.cache/gh3-install-backup-0.8.115`.
 - Verification for this build: logic tests, asset-driven venue script checks, Python tests, and the 33-set regression pass. Headless captures of all ten venues load and render; with network isolation, Video and Budokan passed three of three runs each. Captures end by timeout, so they do not establish a clean process exit.
 - Evidence (not in Git): `~/.cache/gh3ref/` holds the GH3 Slow Ride recording (`gh3-slowride.mp4`), the Dive constant trace (`dive-slowride-ps-constants.log.zst`), matched frames, and comparison sheets.
