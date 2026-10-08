@@ -192,6 +192,17 @@ GH3 creates and kills nodes that have `CreatedFromVariable` or `CreatedOnProgres
 
 Evidence: contact sheets in `~/.cache/gh3ref/agent-dive/nf/sheets/` (poor, medium, and good runs with `GH3_SKIN_FORCE_ROCK`; columns are blackout, chorus, verse, solo, flare, and strobe cues of My Curse). `perf-verse.jpg` shows Dive and Wikker neon that changes with performance.
 
+### Dive neon "flicker" investigation (fix-diveflicker)
+
+The user reported that the Dive neon dancer and other neon lights disappear many times during play. Result: the mod does not have a rendering defect, and its object lifetime agrees with GH3.
+
+- A per-frame log of the dancer (node `0xed7f462c`) and three other flag-driven neons (`e6b81d22`, `0fd01ea8`, `5d967510`) recorded `activeInHierarchy`, `enabled`, `isVisible`, bounds against the camera frustum, and UV and color. When the object was alive and inside the frustum, Unity drew it in each logged frame (the only exceptions were the first frame of a camera cut). Frustum culling, near and far planes, layers, draw order, and visibility groups do not hide it.
+- The object disappears only when it is killed. Each kill occurs at a `blackout` or `flare` lightshow mood. The node-flag table `0x1a22a5e6` sets `LS_PERF_*` to 0 for these moods, and the next `chorus`, `verse`, or `strobe` cue creates the object again. In My Curse these moods alternate every 0.35 to 2 s in many sections.
+- GH3 does the same. In `gh3-mycurse-raw.mp4`, the dancer, its red pole strip, and the purple glow outline of the heart sign disappear at the 198.26 s blackout, come back at 200.76 s (chorus), disappear at 201.02 s, and come back at about 201.37 s. A dark silhouette of the dancer stays, as in the mod. GH3 changes occur about 0.15 s before the cue times. The flare light bursts at 44.94, 52.94, 60.94, and 68.94 s show the same lead. This is a general lightshow timing offset (or a capture offset), not a node-flag defect.
+- Evidence: `~/.cache/gh3ref/agent-dive/flk/dancer-blackout-gh3-vs-mod.jpg` (GH3 197.9–201.2 s and mod 175.6–176.8 s, 20 fps).
+
+No code change. If the visible effect must be softer than GH3, the cause to examine is how dark the mod's blackout lighting is when the neon disappears. The GH3 blackout fades the stage over about 0.8 s.
+
 ### Performance findings
 
 Measured with `GH3_SKIN_PROFILE=1`, which logs per-subsystem milliseconds per frame once a second. The test case is My Curse in Kaiju Megadome: about 14,000 live pyro particles at 48–51 s.
