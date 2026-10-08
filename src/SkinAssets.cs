@@ -48,8 +48,11 @@ internal sealed class SkinAssets
         }
     }
 
+    public string Root { get; }
+
     public SkinAssets(string root)
     {
+        Root = root;
         LoadCoreTextures(root);
         LoadReadyAnimation(root);
         LoadGameplaySprites(root);

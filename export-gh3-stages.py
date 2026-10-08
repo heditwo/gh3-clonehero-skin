@@ -300,7 +300,7 @@ def export(source, scripts, global_entries, zone, directory, global_references=N
             geometry = global_entries[(key(".mdl"), key(stem+".mdl"))]
             texture_blob = global_entries[(key(".tex"), key(stem+".tex"))]
             mat, parts = stage.scene(geometry)
-            parts = [p for p in parts if mat[p[0]]["blend"] == 0]
+            parts = [p for p in parts if mat[p[0]]["blend"] in (0, 1)]
             mat = {n:v for n,v in mat.items() if n in {p[0] for p in parts}}
             images = decode_textures(mat, texture_dictionary(texture_blob))
             renamed = {model+"-"+n:v for n,v in mat.items()}

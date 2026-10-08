@@ -11,6 +11,7 @@ internal sealed class GameplayHud
     private HighwayHud? _highway;
     private RockMeterHud? _rock;
     private ScorePanelHud? _score;
+    private MessageHud? _message;
     private HudViewport? _screenViewport;
     private HudViewport? _highwayViewport;
 
@@ -28,6 +29,7 @@ internal sealed class GameplayHud
         _highway = null;
         _rock = null;
         _score = null;
+        _message = null;
         _screenViewport = null;
         _highwayViewport = null;
     }
@@ -45,6 +47,7 @@ internal sealed class GameplayHud
         HudVisual.Position(_rock.Root, new Vector2(1326, 752.4f));
         _score = new ScorePanelHud(_screenRoot, _tuning, _assets.Textures, _assets.AmpMaterial);
         HudVisual.Position(_score.Root, new Vector2(322, 714));
+        if (File.Exists(Path.Combine(_assets.Root, "message-font.png"))) _message = new MessageHud(_screenRoot, _assets.Root);
     }
 
     public void Update(GameplayState state, Camera camera)
@@ -67,5 +70,6 @@ internal sealed class GameplayHud
         _highway!.Update(state, time);
         _rock!.Update(state, time);
         _score!.Update(state, time);
+        _message?.Update(state, time);
     }
 }

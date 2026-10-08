@@ -25,6 +25,10 @@ internal sealed class StageFixtures : IDisposable
 {
     private readonly List<StageAssets> _assets = new();
     private readonly Dictionary<string, (Transform Transform, bool FixedPosition)> _housings = new();
+    private readonly Dictionary<string, List<Renderer>> _flares = new();
+    private readonly MaterialPropertyBlock _flareProperties = new();
+    private static readonly int ColorId = Shader.PropertyToID("_Color");
+    public Camera? View { get; set; }
     public Dictionary<string, StageObjectPlacement> Placements { get; } = new();
     public Dictionary<uint, string> ObjectBeams { get; } = new();
     public StageScriptState? Scripts { get; set; }
@@ -72,6 +76,12 @@ internal sealed class StageFixtures : IDisposable
                 renderer.receiveShadows = false;
                 renderer.lightProbeUsage = LightProbeUsage.Off;
                 renderer.reflectionProbeUsage = ReflectionProbeUsage.Off;
+                // GH3 housings carry an additive "Flare" lens card; it glows with the beam when facing the camera.
+                if (material.GetInt("_DstBlend") == (int)BlendMode.One)
+                {
+                    if (!_flares.TryGetValue(housing.Id, out var flares)) _flares[housing.Id] = flares = new();
+                    flares.Add(renderer);
+                }
             }
             _housings.Add(housing.Id, (obj.transform, housing.FixedPosition));
             var source = housing.Object.Length == 0 ? Convert.ToUInt32(housing.Id, 16) : Gh3QbText.Key(housing.Object);
@@ -88,6 +98,20 @@ internal sealed class StageFixtures : IDisposable
         if (!housing.FixedPosition) housing.Transform.localPosition = new(value.Position.X, value.Position.Y, value.Position.Z);
         var q = value.Rotation;
         housing.Transform.localRotation = new(q.X, q.Y, q.Z, q.W);
+        if (View == null || !_flares.TryGetValue(id, out var flares)) return;
+        var forward = housing.Transform.forward;
+        var from = housing.Transform.position;
+        var eye = View.transform.position;
+        var dx = eye.x - from.x; var dy = eye.y - from.y; var dz = eye.z - from.z;
+        var length = MathF.Sqrt(dx * dx + dy * dy + dz * dz);
+        var facing = length > 0.0001f ? Math.Max(0, (forward.x * dx + forward.y * dy + forward.z * dz) / length) : 0;
+        var strength = Math.Min(1, value.Density) * facing * facing * facing * facing;
+        _flareProperties.SetColor(ColorId, new Color { r = value.Color.X * strength, g = value.Color.Y * strength, b = value.Color.Z * strength, a = strength });
+        foreach (var flare in flares)
+        {
+            flare.enabled = strength > 0.002f;
+            if (flare.enabled) flare.SetPropertyBlock(_flareProperties);
+        }
     }
 
     public StageBeamValue Resolve(string id, StageBeamValue value, double time)
@@ -118,6 +142,7 @@ internal sealed class StageFixtures : IDisposable
         foreach (var assets in _assets) assets.Dispose();
         _assets.Clear();
         _housings.Clear();
+        _flares.Clear();
         Placements.Clear();
         ObjectBeams.Clear();
         _rotations.Clear();

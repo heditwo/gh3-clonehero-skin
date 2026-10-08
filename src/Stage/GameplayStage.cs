@@ -203,6 +203,7 @@ internal sealed class GameplayStage
             var cameraObject = new GameObject("GH3 Stage Camera");
             cameraObject.transform.SetParent(_root.transform, false);
             _camera = cameraObject.AddComponent<Camera>();
+            _fixtures.View = _camera;
             _camera.cullingMask = 1 << Layer;
             _camera.depth = player.mainCamera.depth - 0.1f;
             _playerCamera = player.mainCamera;
