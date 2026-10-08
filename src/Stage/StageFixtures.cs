@@ -28,6 +28,7 @@ internal sealed class StageFixtures : IDisposable
     public Dictionary<string, StageObjectPlacement> Placements { get; } = new();
     public Dictionary<uint, string> ObjectBeams { get; } = new();
     public StageScriptState? Scripts { get; set; }
+    private readonly Dictionary<string, (System.Numerics.Quaternion Rotation, double Time)> _snapshotRotations = new();
 
     public void Load(string directory, GameObject root, int layer)
     {
@@ -97,6 +98,10 @@ internal sealed class StageFixtures : IDisposable
             if (beam != id || !Scripts.Objects.TryGetValue(source, out var state)) continue;
             value = Scripts.Beam(source, value);
             var pose = Scripts.Sample(source, time);
+            // Light show snapshots and object scripts both set the housing orientation; the latest change wins.
+            if (!_snapshotRotations.TryGetValue(id, out var snapshot) || snapshot.Rotation != value.Rotation || time < snapshot.Time)
+                _snapshotRotations[id] = snapshot = (value.Rotation, time);
+            var scripted = Scripts.Attached(source) || state.RotationChanged && state.RotationTime >= snapshot.Time;
             if (_housings.TryGetValue(id, out var housing))
             {
                 housing.Transform.gameObject.SetActive(pose.Visible);
@@ -104,7 +109,7 @@ internal sealed class StageFixtures : IDisposable
                 if (state.PositionChanged || Scripts.Attached(source)) housing.Transform.localPosition = new(pose.Position.X, pose.Position.Y, pose.Position.Z);
             }
             return value with { Position = state.PositionChanged || Scripts.Attached(source) ? pose.Position : value.Position,
-                Rotation = state.RotationChanged || Scripts.Attached(source) ? pose.Rotation : value.Rotation, Density = pose.Visible ? value.Density : 0 };
+                Rotation = scripted ? pose.Rotation : value.Rotation, Density = pose.Visible ? value.Density : 0 };
         }
         return value;
     }
@@ -116,6 +121,7 @@ internal sealed class StageFixtures : IDisposable
         _housings.Clear();
         Placements.Clear();
         ObjectBeams.Clear();
+        _snapshotRotations.Clear();
         Scripts = null;
     }
 }

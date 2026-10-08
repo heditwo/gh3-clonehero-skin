@@ -11,9 +11,13 @@ from gh3_formats import find_array, find_struct, key
 
 
 def beam_rotation(xyz):
+    """Mirror a GH3 housing quaternion (w implied) into the stage's Z-flipped space.
+
+    This matches each housing node's static Angles exactly; beam cones extend along local +Z.
+    """
     x, y, z = xyz
     w = math.sqrt(max(0, 1 - x*x - y*y - z*z))
-    return [v / math.sqrt(2) for v in (x - w, y + z, y - z, w + x)]
+    return [-x, -y, z, w]
 
 
 def light_rotation(xyzw):

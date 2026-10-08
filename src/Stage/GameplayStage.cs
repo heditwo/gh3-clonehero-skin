@@ -17,6 +17,8 @@ internal sealed class GameplayStage
     private Camera? _camera;
     private StageEffects? _effects;
     private StageHandFire? _handFire;
+    private StageHighwayMask? _highwayMask;
+    private static readonly int EyeId = Shader.PropertyToID("_Gh3Eye");
     private StageTimeline? _timeline;
     private StageBand? _band;
     private StageCrowd? _crowd;
@@ -84,6 +86,7 @@ internal sealed class GameplayStage
         _surfaceBundle = null;
         _effects = null;
         _handFire = null;
+        _highwayMask = null;
         _timeline = null;
         _lastTime = double.NaN;
         _lastCombo = -1;
@@ -101,6 +104,7 @@ internal sealed class GameplayStage
         try
         {
             _audio?.Update(time, rock, time == _lastTime);
+            _highwayMask?.Update(player);
             if (time == _lastTime && combo == _lastCombo && rock == _lastRock) return;
             _lastTime = time;
             _lastCombo = combo;
@@ -116,6 +120,12 @@ internal sealed class GameplayStage
                 if (pose.Rotation is { } q) _camera.transform.localRotation = new Quaternion(q.X, q.Y, q.Z, q.W);
                 else _camera.transform.LookAt(_root.transform.position + new Vector3(pose.Target.X, pose.Target.Y, pose.Target.Z));
                 _camera.fieldOfView = pose.FieldOfView;
+            }
+            if (_camera != null && _assets != null && _assets.CharacterMaterials.Count > 0)
+            {
+                var eye = _camera.transform.position;
+                var eyeVector = new Vector4 { x = eye.x, y = eye.y, z = eye.z, w = 1 };
+                foreach (var material in _assets.CharacterMaterials) material.SetVector(EyeId, eyeVector);
             }
             FrameProfile.Measure("effects", () => _effects.Update(_timeline, time));
             FrameProfile.Measure("particles", () => _particles?.Update(time));
@@ -251,6 +261,7 @@ internal sealed class GameplayStage
             _crowd.SetTimeline(_timeline);
             _effects = new StageEffects(_assets, _root, _camera, Layer,
                 stageLighting, _fixtures, pack.Effects) { SourcePyro = _scripts?.State.SourcePyro == true };
+            if (surfaceShader != null) _highwayMask = new StageHighwayMask(_assets, _camera, surfaceShader, Layer);
             _handFire = StageHandFire.Load(Path.Combine(library, "hand-fire"), _assets, _root, _camera, Layer, _band);
             MelonLogger.Msg($"GH3 stage loaded: {_assets.Definition.Name}");
             MelonLogger.Msg($"GH3 stage cues: {_timeline.CueCount} from {_timeline.Source}; {_timeline.Effects.Length} effects");

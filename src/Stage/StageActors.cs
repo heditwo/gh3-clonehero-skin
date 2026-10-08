@@ -42,6 +42,7 @@ internal sealed class StageActors : IDisposable
             _assets.Add(assets);
             assets.Load(folder, obj, layer, bones, lighting: true, lightGroup: actor.LightGroup, surfaceShader: surfaceShader);
             stage.SurfaceMaterials.AddRange(assets.SurfaceMaterials);
+            stage.CharacterMaterials.AddRange(assets.CharacterMaterials);
             stage.ShadedSurfaces.AddRange(assets.ShadedSurfaces);
             stage.BandMeshes.AddRange(assets.BandMeshes);
             stage.TransparentMeshes.AddRange(assets.TransparentMeshes);

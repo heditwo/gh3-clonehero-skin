@@ -53,9 +53,11 @@ internal static class ScriptBench
         var lighting = new StageLighting(StageLightingBank.Load(directory)!, timeline);
         using var state = new StageScriptState(bank, placements, timeline, venue, (id, time) => null, actors, lighting);
         using var sampler = Environment.GetEnvironmentVariable("GH3_BENCH_ALLOC") == "1" ? new AllocationSampler() : null;
+        var rock = float.Parse(Environment.GetEnvironmentVariable("GH3_BENCH_ROCK") ?? "0.5");
         var step = 1.0 / 144;
-        for (var time = -1.0; time < start; time += step) state.Update(time, .5f);
+        for (var time = -1.0; time < start; time += step) state.Update(time, rock);
         if (sampler != null) sampler.Active = true;
+        var ranges = new[] { new List<float>(), new List<float>(), new List<float>() };
         var clock = Stopwatch.StartNew();
         var allocated = GC.GetTotalAllocatedBytes(true);
         var second = Math.Floor(start);
@@ -64,9 +66,21 @@ internal static class ScriptBench
         for (var time = start; time < end; time += step)
         {
             var before = Stopwatch.GetTimestamp();
-            state.Update(time, .5f);
+            state.Update(time, rock);
             foreach (var (id, _) in state.Objects) state.Sample(id, time);
             busy += Stopwatch.GetElapsedTime(before).TotalMilliseconds;
+            if (Environment.GetEnvironmentVariable("GH3_BENCH_RANGE") is { } range && frames % 4 == 0)
+            {
+                var at = range.Split(',').Select(float.Parse).ToArray();
+                var set = state.LightScene.Sample(new(at[0], at[1], -at[2]), Gh3Checksum.Value("Band")).Lighting;
+                static float Max(System.Numerics.Vector4 value) => Math.Max(value.X, Math.Max(value.Y, value.Z));
+                ranges[0].Add(Max(set.Ambient));
+                ranges[1].Add(Max(set.Color));
+                ranges[2].Add(Max(set.Harmonics[0]));
+            }
+            if (Environment.GetEnvironmentVariable("GH3_BENCH_LIGHTS") is { } watched && Math.Floor(time * 2) != Math.Floor((time - step) * 2))
+                Console.WriteLine($"  {time:0.0}s " + string.Join(" | ", watched.Split(',').Select(id => Convert.ToUInt32(id, 16))
+                    .Select(id => state.LightScene.Channels(id) is var c ? $"{c.Color.X:0.00},{c.Color.Y:0.00},{c.Color.Z:0.00}x{c.Intensity:0.0}" : "")));
             peakParticles = Math.Max(peakParticles, state.Particles.Count);
             frames++;
             if (Math.Floor(time + step) == second) continue;
@@ -79,6 +93,18 @@ internal static class ScriptBench
             second = Math.Floor(time + step);
         }
         Console.WriteLine($"{venue} total {clock.Elapsed.TotalSeconds:0.00}s");
+        foreach (var (name, values) in new[] { "ambient", "key", "sh0" }.Zip(ranges).Where(pair => pair.Second.Count > 0))
+        {
+            values.Sort();
+            Console.WriteLine($"  {name}: n={values.Count} min {values[0]:0.000} p50 {values[values.Count / 2]:0.000} p95 {values[(int)(values.Count * .95)]:0.000} max {values[^1]:0.000}");
+        }
+        if (Environment.GetEnvironmentVariable("GH3_BENCH_OBJECTS") is { } watchedObjects)
+            foreach (var id in watchedObjects.Split(',').Select(value => Convert.ToUInt32(value, 16)))
+                if (state.Objects.TryGetValue(id, out var obj))
+                {
+                    var pose = state.Sample(id, end);
+                    Console.WriteLine($"  object {id:x8}: rotationChanged {obj.RotationChanged} positionChanged {obj.PositionChanged} rotation {pose.Rotation} forward {System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitZ, pose.Rotation)}");
+                }
         if (Environment.GetEnvironmentVariable("GH3_BENCH_PROBE") is { } probe)
         {
             var parts = probe.Split(',').Select(float.Parse).ToArray();
@@ -86,6 +112,15 @@ internal static class ScriptBench
             {
                 var set = state.LightScene.Sample(new(parts[0], parts[1], -parts[2]), Gh3Checksum.Value(group)).Lighting;
                 Console.WriteLine($"  {group}: ambient {set.Ambient} key {set.Color} sh0 {set.Harmonics[0]}");
+                if (group != "Band") continue;
+                var sample = state.LightScene.Sample(new(parts[0], parts[1], -parts[2]), Gh3Checksum.Value(group));
+                foreach (var index in sample.Candidates)
+                {
+                    var light = state.LightScene.Lights[index];
+                    var channels = state.LightScene.Channels(light.Id);
+                    Console.WriteLine($"    light {light.Id:x8} type {light.Type} group {state.LightScene.Group(light.Id):x8} color {channels.Color} intensity {channels.Intensity} selected {Array.IndexOf(sample.Lighting.Indices, index) >= 0}");
+                }
+                Console.WriteLine($"    flags {sample.Lighting.Flags} indices {string.Join(",", sample.Lighting.Indices)}");
             }
         }
         if (sampler == null) return;

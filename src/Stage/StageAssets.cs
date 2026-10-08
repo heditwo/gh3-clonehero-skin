@@ -35,7 +35,15 @@ internal sealed class StageMaterial
     public string Shading { get; set; } = "";
     public string Lightmap { get; set; } = "";
     public float ColorScale { get; set; } = 1;
+    public StageCharacterMaterial? Character { get; set; }
     public int ShadingMode => Shading switch { "unlit" => 0, "ambient" => 1, "lit" => 2, "" => -1, _ => throw new InvalidDataException("Unknown stage shading mode") };
+}
+
+// Constants c0–c10 of GH3's SkinShader and HairShader pixel shaders for one material.
+internal sealed class StageCharacterMaterial
+{
+    public string Model { get; set; } = "";
+    public float[][] Constants { get; set; } = Array.Empty<float[]>();
 }
 
 internal sealed class StageAssets : IDisposable
@@ -52,6 +60,7 @@ internal sealed class StageAssets : IDisposable
     private readonly List<UnityEngine.Object> _resources = new();
     public StageDefinition Definition { get; private set; } = new();
     public List<Material> SurfaceMaterials { get; } = new();
+    public List<Material> CharacterMaterials { get; } = new();
     public List<Material> CrowdMaterials { get; } = new();
     public List<LitMesh> LitMeshes { get; } = new();
     public List<LitBandMesh> BandMeshes { get; } = new();
@@ -107,8 +116,34 @@ internal sealed class StageAssets : IDisposable
         if (!float.IsFinite(source.ColorScale) || source.ColorScale is < 1 or > 1000) throw new InvalidDataException("Invalid material color scale");
         material.SetVector("_Gh3Surface", new(source.ShadingMode, cutout ? source.Cutoff : 0, source.Lightmap.Length > 0 ? 1 : 0, source.ColorScale));
         material.SetColor("_Color", Color.white);
+        if (source.Character is { } character) ConfigureCharacter(material, character);
         material.renderQueue = transparent ? 3000 : cutout ? 2450 : 2000;
         return material;
+    }
+
+    private static void ConfigureCharacter(Material material, StageCharacterMaterial character)
+    {
+        var c = character.Constants;
+        if (c.Length != 11 || c.Any(row => row.Length != 4 || !row.All(float.IsFinite)) || character.Model is not ("skin" or "hair"))
+            throw new InvalidDataException("Invalid GH3 character material constants");
+        static Vector4 V(float x, float y, float z, float w) => new() { x = x, y = y, z = z, w = w };
+        var surface = material.GetVector("_Gh3Surface");
+        surface.x = character.Model == "skin" ? 3 : 4;
+        material.SetVector("_Gh3Surface", surface);
+        if (character.Model == "skin")
+        {
+            material.SetVector("_Gh3Char0", V(c[0][0], c[0][1], c[0][2], c[9][0]));
+            material.SetVector("_Gh3Char1", V(c[1][0], c[1][1], c[1][2], c[4][0]));
+            material.SetVector("_Gh3Char2", V(c[2][0], c[2][1], c[2][2], c[3][0]));
+            material.SetVector("_Gh3Char3", V(c[8][0], c[8][1], c[8][2], c[10][0]));
+        }
+        else
+        {
+            material.SetVector("_Gh3Char0", V(c[1][0], c[1][1], c[1][2], 1));
+            material.SetVector("_Gh3Char1", V(0, 0, 0, c[6][0]));
+            material.SetVector("_Gh3Char2", V(0, 0, 0, c[0][0]));
+            material.SetVector("_Gh3Char3", V(c[8][0], c[8][1], c[8][2], c[9][0]));
+        }
     }
 
     public void Load(string directory, GameObject root, int layer, Transform[]? bones = null, bool lighting = false, string? lightGroup = null, Shader? surfaceShader = null)
@@ -158,6 +193,7 @@ internal sealed class StageAssets : IDisposable
             if (shaded && source.Lightmap.Length > 0) material.SetTexture("_Gh3Lightmap", LoadTexture(source.Lightmap, TextureWrapMode.Clamp));
             materials.Add(Convert.ToUInt32(key, 16), material);
             SurfaceMaterials.Add(material);
+            if (shaded && source.Character != null) CharacterMaterials.Add(material);
             if (source.Crowd) CrowdMaterials.Add(material);
             if (source.MovieSlot is < -1 or > 31) throw new InvalidDataException("Invalid movie surface slot");
             if (source.MovieSlot >= 0) MovieSurfaces.Add((source.MovieSlot, material, material.mainTexture));
@@ -336,6 +372,7 @@ internal sealed class StageAssets : IDisposable
             if (resource != null) UnityEngine.Object.Destroy(resource);
         _resources.Clear();
         SurfaceMaterials.Clear();
+        CharacterMaterials.Clear();
         CrowdMaterials.Clear();
         LitMeshes.Clear();
         Objects.Clear();

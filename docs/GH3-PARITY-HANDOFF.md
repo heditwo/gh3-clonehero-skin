@@ -77,11 +77,19 @@ Soundcheck and Credits stay at the 241 fps cap. Gen-0 collections fell from abou
 
 Visible change: the Budokan stage diver (Crowd light group) now uses native GH3 light selection (cyan ambient, red key) instead of the earlier purple approximation.
 
+#### Visual fixes (0.9.2)
+
+- **Band brightness.** Band materials now use the diffuse part of GH3's `SkinShader` and `HairShader`, ported from the original pixel shaders (`tools/disassemble-ps.py <template>` prints them). Skin: `albedo × c0`, light `× lerp(c1, lerp(c2, 1, step(N·L − c4)), smooth(|N·L − c4| / c3))`, rim toward `c8` by `c10` with view power `c9`. Hair: `albedo × c1`, wrap lighting `sat((N·L + c0) / (1 + c0))`, minimum `c6`, rim toward `c8` by `c9`. The constants come from each material (the `character` field in band `stage.json`). Before this, the band used the venue shader without these factors and rendered about twice as bright (Budokan drummer: `c0` 0.77, skin ramp 0.45–0.73). Specular and the projected shadow map are still not ported.
+- **Light housing orientation.** `prepare-lighting.beam_rotation` used a wrong formula. A housing `Quat` (x, y, z, implied w) maps to `(−x, −y, z, w)` in stage space, which reproduces every housing node's static `Angles` exactly. Lens and beam cone both lie on local +Z.
+- **Housing rotation priority.** Light show snapshots and `Obj_Rotate` both set a housing's orientation; the latest change now wins. Before, one `Obj_Rotate absolute=(−40, 90, 0)` at song start locked the Budokan floor searchlights so they pointed down for the whole song.
+- **Effects behind the highway.** `StageHighwayMask` writes near depth over the highway's screen area (render queue 3005), clipped at the player camera's far plane. Particle batches and Tesla effects draw at queue 3010, so they never draw over the highway.
+- **Pyro amount.** Particle LOD is off in GH3: the flag at `0xb4e322` is in `.bss`, and only the `EngineConfig` handler writes it; no script calls `EngineConfig`. The particle count therefore matches GH3 for the same rock meter value (Budokan pyro peak: about 8,300 particles at rock 0.5, 14,700 at rock 1.0).
+
 MelonLoader's assembly generator contacted `api.melonloader.com` on every launch, and the leftover HTTPS connection crashed the CLR later. The installed game now has `force_offline_generation = true` in `UserData/Loader.cfg`; the original file is backed up as `~/.cache/gh3-install-backup-0.8.115/Loader.cfg.bak`.
 
 ### Installation state
 
-- Version `0.9.1` is installed in `~/games/clonehero-gh3-melon` with all ten re-exported venues, the regenerated band library, and the rebuilt `render/stage.bundle` (the light-data texture needs it). DLL SHA-256: `9ae7d8301ae3ff2880ba14973b2716a82f97f295c3e542b750213e98c4bfedd7`.
+- Version `0.9.2` is installed in `~/games/clonehero-gh3-melon` with all ten re-exported venues, the regenerated band library, and the rebuilt `render/stage.bundle` (the light-data texture needs it). DLL SHA-256: `7802cbdea39aabd8cea2bf1394777d0fe3efd39deefc8aa4935e03018b5087ad`.
 - The previous `0.8.115` install (DLL and `Mods/GH3Skin`) is backed up in `~/.cache/gh3-install-backup-0.8.115`.
 - Verification for this build: logic tests, asset-driven venue script checks, Python tests, and the 33-set regression pass. Headless captures of all ten venues load and render; with network isolation, Video and Budokan passed three of three runs each. Captures end by timeout, so they do not establish a clean process exit.
 - Evidence (not in Git): `~/.cache/gh3ref/` holds the GH3 Slow Ride recording (`gh3-slowride.mp4`), the Dive constant trace (`dive-slowride-ps-constants.log.zst`), matched frames, and comparison sheets.

@@ -42,6 +42,7 @@ internal sealed class StageObjectState
     public bool Visible { get; private set; } = true;
     public bool PositionChanged { get; private set; }
     public bool RotationChanged { get; private set; }
+    public double RotationTime { get; private set; } = double.NegativeInfinity;
 
     public StageObjectState(StageObjectPlacement placement)
     {
@@ -104,7 +105,7 @@ internal sealed class StageObjectState
         if (Is("Hide") || Is("Unhide")) { Visible = Is("Unhide"); return new(true); }
         if (Is("Create"))
         {
-            Exists = true; Visible = true; PositionChanged = false; RotationChanged = false;
+            Exists = true; Visible = true; PositionChanged = false; RotationChanged = false; RotationTime = double.NegativeInfinity;
             _position = new(_origin, _origin, time, time);
             var angles = Angles(_rotation); _angles = new(angles, angles, time, time);
             _scaling = new(_scale, _scale, time, time);
@@ -134,6 +135,7 @@ internal sealed class StageObjectState
             var target = Field("absolute") is { } absolute ? Vector(absolute) : start + Vector(Field("relative") ?? Unnamed());
             _angles = new(start, target, time, time + Duration(start, target));
             RotationChanged = true;
+            RotationTime = time;
             _axis = null;
             return new(true);
         }
@@ -153,6 +155,7 @@ internal sealed class StageObjectState
             var end = Field("angle") != null ? time + duration : speed == 0 ? time : double.PositiveInfinity;
             _axis = new(Sample(time).Rotation, axis, angle, speed, time, end);
             RotationChanged = true;
+            RotationTime = time;
             return new(true);
         }
         if (Is("Obj_StopMoving")) { var p = _position.At(time); _position = new(p, p, time, time); return new(true); }

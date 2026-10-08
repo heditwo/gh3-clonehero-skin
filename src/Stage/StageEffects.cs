@@ -211,6 +211,9 @@ internal sealed class StageEffects
         return mesh;
     }
 
+    // Particle effects draw after the highway mask (StageHighwayMask.Queue).
+    public const int EffectQueue = StageHighwayMask.Queue + 5;
+
     internal sealed class ParticleBatch
     {
         // Vertex math stays in System.Numerics: Unity struct operators and constructors are native calls in this game.
@@ -304,6 +307,7 @@ internal sealed class StageEffects
             if (_bitangentBuffer != null) _bitangentArray = new(_bitangentBuffer.Pointer);
             _mesh.bounds = new Bounds(Vector3.zero, new Vector3(100, 100, 100));
             var material = sourceMaterial ?? assets.Own(StageAssets.MakeMaterial(shader, true, additive));
+            material.renderQueue = EffectQueue;
             Material = material;
             material.mainTexture = texture;
             var obj = new GameObject(_mesh.name) { layer = layer };

@@ -66,7 +66,7 @@ internal sealed class StageTeslaRenderer : IDisposable
         mesh.triangles = new Il2CppStructArray<int>(new[] { 0, 1, 2, 2, 1, 3, 2, 3, 4, 4, 3, 5, 4, 5, 6, 6, 5, 7 });
         var material = _assets.Own(new Material(_shader));
         material.mainTexture = _texture;
-        material.renderQueue = 3000;
+        material.renderQueue = StageEffects.EffectQueue;
         material.SetInt("_Cull", 0);
         var obj = new GameObject(mesh.name) { layer = _layer };
         obj.transform.SetParent(_root.transform, false);
