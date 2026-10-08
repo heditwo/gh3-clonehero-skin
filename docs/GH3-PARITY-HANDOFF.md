@@ -85,11 +85,17 @@ Visible change: the Budokan stage diver (Crowd light group) now uses native GH3 
 - **Effects behind the highway.** `StageHighwayMask` writes near depth over the highway's screen area (render queue 3005), clipped at the player camera's far plane. Particle batches and Tesla effects draw at queue 3010, so they never draw over the highway.
 - **Pyro amount.** Particle LOD is off in GH3: the flag at `0xb4e322` is in `.bss`, and only the `EngineConfig` handler writes it; no script calls `EngineConfig`. The particle count therefore matches GH3 for the same rock meter value (Budokan pyro peak: about 8,300 particles at rock 0.5, 14,700 at rock 1.0).
 
+#### Full-song comparison against original GH3 (0.9.4)
+
+Original GH3 now records on the GPU: `~/.cache/gh3ref/start-gh3-gpu.sh :9310` starts it on a nested Xwayland, and `pin-window.sh :9310 <seconds>` keeps the window at 1600×900. GH3's built-in bot is enabled by setting `bot_play` to 1 in the two `player*_status` defaults of `DATA/PAK/qb.pab.xen` (offsets 0x5026c and 0x508dc + 4); keep a copy of the original. In this install the fret keys are 1–5 and the red fret is "back". The "unlock all songs" cheat opens the bonus list. Quickplay plays in The Dive. `Gh3SongTool chart <song_song.pak.xen> <notes.chart>` writes a Clone Hero chart with GH3's notes and Star Power phrases; `~/.cache/gh3ref/full/sbs.sh` builds a side-by-side synced on the music.
+
+Fixed from that comparison: back-face culling (GH3 material flag +220 marks two-sided materials), Axel's highway texture, venue posters from `global_ad_tex.pak`, housing lens flares, and the "Note Streak!" and "Star Power Ready" messages. Remaining visible gaps: GH3's shadow map, the camera-shot choice (GH3 picks shots at random), bloom around bright lights, and overall stage brightness in some snapshots.
+
 MelonLoader's assembly generator contacted `api.melonloader.com` on every launch, and the leftover HTTPS connection crashed the CLR later. The installed game now has `force_offline_generation = true` in `UserData/Loader.cfg`; the original file is backed up as `~/.cache/gh3-install-backup-0.8.115/Loader.cfg.bak`.
 
 ### Installation state
 
-- Version `0.9.3` is installed in `~/games/clonehero-gh3-melon` with all ten re-exported venues, the regenerated band library, and the rebuilt `render/stage.bundle` (the light-data texture needs it). DLL SHA-256: `f382dfba37f8da3391b9e77ff8b75292f8ca955b4f078f6455471eb16f6dab0a`.
+- Version `0.9.4` is installed in `~/games/clonehero-gh3-melon` with all ten re-exported venues, the regenerated band library, and the rebuilt `render/stage.bundle` (the light-data texture needs it). DLL SHA-256: `4226c612d65d879e9cd56b694567eb9c5e741f45dcf2f9bded2937d586aea302`.
 - The previous `0.8.115` install (DLL and `Mods/GH3Skin`) is backed up in `~/.cache/gh3-install-backup-0.8.115`.
 - Verification for this build: logic tests, asset-driven venue script checks, Python tests, and the 33-set regression pass. Headless captures of all ten venues load and render; with network isolation, Video and Budokan passed three of three runs each. Captures end by timeout, so they do not establish a clean process exit.
 - Evidence (not in Git): `~/.cache/gh3ref/` holds the GH3 Slow Ride recording (`gh3-slowride.mp4`), the Dive constant trace (`dive-slowride-ps-constants.log.zst`), matched frames, and comparison sheets.
