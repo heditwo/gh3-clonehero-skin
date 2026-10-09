@@ -36,7 +36,7 @@ Since 0.9.9 each GH3 guitarist plays on its own GH3 rig profile of the character
 | Bassist | Judy Nails as bassist with her own set and the library bass in her hands; Lars Umlaut outfit 2 as guitarist in the same run |
 | Default band and Axel | Unchanged: the band library and Axel's and the singers' packages are byte-equal to `main`. Screenshots at song times 4–20 s against `main`: 32–47 dB PSNR, as two runs of the same build (32–42 dB) |
 | Clip prefetch | 151–159 band clips for each song (157 with the default band), decoded in 29–59 ms on worker threads; no clip loads on the main thread; managed heap at the stage load 208–218 MB (`main`: 191–229 MB) |
-| Not compared | The original GH3 with a non-Axel character (the menus, bot, and camera patches were not done); the clip data and the selection rules are checked against the GH3 files and scripts only |
+| Original GH3 | One run of the original GH3 (quickplay My Curse, bot, only Judy Nails left as a guitarist profile; the patched `qb.pab.xen` was restored): GH3 plays My Curse in its career venue, not in the Dive, so the cameras differ. Judy's GH3 stance and strums look as in the mod; this is a visual check, not a measurement. The pose data is checked against the GH3 files (first row) |
 
 ### Evidence (GH3 characters)
 
