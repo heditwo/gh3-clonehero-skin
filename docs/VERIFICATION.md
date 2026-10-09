@@ -177,6 +177,12 @@ Each GH3 model PAK has the magazine photo of its variant (`Mag_Photo`, a 512 × 
 2. Fix close-up cameras with `GH3_SKIN_DEBUG_VIEW` (one view for each role, `GH3_SKIN_DEBUG_VIEW_SECONDS=4`) and capture one frame in each view with `GH3_SKIN_CAPTURE_CLOCK=song` and `GH3_SKIN_CAPTURE_TIMES`.
 3. Check the log line `GH3 band <role>: character <id> (...) with <instrument>[; hair of the guitarist profile (9 joints)]`, and `python3 tools/audit-materials.py` (the `characters` line has no `FALLBACK`).
 
+The GH3 guitarists play on their own rig profiles (format 1.1). Check their motion against the GH3 clips:
+
+1. Run the capture with `GH3_SKIN_TRACE=1` and a guitarist character, for example `GH3_SKIN_CHARACTER_GUITARIST=gh3.judy.outfit1.style1`. The log line `GH3 band guitarist: character <id> (...) on its GH3 profile <profile> with ...; animation set <set>, scale <s>, hair <n> joints | no hair physics, IK <ik>` names the profile.
+2. Run `MISE_QUIET=1 uv run --with numpy --with pillow python tools/check-character-trace.py <game>/MelonLoader/Latest.log`. It samples the GH3 clip of each `[trace] band` line on the GH3 skeleton of the profile, at the logged clip time, and prints the largest difference of the four logged bones. Expected: about 0.001 mm and less than 0.02° (q48 and the 30 fps resampling). The tool needs `assets/libraries/gh3-characters-v1` and the GH3 data.
+3. Look at the frames: the stance and the strum of the family, the fret hand on the neck, hand fire after the 100-note streak, and the size (Judy Nails 0.9).
+
 On 2026-10-09 (38 runs on gh3.dive, two guitarist characters and one singer in each run) every variant had a close-up in one role, each character family as guitarist and as bassist, and the colors and outfits agreed with the photos.
 
 ## Runtime variables
@@ -214,7 +220,7 @@ These variables are for checks and captures. Normal play needs none of them.
 | `GH3_SKIN_KEEP_BHAPTICS=1` | Keeps MelonLoader's bHaptics client |
 | `GH3_SKIN_HOOK_GUARD=off` | Turns off the Linux hook page guard ([STATUS.md](STATUS.md#stability)). Only for crash tests |
 | `GH3_SKIN_LIPSYNC=off` | No singer lip sync on charts without GH3 facial clips ([CUSTOM-CONTENT.md](CUSTOM-CONTENT.md#lip-sync-from-vocals)) |
-| `GH3_SKIN_TRACE=1` | Logs score, streak, multiplier, rock, charge, Star Power, note hits, stage note events, hit-flame lanes, pause, and stage audio voices twice per song second (`[trace]`). Compares platforms |
+| `GH3_SKIN_TRACE=1` | Logs score, streak, multiplier, rock, charge, Star Power, note hits, stage note events, hit-flame lanes, pause, and stage audio voices twice per song second (`[trace]`). Compares platforms. Also logs `[trace] band` for the guitarist and the bassist: profile, animation set, stance, body clip, clip time, scale, and the clip pose of four bones (`tools/check-character-trace.py`) |
 | `GH3_SKIN_TRACE_CHARGE=<0–1>` | With `GH3_SKIN_TRACE`: sets the native Star Power charge once at song time 20 s. This changes the game state; use it only for checks |
 
 Forced values change only the display. The command-line bot does not earn Star Power. Do not use forced values to check meter behavior: they cannot show charge, activation, drain, or needle motion. Tests of earned Star Power need an instrumented build that allows the bot's native award routine, and the report must say so.

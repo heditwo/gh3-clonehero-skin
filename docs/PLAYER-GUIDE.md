@@ -119,13 +119,15 @@ The mod has all the characters that GH3 lets you play, with all their outfits an
 
 All characters are available. You do not unlock them as in GH3. A guitarist character can play the guitarist or the bassist.
 
-A character plays with the animations of the member that it replaces. A character for one member can also play another member when the two GH3 skeletons have the same bones. In GH3, the guitarist and the bassist have the same bones; thus a guitarist character can play the bassist, and the reverse. The picker shows such a character with its original member in parentheses, for example "Midori: Puffball (Aqua) (a guitarist)".
+Each GH3 guitarist character moves as in GH3: with its own skeleton, its own animations (stances, idles, strums, finger and fret movements, solos, intro, win, and lose), its own hair and accessory physics, and its own size (Judy Nails is smaller, as in GH3). As the bassist, a guitarist character keeps its own animations and plays the bass, as in a GH3 co-op game.
 
-Differences from GH3 (package format v1 has one skeleton and one set of animations for each band member):
+A character for one member can also play another member when the two GH3 skeletons have the same bones. In GH3, the guitarist and the bassist have the same bones; thus a guitarist character can play the bassist, and the reverse. The picker shows such a character with its original member in parentheses, for example "Midori: Puffball (Aqua) (a guitarist)". Other characters (for example the two singers, and characters made with the Blender add-on) play with the animations of the member that they replace.
 
-- All guitarist characters move with the animations of Axel (as guitarist) or of the GH3 bassist (as bassist). In GH3, each character has its own animations.
-- The body of a character takes the size of the skeleton of the member that it plays. Judy Nails is not smaller (GH3 shows her at 90 %).
-- The hair moves on the hair joints of Axel (guitarist characters) or of the male singer (singer characters). Hair far from these joints moves with the head.
+Differences from GH3:
+
+- The hair moves with the GH3 joint limits, but it is not the GH3 physics engine. It collides only with the head.
+- Bret Michaels and the female singer move with the animations and the hair joints of the male singer.
+- To play the GH3 guitarist characters, the mod needs the character library `gh3-characters-v1.chlib` in `Mods/GH3Skin/Packages/` (the release installs it). A character that needs a newer mod is not in the picker; the log tells you why.
 
 If a character cannot load, the venue default plays, and the log tells you why.
 
