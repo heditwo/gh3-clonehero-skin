@@ -184,7 +184,6 @@ internal sealed class GameplaySpriteRenderer
     }
 
     // Clone Hero's own custom-highway path: HighwayScroll sizes the scroll to the texture, so the board moves with the notes.
-    // GH3_SKIN_HIGHWAY=native keeps the highway chosen in Clone Hero's settings.
     private void ApplyHighway(GameObject neck)
     {
         if (_highwayApplied || _assets.HighwayTexture == null) return;

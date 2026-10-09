@@ -235,10 +235,6 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
                 materials[name]["color"] = [max(0.0, v) for v in constants[template["diffuseConstant"]]]
             if slot is not None:
                 materials[name]["lightmap"] = materials[name]["textures"][slot]
-            model = "skin" if template["name"].startswith("SkinShader") else "hair" if template["name"] == "HairShader" else None
-            count = 13 if model == "hair" else 11
-            if model and len(constants) >= count:
-                materials[name]["character"] = {"model": model, "constants": [list(c) for c in constants[:count]]}
             def uv_scale(sampler):
                 entry = template["uvScales"].get(sampler)
                 return constants[entry[0]][entry[1]] if entry and entry[0] < len(constants) else 1.0

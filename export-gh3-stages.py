@@ -394,7 +394,6 @@ def export(source, scripts, global_entries, zone, directory, global_references=N
     report_templates(zone, materials)
     graph = (global_references if global_references is not None else references(scripts.values())) | references(qbs)
     actors = export_actors(source, scripts, global_entries, entries, nodes, directory, zone, graph, script_values)
-    if actors: print(f"NOTE: {zone}: {len(actors)} skinned actors keep the approximate surface and character models (no GH3 template path for skinned meshes)")
     manifest = {"version": 1, "kind": "stage", "id": "gh3."+zone[2:], "name": VENUES[zone], "library": "gh3-band-v1",
                 "model": "stage.glb", "band": band, "waypoints": waypoints, "cameras": "cameras.json", "lighting": "lighting.json", "effects": effects, "actors": actors,
                 "scripts": "scripts.json"}

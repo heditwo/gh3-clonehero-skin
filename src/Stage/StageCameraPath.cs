@@ -104,7 +104,6 @@ internal sealed class StageCameraPath
     private readonly string _forcedShot = Environment.GetEnvironmentVariable("GH3_SKIN_CAMERA_SHOT") ?? "";
     public float Aspect { get; set; } = 16f / 9;
     public int Seed { get; init; } = BootSeed;
-    private static readonly bool LogCuts = Environment.GetEnvironmentVariable("GH3_SKIN_CAMERA_LOG") == "1";
 
     public StageCameraPath(StageCameraPose fixedPose, IReadOnlyDictionary<string, Vector3> band, string mode = "auto",
         StageCameraBank? bank = null, Func<string, string, BandPose?>? anchor = null)
@@ -224,7 +223,6 @@ internal sealed class StageCameraPath
             if (downbeat != null) duration = downbeat.Time - start;
         }
         _cuts.Add(new(start, Math.Max(0.001, duration), shot, Zoom(shot)));
-        if (LogCuts) Console.WriteLine($"GH3 camera cut {start:0.00}s {duration:0.00}s {selected.Array}/{selected.Type}/{selected.Name} -> {shot.Name} ({shot.Type}, {shot.Control})");
         _next = _enabled ? start + duration : double.PositiveInfinity;
         if (_mode == "auto") _next = NextCue(timeline, _next);
         if (_next <= start) _next = start + 0.001;

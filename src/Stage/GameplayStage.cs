@@ -18,7 +18,6 @@ internal sealed class GameplayStage
     private StageEffects? _effects;
     private StageHandFire? _handFire;
     private StageHighwayMask? _highwayMask;
-    private static readonly int EyeId = Shader.PropertyToID("_Gh3Eye");
     private StageTimeline? _timeline;
     private StageBand? _band;
     private StageCrowd? _crowd;
@@ -143,12 +142,6 @@ internal sealed class GameplayStage
             if (_camera != null) SetTemplateGlobals(_camera, time);
             if (_camera != null) _crowd?.Face(_camera);
             if (_camera != null) _assets?.FaceBillboards(_camera);
-            if (_camera != null && _assets != null && _assets.CharacterMaterials.Count > 0)
-            {
-                var eye = _camera.transform.position;
-                var eyeVector = new Vector4 { x = eye.x, y = eye.y, z = eye.z, w = 1 };
-                foreach (var material in _assets.CharacterMaterials) material.SetVector(EyeId, eyeVector);
-            }
             FrameProfile.Measure("effects", () => _effects.Update(_timeline, time));
             FrameProfile.Measure("particles", () => _particles?.Update(time));
             FrameProfile.Measure("movies", () => _movies?.Update(time));

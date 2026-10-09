@@ -87,7 +87,6 @@ internal sealed class StageBand : IDisposable
             _assets.Add(assets);
             assets.Load(folder, performer, layer, bones, lighting, surfaceShader: surfaceShader);
             stage.SurfaceMaterials.AddRange(assets.SurfaceMaterials);
-            stage.CharacterMaterials.AddRange(assets.CharacterMaterials);
             stage.ShadedSurfaces.AddRange(assets.ShadedSurfaces);
             stage.BandMeshes.AddRange(assets.BandMeshes);
             stage.TransparentMeshes.AddRange(assets.TransparentMeshes);

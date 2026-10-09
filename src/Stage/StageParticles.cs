@@ -30,7 +30,6 @@ internal sealed class StageParticles : IDisposable
     public uint[] DrawOrder { get; private set; } = Array.Empty<uint>();
     public Dictionary<uint, uint> RenderKeys { get; } = new();
     public int RenderedQuads { get; private set; }
-    public int TeslaEffects => _tesla.Effects;
 
     public StageParticles(StageScripts scripts, StageAssets assets, GameObject root, Camera camera, int layer, string shaderPath)
     {
@@ -57,7 +56,6 @@ internal sealed class StageParticles : IDisposable
     {
         System.Numerics.Vector3 Numeric(Vector3 value) => new(value.x, value.y, value.z);
         System.Numerics.Vector3 Reflect(System.Numerics.Vector3 value) => new(value.X, value.Y, -value.Z);
-        Vector3 Unity(System.Numerics.Vector3 value) => new(value.X, value.Y, value.Z);
         var right = Numeric(_root.transform.InverseTransformDirection(_camera.transform.right));
         var up = Numeric(_root.transform.InverseTransformDirection(_camera.transform.up));
         var mark = System.Diagnostics.Stopwatch.GetTimestamp();

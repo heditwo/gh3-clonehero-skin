@@ -66,10 +66,9 @@ internal sealed class SkinAssets
 
     private void LoadCoreTextures(string root)
     {
-        var highway = Environment.GetEnvironmentVariable("GH3_SKIN_HIGHWAY");
-        _textures["highway"] = LoadTexture(Path.Combine(root, highway == "black" ? "highway-black.png" : "highway.png"));
+        _textures["highway"] = LoadTexture(Path.Combine(root, "highway.png"));
         _textures["highway"].wrapMode = TextureWrapMode.Repeat;
-        HighwayTexture = highway == "native" ? null : _textures["highway"];
+        HighwayTexture = _textures["highway"];
         _textures["highway-edges-blue"] = LoadTexture(Path.Combine(root, "highway-edges-blue.png"));
         _textures["highway-edges-normal"] = LoadTexture(Path.Combine(root, "highway-edges-normal.png"));
         for (var frame = 0; frame < StarPowerHighwayAnimation.FrameCount; frame++)
@@ -207,7 +206,6 @@ internal sealed class SkinAssets
     public Sprite HeldSustain(SustainVariant variant) => _heldSustains[(int)variant];
     public Sprite Gem(int lane, GemKind kind, int frame, bool starPowerActive) =>
         starPowerActive ? _activeGems[kind.Index, frame] : _gems[lane, kind.Index, frame];
-    public bool TryGetSprite(string name, out Sprite sprite) => _sprites.TryGetValue(name, out sprite!);
 
     public Sprite Highway(Sprite original)
     {

@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 def used_materials(path):
     """Material ids that compiled meshes reference (the importer also lists an unused default material)."""
     data = path.read_bytes()
-    stride = {b"GH3STG01": 36, b"GH3STG02": 44, b"GH3STG03": 60, b"GH3STG04": 144, b"GH3BND01": 56, b"GH3BND02": 128}[data[:8]]
+    stride = {b"GH3STG04": 144, b"GH3BND02": 128}[data[:8]]
     count = struct.unpack_from("<I", data, 8)[0]; offset = 12; used = set()
     for _ in range(count):
         material, vertices, indices = struct.unpack_from("<3I", data, offset)
@@ -22,10 +22,8 @@ def used_materials(path):
     return used
 
 
-def classify(material, templates, header):
+def classify(material, templates):
     gh3 = material.get("gh3")
-    if header in (b"GH3STG01", b"GH3STG02", b"GH3STG03", b"GH3BND01"):
-        return f"fallback: {header.decode()} mesh has no GH3 vertex streams (re-export)"
     if gh3 is None:
         return "fallback: no GH3 material record"
     if gh3["template"] not in templates["templates"]:
@@ -46,14 +44,13 @@ def main():
     rows = []
 
     def add(venue, part, path):
-        header = (path.parent/"meshes.bin").read_bytes()[:8]
         used = used_materials(path.parent/"meshes.bin")
         for key, material in json.loads(path.read_text())["materials"].items():
             if key not in used: continue
             gh3 = material.get("gh3") or {}
             rows.append({"venue": venue, "part": part, "material": key, "source": material.get("source", material.get("template", "")),
                          "template": templates["templates"].get(gh3.get("template"), {}).get("name", gh3.get("template", "")),
-                         "path": classify(material, templates, header)})
+                         "path": classify(material, templates)})
 
     # The shared band and crowd library (all four performers and instruments, crowd peds and their hands).
     for path in sorted(args.library.glob("band/*/stage.json")): add("band", path.parent.name, path)

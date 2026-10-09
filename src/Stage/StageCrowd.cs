@@ -240,30 +240,8 @@ internal sealed class StageCrowd : IDisposable
         }
     }
 
-    // Capture aid: GH3_SKIN_CROWD_ATLAS=<png path> writes each crowd viewport once, 2 s into the song.
-    private static readonly string? AtlasDump = Environment.GetEnvironmentVariable("GH3_SKIN_CROWD_ATLAS");
-    private bool _dumped;
-
-    private void DumpAtlas(double time)
-    {
-        if (AtlasDump == null || _dumped || _targets.Count == 0 || time < 2) return;
-        _dumped = true;
-        var previous = RenderTexture.active;
-        for (var i = 0; i < _targets.Count; i++)
-        {
-            var image = new Texture2D(CellPixelsWide, CellPixelsHigh, TextureFormat.RGBA32, false);
-            RenderTexture.active = _targets[i];
-            image.ReadPixels(new Rect(0, 0, CellPixelsWide, CellPixelsHigh), 0, 0);
-            image.Apply();
-            File.WriteAllBytes(AtlasDump.Replace(".png", $"-{i}.png"), ImageConversion.EncodeToPNG(image).ToArray());
-            UnityEngine.Object.Destroy(image);
-        }
-        RenderTexture.active = previous;
-    }
-
     public void Update(double time, float rock)
     {
-        DumpAtlas(time);
         _state?.Update(time, rock);
         _stage?.SetVisible("crowd-lighters", _state?.VisibleAt(time));
         foreach (var player in _players)

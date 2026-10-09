@@ -111,7 +111,6 @@ for color in ("", "_blue", "_green", "_purple"):
 global_images = source / "global-gfx-png"
 skull_highway = Image.open(next(global_images.glob("005_*.png"))).convert("RGBA")
 skull_highway.save(target / "highway-skull.png")
-Image.new("RGBA", skull_highway.size, (0, 0, 0, 255)).save(target / "highway-black.png")
 # Vanilla GH3 shows the guitarist's own highway; Axel's is the bullet-belt board in axel_1.pak.
 sys.path.insert(0, str(Path(__file__).parent))
 import importlib.util as _util
