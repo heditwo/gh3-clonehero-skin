@@ -1,6 +1,6 @@
 # Packaging and creator workflow plan
 
-Status: **decided, not started.** This document records the research and the decisions for the release format of this mod. Start a new work session from this file.
+Status: **step 2 (spike) done, step 3 next.** This document records the research and the decisions for the release format of this mod. Start a new work session from this file. The spike results are in [section 9](#9-spike-results).
 
 ## 1. Goal
 
@@ -110,7 +110,7 @@ Three research passes were made in October 2026 (rhythm-game ecosystem, asset fo
 
 ### 4.4 Converter
 
-- The existing Python export (`export-gh3-stages.py`, `prepare-*.py`) writes the GH3 venues and the library as packages in the new format. They ship with the release.
+- The existing Python export (`python -m pipeline.venues`, `python -m pipeline.library`, see [PIPELINE.md](PIPELINE.md)) writes the GH3 venues and the library as packages in the new format. They ship with the release.
 - Later (Pitch C): a standalone packer and validator (CLI and small GUI) so creators who use other tools can pack a folder of GLB + JSON.
 
 ## 5. Pitches considered
@@ -121,8 +121,8 @@ Three research passes were made in October 2026 (rhythm-game ecosystem, asset fo
 
 ## 6. Work order
 
-1. **Wait for the running parity work to merge** (`fix-venues`, `fix-nodeflags`, `fix-fingers`), then re-export all venues one time. The export pipeline is still changing.
-2. **Spike** (short, measure and decide):
+1. **Done.** The parity work is merged and all venues are exported again (`main` @ `2f7b438`).
+2. **Done** (results in [section 9](#9-spike-results)). **Spike** (short, measure and decide):
    - Compressed texture formats (BC7 / BC3) on Clone Hero Linux GL and Windows; `LoadImage` against worker decode + `LoadRawTextureData` for a 2048² texture.
    - Clip size and decode speed with quantized rotations (estimate: 1 GB library to 150–300 MB) and error against GH3 frames.
    - Load a skinned GH3 character from a GLB in Clone Hero; test `bindposes`, `SetBoneWeights` overloads, blend shapes.
@@ -157,5 +157,63 @@ A thin venue MVP is about 8–10 weeks of that estimate. Agent-driven work will 
 - Blender API changes: set a minimum of 4.2 and test new versions.
 - The Blender viewport cannot match GH3 shading exactly; the game is the reference, so fast reload matters.
 - Fixed rigs restrict characters to GH3 proportions (accepted for v1).
-- Shader portability to Windows (D3D11) is not verified.
+- Shader portability to Windows (D3D11): the spike shows that the current bundles fail on D3D11 (section 9.5).
 - IP: the release ships GH3-derived content by decision; keep it non-commercial and unbranded.
+
+## 9. Spike results
+
+The spike ran on 2026-10-09. Each item has a report in [docs/spike/](spike/) with the method, the numbers, and the evidence. The probe code is off by default (`GH3_SKIN_SPIKE=<name>`).
+
+### 9.1 Textures ([report](spike/textures.md))
+
+- Clone Hero Linux uses OpenGL Core 4.5. BC1, BC3, BC5, and BC7 upload with full mip chains and draw correctly. Check `SupportsTextureFormat` before upload (Unity's BC5 value is 27, not 32).
+- Main-thread time for one 2048² texture with mipmaps (median): `LoadImage` 80 ms; worker PNG decode then RGBA32 upload 30–38 ms; BC7 or BC3 from a cache file 5–13 ms. `SetPixelData` is stripped, so the worker must make the mip chain.
+- Encode time for one 2048² texture: BC1 or BC3 0.2–0.3 s in managed C#; BC7 8.5 s in managed C#, 1.5 s with a native encoder.
+- **Decision:** packages ship PNG. The importer encodes BC1 (opaque) or BC3 (alpha) into the cache. BC7 needs a native encoder per platform; it is not in v1 unless the owner asks.
+
+### 9.2 Custom folders ([report](spike/textures.md))
+
+- Clone Hero ignores `Custom/Stages/` and `Custom/Characters/`, with group subfolders, zips, and loose images. The log shows no new errors, and the background and highway lists do not change.
+- **Decision:** use these folders. Find the Custom folder through `GlobalVariables.uniqueCustomContentPaths`, not a fixed path (portable mode and extra content folders).
+
+### 9.3 Skinned characters from GLB ([report](spike/skinned.md))
+
+- A 142-line C# GLB reader (`src/Spike/GlbFile.cs`) loads the gh3.dive guitarist. All vertex channels are bit-identical to `GH3BND02`. After skinning, the maximum vertex difference is 0.7 µm.
+- Main-thread time: mesh 11–24 ms; the 28 embedded PNGs 155 ms (the cache in 9.1 removes this).
+- Working APIs: `bindposes`, `InternalSetBoneWeights`, blend shapes, `BakeMesh`. Absent: `mesh.boneWeights`, all `SetBoneWeights` overloads. The `mesh.triangles` getter fails; use `GetTrianglesImpl`.
+- **Decision:** `.chchar` holds one skinned GLB. Joints map to GH3 bones by name. Inverse bind matrices are required. Four weights per vertex. Blend shapes are optional. The importer converts to the `GH3BND02` cache, and `StageAssets` draws it as today.
+
+### 9.4 Animation clips ([report](spike/clips.md))
+
+| Encoding | Size (1,138 clips) | Added error, max | Decode, one clip p50 / max |
+|---|---:|---|---|
+| Current (float32, gzip) | 455.6 MB | – | 7.5 / 64 ms |
+| **q48 + Brotli 11** | **121.1 MB** | 0.007°, fingertip 0.03 cm | 1.6 / 13 ms |
+| q32 + Brotli 11 | 91 MB | fingertip 0.9 cm (too large) | – |
+
+- q48: 48-bit rotations, 16-bit positions per clip range, 30 fps, constant tracks stored once.
+- One song's clip set decodes in 0.24 s on one worker thread (today: about 1.3 s on the main thread at stage setup).
+- The library goes from about 1,000 MB to about 666 MB, not 150–300 MB. Movies (357 MB) and audio (108 MB) are the remainder.
+- **Decision:** q48 + Brotli for v1. Brotli was tested on the game's .NET 6 runtime but not inside the game. Check it in the game before the format freeze; gzip 9 is the fallback (+10 MB).
+
+### 9.5 Windows D3D11 ([report](spike/d3d11.md))
+
+- All five shader bundles have OpenGL Core programs only. On Windows Clone Hero under Wine and DXVK, D3D11 (the default) draws the stage pink. `-force-glcore` draws it correctly.
+- `Shader.isSupported` returns true on D3D11, so the mod does not detect the failure.
+- The stage shader compiles from GLSL to DXBC on Linux (glslang, SPIRV-Cross, Wine `d3dcompiler_47`) in under 2 s. A D3D11 bundle was not built. Estimate: 3–5 days.
+- Other Windows blockers: the obfuscated names of the Windows build are different (a Windows binding map is necessary), and `StageAudioBackend` looks for BASS only in the Linux folder.
+- **Open decision (owner):** Windows in v1 or later; Microsoft `d3dcompiler_47.dll` or Wine's.
+
+### 9.6 Blender round trip ([report](spike/blender.md))
+
+- With the default bone mode (`BLENDER`), the GH3 guitarist, singer, and a Prison actor survive import, export, and `.blend` save: joint error 0.0007 mm and 0.0004°, GH3 clip error 0.0007 cm.
+- `TEMPERANCE` and `FORTUNE` bone modes, flattened hierarchy, Z-up, and `merge_vertices` break the rig.
+- `export_extras` and `export_attributes` are off by default. Without them, all `gh3*` extras and `_GH3_*` streams are lost. Extras that hold glTF texture indices are wrong even with extras on, because Blender renumbers textures.
+- Blender samples clips at the scene rate (24 fps after import). Set the scene rate to the clip rate before import.
+- `compile_actor` rejects every Blender output: Blender writes unit scale channels.
+- **Decisions:**
+  - Characters: map by joint name; check each joint against the fixed GH3 profile (position 0.1 mm, rotation 0.01°, scale within 1e-4 of 1) and the IBMs against the joints (1e-4).
+  - Accept and drop scale channels within 1e-4 of 1 (fix `compile_actor`).
+  - Refer to textures in extras by image name or package path, not by glTF index.
+  - The add-on sets the export options (extras and attributes on, Y-up, rest position, no flattening) and the import options (`BLENDER` bones, no vertex merge).
+  - Blender 4.2 is not tested; test it before the add-on sets 4.2 as the minimum.

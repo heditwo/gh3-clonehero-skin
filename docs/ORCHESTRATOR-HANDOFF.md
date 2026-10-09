@@ -76,6 +76,7 @@ Tests: `bash scripts/test.sh` (C# logic tests, Python tests, shell syntax). Mate
 
 ## 7. Current state
 
+- Step 2 (spike) is done; see PACKAGING-PLAN section 9. The spike brief for agents is `/tmp/opencode/spike-brief.md`.
 - `main` @ `2f7b438`, pushed. Mod version 0.9.8 plus all later work. All assets regenerated and installed. No agents are running. No open worktrees.
 - Known gaps from GH3 are listed in [STATUS.md](STATUS.md). The ones the owner noticed or is likely to ask about:
   - The guitarist and singer render about 25–30% darker than GH3 (the bassist matches). The cause is probably the lighting inputs or the missing shadow map, not the materials.
