@@ -382,26 +382,20 @@ internal sealed class PerformancePlayer
         return new(branches, _bind.Length);
     }
 
-    // FretFingers_iterator: press each chord with finger_press_blend_time and release it after the note length plus
-    // finger_note_padding with finger_release_blend_time, unless the next chord is pressed first.
+    // FretFingers_iterator: press each chord with finger_press_blend_time. The hand holds the chord until the next note:
+    // the release event (chord none, after the note length plus finger_note_padding) adds no branch to GH3's LeftHand node.
     private StageBlendTrack FingerTrack(IReadOnlyDictionary<string, float>? constants)
     {
         var lead = LeadTime(constants);
         var press = Constant(constants, "finger_press_blend_time", 0.07);
         var release = Constant(constants, "finger_release_blend_time", 0.2);
-        var padding = Constant(constants, "finger_note_padding", 0.01);
         var branches = new List<StageBlendTrack.Branch>();
         var open = Layer("chord/0");
         if (open.Length > 0) branches.Add(new(double.NegativeInfinity, open[0], 0));
-        var notes = _timeline.Track("strum", _role);
-        for (var i = 0; i < notes.Length; i++)
+        foreach (var note in _timeline.Track("strum", _role))
         {
-            var start = notes[i].Time - lead;
-            var chord = Layer("chord/" + notes[i].Value);
-            if (chord.Length == 0) continue;
-            branches.Add(new(start, chord[0], notes[i].Value == "0" ? release : press));
-            var end = start + NoteLength(notes[i]) + padding;
-            if (open.Length > 0 && (i + 1 >= notes.Length || notes[i + 1].Time - lead > end)) branches.Add(new(end, open[0], release));
+            var chord = Layer("chord/" + note.Value);
+            if (chord.Length > 0) branches.Add(new(note.Time - lead, chord[0], note.Value == "0" ? release : press));
         }
         return new(branches, _bind.Length);
     }
