@@ -1,11 +1,13 @@
 import traceback
+from pathlib import Path
 
 import bpy
-from bpy.props import EnumProperty, IntProperty, StringProperty
+from bpy.props import BoolProperty, EnumProperty, IntProperty, StringProperty
 from bpy.types import Operator
+from bpy_extras.io_utils import ExportHelper, ImportHelper
 from mathutils import Vector
 
-from . import collect, sidecars, template
+from . import package_export, package_open, sidecars, template
 
 OWNERS = {"SCENE": lambda c: c.scene, "OBJECT": lambda c: c.object, "MATERIAL": lambda c: c.material}
 
@@ -71,6 +73,16 @@ class CHSTAGE_OT_add_marker(Operator):
         return {"FINISHED"}
 
 
+def store_issues(scene, issues):
+    store = scene.chstage.issues
+    store.clear()
+    for severity, message, obj, material in issues:
+        item = store.add()
+        item.severity, item.message, item.object_name, item.material_name = severity, message, obj or "", material or ""
+    scene.chstage.validated = True
+    return sum(1 for i in issues if i[0] == "ERROR")
+
+
 class CHSTAGE_OT_validate(Operator):
     """Check the stage with the package validator. Click an issue to select its object"""
     bl_idname = "chstage.validate"
@@ -80,20 +92,99 @@ class CHSTAGE_OT_validate(Operator):
     def execute(self, context):
         scene = context.scene
         try:
-            issues = collect.validate_scene(scene)
+            issues = package_export.validate_scene(scene)
         except Exception as error:  # Show the cause in the interface; the console gets the traceback.
             traceback.print_exc()
             self.report({"ERROR"}, f"Validation stopped: {error}")
             return {"CANCELLED"}
-        store = scene.chstage.issues
-        store.clear()
-        for severity, message, obj, material in issues:
-            item = store.add()
-            item.severity, item.message, item.object_name, item.material_name = severity, message, obj or "", material or ""
-        scene.chstage.validated = True
-        errors = sum(1 for i in issues if i[0] == "ERROR")
+        errors = store_issues(scene, issues)
         # An ERROR report makes bpy.ops raise in scripts; the issue list holds the errors.
         self.report({"WARNING" if errors else "INFO"}, f"{errors} errors, {len(issues) - errors} warnings")
+        return {"FINISHED"}
+
+
+def custom_stages_folder(context):
+    addon = context.preferences.addons.get(__package__)
+    return addon.preferences.custom_stages if addon is not None and addon.preferences is not None else ""
+
+
+class CHSTAGE_OT_export(Operator, ExportHelper):
+    """Write the stage as a venue package (.chstage). The add-on validates the package and writes it only when it is valid"""
+    bl_idname = "chstage.export_package"
+    bl_label = "Export .chstage"
+    bl_options = {"REGISTER"}
+
+    filename_ext = ".chstage"
+    filter_glob: StringProperty(default="*.chstage", options={"HIDDEN"})
+    write_folder: BoolProperty(name="Development folder", default=False,
+                               description="Also write the unpacked package to unpacked/<name>.chstage next to the zip")
+    copy_to_game: BoolProperty(name="Copy to Custom/Stages", default=False,
+                               description="Also copy the package into the Custom/Stages folder of the add-on preferences")
+    custom_folder: StringProperty(name="Custom/Stages folder", subtype="DIR_PATH", description="Empty: the folder of the add-on preferences")
+    keep_source: BoolProperty(name="Keep unchanged source rows", default=True, options={"HIDDEN"},
+                              description="Write the rows of the opened package again where the Blender data did not change (tests turn it off)")
+
+    def invoke(self, context, event):
+        scene = context.scene
+        folder = Path(bpy.path.abspath(scene.chstage.export_path)).parent if scene.chstage.export_path else Path(bpy.path.abspath("//") or Path.home())
+        self.filepath = str(folder/package_export.package_file_name(scene))
+        if not self.custom_folder: self.custom_folder = custom_stages_folder(context)
+        return ExportHelper.invoke(self, context, event)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "write_folder")
+        layout.prop(self, "copy_to_game")
+        if self.copy_to_game: layout.prop(self, "custom_folder", text="")
+        layout.prop(context.scene.chstage.package, "preview_mode")
+
+    def execute(self, context):
+        scene = context.scene
+        target = Path(bpy.path.abspath(self.filepath))
+        if target.suffix != ".chstage": target = target.with_name(target.name + ".chstage")
+        custom = None
+        if self.copy_to_game:
+            custom = bpy.path.abspath(self.custom_folder or custom_stages_folder(context))
+            if not custom:
+                self.report({"WARNING"}, "Set the Custom/Stages folder in the add-on preferences or in the export options")
+                return {"CANCELLED"}
+        keeper = sidecars.Keeper("keep" if self.keep_source else "compute")
+        try:
+            issues, written = package_export.export_package(scene, target, package_export.development_folder(target) if self.write_folder else None,
+                                                            custom, keeper)
+        except Exception as error:
+            traceback.print_exc()
+            self.report({"ERROR"}, f"Export stopped: {error}")
+            return {"CANCELLED"}
+        errors = store_issues(scene, issues)
+        if errors:
+            self.report({"WARNING"}, f"Not written: {errors} errors (see the CH Stage panel)")
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"Wrote {', '.join(str(p) for p in written)} ({len(issues)} warnings)")
+        return {"FINISHED"}
+
+
+class CHSTAGE_OT_open(Operator, ImportHelper):
+    """Make a new scene from a venue package (.chstage zip, or the manifest.json of a development folder)"""
+    bl_idname = "chstage.open_package"
+    bl_label = "Open .chstage"
+    # No undo step: the open makes a new scene, and an undo step of a whole venue costs much memory.
+    bl_options = {"REGISTER"}
+
+    filename_ext = ".chstage"
+    filter_glob: StringProperty(default="*.chstage;manifest.json", options={"HIDDEN"})
+
+    def execute(self, context):
+        try:
+            scene, issues = package_open.open_package(bpy.path.abspath(self.filepath))
+        except Exception as error:
+            traceback.print_exc()
+            self.report({"ERROR"}, f"Open stopped: {error}")
+            return {"CANCELLED"}
+        if context.window is not None: context.window.scene = scene
+        store_issues(scene, issues)
+        scene.chstage.validated = bool(issues)
+        self.report({"INFO"}, f"Opened '{scene.name}' ({len(issues)} messages)")
         return {"FINISHED"}
 
 
@@ -160,8 +251,8 @@ class CHSTAGE_OT_add_shot_point(Operator):
         return {"FINISHED"}
 
 
-CLASSES = (CHSTAGE_OT_list_edit, CHSTAGE_OT_new_stage, CHSTAGE_OT_add_marker, CHSTAGE_OT_validate, CHSTAGE_OT_select_issue,
-           CHSTAGE_OT_snapshot, CHSTAGE_OT_add_shot_point)
+CLASSES = (CHSTAGE_OT_list_edit, CHSTAGE_OT_new_stage, CHSTAGE_OT_add_marker, CHSTAGE_OT_validate, CHSTAGE_OT_export, CHSTAGE_OT_open,
+           CHSTAGE_OT_select_issue, CHSTAGE_OT_snapshot, CHSTAGE_OT_add_shot_point)
 
 
 def register():

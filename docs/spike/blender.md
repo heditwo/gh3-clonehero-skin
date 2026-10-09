@@ -181,7 +181,7 @@ PYTHONPATH=$PWD uv run --with pillow --with numpy --with 'shapely>=2.1' python t
 
 ## Open risks
 
-- Blender 4.2: tested later (4.2.23 LTS, see [BLENDER-ADDON.md section 2.4](../BLENDER-ADDON.md#24-blender-42-result)).
+- Blender 4.2: tested later (4.2.23 LTS, see [BLENDER-ADDON.md section 2.8](../BLENDER-ADDON.md#28-blender-42-result)).
   With the add-on's import fix, all variants give the same numbers as 5.2.1. Without it, the 4.2 importer fails on
   GLBs with two or more `_GH3_*` attributes (39 of 40 imports).
 - Clip export depends on the scene frame rate. A creator who imports with the wrong rate gets slower or shorter clips

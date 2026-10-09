@@ -1,6 +1,6 @@
 # Packaging and creator workflow plan
 
-Status: **step 3 done: format v1 frozen ([PACKAGE-FORMAT.md](PACKAGE-FORMAT.md)), and the pipeline writes the ten venues and the library as packages (part 2). Step 4 (the C# importer) is next. Step 5 part 1 (Blender add-on foundation, [BLENDER-ADDON.md](BLENDER-ADDON.md)) done.** This document records the research and the decisions for the release format of this mod. Start a new work session from this file. The spike results are in [section 9](#9-spike-results).
+Status: **step 3 done: format v1 frozen ([PACKAGE-FORMAT.md](PACKAGE-FORMAT.md)), and the pipeline writes the ten venues and the library as packages (part 2). Step 4 (the C# importer) is next. Step 5 parts 1 and 2 (Blender add-on foundation and venue MVP: export and open, [BLENDER-ADDON.md](BLENDER-ADDON.md)) done.** This document records the research and the decisions for the release format of this mod. Start a new work session from this file. The spike results are in [section 9](#9-spike-results).
 
 ## 1. Goal
 
@@ -136,7 +136,8 @@ Three research passes were made in October 2026 (rhythm-game ecosystem, asset fo
 4. **Runtime:** C# GLB importer, cache, loader, clip prefetch, stage and character pickers, chart cue tracks.
 5. **Blender add-on:** venue MVP first (geometry, materials, band markers, wide and role cameras, lights with moods, validate, export, open package), then the full venue tool set, then characters on fixed rigs.
    - **Part 1, done:** the foundation ([BLENDER-ADDON.md](BLENDER-ADDON.md)). CH Stage Tools is a Blender extension (minimum 4.2, tested on 4.2.23 and 5.2.1). It has property groups and panels for the manifest, materials, markers, cameras, and lighting, "New stage from template", and "Validate" with clickable issues. It bundles `pipeline/package` and the schemas at build time (`blender/build.py`). `blender/test.sh` runs a headless test in Blender.
-   - **Part 2, next:** export to `.chstage` (zip, hashes, preview, lightmaps as glTF occlusion textures), "Open package", then actors and scripts.
+   - **Part 2, done:** the venue MVP ([BLENDER-ADDON.md](BLENDER-ADDON.md)). **Export .chstage** writes a reproducible zip (and optionally the development folder and a copy into `Custom/Stages`) with `stage.glb`, the sidecars, the manifest hashes, a rendered `preview.png`, and lightmaps as the glTF occlusion texture on `TEXCOORD_1`. It runs the bundled validator and writes only a valid package. **Open .chstage** rebuilds the scene and all panels from a package. Round trip of the ten GH3 venues and `example.studio` on Blender 4.2.23 and 5.2.1 (open, export without edits, compare): all sidecars JSON-equal, all GLB checks within the tolerances, validator 0 errors and 0 warnings, the same bytes on a second export ([BLENDER-ADDON.md section 2.6](BLENDER-ADDON.md#26-round-trip-of-the-gh3-venues)). Camera bone anchors: the add-on keeps the anchor and the local offset, and Blender shows the camera relative to the performer root.
+   - **Part 3, next:** actors (animated scenery) and script banks in Blender (now kept as package files without a change), material preview node trees, the shot and lighting previews.
 6. **Release cleanup:** repository and documentation cleanup, install instructions, a short creator guide with an example stage, credits for BetterGH3 and FastGH3 gem art (or replacements). The owner records the showcase video and posts the release.
 
 ## 7. Effort estimates (from the tooling research, one experienced developer)
@@ -222,5 +223,5 @@ The spike ran on 2026-10-09. Each item has a report in [docs/spike/](spike/) wit
   - Accept and drop scale channels within 1e-4 of 1 (fix `compile_actor`).
   - Refer to textures in extras by image name or package path, not by glTF index.
   - The add-on sets the export options (extras and attributes on, Y-up, rest position, no flattening) and the import options (`BLENDER` bones, no vertex merge).
-  - Blender 4.2.23 gives the same results as 5.2.1 when the add-on fixes a 4.2 importer bug (custom vertex attributes in a random order). The add-on minimum is 4.2 ([BLENDER-ADDON.md section 2.4](BLENDER-ADDON.md#24-blender-42-result)).
+  - Blender 4.2.23 gives the same results as 5.2.1 when the add-on fixes a 4.2 importer bug (custom vertex attributes in a random order). The add-on minimum is 4.2 ([BLENDER-ADDON.md section 2.8](BLENDER-ADDON.md#28-blender-42-result)).
   - `compile_actor` now drops unit scale channels (fixed with the add-on foundation).

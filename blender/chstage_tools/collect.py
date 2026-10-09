@@ -1,15 +1,12 @@
-"""Read the Blender scene into the plain descriptions of sidecars.py, export the stage GLB, and validate the result."""
+"""Read the Blender scene into the plain descriptions of sidecars.py, and export the stage GLB."""
 
 import json
 import math
 import re
-import tempfile
-from pathlib import Path
 
 import bpy
 
-from . import gltf_io, sidecars
-from .vendor.package_format.validate import Validator
+from . import gltf_io, materials, sidecars
 
 
 def matrix(obj):
@@ -21,7 +18,12 @@ def is_marker(obj):
 
 
 def scene_objects(scene):
-    return [obj for obj in scene.objects if obj.chstage.marker != "PROXY"]
+    """Objects in export order: the order of the opened package, then by name."""
+    return sorted((obj for obj in scene.objects if obj.chstage.marker != "PROXY"), key=lambda o: (o.chstage.order, o.name))
+
+
+def kept_state(scene):
+    return json.loads(scene.chstage.kept) if scene.chstage.kept else {}
 
 
 def package_description(scene):
@@ -40,13 +42,13 @@ def markers(scene):
     for obj in scene_objects(scene):
         props = obj.chstage
         if props.marker in ("BAND", "WAYPOINT", "EFFECT"):
-            result.append({"object": obj.name, "kind": props.marker, "role": props.band_role,
-                           "name": props.waypoint_name or obj.name, "effect": props.effect, "matrix": matrix(obj)})
+            result.append({"object": obj.name, "kind": props.marker, "role": props.band_role, "name": props.waypoint_name or obj.name,
+                           "effect": props.effect, "matrix": matrix(obj), "owner": props})
     return result
 
 
 def horizontal_fov(obj, scene):
-    if obj.type != "CAMERA": return 60.0
+    if obj.type != "CAMERA": return obj.chstage.point.fov
     camera = obj.data
     aspect = (scene.render.resolution_x * scene.render.pixel_aspect_x) / max(1, scene.render.resolution_y * scene.render.pixel_aspect_y)
     fit = camera.sensor_fit
@@ -60,7 +62,11 @@ def point_description(obj, scene):
     look_at = None if point.look_at_role == "none" else sidecars.anchor_name(point.look_at_role, point.look_at_part, point.look_at_bone)
     return {"object": obj.name, "matrix": matrix(obj), "fov": horizontal_fov(obj, scene),
             "anchor": sidecars.anchor_name(point.anchor_role, point.anchor_part, point.anchor_bone), "lookAt": look_at,
-            "screenOffset": list(point.screen_offset) if point.use_screen_offset else None}
+            "useRotation": point.use_rotation, "screenOffset": list(point.screen_offset) if point.use_screen_offset else None}
+
+
+def optional(flag, value):
+    return value if flag else None
 
 
 def shots(scene, issues):
@@ -73,17 +79,19 @@ def shots(scene, issues):
             if ref.target is None: issues.error(f"shot '{shot.shot_name or obj.name}' has an empty point", obj.name); continue
             points.append(point_description(ref.target, scene))
         result.append({
-            "object": obj.name, "name": shot.shot_name or obj.name, "type": shot.type, "control": shot.control, "tag": shot.tag,
-            "groups": [g.name for g in shot.groups if g.name], "waypoints": [w.name for w in shot.waypoints if w.name],
+            "object": obj.name, "owner": obj.chstage, "name": shot.shot_name or obj.name, "type": shot.type, "control": shot.control,
+            "tag": shot.tag, "groups": [g.name for g in shot.groups if g.name], "waypoints": [w.name for w in shot.waypoints if w.name],
             "times": [t.value for t in shot.times], "interpolation": None if shot.interpolation == "default" else shot.interpolation,
-            "orbitAngle": shot.orbit_angle if shot.use_orbit_angle else None,
-            "angularSpeed": shot.angular_speed if shot.use_angular_speed else None,
+            "orbitAngle": optional(shot.use_orbit_angle, shot.orbit_angle), "angularSpeed": optional(shot.use_angular_speed, shot.angular_speed),
+            "stepTime": optional(shot.use_step_time, shot.step_time), "stepCount": optional(shot.use_step_count, shot.step_count),
+            "stepDirection": optional(shot.use_step_direction, list(shot.step_direction)),
+            "heightEase": optional(shot.use_height_ease, list(shot.height_ease)),
             "handCam": shot.hand_cam, "disableOrbit1": shot.disable_orbit1, "disableOrbit2": shot.disable_orbit2, "points": points})
     return result
 
 
 def camera_notes(scene):
-    return [{"note": n.note, "group": n.group, "tag": n.tag, "type": n.type, "enable": n.enable if n.use_enable else None}
+    return [{"note": n.note, "group": n.group, "tag": n.tag, "type": n.type, "enable": n.enable if n.use_enable else None, "owner": n}
             for n in scene.chstage.camera_notes]
 
 
@@ -101,7 +109,7 @@ def lights(scene, issues):
         props = obj.chstage.light
         kind = light_type(obj, issues)
         row = {"source": obj.name, "id": props.light_id or obj.name, "object": props.script_object, "group": props.group, "type": kind,
-               "matrix": matrix(obj), "overrideColor": props.override_color}
+               "matrix": matrix(obj), "overrideColor": props.override_color, "owner": obj.chstage}
         if props.use_cone:
             row.update(hotspot=props.hotspot, field=props.field)
         elif kind == "Spot" and obj.data.type == "SPOT":
@@ -112,8 +120,9 @@ def lights(scene, issues):
 
 
 def snapshots(scene):
-    return [{"name": s.name, "lights": [{"light": e.light.name if e.light else None, "color": list(e.color), "intensity": e.intensity,
-                                          "near": e.near, "far": e.far, "inherit": e.inherit} for e in s.lights],
+    return [{"name": s.name, "owner": s,
+             "lights": [{"light": e.light.name if e.light else None, "color": list(e.color), "intensity": e.intensity, "near": e.near,
+                         "far": e.far, "inherit": e.inherit, "specular": e.specular if e.use_specular else None} for e in s.lights],
              "beams": [{"id": b.fixture_id, "position": list(b.position), "rotation": list(b.rotation), "color": list(b.color),
                         "density": b.density, "startRadius": b.start_radius, "endRadius": b.end_radius, "range": b.range,
                         "inherit": b.inherit} for b in s.beams]}
@@ -125,8 +134,8 @@ def node_description(obj):
     return {"lightGroup": props.light_group, "visibilityGroup": props.visibility_group, "initiallyVisible": props.initially_visible,
             "fixtureId": props.fixture_id, "fixtureFixedPosition": props.fixture_fixed_position, "fixtureObject": props.fixture_object,
             "fixtureCreated": props.fixture_created if props.use_fixture_created else None, "object": props.script_object,
-            "pivot": props.use_object_pivot, "created": props.object_created if props.use_object_created else None,
-            "script": props.object_script}
+            "pivot": props.object_pivot_mode, "pivotPosition": list(props.object_pivot), "pivotRotation": list(props.object_rotation),
+            "created": props.object_created if props.use_object_created else None, "script": props.object_script}
 
 
 def material_description(material):
@@ -137,31 +146,70 @@ def material_description(material):
             "movieSlot": props.movie_slot, "sortedTransparency": props.sorted_transparency,
             "flipbook": {"columns": props.flipbook_columns, "rows": props.flipbook_rows, "fps": props.flipbook_fps,
                          "offset": props.flipbook_offset} if props.use_flipbook else None,
+            "otherExtras": json.loads(props.kept_extras) if props.kept_extras else None, "opaqueAlpha": props.opaque_alpha,
             "lightmap": props.lightmap.name if props.lightmap else None}
 
 
-def sidecar_files(scene, issues):
-    """Package path to JSON value for the scene, and the object names that each file refers to."""
+def sidecar_files(scene, issues, keeper=None):
+    """Package path to JSON value for the scene, and the names (shots, waypoints, lights) to object names of each file."""
+    keeper = keeper or sidecars.Keeper()
+    kept = kept_state(scene)
     marker_list = markers(scene)
     light_list = lights(scene, issues)
-    lighting = sidecars.build_lighting(light_list, snapshots(scene), [{"mood": m.mood, "snapshots": [s.name for s in m.snapshots]}
-                                       for m in scene.chstage.moods], [{"name": c.name, "color": list(c.color)} for c in scene.chstage.colors], issues)
+    lighting = sidecars.build_lighting(light_list, snapshots(scene),
+                                       [{"mood": m.mood, "snapshots": [s.name for s in m.snapshots], "owner": m} for m in scene.chstage.moods],
+                                       [{"name": c.name, "color": list(c.color), "owner": c} for c in scene.chstage.colors], issues, keeper)
+    shot_list = shots(scene, issues)
     files = {
-        "manifest.json": sidecars.build_manifest(package_description(scene), lighting is not None, bool(scene.chstage.package.preview)),
-        "placements.json": sidecars.build_placements(marker_list, [{"role": c.role, "model": c.model, "yaw": c.yaw} for c in scene.chstage.crowd], issues),
-        "cameras.json": sidecars.build_cameras(shots(scene, issues), camera_notes(scene), marker_list, issues),
+        "placements.json": sidecars.build_placements(marker_list, [{"role": c.role, "model": c.model, "yaw": c.yaw, "owner": c}
+                                                                   for c in scene.chstage.crowd], issues, keeper, kept.get("placementKeys", ())),
+        "cameras.json": sidecars.build_cameras(shot_list, camera_notes(scene), marker_list, issues, keeper, scene.chstage),
     }
     if lighting is not None: files["lighting.json"] = lighting
     names = {
         "placements.json": {m["name"] if m["kind"] == "WAYPOINT" else m["role"]: m["object"] for m in marker_list},
-        "cameras.json": {s["name"]: s["object"] for s in shots(scene, sidecars.Issues())},
+        "cameras.json": {s["name"]: s["object"] for s in shot_list},
         "lighting.json": {light["id"]: light["source"] for light in light_list},
     }
     return files, names
 
 
+def exported_objects(scene):
+    """Scenery for stage.glb: meshes and script-object empties; never markers, proxies, cameras, or lights."""
+    result = []
+    for obj in scene_objects(scene):
+        if is_marker(obj) or obj.hide_render: continue
+        if obj.type in ("MESH", "CURVE", "SURFACE", "META", "FONT") or (obj.type == "EMPTY" and obj.chstage.script_object):
+            result.append(obj)
+    return result
+
+
+def exported_materials(objects):
+    found = {}
+    for obj in objects:
+        for slot in obj.material_slots:
+            if slot.material is not None: found[slot.material.name] = slot.material
+    return list(found.values())
+
+
+def node_row(obj):
+    return sidecars.node_extras(node_description(obj), matrix(obj))
+
+
+def material_row(material):
+    return sidecars.material_row(material_description(material))
+
+
+def package_name(data):
+    """The glTF name of an object or material: the name in the opened package while Blender only added a suffix
+    (.001 and so on, when the name was in use in the .blend file), else the Blender name."""
+    source = data.chstage.source_name
+    if source and re.fullmatch(re.escape(source) + r"(\.\d{3,})?", data.name): return source
+    return data.name
+
+
 # glTF export hook: the exporter calls these methods of glTF2ExportUserExtension (see __init__.py) for each node and material.
-_EXPORT = {"active": False}
+_EXPORT = {"active": False, "keeper": None, "materials": {}}
 
 
 class ExportExtras:
@@ -177,35 +225,36 @@ class ExportExtras:
         extras = {k: v for k, v in (gltf2_node.extras or {}).items() if k != "chstage"}
         if _EXPORT["active"] and blender_object is not None and hasattr(blender_object, "chstage"):
             extras = {k: v for k, v in extras.items() if not k.startswith("gh3")}
-            extras.update(sidecars.node_extras(node_description(blender_object), matrix(blender_object)))
+            extras.update(_EXPORT["keeper"](node_row(blender_object), blender_object.chstage, "node"))
+            gltf2_node.name = package_name(blender_object)
         gltf2_node.extras = extras or None
 
     def gather_material_hook(self, gltf2_material, blender_material, export_settings):
         extras = {k: v for k, v in (gltf2_material.extras or {}).items() if k != "chstage"}
         gltf2_material.extras = extras or None
         if not _EXPORT["active"] or blender_material is None or not hasattr(blender_material, "chstage"): return
-        values, fields = sidecars.material_fields(material_description(blender_material))
+        row = _EXPORT["keeper"](material_row(blender_material), blender_material.chstage, "material")
+        gltf2_material.name = package_name(blender_material)
+        _EXPORT["materials"][gltf2_material.name] = blender_material
         extras = {k: v for k, v in extras.items() if not k.startswith("gh3")}
-        extras.update(values)
+        extras.update(row["extras"])
         gltf2_material.extras = extras
-        gltf2_material.alpha_mode = fields["alphaMode"]
-        gltf2_material.alpha_cutoff = fields.get("alphaCutoff")
-        gltf2_material.double_sided = fields["doubleSided"]
+        gltf2_material.alpha_mode = row["alphaMode"]
+        gltf2_material.alpha_cutoff = row.get("alphaCutoff")
+        gltf2_material.double_sided = row["doubleSided"]
+        pbr = gltf2_material.pbr_metallic_roughness
+        if "opaqueAlpha" in row and pbr is not None:
+            pbr.base_color_factor = [*(pbr.base_color_factor or [1, 1, 1, 1])[:3], row["opaqueAlpha"]]
 
 
-def exported_objects(scene):
-    """Scenery for stage.glb: meshes and script-object empties; never markers, proxies, cameras, or lights."""
-    result = []
-    for obj in scene_objects(scene):
-        if is_marker(obj) or obj.hide_render: continue
-        if obj.type in ("MESH", "CURVE", "SURFACE", "META", "FONT") or (obj.type == "EMPTY" and obj.chstage.script_object):
-            result.append(obj)
-    return result
-
-
-def export_stage_glb(scene, path):
-    """Export the scenery with the safe glTF options and the gh3* extras. Returns the exported object names."""
+def export_stage_glb(scene, path, keeper=None, issues=None):
+    """Export the scenery with the safe glTF options and the gh3* extras. Returns the exported objects and the
+    Blender material of each glTF material name."""
     objects = exported_objects(scene)
+    for material in exported_materials(objects):
+        materials.sync_lightmap(material)
+        problem = materials.lightmap_problem(material, objects)
+        if problem and issues is not None: issues.error(problem[1], problem[0].name, material.name)
     window = bpy.context.window
     previous_scene = window.scene if window else None
     if window: window.scene = scene
@@ -213,14 +262,15 @@ def export_stage_glb(scene, path):
     selected = [obj for obj in scene.objects if obj.select_get(view_layer=view_layer)]
     try:
         for obj in scene.objects: obj.select_set(obj in objects, view_layer=view_layer)
-        _EXPORT["active"] = True
-        gltf_io.export_glb(path, fps=scene.render.fps, use_selection=True, export_cameras=False, export_lights=False,
-                           export_apply=True, export_vertex_color="ACTIVE")
+        _EXPORT.update(active=True, keeper=keeper or sidecars.Keeper(), materials={})
+        with bpy.context.temp_override(scene=scene, view_layer=view_layer), materials.vertex_alpha_for_export(exported_materials(objects)):
+            gltf_io.export_glb(path, fps=scene.render.fps, use_selection=True, export_cameras=False, export_lights=False,
+                               export_apply=True, export_vertex_color="ACTIVE")
     finally:
-        _EXPORT["active"] = False
+        _EXPORT.update(active=False, keeper=None)
         for obj in scene.objects: obj.select_set(obj in selected, view_layer=view_layer)
         if window and previous_scene: window.scene = previous_scene
-    return [obj.name for obj in objects]
+    return objects, dict(_EXPORT["materials"])
 
 
 def resolve(message, names, scene):
@@ -241,28 +291,3 @@ def resolve(message, names, scene):
         token = token[0] or token[1]
         if token in names.get(file, {}): return names[file][token], None
     return None, None
-
-
-def validate_scene(scene):
-    """Run the add-on checks and the bundled package validator. Returns a list of (severity, message, object, material)."""
-    issues = sidecars.Issues()
-    files, names = sidecar_files(scene, issues)
-    with tempfile.TemporaryDirectory(prefix="chstage-validate-") as folder:
-        model = Path(folder) / "stage.glb"
-        exported = export_stage_glb(scene, model)
-        if not exported: issues.error("the stage has no scenery meshes")
-        mapped = {path: json.dumps(value, ensure_ascii=False).encode() for path, value in files.items()}
-        mapped["stage.glb"] = model.read_bytes()
-        package = scene.chstage.package
-        if package.preview:
-            preview = Path(bpy.path.abspath(package.preview))
-            if preview.is_file(): mapped["preview.png"] = preview.read_bytes()
-            else: issues.error(f"preview image is missing: {package.preview}")
-        report = Validator(f"{package.package_id or 'stage'}.chstage", files=mapped).run()
-    known = {message for _, message, _, _ in issues.items}
-    for severity, messages in (("ERROR", report.errors), ("WARNING", report.warnings)):
-        for message in messages:
-            if "'files' is empty" in message or message in known: continue
-            obj, material = resolve(message, names, scene)
-            issues.items.append((severity, message, obj, material))
-    return issues.items

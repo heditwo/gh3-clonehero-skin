@@ -1,10 +1,12 @@
-"""Build the package format v1 JSON files and GLB extras from plain scene descriptions.
+"""Build the package format v1 JSON files and GLB extras from plain scene descriptions, and read them back.
 
 This module does not import bpy, so the tests run it without Blender. collect.py makes the descriptions from the
-Blender scene. Blender world coordinates: Z up, right-handed. Package JSON: Unity runtime coordinates (Y up,
-left-handed, docs/PACKAGE-FORMAT.md section 5). A Blender vector (x, y, z) is (x, z, y) at runtime.
+Blender scene; package_open.py makes Blender data from the descriptions that the open_* functions return. Blender
+world coordinates: Z up, right-handed. Package JSON: Unity runtime coordinates (Y up, left-handed,
+docs/PACKAGE-FORMAT.md section 5). A Blender vector (x, y, z) is (x, z, y) at runtime.
 """
 
+import json
 import math
 
 import numpy as np
@@ -20,7 +22,16 @@ SHOT_CONTROLS = ("TwoCam", "HandCam", "Orbit", "OrbitAndMorphTwoCam", "OrbitCont
 LIGHT_TYPES = ("Ambient", "Dir", "Point", "Spot")
 MOODS = ("intro", "verse", "chorus", "solo", "flare", "blackout", "strobe")
 BLENDER_LIGHT_TYPES = {"POINT": "Point", "SUN": "Dir", "SPOT": "Spot", "AREA": "Point"}
+RUNTIME_LIGHT_TYPES = {"Ambient": "POINT", "Dir": "SUN", "Point": "POINT", "Spot": "SPOT"}
+ENTRY_ORDER = ("model", "placements", "cameras", "lighting", "scripts", "actors")
 FILES = {"model": "stage.glb", "placements": "placements.json", "cameras": "cameras.json", "lighting": "lighting.json"}
+OPTIONAL_PLACEMENTS = ("waypoints", "effects", "crowd")
+# Material extras that the material panel edits. The add-on keeps the other gh3* keys (for example the GH3 shader
+# record) without a change.
+PANEL_MATERIAL_EXTRAS = {"gh3Shading", "gh3Additive", "gh3AlphaCutoff", "gh3ColorScale", "gh3CrowdAtlas", "gh3CrowdRole",
+                         "gh3Billboard", "gh3MovieSlot", "gh3SortedTransparency", "gh3TextureAnimation"}
+# A camera point without a rotation looks at its target. The preview aims at this height above the performer root.
+LOOK_HEIGHT = 1.5
 
 SWAP = np.array([[1., 0, 0], [0, 0, 1], [0, 1, 0]])
 # Blender cameras, lights, and beams look along local -Z; runtime cameras and lights look along local +Z.
@@ -36,12 +47,61 @@ class Issues:
     def warn(self, message, obj=None, material=None): self.items.append(("WARNING", message, obj, material))
 
 
+def plain(value):
+    """The value as JSON data (lists, Python numbers), so that two values compare as their JSON files do."""
+    return json.loads(json.dumps(value))
+
+
+class Keeper:
+    """Write the source value of a row again when the Blender data gives the same row as when the package was opened.
+
+    "Open .chstage" stores the source row and the row that the Blender data gave just after the open on the owner of
+    the row (the 'kept' JSON text of an object, a material, or a list item). Export compares the row of the current
+    Blender data with the stored row. Equal: nothing changed in Blender, so the source row goes into the package
+    without the float32 and rounding changes of the Blender data. Different: the current row goes into the package.
+
+    mode "keep" (export), "compute" (ignore the kept rows), or "record" (collect the rows for open).
+    """
+
+    def __init__(self, mode="keep"):
+        self.mode = mode
+        self.recorded = []
+
+    def __call__(self, computed, owner, kind):
+        computed = plain(computed)
+        if owner is None or self.mode == "compute": return computed
+        if self.mode == "record":
+            self.recorded.append((owner, kind, computed))
+            return computed
+        entry = load_kept(owner).get(kind)
+        if entry and "source" in entry and entry.get("computed") == computed: return entry["source"]
+        return computed
+
+    def store(self):
+        """Record mode: add the rows to the kept data of their owners."""
+        for owner, kind, computed in self.recorded:
+            data = load_kept(owner)
+            if kind in data: data[kind]["computed"] = computed
+            owner.kept = json.dumps(data, separators=(",", ":"))
+        self.recorded.clear()
+
+
+def load_kept(owner):
+    return json.loads(owner.kept) if getattr(owner, "kept", "") else {}
+
+
+def kept_text(**rows):
+    """The kept JSON text of an owner for its source rows (one for each kind)."""
+    return json.dumps({kind: {"source": plain(row)} for kind, row in rows.items()}, separators=(",", ":"))
+
+
 def clean(value, digits=6):
     """Round floats for readable JSON; keep the sign of zero out of the file."""
     if isinstance(value, (list, tuple, np.ndarray)): return [clean(v, digits) for v in value]
     if isinstance(value, (float, np.floating)):
         value = round(float(value), digits)
         return 0.0 if value == 0 else value
+    if isinstance(value, np.integer): return int(value)
     return value
 
 
@@ -98,15 +158,44 @@ def transform(matrix, looks=False):
     return {"position": clean(position), "rotation": clean(quaternion(rotation))}
 
 
-def blender_matrix(position, rotation, looks=False):
-    """Inverse of runtime_frame: a Blender world matrix from a runtime position and [x, y, z, w] rotation."""
+def frame_matrix(position, rotation, looks=False):
+    """Inverse of runtime_frame: a Blender world matrix from a runtime position and rotation matrix."""
     m = np.eye(4)
-    m[:3, :3] = SWAP @ quaternion_matrix(rotation) @ (LOOK if looks else SWAP)
+    m[:3, :3] = SWAP @ np.asarray(rotation, dtype=float) @ (LOOK if looks else SWAP)
     m[:3, 3] = SWAP @ np.asarray(position, dtype=float)
     return m
 
 
-def build_manifest(package, has_lighting, preview=False):
+def blender_matrix(position, rotation, looks=False):
+    """A Blender world matrix from a runtime position and [x, y, z, w] rotation."""
+    return frame_matrix(position, quaternion_matrix(rotation), looks)
+
+
+def blender_quaternion(rotation, looks=False):
+    """Blender (w, x, y, z) of a runtime [x, y, z, w] rotation."""
+    x, y, z, w = quaternion(frame_matrix([0, 0, 0], quaternion_matrix(rotation), looks)[:3, :3])
+    return [w, x, y, z]
+
+
+def look_rotation(position, target):
+    """Runtime rotation matrix whose +Z points from position to target, with +Y up as far as possible."""
+    forward = np.asarray(target, dtype=float) - np.asarray(position, dtype=float)
+    if np.linalg.norm(forward) < 1e-9: return np.eye(3)
+    forward /= np.linalg.norm(forward)
+    up = np.array([0., 1, 0]) if abs(forward[1]) < 0.999 else np.array([0., 0, 1])
+    right = np.cross(up, forward); right /= np.linalg.norm(right)
+    return np.column_stack([right, np.cross(forward, right), forward])
+
+
+# Manifest.
+def stage_entry(has_lighting, extra=()):
+    """The 'entry' object of a venue: the add-on files and the kept entries (for example 'scripts' and 'actors')."""
+    entry = {key: path for key, path in FILES.items() if key != "lighting" or has_lighting}
+    entry.update(extra)
+    return {key: entry[key] for key in sorted(entry, key=lambda k: ENTRY_ORDER.index(k) if k in ENTRY_ORDER else len(ENTRY_ORDER))}
+
+
+def build_manifest(package, entry, preview=None):
     manifest = {"format": FORMAT, "id": package["id"], "version": package["version"], "name": package["name"]}
     if package.get("description"): manifest["description"] = package["description"]
     manifest["authors"] = [{k: v for k, v in author.items() if v} for author in package["authors"]]
@@ -115,19 +204,32 @@ def build_manifest(package, has_lighting, preview=False):
     if package.get("credits"): manifest["credits"] = list(package["credits"])
     if package.get("homepage"): manifest["homepage"] = package["homepage"]
     if package.get("requires"): manifest["requires"] = [dict(r) for r in package["requires"]]
-    manifest["entry"] = {key: path for key, path in FILES.items() if key != "lighting" or has_lighting}
+    manifest["entry"] = dict(entry)
     # A development folder can have empty 'files'; the export step writes the hashes.
     manifest["files"] = {}
     if package.get("minModVersion"): manifest["minModVersion"] = package["minModVersion"]
-    if preview: manifest["preview"] = "preview.png"
+    if preview: manifest["preview"] = preview
     return manifest
 
 
-def build_placements(markers, crowd, issues):
+def open_manifest(manifest):
+    """Package description (the inverse of build_manifest) of a manifest."""
+    return {"id": manifest.get("id", ""), "version": manifest.get("version", ""), "name": manifest.get("name", ""),
+            "description": manifest.get("description", ""),
+            "authors": [{"name": a.get("name", ""), "role": a.get("role", ""), "url": a.get("url", "")} for a in manifest.get("authors", [])],
+            "license": manifest.get("license", ""), "permissions": dict(manifest.get("permissions", {})),
+            "credits": list(manifest.get("credits", [])), "homepage": manifest.get("homepage", ""),
+            "requires": [dict(r) for r in manifest.get("requires", [])], "minModVersion": manifest.get("minModVersion", "")}
+
+
+# Placements.
+def build_placements(markers, crowd, issues, keeper=None, keys=()):
+    """keys: optional top-level keys that the file has also when they are empty (as in the opened package)."""
+    keeper = keeper or Keeper("compute")
     placements = {"version": 1, "band": {}}
     waypoints = {}; effects = {}
     for marker in markers:
-        frame = transform(marker["matrix"])
+        frame = keeper(transform(marker["matrix"]), marker.get("owner"), "placement")
         if marker["kind"] == "BAND":
             if marker["role"] in placements["band"]: issues.error(f"two band placements for the role {marker['role']}", marker["object"])
             placements["band"][marker["role"]] = frame
@@ -137,20 +239,54 @@ def build_placements(markers, crowd, issues):
         elif marker["kind"] == "EFFECT":
             effects.setdefault(marker["effect"], []).append(frame)
     if not placements["band"]: issues.error("the stage needs at least one band placement (Add > Band placement)")
-    if waypoints: placements["waypoints"] = waypoints
-    if effects: placements["effects"] = {kind: effects[kind] for kind in EFFECTS if kind in effects}
-    if crowd: placements["crowd"] = [{"role": c["role"], "model": c["model"], "yaw": clean(c["yaw"])} for c in crowd]
+    if waypoints or "waypoints" in keys: placements["waypoints"] = waypoints
+    if effects or "effects" in keys: placements["effects"] = {kind: effects[kind] for kind in EFFECTS if kind in effects}
+    if crowd or "crowd" in keys:
+        placements["crowd"] = [keeper({"role": c["role"], "model": c["model"], "yaw": clean(c["yaw"])}, c.get("owner"), "crowd") for c in crowd]
     return placements
 
 
+def open_placements(placements):
+    """(markers, crowd, keys): Blender marker descriptions with their source rows, crowd rows, and the present optional keys."""
+    markers = []
+    for order, (role, frame) in enumerate(placements.get("band", {}).items()):
+        markers.append({"kind": "BAND", "role": role, "order": order, "matrix": blender_matrix(frame["position"], frame["rotation"]), "source": frame})
+    for order, (name, frame) in enumerate(placements.get("waypoints", {}).items()):
+        markers.append({"kind": "WAYPOINT", "name": name, "order": order, "matrix": blender_matrix(frame["position"], frame["rotation"]), "source": frame})
+    for kind, frames in placements.get("effects", {}).items():
+        for order, frame in enumerate(frames):
+            markers.append({"kind": "EFFECT", "effect": kind, "order": order, "matrix": blender_matrix(frame["position"], frame["rotation"]), "source": frame})
+    crowd = [{**row, "source": row} for row in placements.get("crowd", [])]
+    return markers, crowd, [key for key in OPTIONAL_PLACEMENTS if key in placements]
+
+
+# Cameras.
 def anchor_name(role, part, bone):
     if role in ("world", "none"): return role
     return f"{role}.bone.{bone}" if part == "bone" else f"{role}.{part}"
 
 
-def build_cameras(shots, notes, markers, issues):
-    band = {m["role"]: runtime_frame(m["matrix"]) for m in markers if m["kind"] == "BAND"}
+def parse_anchor(value):
+    """(role, part, bone) of an anchor or lookAt value. A missing lookAt is ('none', 'head', '')."""
+    if value in (None, "", "none"): return "none", "head", ""
+    if value == "world": return "world", "root", ""
+    role, _, part = value.partition(".")
+    if part.startswith("bone."): return role, "bone", part[5:]
+    return role, part, ""
+
+
+def band_frames(markers):
+    """Runtime frames of the band placements: role to (position, rotation matrix)."""
+    return {m["role"]: runtime_frame(m["matrix"]) for m in markers if m["kind"] == "BAND"}
+
+
+def build_cameras(shots, notes, markers, issues, keeper=None, groups_owner=None):
+    """Bone anchors (head, hands, bone): the point is relative to the bone in the game. Blender has no animated
+    performer, so the Blender camera shows the point relative to the performer root (the same rule as open_cameras)."""
+    keeper = keeper or Keeper("compute")
+    band = band_frames(markers)
     result = {"version": 1, "shots": {}, "groups": {}}
+    groups = {}
     for shot in shots:
         name = shot["name"]
         if name in result["shots"]: issues.error(f"two camera shots have the name '{name}'", shot["object"]); continue
@@ -166,36 +302,82 @@ def build_cameras(shots, notes, markers, issues):
                     origin, frame = band[role]
                     position = frame.T @ (position - origin); rotation = frame.T @ rotation
                     if part != "root":
-                        issues.warn(f"shot '{name}': the game places the camera relative to the {part} bone; "
+                        bone = f"bone {part[5:]}" if part.startswith("bone.") else f"{part} bone"
+                        issues.warn(f"shot '{name}': the game places the camera relative to the {bone}; "
                                     "Blender shows it relative to the performer root", point["object"])
-            row = {"anchor": anchor, "position": clean(position), "rotation": clean(quaternion(rotation)),
-                   "horizontalFov": clean(point["fov"], 4)}
+            row = {"anchor": anchor, "position": clean(position)}
+            if point.get("useRotation", True): row["rotation"] = clean(quaternion(rotation))
+            elif not point.get("lookAt"): issues.error(f"shot '{name}': a point without rotation needs a look-at target", point["object"])
+            row["horizontalFov"] = clean(point["fov"], 4)
             if point.get("lookAt"): row["lookAt"] = point["lookAt"]
             if point.get("screenOffset") is not None: row["screenOffset"] = clean(point["screenOffset"])
             points.append(row)
         definition = {"type": shot["type"], "control": shot["control"], "points": points}
-        for key in ("tag", "orbitAngle", "angularSpeed", "interpolation"):
+        for key in ("tag", "orbitAngle", "stepTime", "stepCount", "angularSpeed", "interpolation"):
             if shot.get(key) not in (None, ""): definition[key] = clean(shot[key])
+        for key in ("stepDirection", "heightEase"):
+            if shot.get(key) is not None: definition[key] = clean(shot[key])
         for key in ("handCam", "disableOrbit1", "disableOrbit2"):
             if shot.get(key): definition[key] = True
         if shot.get("waypoints"): definition["waypoints"] = list(shot["waypoints"])
         if shot.get("times"): definition["times"] = clean(shot["times"])
-        result["shots"][name] = definition
+        result["shots"][name] = keeper(definition, shot.get("owner"), "shot")
         if not shot["groups"]: issues.warn(f"shot '{name}' is in no camera group", shot["object"])
         for group in shot["groups"]:
-            result["groups"].setdefault(group, []).append(name)
+            groups.setdefault(group, []).append(name)
+    result["groups"] = keeper(groups, groups_owner, "groups")
     if "wide" not in result["groups"]: issues.error("no camera shot is in the group 'wide' (required)")
     if notes:
         result["notes"] = {}
         for note in notes:
             selector = {key: note[key] for key in ("group", "tag", "type") if note.get(key)}
             if note.get("enable") is not None: selector["enable"] = note["enable"]
-            result["notes"][str(note["note"])] = selector
+            result["notes"][str(note["note"])] = keeper(selector, note.get("owner"), "note")
     return result
 
 
-def build_lighting(lights, snapshots, moods, colors, issues):
+def open_cameras(cameras, placements):
+    """(shots, notes): Blender shot descriptions (point matrices, anchors, settings) with their source rows."""
+    markers, _, _ = open_placements(placements)
+    band = band_frames(markers)
+    groups_of = {}
+    for group, members in cameras.get("groups", {}).items():
+        for member in members: groups_of.setdefault(member, []).append(group)
+    shots = []
+    for order, (name, shot) in enumerate(cameras.get("shots", {}).items()):
+        points = []
+        for point in shot["points"]:
+            role, part, bone = parse_anchor(point["anchor"])
+            look_role, look_part, look_bone = parse_anchor(point.get("lookAt"))
+            position = np.asarray(point["position"], dtype=float)
+            rotation = quaternion_matrix(point["rotation"]) if "rotation" in point else None
+            if role in band:
+                origin, frame = band[role]
+                position = origin + frame @ position
+                if rotation is not None: rotation = frame @ rotation
+            if rotation is None:
+                target = band[look_role][0] + [0, LOOK_HEIGHT, 0] if look_role in band else np.zeros(3)
+                rotation = look_rotation(position, target)
+            points.append({"matrix": frame_matrix(position, rotation, looks=True), "fov": point["horizontalFov"],
+                           "anchorRole": role, "anchorPart": part, "anchorBone": bone,
+                           "lookAtRole": look_role, "lookAtPart": look_part, "lookAtBone": look_bone,
+                           "screenOffset": point.get("screenOffset"), "useRotation": "rotation" in point})
+        shots.append({"name": name, "order": order, "type": shot["type"], "control": shot["control"], "tag": shot.get("tag", ""),
+                      "groups": groups_of.get(name, []), "waypoints": list(shot.get("waypoints", [])), "times": list(shot.get("times", [])),
+                      "interpolation": shot.get("interpolation", "default"), "orbitAngle": shot.get("orbitAngle"),
+                      "angularSpeed": shot.get("angularSpeed"), "stepTime": shot.get("stepTime"), "stepCount": shot.get("stepCount"),
+                      "stepDirection": shot.get("stepDirection"), "heightEase": shot.get("heightEase"),
+                      "handCam": bool(shot.get("handCam")), "disableOrbit1": bool(shot.get("disableOrbit1")),
+                      "disableOrbit2": bool(shot.get("disableOrbit2")), "points": points, "source": shot})
+    notes = [{"note": int(number), "group": selector.get("group", ""), "tag": selector.get("tag", ""), "type": selector.get("type", ""),
+              "enable": selector.get("enable"), "source": selector} for number, selector in cameras.get("notes", {}).items()]
+    return shots, notes
+
+
+# Lighting.
+def build_lighting(lights, snapshots, moods, colors, issues, keeper=None):
     if not lights and not snapshots: return None
+    keeper = keeper or Keeper("compute")
     result = {"version": 1, "lights": [], "snapshots": {}, "moods": {}, "colors": {}}
     for light in lights:
         position, rotation = runtime_frame(light["matrix"], looks=True)
@@ -204,7 +386,7 @@ def build_lighting(lights, snapshots, moods, colors, issues):
         row.update(group=light["group"] or "Stage", type=light["type"], position=clean(position), rotation=clean(quaternion(rotation)))
         if light.get("overrideColor"): row["overrideColor"] = True
         if light.get("hotspot") is not None: row["hotspot"] = clean(light["hotspot"], 4); row["field"] = clean(light["field"], 4)
-        result["lights"].append(row)
+        result["lights"].append(keeper(row, light.get("owner"), "light"))
     if not lights: issues.error("lighting needs at least one stage light (Light properties > Stage light)")
     for snapshot in snapshots:
         settings = {entry["light"]: entry for entry in snapshot["lights"] if entry.get("light")}
@@ -214,7 +396,9 @@ def build_lighting(lights, snapshots, moods, colors, issues):
             if entry is None:
                 issues.error(f"snapshot '{snapshot['name']}' has no settings for the light '{light['id']}'; use Capture", light["source"])
                 entry = {"color": [0, 0, 0], "intensity": 0, "near": 0, "far": 0}
-            row = {"color": clean(entry["color"]), "intensity": clean(entry["intensity"]), "near": clean(entry["near"]), "far": clean(entry["far"])}
+            row = {"color": clean(entry["color"]), "intensity": clean(entry["intensity"])}
+            if entry.get("specular") is not None: row["specular"] = clean(entry["specular"])
+            row.update(near=clean(entry["near"]), far=clean(entry["far"]))
             if entry.get("inherit"): row["inherit"] = True
             rows.append(row)
         beams = {}
@@ -228,16 +412,40 @@ def build_lighting(lights, snapshots, moods, colors, issues):
             if beam.get("inherit"): row["inherit"] = True
             beams[beam["id"]] = row
         if snapshot["name"] in result["snapshots"]: issues.error(f"two snapshots have the name '{snapshot['name']}'")
-        result["snapshots"][snapshot["name"]] = {"lights": rows, "beams": beams}
+        result["snapshots"][snapshot["name"]] = keeper({"lights": rows, "beams": beams}, snapshot.get("owner"), "snapshot")
     for mood in moods:
         if mood["mood"] in result["moods"]: issues.error(f"the mood '{mood['mood']}' occurs two times")
-        result["moods"][mood["mood"]] = list(mood["snapshots"])
+        result["moods"][mood["mood"]] = keeper(list(mood["snapshots"]), mood.get("owner"), "mood")
     for name in ("intro", "blackout"):
         if name not in result["moods"]: issues.error(f"lighting needs the mood '{name}'")
-    for color in colors: result["colors"][color["name"]] = clean(color["color"])
+    for color in colors: result["colors"][color["name"]] = keeper(clean(color["color"]), color.get("owner"), "color")
     return result
 
 
+def open_lighting(lighting):
+    """(lights, snapshots, moods, colors) descriptions for Blender, with their source rows."""
+    lights = []
+    for order, row in enumerate(lighting.get("lights", [])):
+        field = row.get("field")
+        lights.append({"order": order, "id": row["id"], "object": row.get("object", ""), "group": row["group"], "type": row["type"],
+                       "blenderType": RUNTIME_LIGHT_TYPES[row["type"]], "matrix": blender_matrix(row["position"], row["rotation"], looks=True),
+                       "overrideColor": bool(row.get("overrideColor")), "useCone": field is not None,
+                       "hotspot": row.get("hotspot", 0), "field": field or 0, "source": row})
+    snapshots = []
+    for name, snapshot in lighting.get("snapshots", {}).items():
+        rows = [{"index": index, "color": row["color"], "intensity": row["intensity"], "near": row["near"], "far": row["far"],
+                 "inherit": bool(row.get("inherit")), "specular": row.get("specular")} for index, row in enumerate(snapshot["lights"])]
+        beams = [{"id": beam_id, "position": list(SWAP @ np.asarray(beam["position"], dtype=float)),
+                  "rotation": blender_quaternion(beam["rotation"], looks=True), "color": beam["color"], "density": beam["density"],
+                  "startRadius": beam["startRadius"], "endRadius": beam["endRadius"], "range": beam["range"],
+                  "inherit": bool(beam.get("inherit"))} for beam_id, beam in snapshot["beams"].items()]
+        snapshots.append({"name": name, "lights": rows, "beams": beams, "source": snapshot})
+    moods = [{"mood": mood, "snapshots": list(names), "source": names} for mood, names in lighting.get("moods", {}).items()]
+    colors = [{"name": name, "color": color, "source": color} for name, color in lighting.get("colors", {}).items()]
+    return lights, snapshots, moods, colors
+
+
+# Stage GLB extras.
 def node_extras(node, matrix=None):
     """gh3* node extras (PACKAGE-FORMAT 6.4) of one object description."""
     extras = {}
@@ -252,12 +460,30 @@ def node_extras(node, matrix=None):
         if node.get("fixtureCreated") is not None: extras["gh3FixtureCreated"] = bool(node["fixtureCreated"])
     if node.get("object"):
         extras["gh3Object"] = node["object"]
-        if node.get("pivot") and matrix is not None:
+        pivot = node.get("pivot")
+        if pivot == "ORIGIN" and matrix is not None:
             frame = transform(matrix)
             extras["gh3ObjectPivot"] = frame["position"]; extras["gh3ObjectRotation"] = frame["rotation"]
+        elif pivot == "CUSTOM":
+            extras["gh3ObjectPivot"] = [float(v) for v in node["pivotPosition"]]
+            extras["gh3ObjectRotation"] = [float(v) for v in node["pivotRotation"]]
         if node.get("created") is not None: extras["gh3ObjectCreated"] = bool(node["created"])
         if node.get("script"): extras["gh3ObjectScript"] = node["script"]
     return extras
+
+
+def open_node(extras):
+    """Blender object settings (CHSTAGE_PG_object property names) of the gh3* extras of a stage node."""
+    props = {"light_group": extras.get("gh3LightGroup", ""), "visibility_group": extras.get("gh3VisibilityGroup", ""),
+             "initially_visible": bool(extras.get("gh3InitiallyVisible", True)), "fixture_id": extras.get("gh3FixtureId", ""),
+             "fixture_fixed_position": bool(extras.get("gh3FixtureFixedPosition", False)), "fixture_object": extras.get("gh3FixtureObject", ""),
+             "use_fixture_created": "gh3FixtureCreated" in extras, "fixture_created": bool(extras.get("gh3FixtureCreated", True)),
+             "script_object": extras.get("gh3Object", ""), "use_object_created": "gh3ObjectCreated" in extras,
+             "object_created": bool(extras.get("gh3ObjectCreated", True)), "object_script": extras.get("gh3ObjectScript", "")}
+    if "gh3ObjectPivot" in extras or "gh3ObjectRotation" in extras:
+        props.update(object_pivot_mode="CUSTOM", object_pivot=extras.get("gh3ObjectPivot", [0, 0, 0]),
+                     object_rotation=extras.get("gh3ObjectRotation", [0, 0, 0, 1]))
+    return props
 
 
 def material_fields(material):
@@ -266,11 +492,11 @@ def material_fields(material):
     gltf = {"alphaMode": "OPAQUE", "doubleSided": bool(material.get("twoSided"))}
     blend = material["blend"]
     if blend == "CUTOUT":
-        gltf.update(alphaMode="MASK", alphaCutoff=clean(material["alphaCutoff"], 4))
+        gltf.update(alphaMode="MASK", alphaCutoff=clean(material["alphaCutoff"]))
     elif blend in ("BLEND", "ADDITIVE"):
         gltf["alphaMode"] = "BLEND"
         if blend == "ADDITIVE": extras["gh3Additive"] = True
-        if material.get("blendCutoff"): extras["gh3AlphaCutoff"] = clean(material["alphaCutoff"], 4)
+        if material.get("blendCutoff"): extras["gh3AlphaCutoff"] = clean(material["alphaCutoff"])
     if material.get("colorScale", 1) != 1: extras["gh3ColorScale"] = clean(material["colorScale"], 4)
     if material.get("crowdAtlas"): extras["gh3CrowdAtlas"] = True
     if material.get("crowdRole"): extras["gh3CrowdRole"] = material["crowdRole"]
@@ -278,5 +504,57 @@ def material_fields(material):
     if material.get("movieSlot", -1) >= 0: extras["gh3MovieSlot"] = int(material["movieSlot"])
     if material.get("sortedTransparency"): extras["gh3SortedTransparency"] = True
     if material.get("flipbook"): extras["gh3TextureAnimation"] = {k: clean(v, 4) for k, v in material["flipbook"].items()}
+    for key, value in (material.get("otherExtras") or {}).items():
+        if key not in PANEL_MATERIAL_EXTRAS: extras[key] = value
     if material.get("lightmap"): gltf["occlusionTexture"] = {"image": material["lightmap"], "texCoord": 1}
     return extras, gltf
+
+
+def material_row(material):
+    """The material data that the add-on writes into stage.glb: extras, alphaMode, alphaCutoff, doubleSided, and the
+    base color alpha of an opaque material (the Blender glTF importer and exporter drop it)."""
+    extras, gltf = material_fields(material)
+    row = {"extras": extras, "alphaMode": gltf["alphaMode"], "doubleSided": gltf["doubleSided"]}
+    if "alphaCutoff" in gltf: row["alphaCutoff"] = gltf["alphaCutoff"]
+    if gltf["alphaMode"] == "OPAQUE" and material.get("opaqueAlpha", 1) != 1: row["opaqueAlpha"] = clean(material["opaqueAlpha"])
+    return row
+
+
+def gltf_material_row(material):
+    """material_row of a glTF material of a package GLB (glTF defaults filled in)."""
+    row = {"extras": dict(material.get("extras", {})), "alphaMode": material.get("alphaMode", "OPAQUE"),
+           "doubleSided": bool(material.get("doubleSided", False))}
+    if row["alphaMode"] == "MASK": row["alphaCutoff"] = material.get("alphaCutoff", 0.5)
+    alpha = material.get("pbrMetallicRoughness", {}).get("baseColorFactor", [1, 1, 1, 1])[3]
+    if row["alphaMode"] == "OPAQUE" and alpha != 1: row["opaqueAlpha"] = alpha
+    return row
+
+
+def open_material(material):
+    """(Blender material settings, other gh3* extras) of a glTF material of a package GLB."""
+    extras = material.get("extras", {})
+    mode = material.get("alphaMode", "OPAQUE")
+    blend = {"MASK": "CUTOUT", "BLEND": "ADDITIVE" if extras.get("gh3Additive") else "BLEND"}.get(mode, "OPAQUE")
+    cutoff = material.get("alphaCutoff", 0.5) if mode == "MASK" else extras.get("gh3AlphaCutoff", 0.5)
+    flipbook = extras.get("gh3TextureAnimation")
+    props = {"shading": extras.get("gh3Shading", "lit"), "blend": blend, "alpha_cutoff": cutoff,
+             "use_blend_cutoff": mode == "BLEND" and "gh3AlphaCutoff" in extras, "two_sided": bool(material.get("doubleSided", False)),
+             "color_scale": extras.get("gh3ColorScale", 1), "crowd_atlas": bool(extras.get("gh3CrowdAtlas", False)),
+             "crowd_role": extras.get("gh3CrowdRole", "NONE"), "billboard": bool(extras.get("gh3Billboard", False)),
+             "movie_slot": extras.get("gh3MovieSlot", -1), "sorted_transparency": bool(extras.get("gh3SortedTransparency", False)),
+             "use_flipbook": flipbook is not None,
+             "opaque_alpha": material.get("pbrMetallicRoughness", {}).get("baseColorFactor", [1, 1, 1, 1])[3] if mode == "OPAQUE" else 1}
+    if flipbook:
+        props.update(flipbook_columns=flipbook.get("columns", 1), flipbook_rows=flipbook.get("rows", 1),
+                     flipbook_fps=flipbook.get("fps", 10), flipbook_offset=flipbook.get("offset", 0))
+    other = {key: value for key, value in extras.items() if key.startswith("gh3") and key not in PANEL_MATERIAL_EXTRAS}
+    return props, other
+
+
+def texture_references(extras):
+    """(container, key) pairs of every texture reference in material extras (PACKAGE-FORMAT 6.6)."""
+    refs = [(extras, key) for key in ("gh3MaskTexture", "gh3LayerTexture") if isinstance(extras.get(key), str)]
+    shader = extras.get("gh3Shader")
+    if isinstance(shader, dict) and isinstance(shader.get("textures"), list):
+        refs += [(shader["textures"], index) for index, value in enumerate(shader["textures"]) if isinstance(value, str)]
+    return refs

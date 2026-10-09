@@ -9,6 +9,9 @@
 | object.chstage.light, scene.chstage.snapshots, moods, colors | lighting.json |
 | object.chstage (node flags) | stage.glb node extras gh3* |
 | material.chstage | stage.glb material extras gh3* and glTF material fields |
+| scene.chstage.kept_files | Package files that the add-on keeps without a change (scripts.json, actors.json, actor GLBs) |
+
+The 'kept' text properties hold the source rows of an opened package (see sidecars.Keeper).
 """
 
 import bpy
@@ -22,7 +25,7 @@ from bpy.props import (
     PointerProperty,
     StringProperty,
 )
-from bpy.types import PropertyGroup
+from bpy.types import AddonPreferences, PropertyGroup
 
 from . import sidecars
 
@@ -36,6 +39,25 @@ def items(values, descriptions=None):
 
 class CHSTAGE_PG_name(PropertyGroup):
     name: StringProperty(name="Name")
+
+
+class CHSTAGE_PG_image_ref(PropertyGroup):
+    """A texture reference of the opened package: the GLB image name and its Blender image."""
+    name: StringProperty(name="Name")
+    image: PointerProperty(name="Image", type=bpy.types.Image)
+
+
+class CHSTAGE_PG_kept_file(PropertyGroup):
+    """A package file that the add-on does not edit (for example scripts.json, actors.json, actor GLBs). Export writes it again.
+
+    JSON files are Blender text blocks (saved in the .blend file). Other files stay in the source package: export reads
+    them from there and checks the SHA-256."""
+    path: StringProperty(name="Package path")
+    entry: StringProperty(name="Entry", description="manifest.json entry key of this file, or empty")
+    text: PointerProperty(name="Text", type=bpy.types.Text)
+    source: StringProperty(name="Source package", subtype="FILE_PATH")
+    sha256: StringProperty(name="SHA-256")
+    size: IntProperty(name="Size")
 
 
 class CHSTAGE_PG_number(PropertyGroup):
@@ -72,7 +94,12 @@ class CHSTAGE_PG_package(PropertyGroup):
     requires: CollectionProperty(type=CHSTAGE_PG_requirement)
     requires_index: IntProperty()
     min_mod_version: StringProperty(name="Minimum mod version", description="Empty, or the lowest mod version that can load the package")
-    preview: StringProperty(name="Preview image", subtype="FILE_PATH", description="PNG, maximum 1024 x 1024. Recommended 512 x 288")
+    preview_mode: EnumProperty(name="Preview", items=[
+        ("RENDER", "Render", "Render the scene camera at 512 x 288 when you export"),
+        ("IMAGE", "Image", "Use an image (PNG, maximum 1024 x 1024; recommended 512 x 288)"),
+        ("NONE", "None", "No preview image"),
+    ], default="RENDER")
+    preview_image: PointerProperty(name="Preview image", type=bpy.types.Image)
 
 
 class CHSTAGE_PG_point(PropertyGroup):
@@ -84,6 +111,10 @@ class CHSTAGE_PG_point(PropertyGroup):
     look_at_role: EnumProperty(name="Look at", items=[("none", "None", "Use the object rotation"), ("world", "World", "")] + ROLES, default="none")
     look_at_part: EnumProperty(name="Part", items=items(sidecars.ANCHOR_PARTS), default="head")
     look_at_bone: StringProperty(name="Bone")
+    use_rotation: BoolProperty(name="Write rotation", default=True,
+                               description="Off: the point has no rotation in cameras.json and the game aims it at the look-at target")
+    fov: FloatProperty(name="Horizontal FOV", default=60, min=1, max=169,
+                       description="Field of view of an empty point. A camera point uses its camera lens")
     use_screen_offset: BoolProperty(name="Screen offset")
     screen_offset: FloatVectorProperty(name="Screen offset", size=2, description="Framing offset in GH3 normalized screen units")
 
@@ -111,6 +142,14 @@ class CHSTAGE_PG_shot(PropertyGroup):
     orbit_angle: FloatProperty(name="Orbit angle", min=-36000, max=36000)
     use_angular_speed: BoolProperty(name="Angular speed")
     angular_speed: FloatProperty(name="Angular speed", min=-3600, max=3600, description="Degrees per second")
+    use_step_time: BoolProperty(name="Step time")
+    step_time: FloatProperty(name="Step time", default=1, min=0.001, max=86400)
+    use_step_count: BoolProperty(name="Step count")
+    step_count: FloatProperty(name="Step count", min=0, max=10000)
+    use_step_direction: BoolProperty(name="Step direction")
+    step_direction: FloatVectorProperty(name="Step direction", size=3, description="Runtime coordinates")
+    use_height_ease: BoolProperty(name="Height ease")
+    height_ease: FloatVectorProperty(name="Height ease", size=3, description="Start height, end height, and ease (0-100)")
     hand_cam: BoolProperty(name="Hand camera")
     disable_orbit1: BoolProperty(name="Disable orbit 1")
     disable_orbit2: BoolProperty(name="Disable orbit 2")
@@ -151,10 +190,19 @@ class CHSTAGE_PG_object(PropertyGroup):
     use_fixture_created: BoolProperty(name="Set created state")
     fixture_created: BoolProperty(name="Created", default=True)
     script_object: StringProperty(name="Script object", description="gh3Object: script object name or 0x and 8 hex digits")
-    use_object_pivot: BoolProperty(name="Pivot from origin", description="Write the object origin as gh3ObjectPivot and gh3ObjectRotation")
+    object_pivot_mode: EnumProperty(name="Pivot", items=[
+        ("NONE", "None", "No gh3ObjectPivot and gh3ObjectRotation"),
+        ("ORIGIN", "Object origin", "Write the object origin as gh3ObjectPivot and gh3ObjectRotation"),
+        ("CUSTOM", "Custom", "Write the values below (runtime coordinates)"),
+    ], default="NONE")
+    object_pivot: FloatVectorProperty(name="Pivot", size=3, description="gh3ObjectPivot, runtime coordinates")
+    object_rotation: FloatVectorProperty(name="Rotation", size=4, default=(0, 0, 0, 1), description="gh3ObjectRotation [x, y, z, w], runtime coordinates")
     use_object_created: BoolProperty(name="Set created state")
     object_created: BoolProperty(name="Created", default=True)
     object_script: StringProperty(name="Startup script")
+    source_name: StringProperty(name="Package name", description="Node name in the opened package. Export uses it while Blender only added a number suffix")
+    order: IntProperty(name="Order", default=1000000, description="Export order of markers, shots, and lights (the opened package order)")
+    kept: StringProperty(name="Kept rows", description="Source rows of the opened package (see sidecars.Keeper)")
     shot: PointerProperty(type=CHSTAGE_PG_shot)
     point: PointerProperty(type=CHSTAGE_PG_point)
     light: PointerProperty(type=CHSTAGE_PG_light)
@@ -177,6 +225,8 @@ class CHSTAGE_PG_material(PropertyGroup):
     lightmap: PointerProperty(name="Lightmap", type=bpy.types.Image, description="glTF occlusion texture on the second UV map")
     lightmap_uv: StringProperty(name="Lightmap UV", default="UVMap.001", description="UV map of the lightmap (glTF TEXCOORD_1)")
     two_sided: BoolProperty(name="Two-sided", description="glTF doubleSided")
+    opaque_alpha: FloatProperty(name="Color alpha", default=1, min=0, max=1,
+                                description="Alpha of the glTF base color factor of an opaque material (GH3 layer materials use it)")
     color_scale: FloatProperty(name="Color scale", default=1, min=1, max=1000, description="gh3ColorScale: multiplier for the base color")
     crowd_atlas: BoolProperty(name="Crowd atlas", description="Shared animated crowd atlas (8 columns, 3 rows)")
     crowd_role: EnumProperty(name="Crowd role", items=[("NONE", "None", "")] + CROWD_ROLES, default="NONE")
@@ -188,6 +238,10 @@ class CHSTAGE_PG_material(PropertyGroup):
     flipbook_rows: IntProperty(name="Rows", default=1, min=1, max=256)
     flipbook_fps: FloatProperty(name="FPS", default=10, min=-100000, max=100000)
     flipbook_offset: FloatProperty(name="Offset", default=0, min=-100000, max=100000)
+    kept: StringProperty(name="Kept rows")
+    source_name: StringProperty(name="Package name", description="Material name in the opened package")
+    kept_extras: StringProperty(name="Other GH3 data", description="gh3* extras that the panel does not edit (JSON), for example the GH3 shader record")
+    kept_images: CollectionProperty(type=CHSTAGE_PG_image_ref)
 
 
 class CHSTAGE_PG_snapshot_light(PropertyGroup):
@@ -197,6 +251,8 @@ class CHSTAGE_PG_snapshot_light(PropertyGroup):
     near: FloatProperty(name="Near", default=0, min=0, max=100000)
     far: FloatProperty(name="Far", default=200, min=0, max=100001)
     inherit: BoolProperty(name="Inherit")
+    use_specular: BoolProperty(name="Specular")
+    specular: FloatProperty(name="Specular", default=1)
 
 
 class CHSTAGE_PG_beam(PropertyGroup):
@@ -218,17 +274,20 @@ class CHSTAGE_PG_snapshot(PropertyGroup):
     lights_index: IntProperty()
     beams: CollectionProperty(type=CHSTAGE_PG_beam)
     beams_index: IntProperty()
+    kept: StringProperty()
 
 
 class CHSTAGE_PG_mood(PropertyGroup):
     mood: EnumProperty(name="Mood", items=items(sidecars.MOODS), default="intro")
     snapshots: CollectionProperty(type=CHSTAGE_PG_name)
     snapshots_index: IntProperty()
+    kept: StringProperty()
 
 
 class CHSTAGE_PG_color(PropertyGroup):
     name: StringProperty(name="Name")
     color: FloatVectorProperty(name="Color", subtype="COLOR", size=3, default=(1, 1, 1), min=0, soft_max=1)
+    kept: StringProperty()
 
 
 class CHSTAGE_PG_camera_note(PropertyGroup):
@@ -238,12 +297,14 @@ class CHSTAGE_PG_camera_note(PropertyGroup):
     type: StringProperty(name="Type")
     use_enable: BoolProperty(name="Set enable")
     enable: BoolProperty(name="Enable", default=True)
+    kept: StringProperty()
 
 
 class CHSTAGE_PG_crowd(PropertyGroup):
     role: EnumProperty(name="Role", items=CROWD_ROLES, default="crowd1")
     model: StringProperty(name="Model", description="Library crowd model name")
     yaw: FloatProperty(name="Yaw", min=-360, max=360)
+    kept: StringProperty()
 
 
 class CHSTAGE_PG_issue(PropertyGroup):
@@ -268,13 +329,28 @@ class CHSTAGE_PG_scene(PropertyGroup):
     issues: CollectionProperty(type=CHSTAGE_PG_issue)
     issues_index: IntProperty()
     validated: BoolProperty()
+    kept: StringProperty(description="Kept camera groups and placement keys of the opened package")
+    kept_files: CollectionProperty(type=CHSTAGE_PG_kept_file)
+    kept_files_index: IntProperty()
+    source_package: StringProperty(name="Opened package", subtype="FILE_PATH")
+    export_path: StringProperty(name="Last export", subtype="FILE_PATH")
+
+
+class CHSTAGE_AP_preferences(AddonPreferences):
+    bl_idname = __package__
+
+    custom_stages: StringProperty(name="Custom/Stages folder", subtype="DIR_PATH",
+                                  description="The Custom/Stages folder of Clone Hero. Export can copy the package into it")
+
+    def draw(self, context):
+        self.layout.prop(self, "custom_stages")
 
 
 CLASSES = (
-    CHSTAGE_PG_name, CHSTAGE_PG_number, CHSTAGE_PG_author, CHSTAGE_PG_requirement, CHSTAGE_PG_package,
+    CHSTAGE_PG_name, CHSTAGE_PG_image_ref, CHSTAGE_PG_kept_file, CHSTAGE_PG_number, CHSTAGE_PG_author, CHSTAGE_PG_requirement, CHSTAGE_PG_package,
     CHSTAGE_PG_point, CHSTAGE_PG_object_ref, CHSTAGE_PG_shot, CHSTAGE_PG_light, CHSTAGE_PG_object, CHSTAGE_PG_material,
     CHSTAGE_PG_snapshot_light, CHSTAGE_PG_beam, CHSTAGE_PG_snapshot, CHSTAGE_PG_mood, CHSTAGE_PG_color,
-    CHSTAGE_PG_camera_note, CHSTAGE_PG_crowd, CHSTAGE_PG_issue, CHSTAGE_PG_scene,
+    CHSTAGE_PG_camera_note, CHSTAGE_PG_crowd, CHSTAGE_PG_issue, CHSTAGE_PG_scene, CHSTAGE_AP_preferences,
 )
 
 

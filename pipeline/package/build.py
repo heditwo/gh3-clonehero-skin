@@ -13,20 +13,19 @@ import hashlib
 import json
 import os
 import shutil
-import zipfile
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
 
 from pipeline.package import decisions, q48, runtime
+from pipeline.package.container import file_list, json_bytes, write_zip
 from pipeline.package.glb import Glb
 from pipeline.paths import LIBRARY, STAGE_PACKS, STAGES
 from pipeline.stagepack.gltf import GlbWriter
 
 OUTPUT = STAGE_PACKS.parent/"packages"
 EVENTS = STAGES/"events"
-ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 BROTLI_QUALITY = 11
 BROTLI_WINDOW = 24
 # Increment when the clip encoder output changes, so that the clip cache is not reused.
@@ -37,17 +36,6 @@ LIBRARY_ENTRY = {"catalog": "catalog.json", "band": "band/band.json", "performan
                  "audio": "audio/audio.json", "scripts": "scripts.json", "songs": "songs/index.json"}
 EFFECT_FILES = {"render/particle-materials.json": "effects/particle-materials.json",
                 "render/tesla-material.json": "effects/tesla-material.json", "render/tesla-noise.png": "effects/tesla-noise.png"}
-
-
-def json_bytes(value):
-    return (json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + "\n").encode()
-
-
-def sha256_file(path):
-    digest = hashlib.sha256()
-    with open(path, "rb") as stream:
-        for block in iter(lambda: stream.read(1 << 20), b""): digest.update(block)
-    return digest.hexdigest()
 
 
 class PackageWriter:
@@ -76,30 +64,10 @@ class PackageWriter:
         shutil.copyfile(source, self.target(name))
 
     def finish(self, manifest):
-        files = {name: {"sha256": sha256_file(self.folder/name), "size": (self.folder/name).stat().st_size} for name in sorted(self.paths)}
+        files = file_list(self.folder, self.paths)
         manifest = {**manifest, "files": files}
         (self.folder/"manifest.json").write_bytes(json_bytes(manifest))
         return manifest
-
-
-def write_zip(folder, target):
-    """Zip a package folder reproducibly: manifest.json first, then sorted paths, fixed time and attributes."""
-    folder = Path(folder)
-    names = sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*") if p.is_file())
-    names = ["manifest.json", *(name for name in names if name != "manifest.json")]
-    temporary = target.with_name("." + target.name + ".tmp")
-    with zipfile.ZipFile(temporary, "w", allowZip64=True) as archive:
-        for name in names:
-            info = zipfile.ZipInfo(name, ZIP_TIME)
-            info.create_system = 3
-            info.external_attr = 0o100644 << 16
-            info.compress_type = decisions.zip_method(name)
-            # ZipFile.open does not apply the archive level to a given ZipInfo (3.13 keeps _compresslevel as an alias).
-            info._compresslevel = decisions.DEFLATE_LEVEL
-            info.file_size = (folder/name).stat().st_size
-            with open(folder/name, "rb") as source, archive.open(info, "w") as destination:
-                shutil.copyfileobj(source, destination, 1 << 20)
-    os.replace(temporary, target)
 
 
 def publish(writer, output, name):

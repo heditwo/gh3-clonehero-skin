@@ -1,15 +1,17 @@
+import json
 import textwrap
 
 import bpy
 from bpy.types import Panel, UIList
 
 CATEGORY = "CH Stage"
+HIDDEN_FIELDS = {"rna_type", "kept", "kept_extras", "source_name"}
 
 
 def fields(item):
     names = []
     for p in item.bl_rna.properties:
-        if p.identifier != "rna_type" and p.type != "COLLECTION" and not p.identifier.endswith("_index") and p.identifier not in names:
+        if p.identifier not in HIDDEN_FIELDS and p.type != "COLLECTION" and not p.identifier.endswith("_index") and p.identifier not in names:
             names.append(p.identifier)
     return names
 
@@ -60,10 +62,15 @@ class CHSTAGE_PT_stage(SidebarPanel, Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.operator("chstage.new_stage", icon="FILE_NEW")
+        row = layout.row(align=True)
+        row.operator("chstage.new_stage", text="New", icon="FILE_NEW")
+        row.operator("chstage.open_package", text="Open", icon="FILE_FOLDER")
         layout.operator_menu_enum("chstage.add_marker", "kind", text="Add Marker", icon="EMPTY_ARROWS")
-        layout.operator("chstage.validate", icon="CHECKMARK")
+        row = layout.row(align=True)
+        row.operator("chstage.validate", icon="CHECKMARK")
+        row.operator("chstage.export_package", icon="EXPORT")
         props = context.scene.chstage
+        if props.export_path: layout.label(text=f"Last export: {props.export_path}", icon="PACKAGE")
         if props.validated:
             errors = sum(1 for i in props.issues if i.severity == "ERROR")
             layout.label(text=f"{errors} errors, {len(props.issues) - errors} warnings" if props.issues else "No issues",
@@ -86,8 +93,10 @@ class CHSTAGE_PT_manifest(SidebarPanel, Panel):
     def draw(self, context):
         layout = self.layout
         package = context.scene.chstage.package
-        for name in ("package_id", "version", "name", "description", "license", "homepage", "min_mod_version", "preview"):
+        for name in ("package_id", "version", "name", "description", "license", "homepage", "min_mod_version"):
             layout.prop(package, name)
+        layout.prop(package, "preview_mode")
+        if package.preview_mode == "IMAGE": layout.template_ID(package, "preview_image", open="image.open")
         row = layout.row(align=True)
         for name in ("redistribute", "modify", "commercial"): row.prop(package, name, toggle=True)
         layout.label(text="Authors")
@@ -126,18 +135,24 @@ class CHSTAGE_PT_object(SidebarPanel, Panel):
         box = layout.box(); box.label(text="Script object")
         box.prop(props, "script_object")
         if props.script_object:
-            box.prop(props, "use_object_pivot")
+            box.prop(props, "object_pivot_mode")
+            if props.object_pivot_mode == "CUSTOM":
+                box.prop(props, "object_pivot"); box.prop(props, "object_rotation")
             row = box.row(); row.prop(props, "use_object_created"); sub = row.row(); sub.active = props.use_object_created; sub.prop(props, "object_created")
             box.prop(props, "object_script")
 
 
-def draw_point(layout, point):
+def draw_point(layout, point, empty=False):
     row = layout.row(align=True); row.prop(point, "anchor_role"); row.prop(point, "anchor_part", text="")
     if point.anchor_part == "bone" and point.anchor_role != "world": layout.prop(point, "anchor_bone")
+    if point.anchor_role not in ("world", "none") and point.anchor_part != "root":
+        layout.label(text="Blender shows the point relative to the performer root", icon="INFO")
     row = layout.row(align=True); row.prop(point, "look_at_role")
     if point.look_at_role not in ("none", "world"): row.prop(point, "look_at_part", text="")
     if point.look_at_part == "bone" and point.look_at_role not in ("none", "world"): layout.prop(point, "look_at_bone")
     row = layout.row(); row.prop(point, "use_screen_offset", text=""); sub = row.row(); sub.active = point.use_screen_offset; sub.prop(point, "screen_offset")
+    layout.prop(point, "use_rotation")
+    if empty: layout.prop(point, "fov")
 
 
 class CHSTAGE_PT_shot(SidebarPanel, Panel):
@@ -153,11 +168,14 @@ class CHSTAGE_PT_shot(SidebarPanel, Panel):
         obj = context.object
         if obj.type == "EMPTY":
             layout.label(text="Settings when this empty is a shot point:")
-            draw_point(layout, obj.chstage.point)
+            draw_point(layout, obj.chstage.point, empty=True)
             return
         shot = obj.chstage.shot
         layout.prop(shot, "enabled")
-        if not shot.enabled: return
+        if not shot.enabled:
+            layout.label(text="Settings when this camera is a shot point:")
+            draw_point(layout, obj.chstage.point)
+            return
         layout.prop(shot, "shot_name")
         layout.prop(shot, "type"); layout.prop(shot, "control"); layout.prop(shot, "tag")
         layout.label(text="Groups (wide, guitarist, bassist, singer, drummer, orbit, ...)")
@@ -168,7 +186,8 @@ class CHSTAGE_PT_shot(SidebarPanel, Panel):
         edit_list(layout, "OBJECT", shot, "more_points", "chstage.shot.more_points", rows=1)
         layout.operator("chstage.add_shot_point", icon="EMPTY_SINGLE_ARROW")
         col = layout.column(heading="Options")
-        for flag, value in (("use_orbit_angle", "orbit_angle"), ("use_angular_speed", "angular_speed")):
+        for flag, value in (("use_orbit_angle", "orbit_angle"), ("use_angular_speed", "angular_speed"), ("use_step_time", "step_time"),
+                            ("use_step_count", "step_count"), ("use_step_direction", "step_direction"), ("use_height_ease", "height_ease")):
             row = col.row(); row.prop(shot, flag, text=""); sub = row.row(); sub.active = getattr(shot, flag); sub.prop(shot, value)
         col.prop(shot, "hand_cam"); col.prop(shot, "disable_orbit1"); col.prop(shot, "disable_orbit2")
         if shot.control == "Keyframes":
@@ -244,6 +263,33 @@ class CHSTAGE_PT_crowd_cameras(SidebarPanel, Panel):
         edit_list(layout, "SCENE", props, "camera_notes", "chstage.camera_notes", rows=2)
 
 
+class CHSTAGE_UL_kept_files(UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_property, index=0, flt_flag=0):
+        from .package_open import source_status
+        status = source_status(item)
+        row = layout.row(align=True)
+        row.label(text=item.path, icon="TEXT" if item.text else "FILE")
+        if item.entry: row.label(text=item.entry)
+        if status not in ("text", "ok"): row.label(text=status, icon="ERROR")
+
+
+class CHSTAGE_PT_kept_files(SidebarPanel, Panel):
+    bl_label = "Kept Package Files"
+    bl_parent_id = "CHSTAGE_PT_stage"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    @classmethod
+    def poll(cls, context):
+        return len(context.scene.chstage.kept_files) > 0
+
+    def draw(self, context):
+        props = context.scene.chstage
+        layout = self.layout
+        layout.label(text="Export writes these files again without a change")
+        layout.template_list("CHSTAGE_UL_kept_files", "", props, "kept_files", props, "kept_files_index", rows=3)
+        if props.source_package: layout.label(text=f"Source: {props.source_package}")
+
+
 class CHSTAGE_PT_material(Panel):
     bl_label = "CH Stage Material"
     bl_space_type = "PROPERTIES"
@@ -265,6 +311,7 @@ class CHSTAGE_PT_material(Panel):
             row = layout.row(heading="Alpha test"); row.prop(props, "use_blend_cutoff", text="")
             sub = row.row(); sub.active = props.use_blend_cutoff; sub.prop(props, "alpha_cutoff", text="")
         layout.prop(props, "two_sided")
+        if props.blend == "OPAQUE" and props.opaque_alpha != 1: layout.prop(props, "opaque_alpha")
         layout.prop(props, "color_scale")
         layout.prop(props, "lightmap")
         if props.lightmap:
@@ -273,6 +320,9 @@ class CHSTAGE_PT_material(Panel):
             else: layout.prop(props, "lightmap_uv")
         layout.prop(props, "movie_slot")
         layout.prop(props, "sorted_transparency")
+        if props.kept_extras:
+            keys = ", ".join(sorted(json.loads(props.kept_extras)))
+            layout.label(text=f"Kept GH3 data: {keys}", icon="LOCKED")
         col = layout.column(heading="Crowd")
         col.prop(props, "crowd_atlas"); col.prop(props, "crowd_role"); col.prop(props, "billboard")
         layout.prop(props, "use_flipbook")
@@ -280,7 +330,7 @@ class CHSTAGE_PT_material(Panel):
             for name in ("flipbook_columns", "flipbook_rows", "flipbook_fps", "flipbook_offset"): layout.prop(props, name)
 
 
-CLASSES = (CHSTAGE_UL_rows, CHSTAGE_UL_issues, CHSTAGE_PT_stage, CHSTAGE_PT_manifest, CHSTAGE_PT_object, CHSTAGE_PT_shot,
+CLASSES = (CHSTAGE_UL_rows, CHSTAGE_UL_issues, CHSTAGE_UL_kept_files, CHSTAGE_PT_stage, CHSTAGE_PT_manifest, CHSTAGE_PT_kept_files, CHSTAGE_PT_object, CHSTAGE_PT_shot,
            CHSTAGE_PT_light, CHSTAGE_PT_lighting, CHSTAGE_PT_crowd_cameras, CHSTAGE_PT_material)
 
 

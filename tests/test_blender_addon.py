@@ -28,6 +28,8 @@ def load(path, name):
 
 sidecars = load(ADDON / "sidecars.py", "chstage_sidecars")
 gltf_io = load(ADDON / "gltf_io.py", "chstage_gltf_io")
+glb_tools = load(ADDON / "glb_tools.py", "chstage_glb_tools")
+PACKAGES = ROOT / "assets" / "packages"
 build = load(ROOT / "blender" / "build.py", "chstage_build")
 
 
@@ -139,7 +141,7 @@ class SidecarTests(unittest.TestCase):
 
     def test_node_extras(self):
         node = {"lightGroup": "Band", "visibilityGroup": "crowd-lighters", "initiallyVisible": False, "fixtureId": "beam-1",
-                "fixtureFixedPosition": True, "fixtureObject": "housing", "fixtureCreated": False, "object": "door", "pivot": True,
+                "fixtureFixedPosition": True, "fixtureObject": "housing", "fixtureCreated": False, "object": "door", "pivot": "ORIGIN",
                 "created": True, "script": "door_open"}
         self.assertEqual(sidecars.node_extras(node, blender_matrix([1, 2, 3])), {
             "gh3LightGroup": "Band", "gh3VisibilityGroup": "crowd-lighters", "gh3InitiallyVisible": False, "gh3FixtureId": "beam-1",
@@ -159,7 +161,7 @@ class SidecarTests(unittest.TestCase):
         snapshot = {"name": "fill", "lights": [{"light": g, "color": [1, 1, 1], "intensity": 0.65, "near": 0, "far": 200} for g in ("Stage", "Band")], "beams": [beam]}
         lighting = sidecars.build_lighting(lights, [snapshot], [{"mood": "intro", "snapshots": ["fill"]}, {"mood": "blackout", "snapshots": ["fill"]}], [], issues)
         self.assertEqual(lighting["snapshots"]["fill"]["beams"]["left-beam"]["rotation"], [0.707107, 0.0, 0.0, 0.707107])
-        files = {"manifest.json": sidecars.build_manifest(package(), True),
+        files = {"manifest.json": sidecars.build_manifest(package(), sidecars.stage_entry(True)),
                  "placements.json": sidecars.build_placements(markers, [{"role": "crowd1", "model": "crowd_a", "yaw": 10}], issues),
                  "cameras.json": sidecars.build_cameras([camera("wide", [0, -12, 3], ["wide", "default"], look_at="singer.head")], [{"note": 77, "group": "wide"}], markers, issues),
                  "lighting.json": lighting}
@@ -214,6 +216,234 @@ class BuildTests(unittest.TestCase):
             self.assertTrue(any("missing field 'format'" in e for e in report.errors), report.errors)
             manifest = (ADDON / "blender_manifest.toml").read_text()
             self.assertIn('blender_version_min = "4.2.0"', manifest)
+
+
+def float32(matrix):
+    """A matrix as Blender stores it (float32)."""
+    return np.asarray(matrix, dtype=np.float32).astype(np.float64)
+
+
+def scene_from_package(folder):
+    """The plain scene descriptions that "Open .chstage" makes from a package (as package_open.py and collect.py do,
+    with float32 matrices), for the build functions."""
+    placements = json.loads((folder / "placements.json").read_text())
+    cameras = json.loads((folder / "cameras.json").read_text())
+    markers, crowd, keys = sidecars.open_placements(placements)
+    markers = [{**m, "object": f"marker{i}", "matrix": float32(m["matrix"])} for i, m in enumerate(markers)]
+    shots, notes = sidecars.open_cameras(cameras, placements)
+    shot_rows = []
+    for shot in shots:
+        points = [{"object": shot["name"], "matrix": float32(p["matrix"]), "fov": p["fov"],
+                   "anchor": sidecars.anchor_name(p["anchorRole"], p["anchorPart"], p["anchorBone"]),
+                   "lookAt": None if p["lookAtRole"] == "none" else sidecars.anchor_name(p["lookAtRole"], p["lookAtPart"], p["lookAtBone"]),
+                   "useRotation": p["useRotation"], "screenOffset": p["screenOffset"]} for p in shot["points"]]
+        shot_rows.append({**shot, "object": shot["name"], "interpolation": None if shot["interpolation"] == "default" else shot["interpolation"],
+                          "points": points})
+    lighting = json.loads((folder / "lighting.json").read_text())
+    lights, snapshots, moods, colors = sidecars.open_lighting(lighting)
+    lights = [{**light, "source": light["id"], "matrix": float32(light["matrix"]),
+               **({"hotspot": light["hotspot"], "field": light["field"]} if light["useCone"] else {"hotspot": None, "field": None})} for light in lights]
+    snapshots = [{**snap, "lights": [{**row, "light": lights[row["index"]]["source"]} for row in snap["lights"]]} for snap in snapshots]
+    return {"placements": (markers, crowd, keys), "cameras": (shot_rows, notes, markers), "lighting": (lights, snapshots, moods, colors)}
+
+
+def json_close(test, a, b, path=""):
+    """a and b are equal; numbers within 1e-5; q and -q are equal; keys with default values (false, "", []) can be missing in b."""
+    if isinstance(a, dict):
+        for key, value in a.items():
+            if key not in b:
+                test.assertIn(value, (False, "", [], {}, 0), f"{path}.{key}"); continue
+            json_close(test, value, b[key], f"{path}.{key}")
+        test.assertEqual(set(b) - set(a), set(), path)
+    elif isinstance(a, list):
+        test.assertEqual(len(a), len(b), path)
+        if path.endswith("otation") and len(a) == 4 and np.dot(a, b) < 0: b = [-v for v in b]
+        for index, (x, y) in enumerate(zip(a, b)): json_close(test, x, y, f"{path}[{index}]")
+    elif isinstance(a, (int, float)) and not isinstance(a, bool):
+        test.assertAlmostEqual(a, b, delta=1e-5, msg=path)
+    else:
+        test.assertEqual(a, b, path)
+
+
+class Owner:
+    def __init__(self, kept=""): self.kept = kept
+
+
+class OpenTests(unittest.TestCase):
+    """The open_* functions of sidecars.py give back the package files through the build functions."""
+
+    def check_package(self, folder):
+        scene = sidecars.Issues()
+        described = scene_from_package(folder)
+        markers, crowd, keys = described["placements"]
+        placements = sidecars.build_placements(markers, crowd, scene, keys=keys)
+        json_close(self, json.loads((folder / "placements.json").read_text()), placements)
+        shots, notes, markers = described["cameras"]
+        cameras = sidecars.build_cameras(shots, notes, markers, scene)
+        source = json.loads((folder / "cameras.json").read_text())
+        # Group member order comes from the shot order; the kept source rows give the source order (Keeper).
+        self.assertEqual({g: sorted(m) for g, m in source["groups"].items()}, {g: sorted(m) for g, m in cameras["groups"].items()})
+        cameras["groups"] = source["groups"]
+        json_close(self, source, cameras)
+        lighting = sidecars.build_lighting(*described["lighting"], scene)
+        json_close(self, json.loads((folder / "lighting.json").read_text()), lighting)
+        self.assertEqual([m for s_, m, _, _ in scene.items if s_ == "ERROR"], [])
+
+    def test_example_studio(self):
+        folder = PACKAGES / "unpacked" / "example.studio.chstage"
+        if not folder.is_dir(): self.skipTest("assets/packages is not generated")
+        self.check_package(folder)
+
+    def test_gh3_venues(self):
+        folders = sorted((PACKAGES / "unpacked").glob("gh3.*.chstage"))
+        if not folders: self.skipTest("assets/packages is not generated")
+        for folder in folders:
+            with self.subTest(folder.name): self.check_package(folder)
+
+    def test_gh3_materials_and_nodes(self):
+        folder = PACKAGES / "unpacked" / "gh3.dive.chstage"
+        if not folder.is_dir(): self.skipTest("assets/packages is not generated")
+        gltf, _ = glb_tools.read_glb((folder / "stage.glb").read_bytes())
+        for material in gltf["materials"]:
+            props, other = sidecars.open_material(material)
+            description = {"shading": props["shading"], "blend": props["blend"], "alphaCutoff": props["alpha_cutoff"],
+                           "blendCutoff": props["use_blend_cutoff"], "twoSided": props["two_sided"], "colorScale": props["color_scale"],
+                           "crowdAtlas": props["crowd_atlas"], "crowdRole": None if props["crowd_role"] == "NONE" else props["crowd_role"],
+                           "billboard": props["billboard"], "movieSlot": props["movie_slot"], "sortedTransparency": props["sorted_transparency"],
+                           "flipbook": {k: props[f"flipbook_{k}"] for k in ("columns", "rows", "fps", "offset")} if props["use_flipbook"] else None,
+                           "otherExtras": other, "opaqueAlpha": props["opaque_alpha"]}
+            source = sidecars.gltf_material_row(material)
+            if "gh3Shading" not in source["extras"]: source["extras"]["gh3Shading"] = "lit"  # absent means lit
+            json_close(self, source, sidecars.material_row(description))
+        for node in gltf["nodes"]:
+            props = sidecars.open_node(node.get("extras", {}))
+            description = {"lightGroup": props["light_group"], "visibilityGroup": props["visibility_group"], "initiallyVisible": props["initially_visible"],
+                           "fixtureId": props["fixture_id"], "fixtureFixedPosition": props["fixture_fixed_position"], "fixtureObject": props["fixture_object"],
+                           "fixtureCreated": props["fixture_created"] if props["use_fixture_created"] else None, "object": props["script_object"],
+                           "pivot": props.get("object_pivot_mode", "NONE"), "pivotPosition": props.get("object_pivot"), "pivotRotation": props.get("object_rotation"),
+                           "created": props["object_created"] if props["use_object_created"] else None, "script": props["object_script"]}
+            json_close(self, node.get("extras", {}), sidecars.node_extras(description))
+
+    def test_bone_anchor_keeps_the_local_offset(self):
+        placements = {"version": 1, "band": {"guitarist": {"position": [2, 0, 1], "rotation": [0, 0.3826834, 0, 0.9238795]}}}
+        point = {"anchor": "guitarist.bone.c00e3395", "position": [0.1, 1.6, -0.4], "rotation": [0.1, 0.2, 0.0, 0.9746794], "horizontalFov": 40}
+        cameras = {"version": 1, "shots": {"hand": {"type": "closeup", "control": "TwoCam", "points": [point]}}, "groups": {"wide": ["hand"]}}
+        markers, _, _ = sidecars.open_placements(placements)
+        markers = [{**m, "object": "band"} for m in markers]
+        shots, _ = sidecars.open_cameras(cameras, placements)
+        opened = shots[0]["points"][0]
+        self.assertEqual((opened["anchorRole"], opened["anchorPart"], opened["anchorBone"]), ("guitarist", "bone", "c00e3395"))
+        row = {**shots[0], "object": "hand", "interpolation": None, "points": [{"object": "hand", "matrix": opened["matrix"], "fov": 40,
+               "anchor": "guitarist.bone.c00e3395", "lookAt": None, "useRotation": True, "screenOffset": None}]}
+        issues = sidecars.Issues()
+        built = sidecars.build_cameras([row], [], markers, issues)
+        json_close(self, point, built["shots"]["hand"]["points"][0])
+        self.assertTrue(any("bone c00e3395" in m for _, m, _, _ in issues.items), issues.items)
+
+
+class KeeperTests(unittest.TestCase):
+    def test_unchanged_rows_give_the_source_and_changed_rows_the_new_value(self):
+        owner = Owner(sidecars.kept_text(shot={"type": "stage", "waypoints": [], "position": [0.123456789]}))
+        recorder = sidecars.Keeper("record")
+        self.assertEqual(recorder({"type": "stage", "position": [0.123457]}, owner, "shot"), {"type": "stage", "position": [0.123457]})
+        recorder.store()
+        keeper = sidecars.Keeper()
+        self.assertEqual(keeper({"type": "stage", "position": [0.123457]}, owner, "shot"), {"type": "stage", "waypoints": [], "position": [0.123456789]})
+        self.assertEqual(keeper({"type": "mid", "position": [0.123457]}, owner, "shot"), {"type": "mid", "position": [0.123457]})
+        self.assertEqual(sidecars.Keeper("compute")({"type": "stage", "position": [0.123457]}, owner, "shot")["position"], [0.123457])
+        self.assertEqual(keeper({"a": 1}, Owner(), "shot"), {"a": 1})
+        self.assertEqual(keeper({"a": 1}, None, "shot"), {"a": 1})
+
+    def test_manifest_round_trip(self):
+        folder = PACKAGES / "unpacked" / "gh3.dive.chstage"
+        if not folder.is_dir(): self.skipTest("assets/packages is not generated")
+        manifest = json.loads((folder / "manifest.json").read_text())
+        extra = {k: v for k, v in manifest["entry"].items() if k in ("scripts", "actors")}
+        built = sidecars.build_manifest(sidecars.open_manifest(manifest), sidecars.stage_entry(True, extra))
+        self.assertEqual({k: v for k, v in manifest.items() if k != "files"}, {k: v for k, v in built.items() if k != "files"})
+        self.assertEqual(list(built["entry"]), ["model", "placements", "cameras", "lighting", "scripts", "actors"])
+
+
+def test_glb(primitives, extra_accessors=()):
+    """A GLB with one mesh. primitives: lists of (attribute name, float32 array) and an index array."""
+    gltf = {"asset": {"version": "2.0"}, "buffers": [{"byteLength": 0}], "bufferViews": [], "accessors": [], "meshes": [{"primitives": []}],
+            "nodes": [{"mesh": 0}], "scenes": [{"nodes": [0]}]}
+    binary = bytearray()
+
+    def add(array, component, kind):
+        binary.extend(b"\0" * (-len(binary) % 4))
+        gltf["bufferViews"].append({"buffer": 0, "byteOffset": len(binary), "byteLength": array.nbytes})
+        binary.extend(array.tobytes())
+        gltf["accessors"].append({"bufferView": len(gltf["bufferViews"]) - 1, "componentType": component, "count": len(array), "type": kind})
+        return len(gltf["accessors"]) - 1
+
+    for attributes, indices in primitives:
+        primitive = {"attributes": {name: add(np.asarray(v, dtype="<f4"), 5126, {2: "VEC2", 3: "VEC3"}[np.shape(v)[1]]) for name, v in attributes},
+                     "indices": add(np.asarray(indices, dtype="<u2"), 5123, "SCALAR")}
+        gltf["meshes"][0]["primitives"].append(primitive)
+    gltf["buffers"][0]["byteLength"] = len(binary)
+    return glb_tools.write_glb(gltf, bytes(binary))
+
+
+class GlbToolsTests(unittest.TestCase):
+    QUAD = [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]]
+
+    def test_fill_texcoord_gaps(self):
+        data = test_glb([([("POSITION", self.QUAD), ("NORMAL", [[0, 0, 1]] * 4), ("TEXCOORD_0", [[0, 0]] * 4), ("TEXCOORD_3", [[1, 1]] * 4)], [0, 1, 2])])
+        filled, count = glb_tools.fill_texcoord_gaps(data)
+        self.assertEqual(count, 2)
+        gltf, binary = glb_tools.read_glb(filled)
+        attributes = gltf["meshes"][0]["primitives"][0]["attributes"]
+        self.assertEqual(sorted(attributes), ["NORMAL", "POSITION", "TEXCOORD_0", "TEXCOORD_1", "TEXCOORD_2", "TEXCOORD_3"])
+        zeros = glb_tools.accessor_rows(gltf, binary, attributes["TEXCOORD_1"])
+        self.assertEqual(zeros.shape, (4, 8)); self.assertFalse(zeros.any())
+        self.assertEqual(glb_tools.fill_texcoord_gaps(filled), (filled, 0))
+
+    def test_separate_faces(self):
+        # Triangle 1 repeats triangle 0 with the opposite winding; triangle 2 has two corners at one position.
+        positions = self.QUAD + [[0, 0, 0]]
+        data = test_glb([([("POSITION", positions), ("NORMAL", [[0, 0, 1]] * 5)], [0, 1, 2, 2, 1, 0, 0, 4, 3])])
+        separated, count = glb_tools.separate_faces(data)
+        self.assertEqual(count, 2)
+        gltf, binary = glb_tools.read_glb(separated)
+        primitive = gltf["meshes"][0]["primitives"][0]
+        faces = glb_tools.accessor_rows(gltf, binary, primitive["indices"]).view("<u4").reshape(-1, 3)
+        self.assertEqual(faces.tolist(), [[0, 1, 2], [5, 6, 7], [8, 9, 10]])
+        positions_after = glb_tools.accessor_rows(gltf, binary, primitive["attributes"]["POSITION"]).view("<f4").reshape(-1, 3)
+        np.testing.assert_array_equal(positions_after[faces], np.asarray(positions, dtype=np.float32)[[[0, 1, 2], [2, 1, 0], [0, 4, 3]]])
+
+    def test_normalize_normals(self):
+        data = test_glb([([("POSITION", self.QUAD), ("NORMAL", [[0, 0, 1.25]] * 4)], [0, 1, 2])])
+        fixed, count = glb_tools.normalize_normals(data)
+        self.assertEqual(count, 1)
+        gltf, binary = glb_tools.read_glb(fixed)
+        normals = glb_tools.accessor_rows(gltf, binary, gltf["meshes"][0]["primitives"][0]["attributes"]["NORMAL"]).view("<f4").reshape(-1, 3)
+        np.testing.assert_allclose(normals, [[0, 0, 1]] * 4)
+        self.assertEqual(glb_tools.normalize_normals(fixed), (fixed, 0))
+
+    def test_png_text_chunks_are_removed(self):
+        header = glb_tools.png_chunk(b"IHDR", bytes(13))
+        png = glb_tools.PNG_SIGNATURE + header + glb_tools.png_chunk(b"tEXt", b"Date\0today") + glb_tools.png_chunk(b"IEND", b"")
+        self.assertEqual(glb_tools.strip_png_text(png), glb_tools.PNG_SIGNATURE + header + glb_tools.png_chunk(b"IEND", b""))
+
+    def test_texture_references(self):
+        extras = {"gh3MaskTexture": "#a", "gh3Shader": {"textures": ["#b", "", "textures/c.png"]}}
+        self.assertEqual([c[k] for c, k in sidecars.texture_references(extras)], ["#a", "#b", "", "textures/c.png"])
+
+
+class CompareTests(unittest.TestCase):
+    def test_package_equals_itself(self):
+        package = PACKAGES / "gh3.credits.chstage"
+        if not package.is_file(): self.skipTest("assets/packages is not generated")
+        from pipeline.package import compare
+        report = compare.compare_packages(package, PACKAGES / "unpacked" / package.name)
+        self.assertEqual(report["failures"], [])
+        self.assertEqual(report["stage"]["max"]["POSITION"], 0)
+
+    def test_quaternion_sign(self):
+        from pipeline.package import compare
+        self.assertEqual(compare.json_differences({"rotation": [0, 0, 0.6, 0.8]}, {"rotation": [0, 0, -0.6, -0.8]}), [])
+        self.assertEqual(len(compare.json_differences({"position": [0, 0, 0.6]}, {"position": [0, 0, -0.6]})), 1)
 
 
 if __name__ == "__main__":

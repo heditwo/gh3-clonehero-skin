@@ -14,7 +14,7 @@ blender_version_min = "4.2.0"
 license = ["SPDX:GPL-3.0-or-later"]
 
 [permissions]
-files = "Write temporary files for package validation, read package files"
+files = "Read and write package files, and temporary files for validation and export"
 
 [build]
 paths_exclude_pattern = ["__pycache__/", "*.pyc", "/.git/"]

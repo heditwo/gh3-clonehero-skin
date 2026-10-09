@@ -6,6 +6,10 @@ import bpy
 from mathutils import Matrix, Quaternion, Vector
 
 from . import sidecars
+from .vendor.package_format import container
+
+# A new stage has no scripts. The file is a text block (a kept package file), so creators can add script definitions.
+MINIMAL_SCRIPTS = {"version": 1, "definitions": {}}
 
 BOX_FACES = [(0, 1, 2, 3), (4, 7, 6, 5), (0, 4, 5, 1), (1, 5, 6, 2), (2, 6, 7, 3), (3, 7, 4, 0)]
 # Runtime positions of the example.studio pack; Blender position = (x, z, y).
@@ -61,20 +65,20 @@ def proxy_body_mesh():
     return mesh
 
 
-def link(scene, obj):
-    scene.collection.objects.link(obj)
+def link(scene, obj, collection=None):
+    (collection or scene.collection).objects.link(obj)
     return obj
 
 
-def add_band_marker(scene, role, location, rotation=None):
-    marker = link(scene, bpy.data.objects.new(f"band-{role}", None))
+def add_band_marker(scene, role, location, rotation=None, collection=None):
+    marker = link(scene, bpy.data.objects.new(f"band-{role}", None), collection)
     marker.empty_display_type = "ARROWS"
     marker.empty_display_size = 0.5
     marker.location = location
     if rotation is not None: marker.rotation_euler = rotation
     marker.chstage.marker = "BAND"
     marker.chstage.band_role = role
-    proxy = link(scene, bpy.data.objects.new(f"proxy-{role}", proxy_body_mesh()))
+    proxy = link(scene, bpy.data.objects.new(f"proxy-{role}", proxy_body_mesh()), collection)
     proxy.parent = marker
     proxy.chstage.marker = "PROXY"
     proxy.display_type = "WIRE"
@@ -83,16 +87,16 @@ def add_band_marker(scene, role, location, rotation=None):
     return marker
 
 
-def add_waypoint(scene, name, location):
-    marker = link(scene, bpy.data.objects.new(name, None))
+def add_waypoint(scene, name, location, collection=None):
+    marker = link(scene, bpy.data.objects.new(name, None), collection)
     marker.empty_display_type = "SINGLE_ARROW"
     marker.location = location
     marker.chstage.marker = "WAYPOINT"
     return marker
 
 
-def add_effect(scene, kind, location):
-    marker = link(scene, bpy.data.objects.new(f"effect-{kind}", None))
+def add_effect(scene, kind, location, collection=None):
+    marker = link(scene, bpy.data.objects.new(f"effect-{kind}", None), collection)
     marker.empty_display_type = "CONE"
     marker.empty_display_size = 0.3
     marker.location = location
@@ -159,6 +163,10 @@ def create(name="CH Stage"):
     package.authors.add().name = "Your name"
     requirement = package.requires.add()
     requirement.package_id, requirement.version = sidecars.LIBRARY_ID, "1.0.0"
+    scripts = scene.chstage.kept_files.add()
+    scripts.path, scripts.entry = "scripts.json", "scripts"
+    scripts.text = bpy.data.texts.new(f"{name}/scripts.json")
+    scripts.text.from_string(container.json_bytes(MINIMAL_SCRIPTS).decode())
 
     for item, center, size, color in SCENERY:
         obj = link(scene, bpy.data.objects.new(item, box_mesh(item, (size[0], size[2], size[1]))))
