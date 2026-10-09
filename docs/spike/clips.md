@@ -1,5 +1,7 @@
 # Spike: band clip size, decode speed, and quantization error
 
+> Record of the packaging spike (2026-10-09, [PACKAGING-PLAN.md section 9](../PACKAGING-PLAN.md#9-spike-results)). The in-game probes (`src/Spike/`, `GH3_SKIN_SPIKE`) were removed in step 6, so the game commands in this report do not run on `main`. The offline tools are in `tools/research/`. The evidence moved from `/tmp/opencode/` to `~/.cache/gh3-evidence/` on the development machine.
+
 Spike item from `docs/PACKAGING-PLAN.md` section 6, step 2: "Clip size and decode speed with quantized rotations (estimate: 1 GB library to 150–300 MB) and error against GH3 frames."
 
 ## Verdict
@@ -163,19 +165,19 @@ Library estimate: the library is 1000.9 MB today (`direction` 455.7, `movies` 35
 
 ## Evidence
 
-- `/tmp/opencode/spike-clips/full/summary.md`: all size and error tables for each role.
-- `/tmp/opencode/spike-clips/full/bench.md`: all C# timing tables.
-- `/tmp/opencode/spike-clips/full/clips.json`: values for each clip (sizes for each encoding and compressor, keys, tracks).
-- `/tmp/opencode/spike-clips/full/variants/`: encoded clip files.
-- `/tmp/opencode/spike-clips/stats.json`: header statistics of the current clips.
+- `~/.cache/gh3-evidence/spike-clips/full/summary.md`: all size and error tables for each role.
+- `~/.cache/gh3-evidence/spike-clips/full/bench.md`: all C# timing tables.
+- `~/.cache/gh3-evidence/spike-clips/full/clips.json`: values for each clip (sizes for each encoding and compressor, keys, tracks).
+- `~/.cache/gh3-evidence/spike-clips/full/variants/`: encoded clip files.
+- `~/.cache/gh3-evidence/spike-clips/stats.json`: header statistics of the current clips.
 
 Commands:
 
 ```sh
 flock /tmp/opencode/gh3-heavy.lock env PYTHONPATH=. MISE_QUIET=1 uv run --with numpy --with brotli --with zstandard \
-  python tools/research/spike-clips/analyze.py ~/games/gh3-test-tools/game/DATA assets/libraries/gh3-band-v1/direction /tmp/opencode/spike-clips/full 4
-PYTHONPATH=. uv run --with numpy --with brotli --with zstandard python tools/research/spike-clips/summarize.py /tmp/opencode/spike-clips/full
+  python tools/research/spike-clips/analyze.py ~/games/gh3-test-tools/game/DATA assets/libraries/gh3-band-v1/direction ~/.cache/gh3-evidence/spike-clips/full 4
+PYTHONPATH=. uv run --with numpy --with brotli --with zstandard python tools/research/spike-clips/summarize.py ~/.cache/gh3-evidence/spike-clips/full
 dotnet build -c Release tools/ClipBench
 DOTNET_ROOT=<copy of MelonLoader/Dependencies/dotnet> <copy>/dotnet tools/ClipBench/bin/Release/net6.0/ClipBench.dll \
-  assets/libraries/gh3-band-v1/direction /tmp/opencode/spike-clips/full mycurse 3
+  assets/libraries/gh3-band-v1/direction ~/.cache/gh3-evidence/spike-clips/full mycurse 3
 ```

@@ -1,5 +1,7 @@
 # Spike macos: can the mod run on macOS Clone Hero?
 
+> Record of the macOS spike (2026-10-09). The result is still valid: macOS is not supported ([STATUS.md](../STATUS.md#platforms)). The evidence moved from `/tmp/opencode/` to `~/.cache/gh3-evidence/` on the development machine.
+
 Owner goal: the mod works on all platforms that Clone Hero supports. This spike examines macOS.
 
 There is no Mac on this machine. All results come from static evidence: the official download, binary and metadata inspection, offline tools, official documents, source code, and issue trackers. Each claim has one of these labels:
@@ -189,7 +191,7 @@ Ask one community tester with an Apple silicon Mac (and, if possible, one Intel 
 
 ## Evidence
 
-Scratch folder `/tmp/opencode/mac-research/`:
+Scratch folder `~/.cache/gh3-evidence/mac-research/`:
 
 | File | Content |
 | --- | --- |

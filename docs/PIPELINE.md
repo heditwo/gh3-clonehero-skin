@@ -8,7 +8,7 @@ The Python package `pipeline/` makes all generated assets from the owner's GH3 P
 | --- | --- | --- |
 | GH3 PC `DATA` folder | `~/games/gh3-test-tools/game/DATA` | All GH3 steps (`GH3_DATA` in `scripts/regenerate.sh`) |
 | Isolated Clone Hero copy | `~/games/clonehero-gh3-melon` | Shader bundles: they use the Unity `2022.3.62f2` format of this copy (`GH3_CLONE_HERO_DIR`) |
-| Windows Clone Hero copy (same version, the official `CloneHero-Win-x64.zip` unpacked) | `~/games/clonehero-win/game` | Shader bundles: the Direct3D 11 program format (`Clone Hero_Data/Resources/unity_builtin_extra`, `GH3_CLONE_HERO_WINDOWS_DIR`) |
+| Windows Clone Hero copy (same version, the official `CloneHero-Win-x64.zip` unpacked) | `~/games/clonehero-win/game` | Shader bundles: the Direct3D 11 program format (`Clone Hero_Data/Resources/unity_builtin_extra`, `GH3_CLONE_HERO_WINDOWS_DIR`). On the development machine, use `~/games/clonehero-win-spike/game` |
 | Extracted GH3 HUD art | `~/games/gh3-skin-assets` (`global-gfx-png/`, `hud-png/`, `hud-runtime-dds/`) | HUD textures, Star Power highway |
 | BetterGH3 package | `~/games/BetterGH3-FULLPACKAGE_v1.0.2.zip` | Tap gems |
 | FastGH3 package | `~/games/gh3-test-tools/FastGH3_1.1.zip` | Cyan Star Power phrase gems |
@@ -66,7 +66,7 @@ Each command uses `uv run --with ...` for its Python packages. See `scripts/rege
 
 The `venues` step compiles each pack against the library catalog. Thus run `library` first.
 
-The `packages` step reads the source packs, the library folder, and the song direction. Thus run it last. It does not change the files that the mod reads today. The clip encoder (q48 + Brotli 11) keeps a cache in `assets/packages/.clip-cache/`, so a second run takes less time. Use `--jobs N` to set the number of encoder processes (default 2, about 0.1 GB each).
+The `packages` step reads the source packs, the library folder, and the song direction. Thus run it last. Its output (`assets/packages/`) is what `install.sh` and the release build install. The clip encoder (q48 + Brotli 11) keeps a cache in `assets/packages/.clip-cache/`, so a second run takes less time. Use `--jobs N` to set the number of encoder processes (default 2, about 0.1 GB each).
 
 ## Shader tools
 
@@ -87,7 +87,7 @@ The `render` step makes an OpenGL Core program and a Direct3D 11 program for eac
 
 ```bash
 GH3_WINE=~/games/gh3-test-tools/wine-root/usr/bin/wine GH3_ACCEPT_WINDOWS_SDK_LICENSE=1 \
-  GH3_CLONE_HERO_WINDOWS_DIR=~/games/clonehero-win/game flock /tmp/opencode/gh3-heavy.lock scripts/regenerate.sh render
+  GH3_CLONE_HERO_WINDOWS_DIR=~/games/clonehero-win-spike/game flock /tmp/opencode/gh3-heavy.lock scripts/regenerate.sh render
 ```
 
 ## Partial updates
@@ -118,7 +118,7 @@ The audit lists how each used material draws. The expected result is `921 templa
 
 The exporters are deterministic. The package files are reproducible: two runs of the `packages` step give byte-equal `.chstage` and `.chlib` files (sorted zip entries, fixed times and attributes, DEFLATE level 9 of the same zlib).
 
-The round-trip check converts each package back to the files that the mod reads today and compares them with `assets/stages` and `assets/libraries/gh3-band-v1`:
+The round-trip check converts each package back to the compiled runtime files and compares them with `assets/stages` and `assets/libraries/gh3-band-v1`:
 
 ```bash
 flock /tmp/opencode/gh3-heavy.lock env MISE_QUIET=1 uv run --with pillow --with numpy --with 'shapely>=2.1' --with brotli \

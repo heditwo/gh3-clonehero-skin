@@ -1,5 +1,7 @@
 # Spike: GH3 rig through a Blender glTF round trip
 
+> Record of the packaging spike (2026-10-09, [PACKAGING-PLAN.md section 9](../PACKAGING-PLAN.md#9-spike-results)). The in-game probes (`src/Spike/`, `GH3_SKIN_SPIKE`) were removed in step 6, so the game commands in this report do not run on `main`. The offline tools are in `tools/research/`. The evidence moved from `/tmp/opencode/` to `~/.cache/gh3-evidence/` on the development machine.
+
 PACKAGING-PLAN step 2, item 4. Owner: spike agent `blender`. Date: 2026-10-09.
 
 ## Question
@@ -163,7 +165,7 @@ package (sidecar), or connect them to real glTF material slots. The current `gh3
 
 ## Evidence
 
-All under `/tmp/opencode/spike-blender/`:
+All under `~/.cache/gh3-evidence/spike-blender/`:
 
 - `orig/*.glb` (inputs), `out/*.glb` and `out/*.blend` (round trips), `logs/*.log` (Blender output)
 - `results.jsonl` (one row per output, all measurements), `summary.md` (tables above)
@@ -172,11 +174,11 @@ All under `/tmp/opencode/spike-blender/`:
 Reproduce (from the worktree, under `flock /tmp/opencode/gh3-heavy.lock`):
 
 ```sh
-PYTHONPATH=$PWD uv run --with pillow --with numpy python tools/research/spike-blender/band_glb.py assets/libraries/gh3-band-v1 guitarist /tmp/opencode/spike-blender/orig/guitarist.glb
-PYTHONPATH=$PWD uv run --with pillow --with numpy python tools/research/spike-blender/band_glb.py tag assets/stage-packs/gh3.prison/actor-71546938.glb /tmp/opencode/spike-blender/orig/venue-prison.glb
+PYTHONPATH=$PWD uv run --with pillow --with numpy python tools/research/spike-blender/band_glb.py assets/libraries/gh3-band-v1 guitarist ~/.cache/gh3-evidence/spike-blender/orig/guitarist.glb
+PYTHONPATH=$PWD uv run --with pillow --with numpy python tools/research/spike-blender/band_glb.py tag assets/stage-packs/gh3.prison/actor-71546938.glb ~/.cache/gh3-evidence/spike-blender/orig/venue-prison.glb
 bash tools/research/spike-blender/run.sh
 bash tools/research/spike-blender/compare_all.sh
-PYTHONPATH=$PWD uv run --with pillow --with numpy --with 'shapely>=2.1' python tools/research/spike-blender/accept.py [--tolerant] /tmp/opencode/spike-blender/out/*.glb
+PYTHONPATH=$PWD uv run --with pillow --with numpy --with 'shapely>=2.1' python tools/research/spike-blender/accept.py [--tolerant] ~/.cache/gh3-evidence/spike-blender/out/*.glb
 ```
 
 ## Open risks

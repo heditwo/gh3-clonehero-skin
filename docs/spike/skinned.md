@@ -1,5 +1,7 @@
 # Spike: skinned GH3 character from a GLB
 
+> Record of the packaging spike (2026-10-09, [PACKAGING-PLAN.md section 9](../PACKAGING-PLAN.md#9-spike-results)). The in-game probes (`src/Spike/`, `GH3_SKIN_SPIKE`) were removed in step 6, so the game commands in this report do not run on `main`. The offline tools are in `tools/research/`. The evidence moved from `/tmp/opencode/` to `~/.cache/gh3-evidence/` on the development machine.
+
 ## Question
 
 Can our own code load a skinned GH3 band member from a GLB file in Clone Hero (Il2Cpp, Unity 2022.3.62f2, MelonLoader 0.7.3), and which mesh, skin, and blend-shape APIs work? (PACKAGING-PLAN section 6, step 2, item 3.)
@@ -18,7 +20,7 @@ flowchart LR
     D -->|BakeMesh + Camera.Render| E[Same-frame comparison]
 ```
 
-1. Export: `PYTHONPATH=. uv run --with pillow --with numpy python tools/research/spike-skinned/character_glb.py --role guitarist --output /tmp/opencode/spike-skinned/guitarist.glb`. The script reads the library guitarist and writes the GLB with the existing `GlbWriter.actor` (skeleton nodes `bone-<checksum>`, inverse bind matrices, `JOINTS_0`/`WEIGHTS_0` with 4 influences, UVs, colors, the `_GH3_*` streams, and materials with embedded PNG textures). It then reads the file back with `GlbReader` and checks it.
+1. Export: `PYTHONPATH=. uv run --with pillow --with numpy python tools/research/spike-skinned/character_glb.py --role guitarist --output ~/.cache/gh3-evidence/spike-skinned/guitarist.glb`. The script reads the library guitarist and writes the GLB with the existing `GlbWriter.actor` (skeleton nodes `bone-<checksum>`, inverse bind matrices, `JOINTS_0`/`WEIGHTS_0` with 4 influences, UVs, colors, the `_GH3_*` streams, and materials with embedded PNG textures). It then reads the file back with `GlbReader` and checks it.
 2. Probe (off by default; removed in step 6, so the commands below no longer run on `main`): `GH3_SKIN_SPIKE=skinned GH3_SKIN_SPIKE_GLB=<file>`. Code: `src/Spike/GlbFile.cs` (GLB chunks, accessors with stride and normalized integers, embedded images) and `src/Spike/SkinnedGlbSpike.cs`. `StageBand.SetTimeline` attaches the probe to the guitarist. The probe maps joints to band bones by name. It builds one `Mesh` per primitive (z mirror, winding flip, bindposes from the inverse bind matrices, `InternalSetBoneWeights`). It adds a second `SkinnedMeshRenderer` per part on the same band bones and material. `GH3_SKIN_SPIKE_MODE=original` keeps GH3BND02 on screen; the default shows the GLB meshes.
 3. At song times 4, 8, 12, and 15 s, the probe bakes both renderers (`BakeMesh`) and compares the vertices. It renders the stage camera twice into a render texture (`forceRenderingOff` selects the source), then repeats both renders.
 4. Fixed close camera: `GH3_SKIN_DEBUG_VIEW=-0.58,1.3,-1.6,-0.58,1.0,1.31,45`, stage gh3.dive, chart mycurse-native, 1600×900.
@@ -127,7 +129,7 @@ Il2Cpp note: a `Dictionary` keyed by `Material` fails because each property read
 - Other roles, Windows (D3D11), more than 4 influences, normalized integer weights, hair physics on a skeleton that only the GLB contains (the probe uses the existing band bones).
 - The load time of the current GH3BND02 path.
 
-## Evidence (`/tmp/opencode/spike-skinned/`)
+## Evidence (`~/.cache/gh3-evidence/spike-skinned/`)
 
 | File | Content |
 |---|---|
@@ -143,7 +145,7 @@ Recording command (one run; `GH3_SKIN_SPIKE_MODE=original`, `GH3_SKIN_SPIKE_CONT
 flock /tmp/opencode/gh3-record.lock env HYPRLAND_INSTANCE_SIGNATURE=... WAYLAND_DISPLAY=wayland-1 \
   GH3_CLONE_HERO_DIR=~/games/clonehero-gh3-spike-skinned GH3_SKIN_STAGE=gh3.dive \
   GH3_SKIN_PREVIEW_SONG=~/.cache/gh3ref/charts/mycurse-native GH3_SKIN_SPIKE=skinned \
-  GH3_SKIN_SPIKE_GLB=/tmp/opencode/spike-skinned/guitarist.glb GH3_SKIN_SPIKE_OUT=<dir> GH3_SKIN_SPIKE_TIMES=4,8,12,15 \
+  GH3_SKIN_SPIKE_GLB=~/.cache/gh3-evidence/spike-skinned/guitarist.glb GH3_SKIN_SPIKE_OUT=<dir> GH3_SKIN_SPIKE_TIMES=4,8,12,15 \
   GH3_SKIN_DEBUG_VIEW=-0.58,1.3,-1.6,-0.58,1.0,1.31,45 GH3_SKIN_CAPTURE_CLOCK=song GH3_SKIN_CAPTURE_TIMES=9,16 \
   GH3_SKIN_CAPTURE_DIR=<dir>/frames TMPDIR=~/.cache/gh3ref/gpu bash scripts/capture-preview.sh
 ```

@@ -1,5 +1,7 @@
 # Blender add-on: CH Stage Tools
 
+This is the reference of the add-on. For a first stage or character, start with [CREATOR-GUIDE.md](CREATOR-GUIDE.md).
+
 Status: **venue tool set and character tools** (PACKAGING-PLAN step 5, parts 1 to 4). The add-on makes a venue from a template or opens a venue package, edits all venue data that [package format v1](PACKAGE-FORMAT.md) defines, validates it, and exports a `.chstage` package. Actors (animated scenery) are Blender armatures with their clips. The add-on has a script bank browser, a shot browser with GH3 proxy rigs for camera bone anchors, a live lighting preview with beams, and lists of visibility groups, light groups, and node flags. The ten GH3 venues open and export again without a loss (section 2.6). The character tools (section 1.15) make characters on the fixed GH3 rigs and export `.chchar` packages; the four GH3 band members open and export again within the tolerances (section 2.11).
 
 ## 1. For creators
@@ -11,11 +13,7 @@ Status: **venue tool set and character tools** (PACKAGING-PLAN step 5, parts 1 t
 
 ### 1.2 Install
 
-1. Get the file `chstage_tools-<version>.zip`. Do not extract it.
-2. In Blender, open **Edit > Preferences > Get Extensions**.
-3. Open the menu at the top right (the arrow), then click **Install from Disk**.
-4. Select the zip file. Blender installs and enables the add-on.
-5. Optional: open **Edit > Preferences > Add-ons > CH Stage Tools** and set **Custom/Stages folder** to the `Custom/Stages` folder of Clone Hero. Export can then copy the package into the game.
+Install the zip file `chstage_tools-<version>.zip` from **Edit > Preferences > Get Extensions > Install from Disk**, and set the add-on preferences. [CREATOR-GUIDE.md section 2](CREATOR-GUIDE.md#2-install-the-add-on) gives the steps.
 
 To remove the add-on, open **Edit > Preferences > Add-ons**, find **CH Stage Tools**, and click **Uninstall**.
 
@@ -177,7 +175,7 @@ Steps:
 6. **Clip preview.** In **Clip Preview**, click a clip. The add-on converts the library clip (q48) to an action of the rig at 30 fps, sets the scene rate to 30 and the frame range to the clip, and adds the arm and leg IK and the twist bones of the game (hands on the guitar or the drum sticks). Click **Play**. **Bind Pose** removes the preview. The clip names are the GH3 action groups (for example `stance_a/jump/good/fast`) or the GH3 clip name. The preview has no note-driven strum, fret, or face animation. Export never writes the preview actions.
 7. Set the package information (ID, name, version, authors, license) in **Character Package > Package Information**. **Instrument** (empty: the profile default) is the character.json attachment. The game uses the instrument of the role that the character plays.
 8. Click **Validate**. The list shows the errors and warnings of the add-on checks and of the package validator of the mod (with the library: the bind pose check). Click the arrow of an issue to select its object.
-9. Click **Export .chchar**. Options: **Development folder**, **Copy to Custom/Characters**, **Preview** (Render: a 512 × 288 image from the scene camera). The add-on writes the package only when there is no error. Put the file into `Custom/Characters` (the game does not load characters yet: PACKAGING-PLAN step 4 part 2).
+9. Click **Export .chchar**. Options: **Development folder**, **Copy to Custom/Characters**, **Preview** (Render: a 512 × 288 image from the scene camera). The add-on writes the package only when there is no error. Put the file into `Custom/Characters`, and select the character in the F6 picker ([PLAYER-GUIDE.md section 4](PLAYER-GUIDE.md#4-select-the-band-members)).
 
 **Open .chchar** (**File > Import > CH Character Package (.chchar)**) makes a new scene from a package: the rig and the meshes of `character.glb`, the material settings, the hair materials, the package information, and (with the library) the helpers and the clip list.
 
@@ -352,11 +350,11 @@ Differences that remain, and why:
 
 Export from the Blender data only (Keeper off) is the path of an edited row. Its differences to the source rows: numbers within 2.3e-6 in the sidecars and within 3e-8 in the node extras (float32 and rounding to 6 digits), and keys with default values that the add-on does not write (`handCam`, `disableOrbit1`, `disableOrbit2`: false; `waypoints`: []; note `tag` and `type`: ""; `overrideColor`, `gh3FixtureFixedPosition`: false; `gh3ObjectScript`: ""). The compiler (`pipeline/stagepack/pack.py`) and the runtime (`StageCameraPath.cs` `OriginalCameraShot`, `StageLighting.cs`) read each missing key as the same default (false, empty node list, empty string; a shot without `waypoints` matches all nodes, as `[]` does).
 
-Check on the compiled runtime data: the source package and the Keeper-off export of artdeco, dive, hell, and credits, compiled with the pipeline compiler and compared by meaning (materials by `gh3SourceMaterial`, textures by PNG bytes, objects by ID, fixtures by script object). The only differences are numbers within 2.3e-6 and the default keys above (`/tmp/opencode/addon-export/evidence/compiled-edited-path.txt`).
+Check on the compiled runtime data: the source package and the Keeper-off export of artdeco, dive, hell, and credits, compiled with the pipeline compiler and compared by meaning (materials by `gh3SourceMaterial`, textures by PNG bytes, objects by ID, fixtures by script object). The only differences are numbers within 2.3e-6 and the default keys above (`~/.cache/gh3-evidence/addon-export/evidence/compiled-edited-path.txt`).
 
 A missing `gh3Shading` is not the same as `lit`: the mod then draws the material without the stage surface model (`StageMaterial.ShadingMode` −1). The material panel has the shading value **Not set** for it; Open uses it for the 58 GH3 materials without `gh3Shading`. (Before this fix, an edited material of that kind became `lit`; `compiled-edited-path-before-fix.txt` shows it.)
 
-Evidence: `/tmp/opencode/addon-tools/evidence/roundtrip/` (`summary.md`, one JSON report for each package and Blender version); part 2: `/tmp/opencode/addon-export/evidence/`. Command:
+Evidence: `~/.cache/gh3-evidence/addon-tools/evidence/roundtrip/` (`summary.md`, one JSON report for each package and Blender version); part 2: `~/.cache/gh3-evidence/addon-export/evidence/`. Command:
 
 ```sh
 TMPDIR=~/.cache/addon-tools/tmp flock /tmp/opencode/gh3-heavy.lock bash blender/roundtrip.sh ~/.cache/addon-tools/rt "blender-clean $HOME/.cache/blender/blender-4.2-clean"
@@ -378,7 +376,7 @@ The outputs are about 1.2 GB for each Blender version. Use a disk folder, not `/
 | Mesh attributes (`pipeline.package.compare`) | POSITION and `_GH3_*` 0, COLOR_0 1.0/255, except `ven_artdeco_knight1`: its coincident two-sided cards pair wrongly in the 1 mm sort of the compare tool (the triangle and vertex checks above pass) |
 | Materials | All by name, extras equal |
 
-The joint order and the vertex order differ (Blender rebuilds them), so the compiled `actors/*` files are not byte-equal. Evidence: `/tmp/opencode/addon-tools/evidence/actors/` (`export-*.jsonl`, `compare-*.jsonl`, `summary.txt`).
+The joint order and the vertex order differ (Blender rebuilds them), so the compiled `actors/*` files are not byte-equal. Evidence: `~/.cache/gh3-evidence/addon-tools/evidence/actors/` (`export-*.jsonl`, `compare-*.jsonl`, `summary.txt`).
 
 ### 2.7 Build and test
 
@@ -401,7 +399,7 @@ With `assets/packages/gh3-band-v1.chlib` present (or `CHSTAGE_TEST_LIBRARY`), `b
 
 Python tests without Blender (`tests/test_blender_addon_tools.py`, in `scripts/test.sh`): rig joint frames and anchor names, the library rig head height, bone anchors with and without rig frames, re-anchoring, `actors.json` of all packages through open and build, edited actor rows and scale axes, actor GLB edits (keep clips, unit scale channels, merge by joint name, images), the script bank index of `gh3.dive` (all node rows, events, labels, references), value edits and their errors, and the preview light power.
 
-Screenshots (real Blender window in a nested Xwayland display, `gh3.prison`): `/tmp/opencode/addon-tools/evidence/screenshots/blender-clean/` and `blender-4.2-clean/` (`panel-actor.png`, `panel-script-objects.png`, `panel-script-events.png`, `panel-shots-rig.png`, `panel-lighting-preview.png`, `panel-groups-overlay.png`).
+Screenshots (real Blender window in a nested Xwayland display, `gh3.prison`): `~/.cache/gh3-evidence/addon-tools/evidence/screenshots/blender-clean/` and `blender-4.2-clean/` (`panel-actor.png`, `panel-script-objects.png`, `panel-script-events.png`, `panel-shots-rig.png`, `panel-lighting-preview.png`, `panel-groups-overlay.png`).
 
 ### 2.8 Blender 4.2 result
 
@@ -421,7 +419,7 @@ The Blender round trip of the spike (`tools/research/spike-blender/`, [report](s
 - **The Blender 4.2 glTF importer has a bug.** It keeps the names of custom vertex attributes in a Python `set` and their data in a list. With two or more `_GH3_*` attributes the orders differ (Python string hashes change for each process). Without a fix, 39 of 40 imports of the guitarist and the singer failed ("all the input array dimensions … must match"). Blender 5.2 uses a dict. `gltf_io.fix_custom_attribute_import()` gives the 4.2 importer an ordered set; the add-on calls it before each import.
 - Decision: **the minimum is Blender 4.2**, with the import fix.
 
-Evidence: `/tmp/opencode/addon/rt42/` (`results.jsonl`, `summary-4.2.md`, `accept-fixed.txt`, `characters.txt`), `/tmp/opencode/addon/rt42-stock/` (imports without the fix).
+Evidence: `~/.cache/gh3-evidence/addon/rt42/` (`results.jsonl`, `summary-4.2.md`, `accept-fixed.txt`, `characters.txt`), `~/.cache/gh3-evidence/addon/rt42-stock/` (imports without the fix).
 
 
 ### 2.9 Known limits
@@ -440,7 +438,7 @@ Evidence: `/tmp/opencode/addon/rt42/` (`results.jsonl`, `summary-4.2.md`, `accep
 
 ### 2.10 Open questions
 
-- **Texture references, format against compiler.** PACKAGE-FORMAT 6.6 says that `#<name>` names an image of the GLB, and the validator accepts an image without a glTF texture. The pipeline compiler (`pack.py` `texture_reference`, `GlbReader.named_texture`) finds the name only through a glTF texture. The add-on adds a texture for each image that it embeds, so its packages compile. The C# importer should follow the format (image name), or the format should require a texture.
+- **Texture references, done.** PACKAGE-FORMAT 6.6 says that `#<name>` names an image of the GLB. The pipeline compiler (`pack.py` `texture_reference`) and the C# importer now also find an image without a glTF texture. The add-on still adds a texture for each image that it embeds.
 - **First key at 0 s.** PACKAGE-FORMAT 6.7 does not say where an actor clip starts. The add-on export moves the first key of each clip to 0 s (all source clips start at 0 s). A clip that must start later needs a format rule.
 - **Bone anchor frames.** The rig proxy uses the first key of the first clip in `band/<role>/model.glb`. The game uses the clip that plays, so a bone-anchored camera can be some centimeters away from its preview. A per-shot preview clip is not in the format.
 - The add-on is GPL-3.0-or-later (manifest and `blender/chstage_tools/LICENSE`; Blender requirement). The rest of the repository has no license yet (owner decision).
@@ -490,7 +488,7 @@ The limits are 0.1 mm, 0.01°, and 1e-4 (PACKAGING-PLAN 9.6). TEXCOORD and all `
 
 Rotation errors use the chord form; `acos` of a float32 trace gives up to 0.05° of noise for equal rotations.
 
-Evidence: `/tmp/opencode/addon-chars/evidence/` (`<blender>/character-summary.json`, `characters.log`, `renders/`, `screenshots/` with `panel-character.png`, `panel-character-issues.png`, `panel-character-weights.png`, `panel-character-clips.png`; nested Xwayland display). Command:
+Evidence: `~/.cache/gh3-evidence/addon-chars/evidence/` (`<blender>/character-summary.json`, `characters.log`, `renders/`, `screenshots/` with `panel-character.png`, `panel-character-issues.png`, `panel-character-weights.png`, `panel-character-clips.png`; nested Xwayland display). Command:
 
 ```sh
 TMPDIR=~/.cache/addon-chars/tmp flock /tmp/opencode/gh3-heavy.lock bash blender/test.sh ~/.cache/addon-chars/full blender-clean ~/.cache/blender/blender-4.2-clean

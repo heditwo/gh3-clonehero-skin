@@ -1,29 +1,29 @@
-# Custom skins, stages, and song direction
+# Custom stages and song direction
 
 ## Status
 
-This is the reference for authored content: stage packs, song direction, and the planned skin packs. The stage-pack importer, the common loader, and song direction versions 1 and 2 are implemented. All ten GH3 venues use the same loader as a custom pack. Skin-pack import is not implemented; playback uses the shared default skins.
+This is the reference for song direction (sections 6 and 10 to 12) and for the stage-pack source format (sections 2 to 5 and 9). Players and creators use packages: stages (`.chstage`) and characters (`.chchar`) in [package format v1](PACKAGE-FORMAT.md), made with the Blender add-on ([CREATOR-GUIDE.md](CREATOR-GUIDE.md)). A `.chstage` package holds a stage pack of this format in a zip. The pipeline writes the GH3 venues as source packs, and the converter makes the packages from them ([PIPELINE.md](PIPELINE.md)). All ten GH3 venues and custom stages use the same compiler and the same loader.
 
 The authoring target is Moonscraper's chart workflow with complete GH3 data and behavior. Native GH3 archives are reference inputs and a possible export target. Authors do not need to edit or distribute PAK files. Sections 9 to 12 give the workflow.
 
-The current library uses **four original GH3 skeletons and their animations**. Those profiles are the implemented subset. Full character compatibility must also cover native profile choices, instrument packages, and their animation references. Stages supply the setting and camera shots. Charts select the performance through timed cues.
+The library uses **four original GH3 skeletons and their animations**. Characters use these fixed profiles only (PACKAGING-PLAN decision 2). Other native profiles, instrument packages, and retargeting are not in v1. Stages supply the setting and camera shots. Charts select the performance through timed cues.
 
 ## 1. Data ownership
 
 | Owner | Data |
 | --- | --- |
 | Shared GH3 library | Skeletons, bind poses, original animation clips, state tables, blend rules, hand and drum layers, IK constraints, instruments, attachment targets, facial clips, hair constraints, and hand-fire effects |
-| Skin pack | Character meshes, skin weights, materials, and textures for one fixed rig |
+| Character package (`.chchar`) | Character meshes, skin weights, materials, and textures for one fixed rig |
 | Stage pack | Scenery, performer placements, walking destinations, camera shots, lighting, and effect positions |
 | Song | Timing, instrument notes, and optional camera, body, hand, drum, face, movement, lighting, and effect cues |
 | Live game state | Streak effects and other player-state reactions |
 
-The user selects a stage and a skin for each role. A skin works on every stage that supports the shared library. A chart refers to roles and shared actions. For example, `camera guitarist` selects a shot supplied by the active stage.
+The player selects a stage and a character for each role. A character works on every stage that uses the shared library. A chart refers to roles and shared actions. For example, `camera guitarist` selects a shot supplied by the active stage.
 
 ```mermaid
 flowchart LR
     Library[Shared GH3 rigs and animations] --> Player[Performance player]
-    Skins[Selected skins] --> Player
+    Characters[Selected characters] --> Player
     Chart[Chart notes and song direction] --> Player
     Stage[Selected stage and camera bank] --> Player
     Game[Live player state] --> Player
@@ -40,7 +40,7 @@ flowchart LR
 - The importer compiles readable names to runtime identifiers. Authors use rig-template bone names and stage-local names. The compiled files can retain GH3 checksums and bone indices.
 - JSON transforms use metres, Y up, and the Unity runtime coordinate system. Quaternions are `[x, y, z, w]` and have unit length. Stage depth extends along positive Z in the supplied template. GLB files use glTF coordinates; the importer converts them once.
 
-Source packs contain a manifest, a GLB model with embedded textures, and the listed JSON files. The importer produces a runtime cache. The current `GH3STG01`, `GH3BND01`, `GH3ANM01`, and `GH3CLP01` files are implementation formats, rather than the authoring interface.
+Source packs contain a manifest, a GLB model with embedded textures, and the listed JSON files. The importer produces a runtime cache. The cache files (`GH3STG04`, `GH3BND02`, `GH3ANM01`, q48 clips; [PACKAGE-FORMAT.md section 14](PACKAGE-FORMAT.md#14-cache)) are implementation formats, not the authoring interface.
 
 ## 3. Fixed rig profiles
 
@@ -55,30 +55,15 @@ The initial library has these profiles:
 
 Each profile supplies an authoring template with the complete original rig. The importer checks bone identities, parent links, local bind transforms, and inverse bind matrices against that template. Export order can differ; the importer maps bones back to the canonical order. Bone count alone does not establish compatibility.
 
-The skin must preserve the template's scale, origin, bone axes, joint positions, and hierarchy. All vertices must have valid, normalized weights on template bones. The importer checks that the exported bind pose matches within its documented numeric tolerance. Meshes are fitted to the rig, including the source hand and finger positions.
+The character must preserve the template's scale, origin, bone axes, joint positions, and hierarchy. All vertices must have valid, normalized weights on template bones. The importer checks that the exported bind pose matches within its documented numeric tolerance. Meshes are fitted to the rig, including the source hand and finger positions.
 
 The full rig includes instrument, target, face, and accessory bones. Unused bones remain in the exported template. Original IK targets, drumstick grips, microphone attachments, and hand-fire anchors come from the shared profile. The profile also supplies hair physics for the existing hair bones. Hair that should move is weighted to those bones.
 
-The shared library owns the original instruments and animated props. A skin replaces the character art. Each stage template includes instrument and drum-kit reference geometry so that its scenery can be fitted to the performance area.
+The shared library owns the original instruments and animated props. A character replaces the character art; the mod adds the instrument of the role ([PACKAGE-FORMAT.md section 20.6](PACKAGE-FORMAT.md#206-characters)). In Blender, proxy bodies at the band placements show the size of the performers ([BLENDER-ADDON.md section 1.3](BLENDER-ADDON.md#13-make-a-new-stage)).
 
-## 4. Skin pack
+## 4. Characters
 
-The manifest is `skin.json`. Example: [skin.json](examples/custom-content/skin.json).
-
-| Field | Required | Meaning |
-| --- | --- | --- |
-| `version` | Yes | `1` |
-| `kind` | Yes | `skin` |
-| `id` | Yes | Stable pack ID |
-| `name` | Yes | Display name |
-| `library` | Yes | `gh3-band-v1` |
-| `rig` | Yes | One profile from the table above; this also selects the role |
-| `model` | Yes | Relative path to the character GLB |
-| `hairMaterials` | No | GLB material names whose triangles need sorted hair transparency; default `[]` |
-
-The GLB supplies meshes, normals, UVs, weights, inverse bind matrices, base-color textures, and alpha settings. Material names must be unique. The importer maps the glTF `OPAQUE`, `MASK`, and `BLEND` modes to the supported renderer. Masked materials use their alpha cutoff. Materials listed in `hairMaterials` use the existing sorted hair path. Other glTF shader properties require an explicit renderer feature before they affect the result.
-
-Animation comes from the selected profile. Skin imports validate that the GLB contains the template rig and character art without animation tracks. The importer copies the profile's animation and constraint references into the cache.
+Characters are `.chchar` packages: one skinned GLB on a fixed profile rig and `character.json`. The format is in [PACKAGE-FORMAT.md section 9](PACKAGE-FORMAT.md#9-character-chchar), the import in [section 20.6](PACKAGE-FORMAT.md#206-characters), and the Blender workflow in [CREATOR-GUIDE.md section 5](CREATOR-GUIDE.md#5-make-a-character-on-a-gh3-rig). An earlier plan of this document had a `skin.json` skin pack; the `.chchar` package replaces it.
 
 ## 5. Stage pack
 
@@ -101,7 +86,7 @@ The manifest is `stage-pack.json`. Example: [stage-pack.json](examples/custom-co
 
 A transform has `position` and `rotation`. Performer placement has unit scale. A performer's root, instrument, and moving props use the same placement transform. The drummer's fixed kit reference uses the drummer placement. The scenery contains any matching static kit geometry.
 
-The stage model supplies scenery materials through the same base-color and alpha rules as skin models. Mesh nodes can set `extras.gh3LightGroup` to a stage-local light-group name. The default is `Stage`; the reserved `Band` group lights the performers. The importer resolves these names to compiled lighting group IDs.
+The stage model supplies scenery materials through the same base-color and alpha rules as character models. Mesh nodes can set `extras.gh3LightGroup` to a stage-local light-group name. The default is `Stage`; the reserved `Band` group lights the performers. The importer resolves these names to compiled lighting group IDs.
 
 ### Waypoints
 
@@ -135,7 +120,7 @@ Each point has:
 | `lookAt` | Optional shared actor anchor to track |
 | `screenOffset` | Two-element framing offset in GH3 normalized screen units; default `[0, 0]` |
 
-Actor anchors are `<role>.root`, `<role>.head`, `<role>.hand_left`, and `<role>.hand_right`. The shared rig profile resolves head and hand aliases to `bone_head` and `Bone_Palm_L/R`. `root` means the placed performer root. An exact bone anchor uses `<role>.bone.<template-bone-name>`; this preserves original camera targets such as the neck or instrument bones. Skin geometry cannot change these mappings. `lookAt`, when supplied, sets orientation from the target and framing offset; otherwise `rotation` is required.
+Actor anchors are `<role>.root`, `<role>.head`, `<role>.hand_left`, and `<role>.hand_right`. The shared rig profile resolves head and hand aliases to `bone_head` and `Bone_Palm_L/R`. `root` means the placed performer root. An exact bone anchor uses `<role>.bone.<template-bone-name>`; this preserves original camera targets such as the neck or instrument bones. Character geometry cannot change these mappings. `lookAt`, when supplied, sets orientation from the target and framing offset; otherwise `rotation` is required.
 
 Optional shot fields are `orbitAngle` in degrees, `stepTime` in seconds, `stepCount`, `stepDirection`, `handCam`, `disableOrbit1`, `disableOrbit2`, and `waypoints`. Orbit movement uses the last point's anchor as its center, as in the translated GH3 controller. The three flags default to false; `HandCam` control enables hand-camera behavior directly. `waypoints` lists guitarist destinations where the shot is eligible. The stage must supply an unrestricted wide shot. The importer validates fields against the selected control and checks all shot and waypoint references.
 
@@ -143,7 +128,7 @@ The shared camera player owns cut selection, transition timing, and repeat avoid
 
 ### Lighting and effects
 
-Lighting banks retain the version 1 structure described by `StageLightingBank` in `src/Stage/StageLighting.cs`: lights, snapshots, mood-to-snapshot lists, and color presets. Authoring IDs and group names are readable, stage-local names. The importer resolves them to internal IDs. All snapshots must cover the same lights and beam IDs. The standard mood names are `intro`, `verse`, `chorus`, `solo`, `flare`, `blackout`, and `strobe`. Each supported mood maps to one or more snapshots. Missing optional moods use `intro`; `intro` and `blackout` are required when a lighting bank is supplied.
+Lighting banks retain the version 1 structure described by `StageLightingBank` in `src/Stage/Lighting/StageLighting.cs`: lights, snapshots, mood-to-snapshot lists, and color presets. Authoring IDs and group names are readable, stage-local names. The importer resolves them to internal IDs. All snapshots must cover the same lights and beam IDs. The standard mood names are `intro`, `verse`, `chorus`, `solo`, `flare`, `blackout`, and `strobe`. Each supported mood maps to one or more snapshots. Missing optional moods use `intro`; `intro` and `blackout` are required when a lighting bank is supplied.
 
 Movable light housings are model nodes whose `extras.gh3FixtureId` matches a beam ID. Their exported transforms define the source pose. The lighting controller applies snapshot movement to those nodes. Static nodes remain part of the scenery.
 
@@ -247,43 +232,44 @@ The importer must check:
 4. Waypoint names, lighting groups, complete snapshots, and fixture references.
 5. Event timing, roles, action references, and channel conflicts.
 
-The runtime resolves the selected skin for each fixed role and the selected stage independently. An invalid selected skin uses that role's default skin. An unavailable optional stage feature uses the fallback defined above. Import reports identify the file, field, and unresolved reference.
+The runtime resolves the selected character for each fixed role and the selected stage independently. A selected character that cannot load gives the venue's default band member. An unavailable optional stage feature uses the fallback defined above. Import reports identify the file, field, and unresolved reference.
 
 All performance and camera playback uses `GameManager.songTime`. Pause holds the state. Seek reconstructs the pose, camera, and authored effect state at the new time. Live streak effects clear their old trails and use the current player state, as in the installed hand-fire implementation.
 
 ## 8. Implementation status
 
-- **Implemented:** the shared `gh3-band-v1` library and action catalog, stage-local placements and waypoints, public camera and lighting banks, stage import and selection, animated scenery, all ten GH3 performance packs, and version 2 per-channel song direction with role/action checks and source diagnostics.
+- **Implemented:** the shared `gh3-band-v1` library and action catalog, stage-local placements and waypoints, public camera and lighting banks, stage import and selection, animated scenery, all ten GH3 performance packs, version 2 per-channel song direction with role/action checks and source diagnostics, and character packages on the fixed profiles (section 4).
 - **Checked:** every stage and the independently generated Studio stage use the common loader. Renaming the Budokan pack produces identical runtime assets.
-- **Remaining:** exact authoring rig templates, skin import and selection, and replacement-skin checks.
 
 The JSON examples are manifest and cue examples. Their referenced GLB files are author-supplied assets. `python -m pipeline.stagepack.template` creates a complete, installable example stage pack.
 
 ## 9. Create and import a stage
 
-Create the example pack, compile it, install it, and play it:
+Most creators use the Blender add-on ([CREATOR-GUIDE.md](CREATOR-GUIDE.md)). Without Blender, create the example pack, compile it, convert it to a package, install it, and play it:
 
 ```bash
 MISE_QUIET=1 uv run --with pillow --with numpy --with 'shapely>=2.1' python -m pipeline.stagepack.template
 MISE_QUIET=1 uv run --with pillow --with numpy --with 'shapely>=2.1' \
   python -m pipeline.stagepack.install assets/stage-packs/example.studio
+MISE_QUIET=1 uv run --with pillow --with numpy --with 'shapely>=2.1' --with brotli \
+  python -m pipeline.package.build --venue example.studio --no-library
 MISE_QUIET=1 bash install.sh
 MISE_QUIET=1 GH3_SKIN_STAGE=example.studio bash run-gh3-skin.sh --preview
 ```
 
 The example has four performer placements, cameras, a walking destination, a moving light fixture, effect emitters, and a rotating skinned sign. You can edit its GLB files in a glTF tool. The shared band library must be installed.
 
-The GH3 venue exporter writes the same source format and then calls the same compiler. The runtime reads only the compiled `pack.json` and its files. It does not read the source PAK files or select behavior from venue names.
+The GH3 venue exporter writes the same source format and then calls the same compiler. The converter puts the source pack into a `.chstage` package, and the mod compiles the package into its cache with a C# port of the same compiler. The runtime does not read the GH3 PAK files or select behavior from venue names.
 
 ```mermaid
 flowchart LR
     GH3[GH3 files] --> Venues[pipeline.venues]
     Venues --> Source[Source pack: stage-pack.json and GLB]
     Tools[Blender or another glTF tool] --> Source
-    Source --> Install[pipeline.stagepack.install]
-    Install --> Compiled[assets/stages/ID]
-    Compiled --> Loader[GameplayStage]
-    Library[gh3-band-v1] --> Loader
+    Source --> Package[pipeline.package.build: .chstage]
+    Package --> Cache[Mod importer: cache]
+    Cache --> Loader[GameplayStage]
+    Library[gh3-band-v1.chlib] --> Loader
 ```
 
 The compiler accepts embedded glTF 2.0 GLB files with triangle meshes, normals, base-color textures, UVs, vertex colors, and `OPAQUE`, `MASK`, or `BLEND` materials. It applies node transforms, handedness, winding, and UV conversion. Bake unsupported extensions and morph targets before import.
@@ -382,7 +368,7 @@ GH3 lightshow note numbers are in [PARITY-NOTES.md](PARITY-NOTES.md#lighting-and
 
 A MIDI track with the name `VENUE` holds Rock Band camera and lighting cues ([format](https://github.com/TheNathannator/GuitarGame_ChartFormats/blob/main/docs/Implementation-Specific/Rock-Band/MIDI-Tracks/Venue.md)). Many converted charts have one. The mod reads both variants: RB1/RB2 notes and text events, and RB3 text events. `.chart` files have no VENUE section (Moonscraper and YARG also read the track only from MIDI); the `[lighting (NAME)]` and `[bonusfx]` events in `[Events]` use the same name table. `MV VENUE` (RB2 music-video venues) is not read.
 
-The cues go into the normal channels (`camera`, `lighting`, `pyro`, `smoke`) and play through the same players as GH3 notes: camera cuts become `gh3-camera` notes, lighting becomes `lighting`, `color`, and `blend` cues, and keyframe steps become GH3 lightshow notes 58 (next snapshot) and 60 (strobe toggle). A channel uses the VENUE track only when no higher source supplies it ([channel selection](#channel-selection-and-fallback)). Clear **Use Rock Band VENUE tracks** in the picker ([PLAYER-GUIDE.md](PLAYER-GUIDE.md#4-direction-options)), or set `GH3_SKIN_VENUE_TRACK=off`, to ignore all VENUE tracks. The loader log shows the counts (`Rock Band VENUE: ... mapped; N repeated lighting cues blend into the next cue; ignored ...`) and the first 16 mapped cues.
+The cues go into the normal channels (`camera`, `lighting`, `pyro`, `smoke`) and play through the same players as GH3 notes: camera cuts become `gh3-camera` notes, lighting becomes `lighting`, `color`, and `blend` cues, and keyframe steps become GH3 lightshow notes 58 (next snapshot) and 60 (strobe toggle). A channel uses the VENUE track only when no higher source supplies it ([channel selection](#channel-selection-and-fallback)). Clear **Use Rock Band VENUE tracks** in the picker ([PLAYER-GUIDE.md](PLAYER-GUIDE.md#5-direction-options)), or set `GH3_SKIN_VENUE_TRACK=off`, to ignore all VENUE tracks. The loader log shows the counts (`Rock Band VENUE: ... mapped; N repeated lighting cues blend into the next cue; ignored ...`) and the first 16 mapped cues.
 
 In the tables, **J** marks a choice by judgment. The other rows follow the name of the Rock Band cue directly.
 
@@ -471,7 +457,7 @@ Rules:
 - A blend other than 0.15 s applies to its own cue; the next cue sets 0.15 s again.
 - Two lighting cues at one time: the last one in the track plays. `intro` yields to the other cue.
 - A flare is a short pulse, not a full flare snapshot (J). The light blends toward the flare snapshot over GH3's 0.15 s, and at 40% of the way (0.06 s) it turns back: to the next cue, which then reaches its own time, or, when the next cue is more than the return time away, to the cue before the flare. GH3 itself plays its flare mood (note 71) as a short state: in My Curse the next mood note comes 0.33 s after each flare. Rock Band charts often put a flare on each beat (You're Not Going Anywhere: 128 `flare_fast` in 3 minutes); the full Dive flare snapshot sets the ambient light to 2.0 and makes the walls nearly white on each beat. Measured on that chart on `gh3.dive` (frames 600–2400 of a 45 s recording, 160 × 90 mean luma): mean 69 → 50, peak 139 → 95, median rise of a flash 73 → 34 luma steps.
-- Photosensitivity (WCAG 2.3.1, three flashes in one second): flares closer than 0.34 s to the last one are dropped. The picker option **Reduce flashing** ([PLAYER-GUIDE.md](PLAYER-GUIDE.md#4-direction-options); `GH3_SKIN_REDUCE_FLASHING=on` or `off` overrides it) makes flare pulses peak at 20% and come at most once each second, and makes strobe toggles are at least 0.2 s apart. It is off by default (J), because the default pulses already stay below three flashes per second.
+- Photosensitivity (WCAG 2.3.1, three flashes in one second): flares closer than 0.34 s to the last one are dropped. The picker option **Reduce flashing** ([PLAYER-GUIDE.md](PLAYER-GUIDE.md#5-direction-options); `GH3_SKIN_REDUCE_FLASHING=on` or `off` overrides it) makes flare pulses peak at 20% and come at most once each second, and keeps strobe toggles at least 0.2 s apart. It is off by default (J), because the default pulses already stay below three flashes per second.
 - A repeated cue starts a blend, as in Rock Band ([RBN2 docs](http://docs.c3universe.com/rbndocs/index.php?title=RBN2_Camera_And_Lights), "Lighting and Post Process Blending"): for `A … A … B`, the mod starts `B` at the second `A` and blends over the time to `B`. At the time of `B` the blend goes back to 0.15 s, and the snapshot steps of `B` start. Charts use this for fades and for flashes (`flare_fast`, `flare_fast` 1/8 beat later, then `silhouettes_spot`). Before, the second cue had no effect and the stage stayed in the flare mood until `B`. A flare before `A … A` uses the flare rule: the fade starts at the pulse peak.
 
 #### Effects and ignored cues
@@ -529,7 +515,7 @@ For each syllable the mouth opens 0.05 s before the note over 0.1 s, holds for t
 
 The mouth shapes come from the 570 GH3 singer facial clips (`tools/lipsync-shapes.py`): the motion of 18 jaw, lip, cheek, and tongue bones per degree of jaw opening, and the main mouth-width motion. The mod adds them to the body clip in the bone's own axes, as GH3's `applydifference` does. From the first to the last sung syllable, the eyes blink at random intervals of 2 to 18 seconds (fixed for each song). The mod does not move the brows: the brow motion of the GH3 clips has no relation to the jaw.
 
-GH3 facial clips always have priority: a native song, an original song from the library, or a `face` cue keeps the GH3 face exactly. The guitarist does not get lip sync. Set `GH3_SKIN_LIPSYNC=off` to keep the face still (an F6 picker option can set `StageLipSync.Enabled` later). The mod does not analyze audio: the four tested Rock Band charts with a `vocals` stem also have `PART VOCALS`, and the song mix cannot isolate the voice.
+GH3 facial clips always have priority: a native song, an original song from the library, or a `face` cue keeps the GH3 face exactly. The guitarist does not get lip sync. Set `GH3_SKIN_LIPSYNC=off` to keep the face still. The F6 picker has no lip-sync option. The mod does not analyze audio: the four tested Rock Band charts with a `vocals` stem also have `PART VOCALS`, and the song mix cannot isolate the voice.
 
 ### GH3 script calls in charts
 

@@ -1,5 +1,7 @@
 # Spike: textures and the Custom folder
 
+> Record of the packaging spike (2026-10-09, [PACKAGING-PLAN.md section 9](../PACKAGING-PLAN.md#9-spike-results)). The in-game probes (`src/Spike/`, `GH3_SKIN_SPIKE`) were removed in step 6, so the game commands in this report do not run on `main`. The offline tools are in `tools/research/`. The evidence moved from `/tmp/opencode/` to `~/.cache/gh3-evidence/` on the development machine.
+
 Spike agent: `textures`. Branch: `spike-textures`. Plan items: `docs/PACKAGING-PLAN.md` section 6, step 2, items 1 and 6.
 
 ## Questions
@@ -35,7 +37,7 @@ Also reported: BC4, BC6H, and ETC2_RGBA8 are True. ASTC is False.
 
 The mip 5 differences come from different mip filters (Unity's filter for `LoadImage`, a box filter for the others) and from BC encoding of small levels. They are not upload errors. The screenshot shows all six textures. The top row is minified (trilinear). The bottom row uses `mipMapBias = 4`, so it shows the small mip levels.
 
-Evidence: `/tmp/opencode/spike-textures/textures-onscreen.png` (from run 3; tile order: LoadImage, worker RGBA32, BC1, BC3, BC5, BC7), `/tmp/opencode/spike-textures/run2/frame-00.png`.
+Evidence: `~/.cache/gh3-evidence/spike-textures/textures-onscreen.png` (from run 3; tile order: LoadImage, worker RGBA32, BC1, BC3, BC5, BC7), `~/.cache/gh3-evidence/spike-textures/run2/frame-00.png`.
 
 **Pitfall found in run 1:** `TextureFormat.BC5` is 27, not 32 (32 is `PVRTC_RGB4`). With an unsupported format, Unity logs "Texture creation failed" and `LoadRawTextureData` throws `NullReferenceException`. The importer must check `SupportsTextureFormat` before it creates a texture.
 
@@ -79,7 +81,7 @@ Times in ms. "Run 2" and "run 3" are two game starts. Each cell is median / max 
 - PSNR values are high because the source came from GH3 DXT data. A good BC1 encoder can find the original blocks again. Do not use these PSNR values for new creator art.
 - Package size for one texture: PNG 2.31 MB. BC7 with mips, gzip -9: 2.34 MB. BC1: 1.18 MB. BC3 (constant alpha): 1.32 MB.
 
-Evidence: `/tmp/opencode/spike-textures/run2/melon.log`, `/tmp/opencode/spike-textures/run3/melon.log`, `/tmp/opencode/spike-textures/encode-python.json`, `/tmp/opencode/spike-textures/encode-csharp.txt`, `/tmp/opencode/spike-textures/encode-csharp-psnr.txt`.
+Evidence: `~/.cache/gh3-evidence/spike-textures/run2/melon.log`, `~/.cache/gh3-evidence/spike-textures/run3/melon.log`, `~/.cache/gh3-evidence/spike-textures/encode-python.json`, `~/.cache/gh3-evidence/spike-textures/encode-csharp.txt`, `~/.cache/gh3-evidence/spike-textures/encode-csharp-psnr.txt`.
 
 ## C. Custom folder
 

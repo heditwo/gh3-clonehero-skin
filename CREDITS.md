@@ -26,7 +26,7 @@ The GH3 `DATA` folder on the development machine is the BetterGH3 full package v
 
 | Software | License | Use |
 | --- | --- | --- |
-| [MelonLoader](https://github.com/LavaGang/MelonLoader) 0.7.3 | Apache-2.0 | Loads the mod into Clone Hero. The player installs it; `install-windows.ps1` downloads the official release from GitHub and checks its SHA-256 value. The mod builds against its assemblies (`MelonLoader.dll`, Il2CppInterop) and the Il2Cpp proxy assemblies that it makes from the game. None of these files are in this repository |
+| [MelonLoader](https://github.com/LavaGang/MelonLoader) 0.7.3 | Apache-2.0 | Loads the mod into Clone Hero. `install-linux.sh` and `install-windows.ps1` download the official release from GitHub and check its SHA-256 value. The release zips do not contain it. The mod builds against its assemblies (`MelonLoader.dll`, Il2CppInterop) and the Il2Cpp proxy assemblies that it makes from the game. None of these files are in this repository |
 | [Il2CppInterop](https://github.com/BepInEx/Il2CppInterop) (part of MelonLoader) | LGPL-3.0 | The bridge between the mod and the Il2Cpp game code |
 | [Dobby](https://github.com/jmpews/Dobby) (part of MelonLoader) | Apache-2.0 | MelonLoader's hook library. The mod has no Dobby code. `src/HookPageGuard.cs` moves Dobby's hook pages on Linux to stop a crash (`docs/STATUS.md`, Stability) |
 | BASS (part of Clone Hero) | Proprietary (un4seen) | The stage audio plays through Clone Hero's own `libbass.so` or `bass.dll` |
@@ -51,7 +51,7 @@ The GH3 `DATA` folder on the development machine is the BetterGH3 full package v
 | [FFmpeg](https://ffmpeg.org/) | LGPL-2.1-or-later or GPL | The pipeline: Video Shoot movie frames and the reference recording |
 | [Wine](https://www.winehq.org/) | LGPL-2.1-or-later | Runs FXC and the Windows tests on Linux |
 | .NET SDK and runtime | MIT | Builds the mod, the tests, and the tools |
-| Research tools: `ZstdSharp.Port` (`tools/ClipBench`), `Mono.Cecil` (`tools/MoonscraperAudit`), `BCnEncoder.Net` (`scripts/spike/csharp-encoder`) | MIT | NuGet packages of local measurement tools. They are not part of the mod |
+| Research tools: `ZstdSharp.Port` (`tools/ClipBench`), `Mono.Cecil` (`tools/MoonscraperAudit`), `BCnEncoder.Net` (`tools/research/spike-textures/csharp-encoder`) | MIT | NuGet packages of local measurement tools. They are not part of the mod |
 
 ## Example content
 

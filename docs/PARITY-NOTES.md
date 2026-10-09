@@ -55,7 +55,7 @@ Named members (`GameManager.songTime`, `BasePlayer.engine`, `SongEntry.ChartPath
 
 ### Windows run against Linux (same `Gh3Skin.dll`)
 
-`GH3_SKIN_TRACE=1` logs the values above twice per song second. `GH3_SKIN_TRACE_CHARGE=0.6` sets the native charge once at song time 20 s, because the command-line bot does not earn Star Power. Chart `mycurse-native`, venue `gh3.dive`, Windows under Wine 11.17 with `-force-glcore`:
+`GH3_SKIN_TRACE=1` logs the values above twice per song second. `GH3_SKIN_TRACE_CHARGE=0.6` sets the native charge once at song time 20 s, because the command-line bot does not earn Star Power. Chart `mycurse-native`, venue `gh3.dive`, Windows under Wine 11.17 with `-force-glcore` (this run was made before the bundles had Direct3D 11 programs):
 
 | Check | Result |
 | --- | --- |

@@ -8,7 +8,7 @@ The folder [`examples/`](../examples/) has an example stage and an example chara
 
 You need:
 
-- Blender 4.2 LTS or later (Linux, Windows, or macOS).
+- Blender 4.2 LTS or later (Linux, Windows, or macOS). The add-on also works on macOS, but the mod does not run on macOS Clone Hero.
 - The add-on file `chstage_tools-<version>.zip`. To make it from the repository: `python3 blender/build.py` (the file goes to `blender/dist/`).
 - Clone Hero with the mod installed ([PLAYER-GUIDE.md](PLAYER-GUIDE.md)), to test your package.
 - For characters and for camera bone anchors: the GH3 band library `gh3-band-v1.chlib`. The mod installs it in `<game>/Mods/GH3Skin/Packages/`.
@@ -19,7 +19,7 @@ You need:
 2. Open the menu at the top right (the arrow), and click **Install from Disk**.
 3. Select `chstage_tools-<version>.zip`. Do not extract the zip file. Blender installs and enables the add-on.
 4. Open **Edit > Preferences > Add-ons > CH Stage Tools**, and set these fields:
-   - **Custom/Stages folder** and **Custom/Characters folder**: the folders of Clone Hero (see [PLAYER-GUIDE.md section 5](PLAYER-GUIDE.md#5-add-stages-and-characters)). Export can then copy your package into the game.
+   - **Custom/Stages folder** and **Custom/Characters folder**: the folders of Clone Hero (see [PLAYER-GUIDE.md section 6](PLAYER-GUIDE.md#6-add-stages-and-characters)). Export can then copy your package into the game.
    - **GH3 library (.chlib)**: `gh3-band-v1.chlib`.
 
 ![The add-on preferences](images/creator/addon-preferences.png)

@@ -439,7 +439,7 @@ Measured error (spike): 0.0072° maximum rotation error, 0.03 cm maximum fingert
 
 ### 12.1 Audio
 
-- Package audio files are WAV (PCM, 16-bit, 1 or 2 channels), Ogg Vorbis, or MP3. The importer decodes them with Clone Hero's BASS library into PCM in the cache.
+- Package audio files are WAV (PCM, 16-bit, 1 or 2 channels), Ogg Vorbis, or MP3. The importer writes PCM into the cache. Importer version 1 reads WAV only: it rejects a library with Ogg or MP3 samples (the GH3 library has WAV only, decision O4).
 - `audio/audio.json` keeps its current fields. Each `samples` entry gets `file`, the package path of the sample. Loop points stay in sample frames of the decoded audio.
 
 ### 12.2 Movies
@@ -500,7 +500,7 @@ MISE_QUIET=1 uv run --with numpy --with brotli python -m pipeline.package.valida
 | Texture references as glTF indices | Did not map: 2,378 materials in the ten venues: `gh3Shader.textures` (2,272), `gh3MaskTexture` (76), `gh3LayerTexture` (30). **Resolved** in the GLB writer (section 19): 0 errors now |
 | `source-report.json` | Not in the package (pipeline report) |
 
-The character rule was checked on the Blender round-trip outputs of the spike (guitarist and singer, 15 variants each). The default bone mode, `.blend` save, frame rate, `nobind`, and `defbones` variants pass. `temperance`, `fortune`, `flatten`, `posed-frame`, and `zup` fail with the expected message. The `keep` variants fail only because of the spike probe extras `gh3Probe` and `gh3Role` (reserved prefix). Evidence: `/tmp/opencode/format-v1/characters.txt`.
+The character rule was checked on the Blender round-trip outputs of the spike (guitarist and singer, 15 variants each). The default bone mode, `.blend` save, frame rate, `nobind`, and `defbones` variants pass. `temperance`, `fortune`, `flatten`, `posed-frame`, and `zup` fail with the expected message. The `keep` variants fail only because of the spike probe extras `gh3Probe` and `gh3Role` (reserved prefix). Evidence: `~/.cache/gh3-evidence/format-v1/characters.txt`.
 
 The current library does not map file for file. Each part has a conversion step in `pipeline.package.build` (section 19):
 
@@ -521,6 +521,8 @@ The current library does not map file for file. Each part has a conversion step 
 ## 17. Open questions
 
 ### 17.1 For the orchestrator or the owner
+
+The owner decided O1 to O5 as the converter defaults (PACKAGING-PLAN decisions 8 and 9): GLB and PNG stored, `LicenseRef-GH3-Derived` (redistribute yes, modify and commercial no), `.chlib`, WAV audio, and PNG movie frames. O6 is open (PACKAGING-PLAN section 10).
 
 | # | Question | Data |
 |---|---|---|
@@ -546,7 +548,7 @@ The current library does not map file for file. Each part has a conversion step 
 
 Question: does `System.IO.Compression.BrotliStream` work inside Clone Hero Linux, on a worker thread?
 
-Method: the probe `src/Spike/BrotliSpike.cs` (removed in step 6) runs only with `GH3_SKIN_SPIKE=brotli`. It starts one `Task.Run` when the gameplay scene loads. It decodes the 356 guitarist clips of the clip spike in q48 + Brotli 11 and in q48 + gzip 9, and compares the bytes. `GH3_SKIN_SPIKE_CLIPS` points to a folder with the subfolders `brotli11/` and `gzip9/` (copies of `/tmp/opencode/spike-clips/full/variants/q48-*/guitarist`). Game: `~/games/clonehero-gh3-format-v1`, gh3.dive, mycurse-native, started with `scripts/record-preview.sh`.
+Method: the probe `src/Spike/BrotliSpike.cs` (removed in step 6) runs only with `GH3_SKIN_SPIKE=brotli`. It starts one `Task.Run` when the gameplay scene loads. It decodes the 356 guitarist clips of the clip spike in q48 + Brotli 11 and in q48 + gzip 9, and compares the bytes. `GH3_SKIN_SPIKE_CLIPS` points to a folder with the subfolders `brotli11/` and `gzip9/` (copies of `~/.cache/gh3-evidence/spike-clips/full/variants/q48-*/guitarist`). Game: `~/games/clonehero-gh3-format-v1`, gh3.dive, mycurse-native, started with `scripts/record-preview.sh`.
 
 | Pass | Clips | Byte mismatches | Brotli (all clips) | Brotli, one clip max | gzip 9 (all clips) | gzip 9, one clip max |
 |---|---:|---:|---:|---:|---:|---:|
@@ -558,9 +560,9 @@ Method: the probe `src/Spike/BrotliSpike.cs` (removed in step 6) runs only with 
 - Sizes: raw 28.3 MB, Brotli 10.3 MB, gzip 9 12.3 MB.
 - The times include the decompression only, not the q48 decode.
 - **Decision: q48 + Brotli for v1.**
-- Windows and macOS were not tested in the game. The Windows game copy (`~/games/clonehero-win-spike`) has the same MelonLoader .NET 6.0.25 runtime with `System.IO.Compression.Brotli.dll` and `System.IO.Compression.Native.dll` (file check only). macOS was not examined.
+- Windows and macOS were not tested in this check. Later, the Windows runs under Wine played the packages, so the importer and the clip prefetch decoded q48 + Brotli clips there ([STATUS.md](STATUS.md#release-build)). The Windows game copy (`~/games/clonehero-win-spike`) has the same MelonLoader .NET 6.0.25 runtime with `System.IO.Compression.Brotli.dll` and `System.IO.Compression.Native.dll` (file check only). macOS was not examined.
 
-Evidence: `/tmp/opencode/format-v1/brotli-Latest.log`. A run without `GH3_SKIN_SPIKE` logs no probe line and draws the stage as before (`/tmp/opencode/format-v1/default-frame.png`, `default-Latest.log`).
+Evidence: `~/.cache/gh3-evidence/format-v1/brotli-Latest.log`. A run without `GH3_SKIN_SPIKE` logs no probe line and draws the stage as before (`~/.cache/gh3-evidence/format-v1/default-frame.png`, `default-Latest.log`).
 
 ## 19. Converter
 
@@ -593,7 +595,7 @@ Evidence: all ten venues were exported again. All 40 GLBs have the same binary c
 
 All 12 packages (ten venues, `example.studio`, the library), as zip and as folder: **valid, 0 errors, 0 warnings**.
 
-`python -m pipeline.package.roundtrip` converts each package back to the runtime files that the mod reads today and compares them with the current assets:
+`python -m pipeline.package.roundtrip` converts each package back to the compiled runtime files (the pipeline outputs in `assets/stages` and `assets/libraries`; section 20.4 compares the mod cache with them) and compares them with the current assets:
 
 | Part | Method | Result |
 |---|---|---|
@@ -703,7 +705,7 @@ Game copy `~/games/clonehero-gh3-importer`, gh3.dive, mycurse-native, 1600 × 90
 |---|---|---|
 | Cold cache, import of all 12 packages | 23.5 s total on the background thread: library 4.1–4.3 s, gh3.dive 2.9–3.0 s, gh3.hell 4.9–5.1 s, others 0.2–2.6 s. The stage waits for the library and its own package only (7 s) | — |
 | Scene loaded to stage loaded, warm | 2.09–2.38 s (8 runs, median 2.2 s) | 3.43–3.81 s (9 runs, median 3.5 s) |
-| Stage load on the main thread, warm | 1.8–2.2 s; textures 140–200 ms | not logged (the same build with `GH3_SKIN_PACKAGES=off`: 3.1 s) |
+| Stage load on the main thread, warm | 1.8–2.2 s; textures 140–200 ms | not logged (the same build with `GH3_SKIN_PACKAGES=off`, removed in step 6: 3.1 s) |
 | Clip decode | 157 band clips in 30–85 ms on workers; 0 main-thread clip loads during play | gzip on the main thread at load |
 | Peak RSS, warm | 1,160–1,210 MB | 1,107–1,171 MB |
 | Peak RSS during the cold import of all packages, with the stage loaded | 1,472 MB (the import thread alone: 495 MB peak working set in `tools/PackageImport`) | — |

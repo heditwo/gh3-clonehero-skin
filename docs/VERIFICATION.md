@@ -6,7 +6,7 @@
 MISE_QUIET=1 scripts/test.sh
 ```
 
-The script runs the C# logic tests (`tests/SkinLogic.Tests.csproj`, .NET 10 SDK), the Python pipeline tests (`tests/test_*.py`), and a syntax check of the shell scripts. Also build the mod with zero warnings:
+The script runs the C# logic tests (`tests/SkinLogic.Tests.csproj`, .NET 10 SDK), the Python tests (`tests/test_*.py`), and a syntax check of the shell scripts. `tests/test_docs_links.py` checks that every relative link and anchor in the Markdown files resolves and that each Mermaid diagram is small (at most 16 nodes). Also build the mod with zero warnings:
 
 ```bash
 MISE_QUIET=1 dotnet build src/Gh3Skin.csproj -c Release --nologo
@@ -53,7 +53,7 @@ Use an isolated Clone Hero copy, not the copy that you play with. Set `GH3_CLONE
 
 Settings in the test copy that prevent crashes:
 
-- `UserData/Loader.cfg`: `force_offline_generation = true`. Without it, MelonLoader contacts `api.melonloader.com` at each start, and the open HTTPS connection can crash the CLR later.
+- `UserData/Loader.cfg`: `force_offline_generation = true`. Without it, MelonLoader contacts `api.melonloader.com` at each start. (This connection was a suspected crash cause before the hook page guard; see [STATUS.md](STATUS.md#stability).)
 - The mod stops MelonLoader's bHaptics client at start (`GH3_SKIN_KEEP_BHAPTICS=1` keeps it).
 - Linux only: without an ALSA sequencer seat (headless runs), use `tools/rtmidi-stub.c` as the game's `libRtMidi.so`. The Windows build has its own `RtMidi.dll` and needs no stub (it starts under Wine without one).
 
@@ -81,7 +81,7 @@ The script starts the game in its menus in a temporary Xwayland display and runs
 
 ```bash
 MISE_QUIET=1 GH3_SKIN_STAGE=gh3.dive GH3_SKIN_PREVIEW_SONG=/path/to/mycurse \
-  GH3_SKIN_VIDEO_SECONDS=40 GH3_SKIN_VIDEO_TRIM=40 GH3_SKIN_VIDEO=/tmp/opencode/dive.mp4 \
+  GH3_SKIN_VIDEO_SECONDS=40 GH3_SKIN_VIDEO_TRIM=40 GH3_SKIN_VIDEO=$HOME/.cache/gh3-skin-videos/dive.mp4 \
   scripts/record-preview.sh
 ```
 
@@ -101,7 +101,7 @@ One `Gh3Skin.dll` works on Linux and Windows Clone Hero `v1.1.0.6142-final` (see
 
 ### Install on Windows
 
-Players use `install-windows.bat` (it starts `install-windows.ps1`) from the Windows release zip; see [PLAYER-GUIDE.md section 6](PLAYER-GUIDE.md#6-install-the-mod) and [Release build](#release-build). `install-windows.ps1` removes `Mods\GH3Skin\assets`, `Packages`, `render`, and `counter-tuning.json` of an earlier install (also the older install in `assets\stages` and `assets\libraries`), then copies the release `Mods` folder. It installs MelonLoader 0.7.3 x64 (download or `-MelonLoaderZip <file>`, SHA-256 checked) and sets `force_offline_generation = true` after the first start (the first start needs the network for the assembly generator). The script also runs with PowerShell 7 on Linux (`pwsh -File install-windows.ps1 -GameDir <folder>`), which is how it was tested; PowerShell 7.4 for Windows does not start under this Wine.
+Players use `install-windows.bat` (it starts `install-windows.ps1`) from the Windows release zip; see [PLAYER-GUIDE.md section 1](PLAYER-GUIDE.md#1-install-the-mod) and [Release build](#release-build). `install-windows.ps1` removes `Mods\GH3Skin\assets`, `Packages`, `render`, and `counter-tuning.json` of an earlier install (also the older install in `assets\stages` and `assets\libraries`), then copies the release `Mods` folder. It installs MelonLoader 0.7.3 x64 (download or `-MelonLoaderZip <file>`, SHA-256 checked) and sets `force_offline_generation = true` after the first start (the first start needs the network for the assembly generator). The script also runs with PowerShell 7 on Linux (`pwsh -File install-windows.ps1 -GameDir <folder>`), which is how it was tested; PowerShell 7.4 for Windows does not start under this Wine.
 
 `GH3_CLONE_HERO_DIR=<windows game folder> bash install.sh` installs into a Windows game folder directly (with the test charts, as on Linux). It builds against the interop assemblies of that folder; one DLL works on Linux and Windows.
 
@@ -202,6 +202,8 @@ These variables are for checks and captures. Normal play needs none of them.
 | `GH3_SKIN_DEBUG_SHOW=<id,...>` | Keeps these GH3 objects created |
 | `GH3_SKIN_PROFILE=1` | Logs milliseconds, managed kilobytes, and gen-0 collections per subsystem each second; `tools/summarize-profile.py` reads the logs |
 | `GH3_SKIN_KEEP_BHAPTICS=1` | Keeps MelonLoader's bHaptics client |
+| `GH3_SKIN_HOOK_GUARD=off` | Turns off the Linux hook page guard ([STATUS.md](STATUS.md#stability)). Only for crash tests |
+| `GH3_SKIN_LIPSYNC=off` | No singer lip sync on charts without GH3 facial clips ([CUSTOM-CONTENT.md](CUSTOM-CONTENT.md#lip-sync-from-vocals)) |
 | `GH3_SKIN_TRACE=1` | Logs score, streak, multiplier, rock, charge, Star Power, note hits, stage note events, hit-flame lanes, pause, and stage audio voices twice per song second (`[trace]`). Compares platforms |
 | `GH3_SKIN_TRACE_CHARGE=<0–1>` | With `GH3_SKIN_TRACE`: sets the native Star Power charge once at song time 20 s. This changes the game state; use it only for checks |
 

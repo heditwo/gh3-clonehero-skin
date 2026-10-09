@@ -7,26 +7,19 @@ The project has two parts:
 
 ```mermaid
 flowchart LR
-    GH3[GH3 PC DATA<br/>PAK, QB, SKA, SCN, TEX] --> Pipeline[pipeline/]
-    Art[Extracted HUD art,<br/>BetterGH3, FastGH3] --> Pipeline
-    Pipeline --> HudAssets[assets/gems, sustains, highway,<br/>hud, fonts, hit-effects]
-    Pipeline --> Library[assets/libraries/gh3-band-v1]
-    Pipeline --> Packs[assets/stage-packs<br/>source packs]
-    Packs --> Compiler[pipeline.stagepack]
-    Author[Author GLB and JSON] --> Compiler
-    Compiler --> Stages[assets/stages<br/>compiled packs]
-    Pipeline --> Events[assets/stages/events<br/>song direction]
-    Packs --> Packages[assets/packages<br/>.chstage and .chlib]
-    Library --> Packages
-    Events --> Packages
-    HudAssets --> Install[install.sh,<br/>scripts/build-release.sh]
-    Library -- shader bundles --> Install
+    GH3[GH3 PC files] --> Pipeline[pipeline/]
+    Pipeline --> Hud[HUD and gem textures]
+    Pipeline --> Packages[Packages:<br/>venues and library]
+    Pipeline --> Shaders[Shader bundles]
+    Hud --> Install[install.sh or<br/>release zip]
     Packages --> Install
-    Install --> Game[Clone Hero<br/>Mods/GH3Skin]
-    Custom[Custom/Stages,<br/>Custom/Characters] --> Game
-    Game --> Cache[UserData/GH3Skin/Cache]
-    Chart[Song folder: chart or MIDI,<br/>stage-events.json, native song PAK] --> Game
+    Shaders --> Install
+    Install --> Game[Clone Hero with the mod]
+    Custom[Custom/Stages and<br/>Custom/Characters] --> Game
+    Song[Song folder] --> Game
 ```
+
+Inside the pipeline, the venues go through editable source packs (`assets/stage-packs`) and compiled packs (`assets/stages`), and the band library through `assets/libraries`, before the converter writes the packages (`assets/packages`). See [PIPELINE.md](PIPELINE.md). The mod imports each package one time into `UserData/GH3Skin/Cache` and loads the stage from there ([PACKAGE-FORMAT.md section 20](PACKAGE-FORMAT.md#20-c-importer)).
 
 ## Runtime modules
 
@@ -34,7 +27,7 @@ flowchart LR
 
 | Folder | Contents |
 | --- | --- |
-| `src/` | `SkinMod`, `SkinAssets`, `SkinAssetPaths`, `SkinOptions`, `GameCompatibility`, `CloneHeroBindings`, `PreviewCapture` (timed screenshots), `FrameProfile` (`GH3_SKIN_PROFILE`), `BindingTrace` (`GH3_SKIN_TRACE`) |
+| `src/` | `SkinMod`, `SkinAssets`, `SkinAssetPaths`, `SkinOptions`, `GameCompatibility`, `CloneHeroBindings`, `HookPageGuard` (Linux hook pages, see below), `PreviewCapture` (timed screenshots), `FrameProfile` (`GH3_SKIN_PROFILE`), `BindingTrace` (`GH3_SKIN_TRACE`) |
 | `src/Gameplay/` | `GameplayScene` (cached game objects), `GameplayStateReader` (score, streak, rock, and Star Power from the engine), `GameplaySpriteRenderer` (highway, gems, sustains, stock-effect hiding; split into `.Highway`, `.Gems`, `.Sustains` parts), `HighwayView` (GH3 camera and highway geometry), `BeatlineVisual`, `GemKind`, `GemAnimation`, `SustainBend` and `SustainVariant` (whammy bend, star whammy), `HitEffects` (GH3 2D hit particles) |
 | `src/Hud/` | `GameplayHud` builds the HUD tree. Components: `HighwayHud`, `ReadyBannerHud`, `RockMeterHud` (`RockGaugeHud`, `StarPowerBulbsHud`), `ScorePanelHud` (`AmpHud`, `LampColumnHud`, `ComboHud`, `ComboDigitHud`), `MessageHud`, `HitEffectsHud`, `YouRockHud`. Pure state and animation classes (`HudState`, `RockMeterState`, `ComboReelAnimation`, `StarPowerBulbAnimation`, `StarPowerHighwayAnimation`, `IntroHudAnimation`, `YouRockAnimation`, `ReadyAnimationTrigger`, `HudTuning`, `HudViewport`) have no Unity calls; the logic tests use them |
 | `src/Native/` | GH3 data and script engine: `Gh3Pak`, `Gh3Qb`, `Gh3QbText` (typed QB values), `Gh3Checksum`, `Gh3Song` (native song PAK), `Gh3ScriptCode` and `Gh3ScriptRuntime` (QB bytecode interpreter), `Gh3CommandDispatch`, `Gh3PcCommands`, `Gh3ComponentWait`, `Gh3Random` (GH3's RNG), `Gh3ScriptEvent` |
@@ -150,7 +143,7 @@ The GLSL sources have `#ifdef GH3_D3D11` blocks only where Direct3D 11 needs oth
 | Path | Contents |
 | --- | --- |
 | `tests/*.cs`, `tests/SkinLogic.Tests.csproj` | C# logic tests. They link the Unity-free source files. Optional variables (`GH3_PACK_ASSETS`, `GH3_NATIVE_DATA`, `GH3_*_ORACLE`, ...) add checks against real assets and native reference data |
-| `tests/test_*.py` | Python pipeline tests |
+| `tests/test_*.py` | Python tests: pipeline, package format, Blender add-on without Blender, examples, and the Markdown links, anchors, and diagram size (`test_docs_links.py`) |
 | `schemas/*.schema.json` | JSON Schemas (draft 2020-12) of package format v1: manifest, venue sidecars, `character.json`, GLB extras. See [PACKAGE-FORMAT.md](PACKAGE-FORMAT.md) |
 | `scripts/test.sh` | Runs both suites and shell syntax checks |
 | `scripts/build-release.sh` | Builds the release zips (Linux, Windows) and the Blender add-on zip from a clean export of a commit ([VERIFICATION.md](VERIFICATION.md#release-build)) |
@@ -166,4 +159,7 @@ The GLSL sources have `#ifdef GH3_D3D11` blocks only where Direct3D 11 needs oth
 | `tools/InteropMap/` | Maps the interop names that the mod uses to obfuscated metadata names, field offsets, and method RVAs, for one or more game installs |
 | `tools/native-offsets.py` | Compares a Linux and a Windows native method by the object offsets that they read |
 | `tools/windows/` | `run-win.sh` and the `env.sh` template: run Windows Clone Hero under Wine for tests |
+| `tools/hook-slots.py`, `tools/hook-page-sampler.py` | Examine MelonLoader's Dobby hook pages in a core dump or a live run ([STATUS.md](STATUS.md#stability)) |
+| `tools/lipsync-shapes.py` | Measures the singer mouth shapes of the GH3 facial clips for `StageLipSync` |
+| `tools/ClipBench/` | Clip codec measurements of the spike |
 | `tools/research/` | Offline tools of the packaging spike ([docs/spike/](spike/)), kept as history |
