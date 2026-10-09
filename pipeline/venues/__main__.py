@@ -200,7 +200,7 @@ def venue_camera_bank(source, scripts, qbs, zone):
     elif normal and not authored:
         shot = {"name": "source-normal", "type": "stage", "control": "TwoCam", "points": [camera_point(normal[0])], "nodes": []}
     else: return bank
-    bank["arrays"] = {name: [shot] for name in {*bank["arrays"], "cameras"}}
+    bank["arrays"] = {name: [shot] for name in sorted({*bank["arrays"], "cameras"})}
     return bank
 
 

@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.gh3skin.invalid/v1/crowd.schema.json",
+  "title": "Crowd (crowd/crowd.json)",
+  "description": "Crowd models, crowd roles with their action groups, hand props, and clips.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "models",
+    "members",
+    "bones",
+    "hands",
+    "performanceClips",
+    "constants",
+    "clips"
+  ],
+  "properties": {
+    "version": {
+      "const": 2
+    },
+    "models": {
+      "description": "Crowd models: crowd/<model>/model.glb.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "library-common.schema.json#/$defs/modelId"
+      }
+    },
+    "members": {
+      "type": "object",
+      "maxProperties": 8,
+      "propertyNames": {
+        "$ref": "common.schema.json#/$defs/crowdRole"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model",
+          "groups"
+        ],
+        "properties": {
+          "model": {
+            "$ref": "library-common.schema.json#/$defs/modelId"
+          },
+          "groups": {
+            "$ref": "library-common.schema.json#/$defs/clipTable"
+          }
+        }
+      }
+    },
+    "bones": {
+      "$ref": "library-common.schema.json#/$defs/bones"
+    },
+    "hands": {
+      "description": "Hand props: crowd/hands/<name>/model.glb.",
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]{1,64}$"
+      }
+    },
+    "performanceClips": {
+      "description": "Clip ID to its timing. Clip files: crowd/clips/<clip>.q48.br.",
+      "$ref": "library-common.schema.json#/$defs/clips"
+    },
+    "constants": {
+      "$ref": "library-common.schema.json#/$defs/constants"
+    },
+    "clips": {
+      "description": "Model to the names of its start clips; the model GLB holds them as animations with these names.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "maxItems": 64,
+        "items": {
+          "$ref": "common.schema.json#/$defs/name"
+        }
+      }
+    },
+    "sources": {
+      "$ref": "library-common.schema.json#/$defs/sources"
+    }
+  }
+}

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Regenerate every generated asset from the owner's GH3 files, in dependency order.
 # Usage: scripts/regenerate.sh [--clean] [step...]
-# Steps: library venues events render hud template. The default is all steps.
+# Steps: library venues events render hud template packages. The default is all steps.
 # The optional hud-video step needs GH3_REFERENCE_VIDEO (the GH3 Star Power reference recording).
 set -euo pipefail
 export MISE_QUIET=1
@@ -16,11 +16,11 @@ steps=()
 for argument in "$@"; do
   case "$argument" in
     --clean) clean=true ;;
-    library | venues | events | render | hud | hud-video | template) steps+=("$argument") ;;
+    library | venues | events | render | hud | hud-video | template | packages) steps+=("$argument") ;;
     *) printf 'Unknown step: %s\n' "$argument" >&2; exit 2 ;;
   esac
 done
-(( ${#steps[@]} )) || steps=(library venues events render hud template)
+(( ${#steps[@]} )) || steps=(library venues events render hud template packages)
 
 stage_python=(uv run --with pillow --with numpy --with 'shapely>=2.1' python)
 run() {
@@ -32,7 +32,7 @@ run() {
 
 if [[ "$clean" == true ]]; then
   rm -rf assets/libraries/gh3-band-v1 assets/stages assets/stage-packs/gh3.* assets/stage-packs/example.studio \
-    assets/stage-packs/conversion-report.json
+    assets/stage-packs/conversion-report.json assets/packages
 fi
 
 for step in "${steps[@]}"; do
@@ -58,6 +58,12 @@ for step in "${steps[@]}"; do
     template)
       run "${stage_python[@]}" -m pipeline.stagepack.template
       run "${stage_python[@]}" -m pipeline.stagepack.install assets/stage-packs/example.studio
+      ;;
+    packages)
+      # Package format v1: the venues, example.studio, and the library as .chstage and .chlib files, validated.
+      package_python=(uv run --with pillow --with numpy --with 'shapely>=2.1' --with brotli python)
+      run "${package_python[@]}" -m pipeline.package.build
+      run "${package_python[@]}" -m pipeline.package.validate assets/packages/*.chstage assets/packages/*.chlib
       ;;
   esac
 done

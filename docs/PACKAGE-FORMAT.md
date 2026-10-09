@@ -1,6 +1,6 @@
 # Package format v1
 
-Status: **frozen** (PACKAGING-PLAN step 3, part 1). This document is the reference for venue, character, and library packages. The JSON Schemas are in [`schemas/`](../schemas). The validator is `pipeline/package/validate.py`. The converter and the C# importer are not written yet (see [section 17](#17-open-questions)).
+Status: **frozen** (PACKAGING-PLAN step 3, part 1). This document is the reference for venue, character, and library packages. The JSON Schemas are in [`schemas/`](../schemas). The validator is `pipeline/package/validate.py`. The converter is `pipeline/package/build.py` ([section 19](#19-converter)). The C# importer is not written yet (see [section 17](#17-open-questions)).
 
 The words "must" and "must not" give rules. The validator reports a rule failure as an error. "Should" gives a recommendation. The validator reports it as a warning.
 
@@ -224,7 +224,7 @@ A texture reference in extras is a string:
 | `#<name>` | The image with this `name` in the same GLB. Image names in one GLB are unique |
 | `<package path>.png` | A PNG file in the package |
 
-**A texture reference must not be a glTF texture or image index.** Blender renumbers textures on export and drops images that no material slot uses (spike result 9.6). Thus the Blender add-on writes sampler-only textures as package files. The converter can use `#<name>` for images that are already in the GLB.
+**A texture reference must not be a glTF texture or image index.** Blender renumbers textures on export and drops images that no material slot uses (spike result 9.6). Thus the Blender add-on writes sampler-only textures as package files. The pipeline GLB writer (`GlbWriter`) names every image (the GH3 texture checksum, for example `1a52a814`) and writes `#<name>`.
 
 ### 6.7 Animation channels and the unit-scale rule
 
@@ -346,7 +346,29 @@ Other files have fixed paths:
 
 The library does **not** contain shader bundles (`render/*.bundle`) or `render/stage-templates.json`. They depend on the graphics API and the Unity version. The mod installation supplies them for each platform.
 
-The library JSON files keep their current version 1 layouts (written by `pipeline.library`). Only file references change: `.bin.gz` clips become `.q48.br`, `.gh3video` movies become `movie.json`, and `.pcm.gz` samples become audio files. JSON Schemas for the library files are remaining work.
+The library JSON files keep their current layouts (written by `pipeline.library`). Only file references change: `.bin.gz` clips become `.q48.br`, `.gh3video` movies become `movie.json`, and `.pcm.gz` samples become audio files.
+
+| File | Schema |
+|---|---|
+| `catalog.json` | [`catalog.schema.json`](../schemas/catalog.schema.json) |
+| `band/band.json` | [`band.schema.json`](../schemas/band.schema.json) |
+| `direction/performance.json` | [`performance.schema.json`](../schemas/performance.schema.json) |
+| `band/hair.json` | [`hair.schema.json`](../schemas/hair.schema.json) |
+| `crowd/crowd.json` | [`crowd.schema.json`](../schemas/crowd.schema.json) (layout version 2) |
+| `hand-fire/hand-fire.json` | [`hand-fire.schema.json`](../schemas/hand-fire.schema.json) |
+| `audio/audio.json` | [`audio.schema.json`](../schemas/audio.schema.json) |
+| `scripts.json` | [`scripts.schema.json`](../schemas/scripts.schema.json) |
+| `songs/index.json`, `songs/<song>.json` | [`songs.schema.json`](../schemas/songs.schema.json), [`song.schema.json`](../schemas/song.schema.json) |
+| `movies/<name>/movie.json` | [`movie.schema.json`](../schemas/movie.schema.json) |
+| `effects/particle-materials.json`, `effects/tesla-material.json` | [`particle-materials.schema.json`](../schemas/particle-materials.schema.json), [`tesla-material.schema.json`](../schemas/tesla-material.schema.json) |
+
+Shared definitions are in [`library-common.schema.json`](../schemas/library-common.schema.json). The validator also checks that the files that the JSON files name exist: clips (`direction/<role>/<clip>.q48.br`, `crowd/clips/<clip>.q48.br`), models, audio samples, hand-fire textures, songs, and all movie frames.
+
+Library model GLBs (`band/<role>/model.glb`, `crowd/…/model.glb`):
+
+- The joints are the rig, named `bone-<checksum>`, in rig order. The GLB has the bind pose and the start clips of `band.json` `clips` (or `crowd.json` `clips`) as animations with these names. The crowd hand models use the crowd rig without animations.
+- Each material keeps the raw GH3 blend value in `gh3Shader.blend`. The importer takes `blend` from `gh3Shader.blend` when the record is present (section 17.2), and the cutoff from `alphaCutoff` (`MASK`) or `gh3AlphaCutoff` (`BLEND`). `color` is `baseColorFactor` × `gh3ColorScale`.
+- The GLB also holds the materials that no mesh uses, so that the importer can write the full material table.
 
 ## 11. Clip encoding q48
 
@@ -449,13 +471,13 @@ The importer converts a package one time and writes a per-machine cache.
 MISE_QUIET=1 uv run --with numpy --with brotli python -m pipeline.package.validate PACKAGE [--library assets/libraries/gh3-band-v1]
 ```
 
-- The validator reads a zip or a development folder. It checks the container, the paths, the manifest, the hashes, the schemas, the references, the GLB rules, and the extras. For a character, `--library` adds the profile rig check (section 9.3). For a library, it decodes all clips (needs the `brotli` module).
+- The validator reads a zip or a development folder. It checks the container, the paths, the manifest, the hashes, the schemas, the references, the GLB rules, and the extras. For a character, `--library` adds the profile rig check (section 9.3); the value is a library package (`gh3-band-v1.chlib`, the rig comes from `band/<role>/model.glb`) or the current library folder. For a library, it decodes all clips (needs the `brotli` module) and checks the library schemas and file references (section 10).
 - `pipeline/package/schema.py` evaluates the schemas without third-party packages, so the Blender add-on can bundle the validator. The tests compare it with the `jsonschema` reference implementation.
 - Dry conversion check of the current outputs: `python -m pipeline.package.sources --json report.json` (see [section 16](#16-mapping-of-the-current-pipeline-outputs)).
 
 ## 16. Mapping of the current pipeline outputs
 
-`pipeline.package.sources` maps every source pack in `assets/stage-packs/` to the venue layout (section 8.1) without a change to the GLB files. Then it runs the validator. Result on 2026-10-09 (ten GH3 venues and `example.studio`):
+`pipeline.package.sources` maps every source pack in `assets/stage-packs/` to the venue layout (section 8.1) without a change to the GLB files. Then it runs the validator. Result on 2026-10-09, before the converter (ten GH3 venues and `example.studio`):
 
 | Item | Result |
 |---|---|
@@ -463,26 +485,26 @@ MISE_QUIET=1 uv run --with numpy --with brotli python -m pipeline.package.valida
 | Node extras, all other material extras, vertex attributes, images | All valid |
 | Actor GLBs (29): skin, inverse bind matrices, clips | All valid |
 | `example.studio` | Valid, no errors |
-| **Texture references as glTF indices** | **Do not map yet.** 2,378 materials in the ten venues: `gh3Shader.textures` (2,272), `gh3MaskTexture` (76), `gh3LayerTexture` (30). The converter must name the GLB images and write `#<name>` |
+| Texture references as glTF indices | Did not map: 2,378 materials in the ten venues: `gh3Shader.textures` (2,272), `gh3MaskTexture` (76), `gh3LayerTexture` (30). **Resolved** in the GLB writer (section 19): 0 errors now |
 | `source-report.json` | Not in the package (pipeline report) |
 
 The character rule was checked on the Blender round-trip outputs of the spike (guitarist and singer, 15 variants each). The default bone mode, `.blend` save, frame rate, `nobind`, and `defbones` variants pass. `temperance`, `fortune`, `flatten`, `posed-frame`, and `zup` fail with the expected message. The `keep` variants fail only because of the spike probe extras `gh3Probe` and `gh3Role` (reserved prefix). Evidence: `/tmp/opencode/format-v1/characters.txt`.
 
-The current library does not map file for file. Each part needs a conversion step:
+The current library does not map file for file. Each part has a conversion step in `pipeline.package.build` (section 19):
 
 | Current file | Package v1 | Status |
 |---|---|---|
-| `band/<role>/meshes.bin`, `animation.bin`, `stage.json`, `textures/` | `band/<role>/model.glb` | Converter to write (the spike `character_glb.py` shows the way; bit-identical mesh) |
-| `crowd/<model>/…`, `crowd/hands/<name>/…` | `model.glb` | Converter to write |
-| `direction/**/*.bin.gz`, `crowd/clips/*.bin.gz` (`GH3CLP01`, 1,240 files) | `*.q48.br` | Reference encoder exists. Added error as in section 11.4 |
-| `audio/*.pcm.gz` (227) | `audio/*.wav` or the original MP3 | Converter to write; see open question O4 |
-| `movies/*.gh3video` (4) | `movies/<name>/` | Converter to write (lossless) |
-| `scripts.json` `movies` values (`.gh3video` paths) | `movie.json` paths | 4 values change |
+| `band/<role>/meshes.bin`, `animation.bin`, `stage.json`, `textures/` | `band/<role>/model.glb` | Done (`GlbWriter.actor`; see section 19.4 for the UV result) |
+| `crowd/<model>/…`, `crowd/hands/<name>/…` | `model.glb` | Done |
+| `direction/**/*.bin.gz`, `crowd/clips/*.bin.gz` (`GH3CLP01`, 1,240 files) | `*.q48.br` | Done. Added error as in section 11.4 |
+| `audio/*.pcm.gz` (227) | `audio/*.wav` | Done: the current PCM in a WAV container (open question O4) |
+| `movies/*.gh3video` (4) | `movies/<name>/` | Done (lossless) |
+| `scripts.json` `movies` values (`.gh3video` paths) | `movie.json` paths | Done: 4 values change |
 | `stage.json` material fields `textures` and `template` (85 materials) | Not mapped | The runtime does not read them. The `gh3Shader` record holds the same data |
-| `render/particle-materials.json`, `tesla-material.json`, `tesla-noise.png` | `effects/` | Copy |
+| `render/particle-materials.json`, `tesla-material.json`, `tesla-noise.png` | `effects/` | Copied |
 | `render/*.bundle`, `render/stage-templates.json` | Not in the package | Mod installation |
 | `library.json` | `manifest.json` `files` | — |
-| `assets/stages/events/` (original song direction, 162 MB) | `songs/` | Copy |
+| `assets/stages/events/` (original song direction, 169 MB) | `songs/` | Copied (not `export-report.json`, a pipeline report) |
 
 ## 17. Open questions
 
@@ -490,19 +512,18 @@ The current library does not map file for file. Each part needs a conversion ste
 
 | # | Question | Data |
 |---|---|---|
-| O1 | Permit DEFLATE for `.glb`? The plan says STORE. | All source-pack GLBs: 550 MB stored, 299 MB with DEFLATE level 6. The PNG images are 196 MB of this; the mesh data compresses to about one third. The validator only warns, so the change is one line |
-| O2 | License text for the GH3-derived packages (`LicenseRef-GH3-Derived`?) and the `permissions` values. | Decision 1 accepts the IP risk |
-| O3 | Library file extension `.chlib`. The plan names `.chstage` and `.chchar` only. | — |
-| O4 | Audio in the library: the original MP3 data (smaller, as GH3 shipped it) or WAV of the current PCM (identical samples)? | Current PCM gzip: 104 MB. MP3 size not measured. MP3 decoders can differ by a few samples at the start, which moves loop points |
-| O5 | Movies stay PNG frames (357 MB today) or change to a video codec (smaller, but needs a decoder or Unity `VideoPlayer`)? | Section 9.4 of the plan: movies are now the largest part |
+| O1 | Permit DEFLATE for `.glb`? The plan says STORE (the converter default, `pipeline/package/decisions.py`). | All source-pack GLBs: 550 MB stored, 299 MB with DEFLATE level 6. The PNG images are 196 MB of this; the mesh data compresses to about one third. The validator only warns, so the change is one line |
+| O2 | License text for the GH3-derived packages (`LicenseRef-GH3-Derived`?) and the `permissions` values. The converter uses `LicenseRef-GH3-Derived`, redistribute yes, modify and commercial no. `example.studio` uses `CC0-1.0`. | Decision 1 accepts the IP risk |
+| O3 | Library file extension `.chlib`. The plan names `.chstage` and `.chchar` only. The converter uses `.chlib`. | — |
+| O4 | Audio in the library: the original MP3 data (smaller, as GH3 shipped it) or WAV of the current PCM (identical samples)? The converter writes WAV of the current PCM. | Current PCM gzip: 104 MB. WAV: 132.4 MB, 107.7 MB with DEFLATE 9 in the zip. MP3 size not measured. MP3 decoders can differ by a few samples at the start, which moves loop points |
+| O5 | Movies stay PNG frames (357 MB today) or change to a video codec (smaller, but needs a decoder or Unity `VideoPlayer`)? The converter keeps the PNG frames. | Movies are 357 MB of the 658 MB library zip |
 | O6 | Public URL for the schema `$id` values (now `https://schemas.gh3skin.invalid/v1/…`). | — |
 
-### 17.2 For the converter (next part of step 3)
+### 17.2 For the converter
 
-- Name all GLB images (for example the current texture checksum) and rewrite the texture references to `#<name>`.
-- Library band and crowd materials use the raw GH3 blend value (0–12) in `blend`. The stage material contract derives `blend` from `alphaMode` and `gh3Additive`. With a `gh3Shader` record, the importer must take the raw value from `gh3Shader.blend` for library models. Check that the skinned path gives the same result.
-- Decide the sort order and compression level of the zip entries so that a build is reproducible (fixed times, sorted paths).
-- `preview.png` for each venue: make it from a capture.
+- Done: GLB image names and `#<name>` references; reproducible zips (section 19).
+- Library band and crowd materials use the raw GH3 blend value (0–12) in `blend`. The stage material contract derives `blend` from `alphaMode` and `gh3Additive`. With a `gh3Shader` record, the importer must take the raw value from `gh3Shader.blend` for library models. The round trip (section 19.4) shows that this rule gives the current `stage.json` for all 85 library materials. The venue compiler (`pack.py`) still derives `blend` from `alphaMode` for venue materials; the C# importer must keep both rules.
+- Open: `preview.png` for each venue. It needs a capture of each venue in the game. The converter writes no `preview` now.
 
 ### 17.3 For the C# importer (step 4)
 
@@ -531,3 +552,85 @@ Method: the probe `src/Spike/BrotliSpike.cs` runs only with `GH3_SKIN_SPIKE=brot
 - Windows and macOS were not tested in the game. The Windows game copy (`~/games/clonehero-win-spike`) has the same MelonLoader .NET 6.0.25 runtime with `System.IO.Compression.Brotli.dll` and `System.IO.Compression.Native.dll` (file check only). macOS was not examined.
 
 Evidence: `/tmp/opencode/format-v1/brotli-Latest.log`. A run without `GH3_SKIN_SPIKE` logs no probe line and draws the stage as before (`/tmp/opencode/format-v1/default-frame.png`, `default-Latest.log`).
+
+## 19. Converter
+
+`python -m pipeline.package.build` (the `packages` step of `scripts/regenerate.sh`) writes all packages to `assets/packages/`: `<id>.chstage` for each source pack, `gh3-band-v1.chlib`, and the same packages as development folders in `assets/packages/unpacked/`. The folder and the zip have the same files, with a full `files` list in `manifest.json`.
+
+### 19.1 Texture references
+
+The GLB writer (`pipeline/stagepack/gltf.py`, `GlbWriter.texture` and `reference`) gives each embedded image a unique `name`: the GH3 texture checksum, with `-1`, `-2` and so on when two different images have the same checksum. Extras use `#<name>`. The venue compiler (`pack.py`) reads `#<name>`, package paths, and (for older packs) glTF indices. It gives a named image the runtime texture name of its texture index, so the compiled packs do not change.
+
+The fix is in the writer, not in a converter post-pass, for these reasons:
+
+- The source packs in `assets/stage-packs/` are the creator-facing format. With the fix they are format v1 GLBs, and `pipeline.package.sources` gives 0 errors. A post-pass would keep two GLB dialects.
+- The writer knows the texture checksum of each image. A post-pass sees only indices.
+- The converter then copies the GLB bytes without a change, and refuses a GLB that still has index references ("export the source pack again").
+
+Evidence: all ten venues were exported again. All 40 GLBs have the same binary chunk as before; the JSON chunks are equal after the names are mapped back to indices (1,276 images named, all unique). All 1,739 compiled files in `assets/stages` are byte-equal or JSON-equal to the files before the change. Only `pack.json` changes: its `sources` hashes of the GLBs, and the `cameras.json` hash of Credits and Soundcheck (key order, see 19.2).
+
+### 19.2 Reproducible output
+
+- Zip entries: `manifest.json` first, then the sorted paths; time 1980-01-01 00:00; Unix attributes `0644`; STORE or DEFLATE level 9 (`decisions.py`).
+- JSON that the converter writes: two-space indent, UTF-8, key order of the source.
+- The two old exceptions are fixed at their source: `pack.json` lists its files in sorted order, and the venue exporter sorts the camera arrays of Credits and Soundcheck (the order came from a Python set). An export of the two venues with two different `PYTHONHASHSEED` values gave byte-equal `cameras.json` files.
+- Two full converter runs (the second with an empty clip cache and 3 processes) gave byte-equal packages.
+
+### 19.3 Owner choices
+
+`pipeline/package/decisions.py` holds every open choice of section 17.1: the zip method for each suffix (GLB and PNG STORE), the license and permissions, the library extension (`.chlib`), the audio format (`wav`: the current 16-bit PCM, decoded from the GH3 MP3 data by FFmpeg, in a WAV container, without re-encoding), and the movie format (`png-frames`).
+
+### 19.4 Validation and round trip (2026-10-09)
+
+All 12 packages (ten venues, `example.studio`, the library), as zip and as folder: **valid, 0 errors, 0 warnings**.
+
+`python -m pipeline.package.roundtrip` converts each package back to the runtime files that the mod reads today and compares them with the current assets:
+
+| Part | Method | Result |
+|---|---|---|
+| Venues (10 and `example.studio`) | Package → `stage-pack.json` and files → `compile_stage` → compare with `assets/stages/<id>` | All 1,738 compiled files byte-equal (one `example.studio/pack.json` JSON-equal: its file list was in file-system order) |
+| Library JSON (catalog, band, hair, performance, crowd, hand fire, effects) | Bytes | Byte-equal |
+| `scripts.json`, `audio/audio.json` | Map `movie.json` back to `.gh3video`, remove `file` | JSON-equal |
+| Audio (227 samples) | WAV → PCM → gzip with the pipeline header | 227 byte-equal `.pcm.gz` files |
+| Movies (4) | Frames → `GH3VID01` | Byte-equal |
+| Particle and hand-fire textures, Tesla noise, songs (159 and `index.json`) | Bytes | Byte-equal |
+| Band and crowd models (4 band, 10 crowd, 8 hands) | GLB → `meshes.bin`, `animation.bin`, `stage.json`, `textures/` | `animation.bin` byte-equal (bind pose and start clips), `stage.json` equal, textures byte-equal. `meshes.bin` byte-equal for 20 models. Guitarist and drummer: 159 of the 33,391 band vertices have a V coordinate that differs by at most 3.0e-8, because glTF stores 1 − v in float32 |
+| Clips (1,138 band, 102 crowd) | q48 → `GH3CLP01` → compare the channels in the track mask | All within the bound: rotation 0.00715° maximum (bound 0.0075°), position 0.115 mm maximum, at most 0.99 of the half quantization step |
+
+The rotation error uses the chord form 4 asin(|a − b| / 2). An `arccos` of the dot product in float32 gives up to 0.05° for the same data, which is only rounding.
+
+Not carried into the library package, by design: the shader bundles and `render/stage-templates.json` (6 files, mod installation), `library.json` (replaced by `manifest.json` `files`), the 4 movie conversion stamps, 50 model textures that no material refers to (the runtime loads textures by material reference), and the `stage.json` material fields `textures`, `template`, and `geometryCutout` (173 values; the runtime does not read them). An explicit white `color` and an absent `color` draw the same (`StageAssets` keeps white), so the round trip treats them as equal (29 materials have an explicit white `color`; glTF writes no white `baseColorFactor`).
+
+### 19.5 Sizes (MB, 10^6 bytes)
+
+| Package | Folder | Zip |
+|---|---:|---:|
+| `gh3.artdeco` | 50.8 | 47.7 |
+| `gh3.budokan` | 35.0 | 29.8 |
+| `gh3.credits` | 6.2 | 6.0 |
+| `gh3.dive` | 87.0 | 84.7 |
+| `gh3.hell` | 213.6 | 211.6 |
+| `gh3.party` | 45.9 | 44.1 |
+| `gh3.prison` | 50.9 | 48.7 |
+| `gh3.soundcheck` | 18.7 | 18.3 |
+| `gh3.video` | 26.1 | 24.3 |
+| `gh3.wikker` | 38.1 | 35.9 |
+| `example.studio` | 0.05 | 0.05 |
+| **Ten venues** (without `example.studio`) | **572.4** | **550.9** |
+| **`gh3-band-v1.chlib`** | **856.9** | **658.1** |
+| **Total** | **1,429.3** | **1,209.0** |
+
+Library parts:
+
+| Part | Files | Folder | Zip | Current library |
+|---|---:|---:|---:|---:|
+| Band clips (`direction/`, q48 + Brotli) | 1,138 | 121.1 | 121.1 | 455.7 (with `performance.json`) |
+| Crowd clips | 102 | 0.8 | 0.8 | in `crowd/` |
+| Band models (`band/`) | 6 | 19.9 | 19.9 | 19.4 |
+| Crowd models and `crowd.json` | 19 | 5.0 | 4.9 | 9.1 (with clips) |
+| Audio (WAV) | 228 | 132.4 | 107.7 | 108.4 |
+| Movies (PNG frames) | 4,603 | 356.9 | 356.9 | 357.0 |
+| Particle textures | 542 | 38.1 | 38.1 | 38.1 |
+| Songs | 160 | 169.0 | 5.9 | 169.0 (`assets/stages/events`) |
+| `scripts.json` | 1 | 12.1 | 1.2 | 12.1 |
+| Other JSON, hand fire, effects, manifest | 9 | 1.7 | 0.4 | 1.0 (with `render/` bundles and `library.json`) |

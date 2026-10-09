@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.gh3skin.invalid/v1/library-common.schema.json",
+  "title": "Shared definitions of the library files",
+  "$defs": {
+    "checksum": {
+      "description": "GH3 checksum: 8 lowercase hex digits.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}$"
+    },
+    "hash": {
+      "description": "SHA-1 or SHA-256 in lowercase hex.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    },
+    "sources": {
+      "description": "Pipeline record: GH3 source file to its hash. The importer ignores it.",
+      "type": "object",
+      "maxProperties": 10000,
+      "additionalProperties": {
+        "$ref": "#/$defs/hash"
+      }
+    },
+    "clipIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/checksum"
+      }
+    },
+    "clipTable": {
+      "description": "Action or layer name to the clip IDs to choose from.",
+      "type": "object",
+      "maxProperties": 10000,
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/clipIds"
+      }
+    },
+    "clipInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "duration",
+        "frames",
+        "rootDistance"
+      ],
+      "properties": {
+        "duration": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 600
+        },
+        "frames": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "rootDistance": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "clips": {
+      "description": "Clip ID to its timing.",
+      "type": "object",
+      "maxProperties": 10000,
+      "propertyNames": {
+        "$ref": "#/$defs/checksum"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/clipInfo"
+      }
+    },
+    "bones": {
+      "description": "Rig bone checksums in rig order.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 255,
+      "items": {
+        "$ref": "#/$defs/checksum"
+      }
+    },
+    "member": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bones",
+        "groups",
+        "layers",
+        "clips"
+      ],
+      "properties": {
+        "bones": {
+          "$ref": "#/$defs/bones"
+        },
+        "groups": {
+          "$ref": "#/$defs/clipTable"
+        },
+        "layers": {
+          "$ref": "#/$defs/clipTable"
+        },
+        "clips": {
+          "$ref": "#/$defs/clips"
+        }
+      }
+    },
+    "performanceMember": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bones",
+        "groups",
+        "layers",
+        "clips"
+      ],
+      "properties": {
+        "bones": {
+          "$ref": "#/$defs/bones"
+        },
+        "groups": {
+          "$ref": "#/$defs/clipTable"
+        },
+        "layers": {
+          "$ref": "#/$defs/clipTable"
+        },
+        "clips": {
+          "$ref": "#/$defs/clips"
+        },
+        "missingClips": {
+          "description": "Clip IDs that the GH3 tables name but the GH3 data does not contain.",
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/checksum"
+          }
+        }
+      }
+    },
+    "constants": {
+      "type": "object",
+      "maxProperties": 1000,
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "modelId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_]{1,64}$"
+    },
+    "hex64": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

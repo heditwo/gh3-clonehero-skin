@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.gh3skin.invalid/v1/band.schema.json",
+  "title": "Band members (band/band.json)",
+  "description": "Band members, their models (band/<role>/model.glb), instruments, and start clips.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "members"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "members": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "model",
+          "instrument",
+          "position",
+          "yaw",
+          "clips",
+          "bones",
+          "vertices"
+        ],
+        "properties": {
+          "role": {
+            "$ref": "common.schema.json#/$defs/role"
+          },
+          "model": {
+            "$ref": "library-common.schema.json#/$defs/modelId"
+          },
+          "instrument": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_]{0,64}$"
+          },
+          "position": {
+            "$ref": "common.schema.json#/$defs/vec3"
+          },
+          "yaw": {
+            "type": "number"
+          },
+          "clips": {
+            "description": "Start clips; the model GLB holds them as animations with these names.",
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {
+              "$ref": "common.schema.json#/$defs/name"
+            }
+          },
+          "bones": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 255
+          },
+          "vertices": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "sources": {
+      "$ref": "library-common.schema.json#/$defs/sources"
+    }
+  }
+}

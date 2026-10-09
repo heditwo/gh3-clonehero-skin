@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.gh3skin.invalid/v1/songs.schema.json",
+  "title": "Original song direction index (songs/index.json)",
+  "description": "Title and artist of each original GH3 song, for chart matching.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "songs"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "songs": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "artist",
+          "file"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "artist": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "file": {
+            "description": "File in the songs/ folder.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]*\\.json$"
+          }
+        }
+      }
+    }
+  }
+}

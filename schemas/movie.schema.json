@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.gh3skin.invalid/v1/movie.schema.json",
+  "title": "Movie (movies/<name>/movie.json)",
+  "description": "A movie is this file and the PNG frames frames/000000.png, frames/000001.png, and so on, in the same folder.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "width",
+    "height",
+    "frames",
+    "rate"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "width": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4096
+    },
+    "height": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4096
+    },
+    "frames": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100000
+    },
+    "rate": {
+      "description": "Frame rate as [numerator, denominator].",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  }
+}

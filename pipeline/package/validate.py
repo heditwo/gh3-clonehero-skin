@@ -28,6 +28,10 @@ WINDOWS_RESERVED = re.compile(r"^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$", r
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 PROFILES = {"gh3-guitarist-axel-v1": "guitarist", "gh3-bassist-v1": "bassist", "gh3-singer-male-v1": "singer", "gh3-drummer-v1": "drummer"}
 LIBRARY_ID = "gh3-band-v1"
+LIBRARY_SCHEMAS = {"catalog": "catalog.schema.json", "band": "band.schema.json", "performance": "performance.schema.json",
+                   "hair": "hair.schema.json", "crowd": "crowd.schema.json", "handFire": "hand-fire.schema.json",
+                   "audio": "audio.schema.json", "scripts": "scripts.schema.json", "songs": "songs.schema.json"}
+EFFECT_SCHEMAS = {"effects/particle-materials.json": "particle-materials.schema.json", "effects/tesla-material.json": "tesla-material.schema.json"}
 KNOWN_EXTENSIONS = {"KHR_materials_unlit"}
 IGNORED_EXTENSIONS = {"KHR_lights_punctual", "KHR_materials_emissive_strength", "KHR_texture_transform", "KHR_materials_specular", "KHR_materials_ior"}
 STATIC_ATTRIBUTES = {"POSITION", "NORMAL", "TEXCOORD_0", "TEXCOORD_1", "TEXCOORD_2", "TEXCOORD_3", "COLOR_0", "TANGENT",
@@ -537,12 +541,9 @@ class Validator:
     def check_library(self):
         entry = self.manifest["entry"]
         if self.manifest["id"] != LIBRARY_ID: self.report.warn("manifest.json", f"the mod v1 uses the library {LIBRARY_ID}")
-        for key, name in entry.items():
-            if key == "scripts":
-                scripts = self.json_entry("scripts", "scripts.schema.json")
-                if scripts: self.check_script_files(name, scripts)
-            else:
-                load_json(self.source, name, self.report)
+        data = {key: self.json_entry(key, schema) for key, schema in LIBRARY_SCHEMAS.items() if key in entry}
+        if data.get("scripts"): self.check_script_files(entry["scripts"], data["scripts"])
+        self.check_library_files(entry, data)
         try:
             import brotli
         except ImportError:
@@ -558,6 +559,50 @@ class Validator:
                 glb = self.check_glb(name, skinned=True)
                 if glb is not None and glb.list("skins"): self.check_skin(name, glb)
 
+    def check_library_files(self, entry, data):
+        """The fixed-path files of a library (PACKAGE-FORMAT.md section 10) that its JSON files refer to."""
+        def need(where, name, what):
+            if name not in self.source.set: self.report.error(where, f"{what} file is missing: {name}")
+
+        for key, member in (data.get("performance") or {}).get("members", {}).items():
+            for clip in member["clips"]: need(entry["performance"], f"direction/{key}/{clip}.q48.br", "clip")
+        for member in (data.get("band") or {}).get("members", []):
+            need(entry["band"], f"band/{member['role']}/model.glb", "band model")
+        crowd = data.get("crowd") or {}
+        for model in crowd.get("models", []): need(entry["crowd"], f"crowd/{model}/model.glb", "crowd model")
+        for hand in crowd.get("hands", []): need(entry["crowd"], f"crowd/hands/{hand}/model.glb", "crowd hand model")
+        for clip in crowd.get("performanceClips", {}): need(entry["crowd"], f"crowd/clips/{clip}.q48.br", "clip")
+        for emitter in (data.get("handFire") or {}).get("emitters", []): need(entry["handFire"], f"hand-fire/{emitter['texture']}", "hand-fire texture")
+        for sample in (data.get("audio") or {}).get("samples", {}).values():
+            if "file" not in sample: self.report.error(entry["audio"], "each sample needs 'file'")
+            else: need(entry["audio"], sample["file"], "audio sample")
+        songs = data.get("songs")
+        if songs:
+            song_folder = entry["songs"].rsplit("/", 1)[0] + "/" if "/" in entry["songs"] else ""
+            for song in songs["songs"]: need(entry["songs"], song_folder + song["file"], "song direction")
+        for name, schema in EFFECT_SCHEMAS.items():
+            if name in self.source.set:
+                value = load_json(self.source, name, self.report)
+                if value is not None: check_schema(self.schemas, value, schema, name, self.report)
+        frames = {}
+        for name in self.source.names:
+            match = re.fullmatch(r"(movies/.+)/frames/(\d{6})\.png", name)
+            if match: frames.setdefault(match.group(1), set()).add(int(match.group(2)))
+        movies = set((data.get("scripts") or {}).get("movies", {}).values())
+        movies |= {name for name in self.source.names if name.startswith("movies/") and name.endswith("/movie.json")}
+        for name in sorted(movies):
+            if name not in self.source.set: continue
+            movie = load_json(self.source, name, self.report)
+            if movie is None or not check_schema(self.schemas, movie, "movie.schema.json", name, self.report): continue
+            folder = name.rsplit("/", 1)[0]
+            if frames.pop(folder, set()) != set(range(movie["frames"])): self.report.error(name, "frames/000000.png and onward must exist for each frame, without gaps or extra frames")
+        for folder in frames: self.report.error(folder, "movie frames without movie.json")
+        if songs:
+            for name in self.source.names:
+                if name.startswith(song_folder) and name.endswith(".json") and name != entry["songs"] and "/" not in name[len(song_folder):]:
+                    value = load_json(self.source, name, self.report)
+                    if value is not None: check_schema(self.schemas, value, "song.schema.json", name, self.report)
+
 
 def gh3_key(name):
     from pipeline.gh3.formats import key
@@ -565,8 +610,19 @@ def gh3_key(name):
 
 
 def load_profile(library, role):
-    """Profile rig from the current library folder: joint checksums, parents, and glTF-space local bind transforms."""
+    """Profile rig: joint checksums, parents, and glTF-space local bind transforms. `library` is a library package
+    (zip or unpacked folder; the rig comes from band/<role>/model.glb) or the current library folder."""
     library = Path(library)
+    if library.is_file() or (library/"manifest.json").is_file():
+        report = Report()
+        source = Source(library, report)
+        if report.errors or f"band/{role}/model.glb" not in source.set: raise ValueError(f"the library has no band/{role}/model.glb")
+        glb = Glb(source.read(f"band/{role}/model.glb"))
+        nodes = glb.list("nodes"); joints = glb.list("skins")[0]["joints"]; parents = glb.parents()
+        names = [nodes[j]["name"].removeprefix("bone-").lower() for j in joints]
+        local = [decompose(glb.node_matrix(nodes[j])) for j in joints]
+        return names, [joints.index(parents[j]) if parents.get(j) in joints else -1 for j in joints], \
+            np.array([t for t, _, _ in local]), np.array([r for _, r, _ in local])
     bones = json.loads((library / "direction" / "performance.json").read_text())["members"][role]["bones"]
     data = (library / "band" / role / "animation.bin").read_bytes()
     if data[:8] != b"GH3ANM01": raise ValueError("expected GH3ANM01")
@@ -586,7 +642,7 @@ def validate(path, library=None):
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="python -m pipeline.package.validate", description=__doc__.splitlines()[0])
     parser.add_argument("package", type=Path, nargs="+")
-    parser.add_argument("--library", type=Path, help="current library folder (assets/libraries/gh3-band-v1) for the character profile check")
+    parser.add_argument("--library", type=Path, help="library package (gh3-band-v1.chlib) or current library folder for the character profile check")
     parser.add_argument("--json", action="store_true", help="print one JSON report for each package")
     args = parser.parse_args(argv)
     failed = False

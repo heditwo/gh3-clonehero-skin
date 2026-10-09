@@ -212,6 +212,31 @@ def write_meshes(folder, meshes, materials, groups=None, skinned=False):
     return result
 
 
+def texture_reference(glb, reference, texture_dir, images):
+    """Compile a texture reference from material extras and return the runtime texture name ('' for none).
+
+    References are '#<GLB image name>' or a pack-relative PNG path (package format v1, section 6.6). Older packs use
+    glTF texture indices (-1 for none); they still compile. A named image keeps the runtime name of its texture index."""
+    if reference in ("", -1): return ""
+    textures = glb.data.get("textures", [])
+    if type(reference) == int:
+        if not 0 <= reference < len(textures): raise ValueError("Invalid material texture index")
+        index = reference
+    elif isinstance(reference, str) and reference.startswith("#"):
+        index = glb.named_texture(reference[1:])
+        if index is None: raise ValueError(f"No GLB image named {reference[1:]}")
+    elif isinstance(reference, str) and reference.lower().endswith(".png"):
+        name = f"{key('file-'+reference):08x}"
+        if name not in images:
+            images[name] = Image.open(relative(glb.root, reference)).convert("RGBA"); images[name].save(texture_dir/(name+".png"))
+        return name
+    else: raise ValueError("Invalid material texture reference")
+    name = f"{key('texture-'+str(index)):08x}"
+    if name not in images:
+        images[name] = glb.image(index); images[name].save(texture_dir/(name+".png"))
+    return name
+
+
 def gh3_shader_material(glb, data, texture_dir, images):
     """Validate a GH3 template material: its template checksum, constant banks, sampler textures, and render state."""
     fields(data, {"template", "vertexConstants", "pixelConstants", "textures", "addressing", "flags", "blend", "alphaRef", "drawOrder"},
@@ -225,14 +250,7 @@ def gh3_shader_material(glb, data, texture_dir, images):
     textures = data["textures"]; addressing = data["addressing"]
     if not isinstance(textures, list) or len(textures) > 16 or not isinstance(addressing, list) or len(addressing) != len(textures):
         raise ValueError("Invalid GH3 sampler list")
-    names = []
-    for index in textures:
-        if type(index) != int or not -1 <= index < len(glb.data.get("textures", [])): raise ValueError("Invalid GH3 sampler texture")
-        if index < 0: names.append(""); continue
-        image = f"{key('texture-'+str(index)):08x}"
-        if image not in images:
-            images[image] = glb.image(index); images[image].save(texture_dir/(image+".png"))
-        names.append(image)
+    names = [texture_reference(glb, reference, texture_dir, images) for reference in textures]
     if any(type(v) != int or not 0 <= v <= 255 for v in addressing): raise ValueError("Invalid GH3 sampler addressing")
     for field, maximum in (("flags", 0xFFFFFFFF), ("blend", 12), ("alphaRef", 255)):
         if type(data[field]) != int or not 0 <= data[field] <= maximum: raise ValueError(f"Invalid GH3 render state: {field}")
@@ -289,11 +307,8 @@ def import_materials(glb, folder):
             materials[name]["animation"] = animation
         for field, extra in (("mask", "gh3MaskTexture"), ("layer", "gh3LayerTexture")):
             if extra not in extras: continue
-            index = extras[extra]
-            if type(index) != int or not 0 <= index < len(glb.data.get("textures", [])): raise ValueError("Invalid material layer texture")
-            image = f"{key('texture-'+str(index)):08x}"
-            if image not in images:
-                images[image] = glb.image(index); images[image].save(texture_dir/(image+".png"))
+            image = texture_reference(glb, extras[extra], texture_dir, images)
+            if not image: raise ValueError("Invalid material layer texture")
             materials[name][field] = image
         if "layer" in materials[name]:
             materials[name]["layerColor"] = [float(number(v, 0, 1000)) for v in vector(extras.get("gh3LayerColor"), 4)]
@@ -357,7 +372,7 @@ def compile_stage(source, destination):
     if "lighting" in manifest:
         inputs.append(relative(source, manifest["lighting"])); lighting = compile_lighting(load_json(inputs[-1]))
     else: lighting = compile_lighting(basic_lighting())
-    glb = GlbReader(inputs[1])
+    glb = GlbReader(inputs[1], root=source)
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".stage-import-", dir=destination.parent) as temporary:
         folder = Path(temporary)
@@ -498,7 +513,7 @@ def compile_stage(source, destination):
             transform(actor["transform"])
             model = relative(source, actor["model"]); inputs.append(model)
             id = f"{key(name):08x}"
-            clips = compile_actor(model, folder/"actors"/id, import_materials, write_meshes, split_mesh)
+            clips = compile_actor(model, folder/"actors"/id, import_materials, write_meshes, split_mesh, root=source)
             clip = actor.get("clip", clips[0])
             if clip not in clips: raise ValueError(f"Actor {name} has no clip {clip}")
             playback = actor.get("playback", "loop")
@@ -528,7 +543,7 @@ def compile_stage(source, destination):
         pack = {"version": 1, "id": manifest["id"], "name": manifest["name"], "library": manifest["library"],
                 "band": manifest["band"], "waypoints": waypoints, "effects": effects, "crowd": crowd,
                 "sources": {str(p.relative_to(source)): sha256(p.read_bytes()).hexdigest() for p in inputs}}
-        pack["files"] = {str(p.relative_to(folder)): sha256(p.read_bytes()).hexdigest() for p in folder.rglob("*") if p.is_file()}
+        pack["files"] = {str(p.relative_to(folder)): sha256(p.read_bytes()).hexdigest() for p in sorted(folder.rglob("*")) if p.is_file()}
         write_json(folder/"pack.json", pack)
         if destination.exists():
             if not (destination/"pack.json").is_file(): raise ValueError("Destination is not a compiled stage pack")

@@ -81,14 +81,26 @@ class GlbWriter:
         self.data["accessors"].append(row)
         return index
 
-    def texture(self, image):
-        raw = BytesIO(); image.save(raw, format="PNG"); blob = raw.getvalue()
+    def texture(self, image, name=None):
+        """Embed a PIL image or PNG bytes once and return its texture index. Images get unique names so that extras can
+        refer to them as '#<name>' (package format v1, section 6.6); equal images keep the first name."""
+        if isinstance(image, (bytes, bytearray)): blob = bytes(image)
+        else: raw = BytesIO(); image.save(raw, format="PNG"); blob = raw.getvalue()
         if blob not in self.textures:
             i = len(self.data["images"])
-            self.data["images"].append({"bufferView": self.view(blob), "mimeType": "image/png"})
+            names = {row.get("name") for row in self.data["images"]}
+            base = unique = name or f"image-{i}"
+            suffix = 0
+            while unique in names:
+                suffix += 1; unique = f"{base}-{suffix}"
+            self.data["images"].append({"bufferView": self.view(blob), "mimeType": "image/png", "name": unique})
             self.data["textures"].append({"source": i})
             self.textures[blob] = i
         return self.textures[blob]
+
+    def reference(self, image, name):
+        """Texture reference for extras: '#<image name>' of the embedded image."""
+        return "#" + self.data["images"][self.texture(image, name)]["name"]
 
     def material(self, name, definition, textures, layered=True, streams=None):
         if name in self.materials: return self.materials[name]
@@ -96,13 +108,13 @@ class GlbWriter:
         row = {"name": name, "pbrMetallicRoughness": {"metallicFactor": 0, "roughnessFactor": 1}, "doubleSided": definition.get("doubleSided", True)}
         texture = definition.get("texture", "")
         if texture:
-            row["pbrMetallicRoughness"]["baseColorTexture"] = {"index": self.texture(textures[texture])}
+            row["pbrMetallicRoughness"]["baseColorTexture"] = {"index": self.texture(textures[texture], texture)}
         color = [float(v) for v in definition.get("color") or [1, 1, 1, 1]]
         scale = max(1.0, *color[:3])
         if color != [1, 1, 1, 1]:
             row["pbrMetallicRoughness"]["baseColorFactor"] = [v/scale for v in color[:3]] + [min(1.0, color[3])]
         if definition.get("lightmap"):
-            row["occlusionTexture"] = {"index": self.texture(textures[definition["lightmap"]]), "texCoord": 1}
+            row["occlusionTexture"] = {"index": self.texture(textures[definition["lightmap"]], definition["lightmap"]), "texCoord": 1}
         blend = definition.get("blend", 0)
         # GH3 applies the material alpha test (+232) to opaque and blended materials alike.
         cutoff = definition.get("cutoff", 0) if not definition.get("crowd") else 0
@@ -110,9 +122,9 @@ class GlbWriter:
         if row["alphaMode"] == "MASK": row["alphaCutoff"] = cutoff
         extras = {}
         if blend and cutoff: extras["gh3AlphaCutoff"] = cutoff
-        if layered and definition.get("mask"): extras["gh3MaskTexture"] = self.texture(textures[definition["mask"]])
+        if layered and definition.get("mask"): extras["gh3MaskTexture"] = self.reference(textures[definition["mask"]], definition["mask"])
         if layered and definition.get("layer"):
-            extras["gh3LayerTexture"] = self.texture(textures[definition["layer"]["texture"]])
+            extras["gh3LayerTexture"] = self.reference(textures[definition["layer"]["texture"]], definition["layer"]["texture"])
             extras["gh3LayerColor"] = [float(v) for v in definition["layer"]["color"]]
         if definition.get("uvWibble"): extras["gh3UvWibble"] = [float(v) for v in definition["uvWibble"]]
         if definition.get("sourceMaterial"): extras["gh3SourceMaterial"] = definition["sourceMaterial"]
@@ -128,7 +140,7 @@ class GlbWriter:
         if (layered if streams is None else streams) and gh3:
             # GH3 template, constant banks, samplers, and render state; the stage shader runs the template's own shaders.
             extras["gh3Shader"] = {**{k: gh3[k] for k in ("template", "vertexConstants", "pixelConstants", "addressing", "flags", "blend", "alphaRef", "drawOrder")},
-                                   "textures": [self.texture(textures[t]) if t in textures else -1 for t in gh3["textures"]]}
+                                   "textures": [self.reference(textures[t], t) if t in textures else "" for t in gh3["textures"]]}
         if extras: row["extras"] = extras
         index = len(self.data["materials"])
         self.data["materials"].append(row); self.materials[name] = index
@@ -211,17 +223,22 @@ class GlbWriter:
                     track["channels"].append({"sampler": sampler, "target": {"node": nodes[i], "path": path}})
             self.data["animations"].append(track)
 
-    def save(self, path):
+    def to_bytes(self):
         self.binary.extend(b"\0" * (-len(self.binary) % 4))
         self.data["buffers"] = [{"byteLength": len(self.binary)}]
         header = json.dumps(self.data, separators=(",", ":"), allow_nan=False).encode()
         header += b" " * (-len(header) % 4)
-        Path(path).write_bytes(struct.pack("<5I", 0x46546c67, 2, 28+len(header)+len(self.binary), len(header), 0x4e4f534a) +
-                               header + struct.pack("<2I", len(self.binary), 0x004e4942) + self.binary)
+        return (struct.pack("<5I", 0x46546c67, 2, 28+len(header)+len(self.binary), len(header), 0x4e4f534a) +
+                header + struct.pack("<2I", len(self.binary), 0x004e4942) + self.binary)
+
+    def save(self, path):
+        Path(path).write_bytes(self.to_bytes())
 
 
 class GlbReader:
-    def __init__(self, path):
+    def __init__(self, path, root=None):
+        # Package paths in texture references are relative to the pack root.
+        self.root = Path(root) if root is not None else Path(path).parent
         data = Path(path).read_bytes()
         if len(data) < 28 or struct.unpack_from("<3I", data) != (0x46546c67, 2, len(data)):
             raise ValueError("Expected a glTF 2.0 GLB")
@@ -255,6 +272,12 @@ class GlbReader:
             output = np.maximum(-1, output.astype(float) / np.iinfo(dtype).max)
         if not np.isfinite(output).all(): raise ValueError("Non-finite glTF accessor")
         return output
+
+    def named_texture(self, name):
+        """Index of the first texture whose image has this name, or None."""
+        images = self.data.get("images", [])
+        return next((i for i, texture in enumerate(self.data.get("textures", []))
+                     if 0 <= texture.get("source", -1) < len(images) and images[texture["source"]].get("name") == name), None)
 
     def image(self, texture):
         row = self.data["images"][self.data["textures"][texture]["source"]]

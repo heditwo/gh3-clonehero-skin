@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.gh3skin.invalid/v1/catalog.schema.json",
+  "title": "Library catalog (catalog.json)",
+  "description": "For each band role: rig bones, action groups, layers, and clips. Clip files: direction/<role>/<clip>.q48.br.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "library",
+    "members"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "library": {
+      "$ref": "common.schema.json#/$defs/packageId"
+    },
+    "members": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "guitarist": {
+          "$ref": "library-common.schema.json#/$defs/member"
+        },
+        "bassist": {
+          "$ref": "library-common.schema.json#/$defs/member"
+        },
+        "singer": {
+          "$ref": "library-common.schema.json#/$defs/member"
+        },
+        "drummer": {
+          "$ref": "library-common.schema.json#/$defs/member"
+        }
+      }
+    }
+  }
+}

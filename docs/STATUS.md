@@ -55,7 +55,7 @@ Version **0.9.8**. Clone Hero `v1.1.0.6142-final` with MelonLoader 0.7.3, Linux 
 ### Delivery
 
 - One complete ten-venue run on one build with exit 0 for all venues.
-- See [PACKAGING-PLAN.md](PACKAGING-PLAN.md) for the release package plan. Package format v1 is frozen ([PACKAGE-FORMAT.md](PACKAGE-FORMAT.md)); the conversion of the ten venues and the library is next.
+- See [PACKAGING-PLAN.md](PACKAGING-PLAN.md) for the release package plan. Package format v1 is frozen ([PACKAGE-FORMAT.md](PACKAGE-FORMAT.md)). The `packages` step of `scripts/regenerate.sh` writes the ten venues and the library as packages (`assets/packages/`); the mod does not read them yet. The C# importer is next.
 
 ## Stability
 

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.gh3skin.invalid/v1/tesla-material.schema.json",
+  "title": "Tesla material (effects/tesla-material.json)",
+  "description": "The GH3 Tesla coil material and its noise texture effects/tesla-noise.png.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "material",
+    "shader",
+    "texture",
+    "sourceSha256",
+    "imageSha256",
+    "size"
+  ],
+  "properties": {
+    "material": {
+      "$ref": "library-common.schema.json#/$defs/checksum"
+    },
+    "shader": {
+      "$ref": "library-common.schema.json#/$defs/checksum"
+    },
+    "texture": {
+      "$ref": "library-common.schema.json#/$defs/checksum"
+    },
+    "sourceSha256": {
+      "$ref": "library-common.schema.json#/$defs/hex64"
+    },
+    "imageSha256": {
+      "$ref": "library-common.schema.json#/$defs/hex64"
+    },
+    "size": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 4096
+      }
+    }
+  }
+}

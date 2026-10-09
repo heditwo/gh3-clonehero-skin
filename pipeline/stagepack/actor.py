@@ -20,8 +20,8 @@ from pipeline.stagepack.gltf import (
 SKIN_VERTEX = np.dtype(VERTEX.descr + [("joints", "u1", 4), ("weights", "<f4", 4)])
 
 
-def compile_actor(path, folder, material_import, mesh_write, mesh_split):
-    glb = GlbReader(path)
+def compile_actor(path, folder, material_import, mesh_write, mesh_split, root=None):
+    glb = GlbReader(path, root)
     nodes = list(glb.nodes())
     if len(glb.data.get("skins", [])) != 1: raise ValueError("An actor GLB needs one skin")
     skin = glb.data["skins"][0]

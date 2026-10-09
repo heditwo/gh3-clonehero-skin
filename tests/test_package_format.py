@@ -337,7 +337,11 @@ class ClipTests(unittest.TestCase):
             self.skipTest("brotli is not installed")
         positions, rotations, tracks = self.clip()
         clip = brotli.compress(q48.encode(positions, rotations, tracks, 8, 1.0), quality=11)
-        files = {"catalog.json": b"{}", "band/band.json": b"{}", "direction/performance.json": b"{}", "direction/drummer/0000696c.q48.br": clip,
+        member = {"bones": ["00000001"] * 8, "groups": {}, "layers": {}, "clips": {"0000696c": {"duration": 1.0, "frames": 31, "rootDistance": 0}}}
+        catalog = {"version": 1, "library": "gh3-band-v1", "members": {"drummer": member}}
+        performance = {"version": 1, "members": {"drummer": member}, "constants": {}}
+        files = {"catalog.json": json.dumps(catalog).encode(), "band/band.json": json.dumps({"version": 1, "members": []}).encode(),
+                 "direction/performance.json": json.dumps(performance).encode(), "direction/drummer/0000696c.q48.br": clip,
                  "direction/drummer/broken.q48.br": brotli.compress(b"GH3CLQ01")}
         with tempfile.TemporaryDirectory() as folder:
             entry = {"catalog": "catalog.json", "band": "band/band.json", "performance": "direction/performance.json"}

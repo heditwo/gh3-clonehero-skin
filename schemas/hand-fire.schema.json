@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.gh3skin.invalid/v1/hand-fire.schema.json",
+  "title": "Hand fire (hand-fire/hand-fire.json)",
+  "description": "Particle emitters on the hand bones of a player streak.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "bones",
+    "emitters"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "bones": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "$ref": "library-common.schema.json#/$defs/checksum"
+      }
+    },
+    "emitters": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "texture",
+          "textureId",
+          "scriptSha256",
+          "imageSha256",
+          "rate",
+          "life",
+          "speed",
+          "size",
+          "spread",
+          "range",
+          "force",
+          "direction",
+          "follow",
+          "color",
+          "colors",
+          "atlas",
+          "fps"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "common.schema.json#/$defs/name"
+          },
+          "texture": {
+            "description": "PNG file in the hand-fire/ folder.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]*\\.png$"
+          },
+          "textureId": {
+            "$ref": "library-common.schema.json#/$defs/checksum"
+          },
+          "scriptSha256": {
+            "$ref": "library-common.schema.json#/$defs/hex64"
+          },
+          "imageSha256": {
+            "$ref": "library-common.schema.json#/$defs/hex64"
+          },
+          "rate": {
+            "type": "number",
+            "minimum": 0
+          },
+          "life": {
+            "$ref": "common.schema.json#/$defs/vec2"
+          },
+          "speed": {
+            "$ref": "common.schema.json#/$defs/vec2"
+          },
+          "size": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "$ref": "common.schema.json#/$defs/vec2"
+            }
+          },
+          "spread": {
+            "type": "number"
+          },
+          "range": {
+            "$ref": "common.schema.json#/$defs/vec3"
+          },
+          "force": {
+            "$ref": "common.schema.json#/$defs/vec3"
+          },
+          "direction": {
+            "$ref": "common.schema.json#/$defs/vec3"
+          },
+          "follow": {
+            "type": "number"
+          },
+          "color": {
+            "$ref": "common.schema.json#/$defs/vec4"
+          },
+          "colors": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "$ref": "common.schema.json#/$defs/vec4"
+            }
+          },
+          "atlas": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 16
+          },
+          "fps": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}

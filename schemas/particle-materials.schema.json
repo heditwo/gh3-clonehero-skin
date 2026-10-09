@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.gh3skin.invalid/v1/particle-materials.schema.json",
+  "title": "Particle material table (effects/particle-materials.json)",
+  "description": "GH3 particle material slots: sort order and flags. The shaders come with the mod installation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "lit",
+    "unlit"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "lit": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "sortId",
+          "flags"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "common.schema.json#/$defs/name"
+          },
+          "sortId": {
+            "type": "integer"
+          },
+          "flags": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "unlit": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "sortId",
+          "flags"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "common.schema.json#/$defs/name"
+          },
+          "sortId": {
+            "type": "integer"
+          },
+          "flags": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}

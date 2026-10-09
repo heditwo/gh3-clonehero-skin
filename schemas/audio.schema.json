@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.gh3skin.invalid/v1/audio.schema.json",
+  "title": "Stage audio (audio/audio.json)",
+  "description": "Sound definitions, samples, count-offs, and crowd audio constants.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "definitions",
+    "samples"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "definitions": {
+      "description": "GH3 sound definitions as typed QB values (as in scripts.json).",
+      "type": "object",
+      "maxProperties": 50000,
+      "propertyNames": {
+        "$ref": "library-common.schema.json#/$defs/checksum"
+      },
+      "additionalProperties": {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          },
+          true
+        ],
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+    "samples": {
+      "description": "Sample checksum to its format and loop points (sample frames of the decoded audio).",
+      "type": "object",
+      "maxProperties": 10000,
+      "propertyNames": {
+        "$ref": "library-common.schema.json#/$defs/checksum"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "rate",
+          "channels",
+          "frames",
+          "loopStart",
+          "loopEnd",
+          "loop",
+          "file"
+        ],
+        "properties": {
+          "rate": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 192000
+          },
+          "channels": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2
+          },
+          "frames": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "loopStart": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "loopEnd": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "loop": {
+            "type": "boolean"
+          },
+          "file": {
+            "description": "Package path of the sample: WAV (16-bit PCM), Ogg Vorbis, or MP3.",
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/path"
+              },
+              {
+                "pattern": "\\.(wav|ogg|mp3)$"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "countoffs": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "library-common.schema.json#/$defs/checksum"
+      },
+      "additionalProperties": {
+        "$ref": "common.schema.json#/$defs/name"
+      }
+    },
+    "constants": {
+      "$ref": "library-common.schema.json#/$defs/constants"
+    },
+    "sources": {
+      "$ref": "library-common.schema.json#/$defs/sources"
+    }
+  }
+}

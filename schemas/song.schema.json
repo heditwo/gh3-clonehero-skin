@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.gh3skin.invalid/v1/song.schema.json",
+  "title": "Original song direction (songs/<song>.json)",
+  "description": "Direction events of one original GH3 song in the stage-events.json version 1 layout.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "events"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "offsetSeconds": {
+      "type": "number"
+    },
+    "sourceSong": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "sourceSha256": {
+      "$ref": "library-common.schema.json#/$defs/hex64"
+    },
+    "events": {
+      "type": "array",
+      "maxItems": 1000000,
+      "items": {
+        "description": "Direction event (stage-events.json version 1).",
+        "type": "object",
+        "required": [
+          "time",
+          "type"
+        ],
+        "properties": {
+          "time": {
+            "type": "number",
+            "minimum": 0
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
+      }
+    },
+    "playback": {
+      "description": "Pipeline record of the GH3 script commands. The importer ignores it.",
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  }
+}

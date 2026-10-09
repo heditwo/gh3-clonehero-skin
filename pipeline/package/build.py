@@ -1,0 +1,318 @@
+"""Convert the current source packs and the shared library into package format v1 (docs/PACKAGE-FORMAT.md).
+
+Each package is written two times: as an unpacked development folder (`<output>/unpacked/<name>`) and as a zip
+(`<output>/<name>`). The output is reproducible: sorted zip entries, fixed times and attributes, and stable JSON.
+
+Usage: python -m pipeline.package.build [--packs DIR] [--library DIR] [--events DIR] [--output DIR]
+                                        [--venue ID ...] [--no-venues] [--no-library] [--jobs N]
+"""
+
+import argparse
+import gzip
+import hashlib
+import json
+import os
+import shutil
+import zipfile
+from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
+
+import numpy as np
+
+from pipeline.package import decisions, q48, runtime
+from pipeline.package.glb import Glb
+from pipeline.paths import LIBRARY, STAGE_PACKS, STAGES
+from pipeline.stagepack.gltf import GlbWriter
+
+OUTPUT = STAGE_PACKS.parent/"packages"
+EVENTS = STAGES/"events"
+ZIP_TIME = (1980, 1, 1, 0, 0, 0)
+BROTLI_QUALITY = 11
+BROTLI_WINDOW = 24
+# Increment when the clip encoder output changes, so that the clip cache is not reused.
+CLIP_ENCODER = "q48-1"
+PLACEMENT_FIELDS = ("band", "waypoints", "effects", "crowd")
+LIBRARY_ENTRY = {"catalog": "catalog.json", "band": "band/band.json", "performance": "direction/performance.json",
+                 "hair": "band/hair.json", "crowd": "crowd/crowd.json", "handFire": "hand-fire/hand-fire.json",
+                 "audio": "audio/audio.json", "scripts": "scripts.json", "songs": "songs/index.json"}
+EFFECT_FILES = {"render/particle-materials.json": "effects/particle-materials.json",
+                "render/tesla-material.json": "effects/tesla-material.json", "render/tesla-noise.png": "effects/tesla-noise.png"}
+
+
+def json_bytes(value):
+    return (json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + "\n").encode()
+
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(1 << 20), b""): digest.update(block)
+    return digest.hexdigest()
+
+
+class PackageWriter:
+    """Collects the files of one package in a staging folder and writes the manifest."""
+
+    def __init__(self, folder):
+        self.folder = Path(folder)
+        if self.folder.exists(): shutil.rmtree(self.folder)
+        self.folder.mkdir(parents=True)
+        self.paths = set()
+
+    def target(self, name):
+        if name in self.paths or name == "manifest.json": raise ValueError(f"Package file written two times: {name}")
+        self.paths.add(name)
+        path = self.folder/name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def add_bytes(self, name, data):
+        self.target(name).write_bytes(data)
+
+    def add_json(self, name, value):
+        self.add_bytes(name, json_bytes(value))
+
+    def add_file(self, name, source):
+        shutil.copyfile(source, self.target(name))
+
+    def finish(self, manifest):
+        files = {name: {"sha256": sha256_file(self.folder/name), "size": (self.folder/name).stat().st_size} for name in sorted(self.paths)}
+        manifest = {**manifest, "files": files}
+        (self.folder/"manifest.json").write_bytes(json_bytes(manifest))
+        return manifest
+
+
+def write_zip(folder, target):
+    """Zip a package folder reproducibly: manifest.json first, then sorted paths, fixed time and attributes."""
+    folder = Path(folder)
+    names = sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*") if p.is_file())
+    names = ["manifest.json", *(name for name in names if name != "manifest.json")]
+    temporary = target.with_name("." + target.name + ".tmp")
+    with zipfile.ZipFile(temporary, "w", allowZip64=True) as archive:
+        for name in names:
+            info = zipfile.ZipInfo(name, ZIP_TIME)
+            info.create_system = 3
+            info.external_attr = 0o100644 << 16
+            info.compress_type = decisions.zip_method(name)
+            # ZipFile.open does not apply the archive level to a given ZipInfo (3.13 keeps _compresslevel as an alias).
+            info._compresslevel = decisions.DEFLATE_LEVEL
+            info.file_size = (folder/name).stat().st_size
+            with open(folder/name, "rb") as source, archive.open(info, "w") as destination:
+                shutil.copyfileobj(source, destination, 1 << 20)
+    os.replace(temporary, target)
+
+
+def publish(writer, output, name):
+    """Move a finished staging folder to <output>/unpacked/<name> and write the zip <output>/<name>."""
+    folder = output/"unpacked"/name
+    if folder.exists(): shutil.rmtree(folder)
+    writer.folder.rename(folder)
+    write_zip(folder, output/name)
+    return folder, output/name
+
+
+def texture_index_references(glb_bytes):
+    """Material extras that still use glTF texture indices (not permitted in format v1)."""
+    found = 0
+    for material in Glb(glb_bytes).list("materials"):
+        extras = material.get("extras", {})
+        shader = extras.get("gh3Shader", {})
+        found += sum(isinstance(ref, int) for ref in [extras.get("gh3MaskTexture"), extras.get("gh3LayerTexture"), *shader.get("textures", [])])
+    return found
+
+
+# Venues.
+def venue_manifest(stage, entry):
+    gh3 = stage["id"].startswith("gh3.")
+    manifest = {"format": "chstage/1.0", "id": stage["id"], "version": decisions.PACKAGE_VERSION, "name": stage["name"],
+                "authors": decisions.GH3_VENUE_AUTHORS if gh3 else decisions.EXAMPLE_AUTHORS,
+                "license": decisions.GH3_LICENSE if gh3 else decisions.EXAMPLE_LICENSE,
+                "permissions": decisions.GH3_PERMISSIONS if gh3 else decisions.EXAMPLE_PERMISSIONS}
+    if gh3: manifest["credits"] = [decisions.CONVERTER_CREDIT]
+    manifest["requires"] = [{"id": stage["library"], "version": decisions.LIBRARY_VERSION}]
+    manifest["entry"] = entry
+    return manifest
+
+
+def build_venue(source, output):
+    source = Path(source)
+    stage = json.loads((source/"stage-pack.json").read_text())
+    name = stage["id"] + ".chstage"
+    writer = PackageWriter(output/"unpacked"/("." + name + ".tmp"))
+    entry = {"model": stage["model"], "placements": "placements.json", "cameras": stage["cameras"]}
+    models = [stage["model"], *(actor["model"] for actor in stage.get("actors", {}).values())]
+    for model in models:
+        data = (source/model).read_bytes()
+        if texture_index_references(data): raise ValueError(f"{source/model} uses glTF texture indices in extras; export the source pack again")
+        writer.add_bytes(model, data)
+    writer.add_file(stage["cameras"], source/stage["cameras"])
+    for key in ("lighting", "scripts"):
+        if key in stage:
+            entry[key] = stage[key]
+            writer.add_file(stage[key], source/stage[key])
+    writer.add_json("placements.json", {"version": 1, **{key: stage[key] for key in PLACEMENT_FIELDS if key in stage}})
+    if "actors" in stage:
+        entry["actors"] = "actors.json"
+        writer.add_json("actors.json", {"version": 1, "actors": stage["actors"]})
+    if "scripts" in stage:
+        scripts = json.loads((source/stage["scripts"]).read_text())
+        for file in sorted({*scripts.get("textures", {}).values(), *scripts.get("movies", {}).values()}):
+            writer.add_file(file, source/file)
+    entry = {key: entry[key] for key in ("model", "placements", "cameras", "lighting", "scripts", "actors") if key in entry}
+    writer.finish(venue_manifest(stage, entry))
+    return publish(writer, output, name)
+
+
+# Library.
+def skinned_model(folder, bones, clip_names=(), rig=None, name=None):
+    """GLB bytes of one compiled GH3BND02 model with its GH3ANM01 rig and sampled clips (Unity space to glTF)."""
+    parts = runtime.read_meshes((folder/"meshes.bin").read_bytes())
+    if any(not len(faces) for _, _, _, faces in parts): raise ValueError(f"{folder}: a mesh part has no triangles")
+    materials = json.loads((folder/"stage.json").read_text())["materials"]
+    textures = {p.stem: p.read_bytes() for p in sorted((folder/"textures").glob("*.png"))}
+    parents, bind, clips = rig or runtime.read_animation((folder/"animation.bin").read_bytes())
+    if len(bones) != len(parents): raise ValueError(f"{folder}: bone names differ from the rig")
+    # GlbWriter.actor takes GH3-space positions (z negated from Unity) and rotations whose conjugate is the glTF rotation.
+    flip_position, flip_rotation = np.array([1, 1, -1]), np.array([1, 1, -1, 1])
+    gh3_rig = ([int(b, 16) for b in bones], parents, bind[:, :3].astype(np.float64) * flip_position, bind[:, 3:].astype(np.float64) * flip_rotation)
+    if len(clip_names) != len(clips): raise ValueError(f"{folder}: clip names differ from the clips")
+    tracks = [(clip_name, float(duration), poses[..., :3].astype(np.float64) * flip_position, poses[..., 3:].astype(np.float64) * flip_rotation)
+              for clip_name, (duration, poses) in zip(clip_names, clips)]
+    writer = GlbWriter()
+    writer.data["asset"]["generator"] = "GH3 Gameplay Skin package converter"
+    writer.actor([(m, c, v, f.tolist()) for m, c, v, f in parts], materials, textures, gh3_rig, tracks)
+    # Keep the materials that no mesh part uses, so that the package holds the whole stage.json.
+    for material, definition in materials.items(): writer.material(material, definition, textures, layered=False, streams=True)
+    if name: next(node for node in writer.data["nodes"] if "mesh" in node)["name"] = name
+    return bytes(writer.to_bytes())
+
+
+def encode_clip(job):
+    """Encode one GH3CLP01 clip as q48 + Brotli; reuse the cache entry of the same source bytes."""
+    import brotli
+    source, target, cache = job
+    data = Path(source).read_bytes()
+    cached = Path(cache)/f"{hashlib.sha256(data + CLIP_ENCODER.encode()).hexdigest()}.q48.br"
+    if cached.is_file():
+        shutil.copyfile(cached, target)
+        return Path(source).stat().st_size, cached.stat().st_size
+    bones, duration, tracks, poses = runtime.read_clip(gzip.decompress(data))
+    raw = q48.encode(poses[..., :3], poses[..., 3:], tracks, bones, duration)
+    compressed = brotli.compress(raw, quality=BROTLI_QUALITY, lgwin=BROTLI_WINDOW)
+    cached.parent.mkdir(parents=True, exist_ok=True)
+    temporary = cached.with_name(cached.name + f".{os.getpid()}.tmp")
+    temporary.write_bytes(compressed); os.replace(temporary, cached)
+    Path(target).write_bytes(compressed)
+    return len(data), len(compressed)
+
+
+def library_manifest(entry):
+    return {"format": "chlib/1.0", "id": "gh3-band-v1", "version": decisions.LIBRARY_VERSION, "name": "GH3 band library",
+            "description": "The GH3 band, crowd, animation clips, stage sounds, Video Shoot movies, particle textures, and original song direction.",
+            "authors": decisions.GH3_LIBRARY_AUTHORS, "license": decisions.GH3_LICENSE, "permissions": decisions.GH3_PERMISSIONS,
+            "credits": [decisions.CONVERTER_CREDIT], "entry": entry}
+
+
+def build_library(library, events, output, jobs=2):
+    if decisions.AUDIO_FORMAT != "wav" or decisions.MOVIE_FORMAT != "png-frames":
+        raise ValueError("Only WAV audio and PNG movie frames are implemented")
+    library = Path(library)
+    name = "gh3-band-v1" + decisions.LIBRARY_EXTENSION
+    writer = PackageWriter(output/"unpacked"/("." + name + ".tmp"))
+    for path in ("catalog.json", "band/band.json", "band/hair.json", "direction/performance.json", "crowd/crowd.json", "hand-fire/hand-fire.json"):
+        writer.add_file(path, library/path)
+    for path in sorted((library/"hand-fire").glob("*.png")): writer.add_file(f"hand-fire/{path.name}", path)
+    for path in sorted((library/"particle-textures").glob("*.png")): writer.add_file(f"particle-textures/{path.name}", path)
+    for path, target in EFFECT_FILES.items(): writer.add_file(target, library/path)
+
+    scripts = json.loads((library/"scripts.json").read_text())
+    for movie, path in sorted(scripts.get("movies", {}).items()):
+        width, height, rate, frames = runtime.read_movie((library/path).read_bytes())
+        folder = f"movies/{Path(path).stem}"
+        writer.add_json(f"{folder}/movie.json", {"version": 1, "width": width, "height": height, "frames": len(frames), "rate": rate})
+        for index, frame in enumerate(frames): writer.add_bytes(f"{folder}/frames/{index:06d}.png", frame)
+        scripts["movies"][movie] = f"{folder}/movie.json"
+    writer.add_json("scripts.json", scripts)
+
+    audio = json.loads((library/"audio/audio.json").read_text())
+    for sample, row in audio["samples"].items():
+        pcm = gzip.decompress((library/"audio"/f"{sample}.pcm.gz").read_bytes())
+        if len(pcm) != row["frames"] * row["channels"] * 2: raise ValueError(f"Audio sample {sample} differs from audio.json")
+        writer.add_bytes(f"audio/{sample}.wav", runtime.wav_from_pcm(pcm, row["rate"], row["channels"]))
+        row["file"] = f"audio/{sample}.wav"
+    writer.add_json("audio/audio.json", audio)
+
+    performance = json.loads((library/"direction/performance.json").read_text())
+    for member in json.loads((library/"band/band.json").read_text())["members"]:
+        role = member["role"]
+        writer.add_bytes(f"band/{role}/model.glb", skinned_model(library/"band"/role, performance["members"][role]["bones"], member["clips"], name=member["model"]))
+    crowd = json.loads((library/"crowd/crowd.json").read_text())
+    crowd_rig = None
+    for model in crowd["models"]:
+        rig = runtime.read_animation((library/"crowd"/model/"animation.bin").read_bytes())
+        if crowd_rig is None: crowd_rig = rig
+        elif rig[0] != crowd_rig[0] or not np.array_equal(rig[1], crowd_rig[1]): raise ValueError("Crowd models use different rigs")
+        writer.add_bytes(f"crowd/{model}/model.glb", skinned_model(library/"crowd"/model, crowd["bones"], crowd["clips"][model], rig, name=model))
+    for hand in crowd["hands"]:
+        writer.add_bytes(f"crowd/hands/{hand}/model.glb", skinned_model(library/"crowd/hands"/hand, crowd["bones"], (), (crowd_rig[0], crowd_rig[1], []), name=hand))
+
+    jobs_list = []
+    for role, member in performance["members"].items():
+        for clip in sorted(member["clips"]): jobs_list.append((library/"direction"/role/f"{clip}.bin.gz", f"direction/{role}/{clip}.q48.br"))
+    for clip in sorted(crowd["performanceClips"]): jobs_list.append((library/"crowd/clips"/f"{clip}.bin.gz", f"crowd/clips/{clip}.q48.br"))
+    cache = output/".clip-cache"
+    tasks = [(str(source), str(writer.target(target)), str(cache)) for source, target in jobs_list]
+    with ProcessPoolExecutor(max_workers=max(1, jobs)) as pool:
+        sizes = list(pool.map(encode_clip, tasks, chunksize=8))
+
+    events = Path(events)
+    for path in sorted(events.glob("*.json")):
+        if path.name != "export-report.json": writer.add_file(f"songs/{path.name}", path)
+    writer.finish(library_manifest(LIBRARY_ENTRY))
+    return publish(writer, output, name), sizes
+
+
+def tree_size(folder):
+    return sum(p.stat().st_size for p in Path(folder).rglob("*") if p.is_file())
+
+
+def part_sizes(folder):
+    """Bytes for each top-level part of an unpacked package."""
+    sizes = {}
+    for path in Path(folder).rglob("*"):
+        if path.is_file():
+            relative = path.relative_to(folder)
+            part = relative.parts[0] if len(relative.parts) > 1 else relative.name
+            sizes[part] = sizes.get(part, 0) + path.stat().st_size
+    return dict(sorted(sizes.items()))
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog="python -m pipeline.package.build", description=__doc__.splitlines()[0])
+    parser.add_argument("--packs", type=Path, default=STAGE_PACKS)
+    parser.add_argument("--library", type=Path, default=LIBRARY)
+    parser.add_argument("--events", type=Path, default=EVENTS)
+    parser.add_argument("--output", type=Path, default=OUTPUT)
+    parser.add_argument("--venue", action="append", help="Convert only this source pack ID (repeatable)")
+    parser.add_argument("--no-venues", action="store_true")
+    parser.add_argument("--no-library", action="store_true")
+    parser.add_argument("--jobs", type=int, default=2, help="Clip encoder processes (each uses about 0.1 GB)")
+    args = parser.parse_args(argv)
+    (args.output/"unpacked").mkdir(parents=True, exist_ok=True)
+    report = {"venues": {}, "library": None}
+    if not args.no_venues:
+        for source in sorted(p.parent for p in args.packs.glob("*/stage-pack.json")):
+            if args.venue and source.name not in args.venue: continue
+            folder, archive = build_venue(source, args.output)
+            report["venues"][source.name] = {"folder": tree_size(folder), "zip": archive.stat().st_size}
+            print(f"{archive}: folder {tree_size(folder):,} bytes, zip {archive.stat().st_size:,} bytes")
+    if not args.no_library:
+        (folder, archive), clips = build_library(args.library, args.events, args.output, args.jobs)
+        report["library"] = {"folder": tree_size(folder), "zip": archive.stat().st_size, "parts": part_sizes(folder),
+                             "clips": {"count": len(clips), "sourceBytes": sum(a for a, _ in clips), "packageBytes": sum(b for _, b in clips)}}
+        print(f"{archive}: folder {tree_size(folder):,} bytes, zip {archive.stat().st_size:,} bytes")
+    (args.output/"build-report.json").write_bytes(json_bytes(report))
+
+
+if __name__ == "__main__":
+    main()

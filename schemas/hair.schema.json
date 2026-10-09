@@ -1,0 +1,482 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.gh3skin.invalid/v1/hair.schema.json",
+  "title": "Hair physics (band/hair.json)",
+  "description": "Hair joint chains of each band member (GH3 Havok ragdoll data) and the head collision capsule.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "members"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "members": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "guitarist": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "head",
+            "joints",
+            "capsule",
+            "ragdoll"
+          ],
+          "properties": {
+            "head": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 254
+            },
+            "joints": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "bone",
+                  "parent",
+                  "limits",
+                  "mass",
+                  "friction",
+                  "angularDamping",
+                  "position",
+                  "rotation",
+                  "length"
+                ],
+                "properties": {
+                  "bone": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 254
+                  },
+                  "parent": {
+                    "type": "integer",
+                    "minimum": -1,
+                    "maximum": 254
+                  },
+                  "limits": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "twistLimit",
+                      "coneLimit",
+                      "planesLimit"
+                    ],
+                    "properties": {
+                      "twistLimit": {
+                        "$ref": "common.schema.json#/$defs/vec2"
+                      },
+                      "coneLimit": {
+                        "$ref": "common.schema.json#/$defs/vec2"
+                      },
+                      "planesLimit": {
+                        "$ref": "common.schema.json#/$defs/vec2"
+                      }
+                    }
+                  },
+                  "mass": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "friction": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "angularDamping": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "position": {
+                    "$ref": "common.schema.json#/$defs/vec3"
+                  },
+                  "rotation": {
+                    "$ref": "common.schema.json#/$defs/quaternion"
+                  },
+                  "length": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                }
+              }
+            },
+            "capsule": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "radius",
+                "a",
+                "b"
+              ],
+              "properties": {
+                "radius": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "a": {
+                  "$ref": "common.schema.json#/$defs/vec3"
+                },
+                "b": {
+                  "$ref": "common.schema.json#/$defs/vec3"
+                }
+              }
+            },
+            "ragdoll": {
+              "$ref": "library-common.schema.json#/$defs/checksum"
+            }
+          }
+        },
+        "bassist": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "head",
+            "joints",
+            "capsule",
+            "ragdoll"
+          ],
+          "properties": {
+            "head": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 254
+            },
+            "joints": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "bone",
+                  "parent",
+                  "limits",
+                  "mass",
+                  "friction",
+                  "angularDamping",
+                  "position",
+                  "rotation",
+                  "length"
+                ],
+                "properties": {
+                  "bone": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 254
+                  },
+                  "parent": {
+                    "type": "integer",
+                    "minimum": -1,
+                    "maximum": 254
+                  },
+                  "limits": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "twistLimit",
+                      "coneLimit",
+                      "planesLimit"
+                    ],
+                    "properties": {
+                      "twistLimit": {
+                        "$ref": "common.schema.json#/$defs/vec2"
+                      },
+                      "coneLimit": {
+                        "$ref": "common.schema.json#/$defs/vec2"
+                      },
+                      "planesLimit": {
+                        "$ref": "common.schema.json#/$defs/vec2"
+                      }
+                    }
+                  },
+                  "mass": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "friction": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "angularDamping": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "position": {
+                    "$ref": "common.schema.json#/$defs/vec3"
+                  },
+                  "rotation": {
+                    "$ref": "common.schema.json#/$defs/quaternion"
+                  },
+                  "length": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                }
+              }
+            },
+            "capsule": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "radius",
+                "a",
+                "b"
+              ],
+              "properties": {
+                "radius": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "a": {
+                  "$ref": "common.schema.json#/$defs/vec3"
+                },
+                "b": {
+                  "$ref": "common.schema.json#/$defs/vec3"
+                }
+              }
+            },
+            "ragdoll": {
+              "$ref": "library-common.schema.json#/$defs/checksum"
+            }
+          }
+        },
+        "singer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "head",
+            "joints",
+            "capsule",
+            "ragdoll"
+          ],
+          "properties": {
+            "head": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 254
+            },
+            "joints": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "bone",
+                  "parent",
+                  "limits",
+                  "mass",
+                  "friction",
+                  "angularDamping",
+                  "position",
+                  "rotation",
+                  "length"
+                ],
+                "properties": {
+                  "bone": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 254
+                  },
+                  "parent": {
+                    "type": "integer",
+                    "minimum": -1,
+                    "maximum": 254
+                  },
+                  "limits": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "twistLimit",
+                      "coneLimit",
+                      "planesLimit"
+                    ],
+                    "properties": {
+                      "twistLimit": {
+                        "$ref": "common.schema.json#/$defs/vec2"
+                      },
+                      "coneLimit": {
+                        "$ref": "common.schema.json#/$defs/vec2"
+                      },
+                      "planesLimit": {
+                        "$ref": "common.schema.json#/$defs/vec2"
+                      }
+                    }
+                  },
+                  "mass": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "friction": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "angularDamping": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "position": {
+                    "$ref": "common.schema.json#/$defs/vec3"
+                  },
+                  "rotation": {
+                    "$ref": "common.schema.json#/$defs/quaternion"
+                  },
+                  "length": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                }
+              }
+            },
+            "capsule": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "radius",
+                "a",
+                "b"
+              ],
+              "properties": {
+                "radius": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "a": {
+                  "$ref": "common.schema.json#/$defs/vec3"
+                },
+                "b": {
+                  "$ref": "common.schema.json#/$defs/vec3"
+                }
+              }
+            },
+            "ragdoll": {
+              "$ref": "library-common.schema.json#/$defs/checksum"
+            }
+          }
+        },
+        "drummer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "head",
+            "joints",
+            "capsule",
+            "ragdoll"
+          ],
+          "properties": {
+            "head": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 254
+            },
+            "joints": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "bone",
+                  "parent",
+                  "limits",
+                  "mass",
+                  "friction",
+                  "angularDamping",
+                  "position",
+                  "rotation",
+                  "length"
+                ],
+                "properties": {
+                  "bone": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 254
+                  },
+                  "parent": {
+                    "type": "integer",
+                    "minimum": -1,
+                    "maximum": 254
+                  },
+                  "limits": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "twistLimit",
+                      "coneLimit",
+                      "planesLimit"
+                    ],
+                    "properties": {
+                      "twistLimit": {
+                        "$ref": "common.schema.json#/$defs/vec2"
+                      },
+                      "coneLimit": {
+                        "$ref": "common.schema.json#/$defs/vec2"
+                      },
+                      "planesLimit": {
+                        "$ref": "common.schema.json#/$defs/vec2"
+                      }
+                    }
+                  },
+                  "mass": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "friction": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "angularDamping": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "position": {
+                    "$ref": "common.schema.json#/$defs/vec3"
+                  },
+                  "rotation": {
+                    "$ref": "common.schema.json#/$defs/quaternion"
+                  },
+                  "length": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                }
+              }
+            },
+            "capsule": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "radius",
+                "a",
+                "b"
+              ],
+              "properties": {
+                "radius": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "a": {
+                  "$ref": "common.schema.json#/$defs/vec3"
+                },
+                "b": {
+                  "$ref": "common.schema.json#/$defs/vec3"
+                }
+              }
+            },
+            "ragdoll": {
+              "$ref": "library-common.schema.json#/$defs/checksum"
+            }
+          }
+        }
+      }
+    },
+    "sources": {
+      "$ref": "library-common.schema.json#/$defs/sources"
+    }
+  }
+}
