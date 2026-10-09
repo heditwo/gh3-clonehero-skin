@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GameRoot Condition="'$(GameRoot)' == ''">$(HOME)/games/clonehero-gh3-melon</GameRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Mono.Cecil">
+      <HintPath>$(GameRoot)/MelonLoader/net6/Mono.Cecil.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>

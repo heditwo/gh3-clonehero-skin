@@ -206,7 +206,7 @@ The spike ran on 2026-10-09. Each item has a report in [docs/spike/](spike/) wit
 - All five shader bundles have OpenGL Core programs only. On Windows Clone Hero under Wine and DXVK, D3D11 (the default) draws the stage pink. `-force-glcore` draws it correctly.
 - `Shader.isSupported` returns true on D3D11, so the mod does not detect the failure.
 - The stage shader compiles from GLSL to DXBC on Linux (glslang, SPIRV-Cross, Wine `d3dcompiler_47`) in under 2 s. A D3D11 bundle was not built. Estimate: 3–5 days.
-- Other Windows blockers: the obfuscated names of the Windows build are different (a Windows binding map is necessary), and `StageAudioBackend` looks for BASS only in the Linux folder.
+- Other Windows blockers (fixed): Il2CppInterop method names are different in the Windows build; `CloneHeroBindings` now binds methods by their obfuscated metadata name, which is the same on both platforms. `StageAudioBackend` finds BASS in `Clone Hero_Data/Plugins/x86_64`.
 - **Open decision (owner):** Windows in v1 or later; Microsoft `d3dcompiler_47.dll` or Wine's.
 
 ### 9.6 Blender round trip ([report](spike/blender.md))

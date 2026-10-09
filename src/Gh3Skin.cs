@@ -36,9 +36,16 @@ public sealed class SkinMod : MelonMod
 
     public override void OnInitializeMelon()
     {
-        if (!GameCompatibility.Supports(Application.version))
+        var problem = GameCompatibility.Problem(Application.version, Application.platform.ToString());
+        if (problem != null)
         {
-            MelonLogger.Warning($"GH3 skin requires Clone Hero {GameCompatibility.Version}; found {Application.version}.");
+            MelonLogger.Warning(problem);
+            return;
+        }
+        var bindingError = CloneHeroBindings.Bind();
+        if (bindingError != null)
+        {
+            MelonLogger.Warning($"GH3 skin cannot bind to Clone Hero {Application.version} on {Application.platform}: {bindingError}. The skin is off.");
             return;
         }
         var assetsDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Mods", "GH3Skin", "assets");
@@ -64,6 +71,7 @@ public sealed class SkinMod : MelonMod
         _comboOverride?.Reset();
         _stage?.Reset();
         Spike.TextureSpike.Reset();
+        BindingTrace.Reset();
         if (_gameplay)
         {
             MelonLogger.Msg("GH3 gameplay scene loaded");
@@ -94,6 +102,7 @@ public sealed class SkinMod : MelonMod
         FrameProfile.Measure("hud", () => _hud.Update(state, player.mainCamera, songTime, _stage?.ShowFlow == true, _stage?.WinTime ?? double.PositiveInfinity));
         FrameProfile.Measure("hits", () => _hud.UpdateHitEffects(player, state, songTime));
         _capture.Update(songTime);
+        if (BindingTrace.Enabled) BindingTrace.Update(player, state, songTime, _stage?.AudioVoices ?? "none");
         FrameProfile.EndFrame(songTime);
     }
 

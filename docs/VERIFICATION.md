@@ -34,7 +34,7 @@ Settings in the test copy that prevent crashes:
 
 - `UserData/Loader.cfg`: `force_offline_generation = true`. Without it, MelonLoader contacts `api.melonloader.com` at each start, and the open HTTPS connection can crash the CLR later.
 - The mod stops MelonLoader's bHaptics client at start (`GH3_SKIN_KEEP_BHAPTICS=1` keeps it).
-- Without an ALSA sequencer seat (headless runs), use `tools/rtmidi-stub.c` as the game's `libRtMidi.so`.
+- Linux only: without an ALSA sequencer seat (headless runs), use `tools/rtmidi-stub.c` as the game's `libRtMidi.so`. The Windows build has its own `RtMidi.dll` and needs no stub (it starts under Wine without one).
 
 The loader log always has one `Unable to create a snapshot of process` error and an `Il2CppInterop` warning. They are not caused by the mod. Any other exception is a fault.
 
@@ -63,6 +63,38 @@ flock /tmp/opencode/gh3-record.lock scripts/record-preview.sh
 ```
 
 `scripts/capture-stage.sh <stage> <output> [song] [times] [seconds]` captures timed frames on Xvfb without a desktop session. It uses software rendering and the local research audio wrapper in `assets/event-audit/`. Use it for frame captures, not for video.
+
+## Windows
+
+One `Gh3Skin.dll` works on Linux and Windows Clone Hero `v1.1.0.6142-final` (see [ARCHITECTURE.md](ARCHITECTURE.md#clone-hero-bindings)).
+
+### Install on Windows
+
+1. Install Clone Hero 1.1.0.6142 for Windows (`CloneHero-Win-x64.zip`).
+2. Extract MelonLoader 0.7.3 x64 (`MelonLoader.x64.zip`) into the game folder, next to `Clone Hero.exe`. The folder then has `version.dll` and `MelonLoader\`.
+3. Start the game once and close it. MelonLoader generates `MelonLoader\Il2CppAssemblies\` (the first start needs the network). Then set `force_offline_generation = true` in `UserData\Loader.cfg` (see [Test game](#test-game)).
+4. Copy the files to the same places as on Linux:
+   - `Gh3Skin.dll` to `<game>\Mods\Gh3Skin.dll`.
+   - The `assets` folder (images, fonts, JSON, `stages\`, `libraries\`) to `<game>\Mods\GH3Skin\assets\`, and `counter-tuning.json` to `<game>\Mods\GH3Skin\`.
+5. Start Clone Hero with the launch option `-force-glcore`. Without it, Clone Hero uses Direct3D 11, and the stage is pink because the shader bundles have OpenGL programs only ([spike](spike/d3d11.md)).
+
+From Linux, `GH3_CLONE_HERO_DIR=<windows game folder> bash install.sh` does step 4. It builds against the Windows interop assemblies of that folder; the result works on Linux too.
+
+The loader log is `<game>\MelonLoader\Latest.log`. A good start logs `Loaded … GH3 skin gameplay sprites` and, in a song, `Stage audio uses BASS from …\Clone Hero_Data\Plugins\x86_64\bass.dll`. On another version or platform, the log shows `GH3 skin requires Clone Hero …` or `GH3 skin cannot bind to Clone Hero …` and the skin stays off.
+
+### Test under Wine
+
+The test setup is in `~/games/clonehero-win-spike/` (game, Wine prefix, DXVK 3.1.1, `env.sh`, `run-win.sh`; Wine 11.17 from `~/games/gh3-test-tools/wine-root`). Make a reflink copy for each agent and change `here=` in `run-win.sh` and `WINEPREFIX` in `env.sh`. Run under the record lock:
+
+```bash
+flock /tmp/opencode/gh3-record.lock env GH3_SKIN_STAGE=gh3.dive GH3_SKIN_TRACE=1 \
+  GH3_SKIN_CAPTURE_CLOCK=song GH3_SKIN_CAPTURE_TIMES=2,10,20,30,45,60 'GH3_SKIN_CAPTURE_DIR=Z:\tmp\opencode\win\frames' \
+  bash ~/games/clonehero-win-<name>/run-win.sh 240 /tmp/opencode/win/run.log \
+  --song 'Z:\home\hedi\.cache\gh3ref\charts\mycurse-native' --player Guitar,Expert \
+  -screen-fullscreen 0 -screen-width 1600 -screen-height 900 -force-glcore
+```
+
+Windows paths in variables need the `Z:` drive. Run the same chart on Linux with `scripts/capture-preview.sh` and the same `GH3_SKIN_TRACE` and capture variables. Then compare the `[trace]` lines of the two loader logs at the same song times.
 
 ## Compare two builds
 
@@ -110,6 +142,8 @@ These variables are for checks and captures. Normal play needs none of them.
 | `GH3_SKIN_DEBUG_SHOW=<id,...>` | Keeps these GH3 objects created |
 | `GH3_SKIN_PROFILE=1` | Logs milliseconds, managed kilobytes, and gen-0 collections per subsystem each second; `tools/summarize-profile.py` reads the logs |
 | `GH3_SKIN_KEEP_BHAPTICS=1` | Keeps MelonLoader's bHaptics client |
+| `GH3_SKIN_TRACE=1` | Logs score, streak, multiplier, rock, charge, Star Power, note hits, stage note events, hit-flame lanes, pause, and stage audio voices twice per song second (`[trace]`). Compares platforms |
+| `GH3_SKIN_TRACE_CHARGE=<0–1>` | With `GH3_SKIN_TRACE`: sets the native Star Power charge once at song time 20 s. This changes the game state; use it only for checks |
 
 Forced values change only the display. The command-line bot does not earn Star Power. Do not use forced values to check meter behavior: they cannot show charge, activation, drain, or needle motion. Tests of earned Star Power need an instrumented build that allows the bot's native award routine, and the report must say so.
 

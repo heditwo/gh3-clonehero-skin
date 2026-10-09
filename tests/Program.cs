@@ -342,6 +342,10 @@ foreach (var power in new[] { 0f, 0.25f, 0.5f, 0.75f, 1f })
 }
 Equal(true, GameCompatibility.Supports("v1.1.0.6142-final"), "verified game version");
 Equal(false, GameCompatibility.Supports("v1.1.0.6143-final"), "unverified fields are not used on another version");
+Equal(true, GameCompatibility.Problem("v1.1.0.6142-final", "LinuxPlayer") == null, "verified Linux build");
+Equal(true, GameCompatibility.Problem("1.1.0.6142", "WindowsPlayer") == null, "verified Windows build");
+Equal(true, GameCompatibility.Problem("v1.1.0.6142-final", "OSXPlayer") != null, "unverified macOS build");
+Equal(true, GameCompatibility.Problem("v1.1.0.6143-final", "WindowsPlayer") != null, "unverified Windows version");
 Equal(new GemKind(0), GemKind.FromSprites("spr_newnotes_strip4_0", "spr_newnotes_strip4_2"), "regular note");
 Equal(new GemKind(1), GemKind.FromSprites("spr_newnotes_strip4_1", "spr_newnotes_strip4_2"), "HOPO");
 Equal(new GemKind(2), GemKind.FromSprites("spr_star_notes_cap_strip4_0", "spr_star_notes_strip1_3"), "phrase note");

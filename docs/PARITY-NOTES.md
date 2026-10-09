@@ -4,26 +4,79 @@ This is a reference of GH3 facts that the mod uses: addresses, constants, script
 
 ## Clone Hero bindings
 
-Linux Clone Hero `v1.1.0.6142-final` only. `engine` is `Il2Cpp.ObjectPublicAbstractDoBoDoInBoObDoInSiBoUnique` in `Il2CppStrikeCore.dll`. Native addresses are in `GameAssembly.so`.
+Clone Hero `v1.1.0.6142-final` for Linux and Windows. `engine` is `Il2Cpp.ObjectPublicAbstractDoBoDoInBoObDoInSiBoUnique` in `Il2CppStrikeCore.dll`. `Note` is `Il2Cpp.ObjectPublicObInObDoSiDoUIInBoInUnique`. Native addresses are RVAs in `GameAssembly.so` (Linux) and `GameAssembly.dll` (Windows).
 
-| Value | Member | Evidence |
-| --- | --- | --- |
-| Total score | `ScoreManager.field_Private_Int32_4` | Live score |
-| Streak | `ScoreManager.field_Private_Int32_2` | Live bot run |
-| Rock | `engine.field_Protected_Single_0` | Offset `0x70` |
-| Charge | `engine.prop_Single_0` | Getter `0x5556790`: charge `0x68` / capacity `0x1b0` |
-| Multiplier | `engine.prop_Int32_0` | Getter `0x5557270` reads `0x48` |
-| Base multiplier | `engine.prop_Int32_1` | Getter `0x5557020` halves the multiplier when active |
-| Star Power active | `engine.field_Public_Boolean_0` | Offset `0x42` |
+### How the names work
 
+```mermaid
+flowchart LR
+  M[global-metadata.dat<br/>obfuscated name, for example ʼʺʹʷʵʺʸʺʻʼʶ] --> G[MelonLoader Il2CppInterop generator]
+  G --> I[Interop name, for example Method_Public_get_Int32_PDM_0]
+  M --> B[CloneHeroBindings<br/>binds by obfuscated name]
+```
+
+- The interop type names and the obfuscated metadata names and offsets of all fields and methods that the mod uses are the same in the Linux and Windows builds. For `engine`, all 93 fields and all 84 method names and signatures are the same; only the method order is different.
+- Il2CppInterop names a method by its signature, its position, and its caller count (`PDM` = no caller found). Position and caller count are different in the two builds. Thus the same interop name can point to a different method. Example: `Method_Public_get_Int32_PDM_0` is the multiplier getter on Linux and a getter of offset `0xd4` on Windows.
+- Interop field names (`field_Private_Int32_4`) come from the field order. They point to the same native field on both platforms.
+- `CloneHeroBindings` binds the 7 obfuscated methods by their metadata name and parameter count at start. It also checks the metadata name of each obfuscated field that the mod reads. If one check fails, the mod logs `GH3 skin cannot bind to Clone Hero …` and stays off.
+
+### Methods (bound by metadata name)
+
+The evidence is from `tools/InteropMap` (interop name → metadata name and RVA, through the Cpp2IL dummy assemblies) and `tools/native-offsets.py` (object offsets that the native code reads).
+
+| Value | Metadata name, signature | Linux interop name, RVA | Windows interop name, RVA | Native evidence (same on both) |
+| --- | --- | --- | --- | --- |
+| Multiplier | `ʼʺʹʷʵʺʸʺʻʼʶ`, `int ()` | `Method_Public_get_Int32_PDM_0`, `0x5557270` | `Method_Public_get_Int32_4`, `0x27790` | Reads `0x48` only |
+| Star Power charge | `ʶˀʲʵʳˁʾʾˀʼʻ`, `float ()` | `Method_Public_get_Single_0`, `0x5556790` | `Method_Public_get_Single_0`, `0x20F4CB0` | `(float)[0x68] / (float)[0x1b0]` |
+| Notes | `ʸʲʾʵʸʹʻʿʽʸʲ`, `List<Note> ()` | `Method_Public_get_List_1_…_0`, `0x55564B0` | same name, `0x20F4F90` | Returns `[0x1e0]` |
+| Note lane mask | `ˀʶˀʼʲʾʸʴʴʶʿ`, `ushort ()` | `Method_Public_get_UInt16_0`, `0x556C910` | same name, `0x214BCD0` | ORs `[0x80]` of each chord note (enumerator inlined on Windows) |
+| Custom highway | `HighwayScroll.ʳʷʽʴʺʻʷʳʻʼʷ`, `void (Texture2D)` | `Method_Public_Void_Texture2D_0`, `0x2D91000` | same name, `0x380300` | Offsets `0x28 0x6c 0x70 0xe0 0x178 0x180 0x198 0x1a0` |
+| Whammy input (verification) | `ʲʽʻʷʻʽʼʷˀʾʾ`, `static void (int, ushort, byte)` | `Method_Public_Static_Void_Int32_UInt16_Byte_0`, `0x2C8EDD0` | same name, `0x22B610` | Offsets `0xb8 0xe0`, 11 calls |
+| Track fade | `TrackFadeManager.ʲˁʴʾʸʿʴʿˁʾˀ`, `void ()` | `Method_Public_Void_0`, `0x2BD0040` | same name, `0x1517A0` | Offsets `0x18 0x28 0x30 0x38` (Linux adds the class-init check) |
+
+### Fields (interop name, metadata name checked at start)
+
+| Value | Member | Metadata name | Offset (Linux = Windows) | Evidence |
+| --- | --- | --- | --- | --- |
+| Total score | `ScoreManager.field_Private_Int32_4` | `ʸʶʻʲʲˀʷʻʳʸʲ` | `0x50` | Live score |
+| Streak | `ScoreManager.field_Private_Int32_2` | `ʼʳʽʺʴʺʴʴˁʵʶ` | `0x48` | Live bot run |
+| Rock | `engine.field_Protected_Single_0` | `ʺʼʻʳʼʳʲˀʼʸʺ` | `0x70` | Live bot run |
+| Star Power active | `engine.field_Public_Boolean_0` | `ˁʸʴʵʳʾʽʿʹʷʿ` | `0x42` | Activation routine |
+| Note time, sustain end | `Note.field_Public_Double_0`, `_1` | `ʲʸʺʺʼʷʵʵʶʵˁ`, `ʲʸʷʽʵʷʶʲʿʽˀ` | `0x28`, `0x30` | Live note scan |
+| Note flags | `Note.field_Public_EnumNPublicSealedvaNoChDiExChHoStTaSoUnique_0` | `ˀʷˁʵʹʳʿʵʼʹˀ` | `0x7c` | `StarPower`, `StarPowerEnd` |
+| Note lane | `Note.field_Public_UInt16_0` | `ʿˀʸʻʺʸʳʺʴʻʿ` | `0x80` | Read by the lane-mask getter |
+| Note state | `Note.field_Public_EnumNPublicSealedvaNoHiMiDyIsWa8vWaUnique_0` | `ʺʺʴʶʽʴʳʵˀʽʳ` | `0x84` | `Hit`, `Missed` |
+| Scroll speed, tiling | `HighwayScroll.field_Private_Single_1`, `field_Private_Vector4_0` | `ʷʻʺˀʿʵʵʹʽˁʴ`, `ʳˀʳʽʻʳʺˁʲʵʽ` | `0x50`, `0x6c` | Read by the custom-highway method |
+| Whammy column, tick | `ObjectPublicAbstractSealedInBoInObDoInSiDoInDoUnique.field_Private_Static_Int32_0`, `field_Private_Static_Double_2` | `ʿʴˀʴʹʷʺʻʸʳʽ`, `ʻʳʷʶˀʻʻʳʶʻʹ` | static | Whammy texture |
+| Song clock start | `GameManager.sync` `.field_Private_Double_2`, `_3` | `ʲʻʺʹʺʲʷʾʻʺʹ`, `ˁʵˁʺʳʻʸʶʼʽʺ` | `0x38`, `0x40` | Lead-in starts at −8 s on both |
+| Note spawn time | `BaseNoteRenderer.field_Protected_Double_0` | `ʲʾʴʾʹʵʴʺʶʿʸ` | generic type | `noteZPosFarLimit / noteSpeed` |
+
+Named members (`GameManager.songTime`, `BasePlayer.engine`, `SongEntry.ChartPath`, and others) are not obfuscated.
+
+### Windows run against Linux (same `Gh3Skin.dll`)
+
+`GH3_SKIN_TRACE=1` logs the values above twice per song second. `GH3_SKIN_TRACE_CHARGE=0.6` sets the native charge once at song time 20 s, because the command-line bot does not earn Star Power. Chart `mycurse-native`, venue `gh3.dive`, Windows under Wine 11.17 with `-force-glcore`:
+
+| Check | Result |
+| --- | --- |
+| Song times compared | 138 (−8 s to 60.5 s) |
+| Score, streak, rock, hit notes, lane-mask sum, stage note events, hit-flame lanes | Equal at 137 of 138 times. At 14.0 s one note is on the sample boundary (one run is 1 note ahead) |
+| Multiplier, charge (0 → 0.6 at 20 s), Star Power active, note count, pause flag, stage audio voices | Equal at all 138 times |
+| Lead-in | Both runs go from −1 s (paused) to −8 s |
+| Stage audio | Windows loads `Clone Hero_Data/Plugins/x86_64/bass.dll`; voice counts are equal |
+
+- The `ab1e699` DLL on Windows: the stage stops ("type initializer for `StageAudioBackend` threw"; measured). Its multiplier call `Method_Public_get_Int32_PDM_0` reads offset `0xd4` on Windows (static analysis; not seen at run time because the HUD stops with the stage).
+- The bot does not activate Star Power, and the Clone Hero pause menu did not open from XTEST key presses or a focus loss in a bot run. Active Star Power and a user pause were not compared at run time.
+
+- Base multiplier (not used): the Linux getter `0x5557020` halves the multiplier while Star Power is active.
 - `SPBar.field_Private_Single_0` is a display cache (can be −1). Do not use it for charge.
 - Health colors: `HealthContainer` statics are 1/3 and 2/3. Red at or below 1/3, yellow at or below 2/3, green above. The classifier is `Method_Private_EnumNPrivateSealedvaHiMeLo4vUnique_Single_PDM_1`.
 - Hit/miss health routine `0x5558de0`: a hit adds `0x74` (`0x7c` while active); a miss subtracts `0x78`. The miss routine `0x5558c80` also resets the streak.
 - The bot's charge-award routine `0x5556510` returns early for engine modes 1 and 2. Native activation is `0x55556a0`.
-- `HighwayScroll.field_Private_Single_1` is the scroll speed (UV per second = `songTime × speed / 6`, default 7); `field_Private_Vector4_0.y` is the texture tiling; `Method_Public_Void_Texture2D_0` sets a custom highway.
+- `HighwayScroll.field_Private_Single_1` is the scroll speed (UV per second = `songTime × speed / 6`, default 7); `field_Private_Vector4_0.y` is the texture tiling; `CloneHeroBindings.SetHighwayTexture` sets a custom highway.
 - `GuitarNoteRenderer.HeldSustainNotes`: note flags have `StarPower` (128); `field_Public_UInt16_0` is the lane mask (bit = lane + 1, the whammy channel).
 - `_GlobalWhammyTexture`: 1024 columns, one row per channel (green is channel 1).
-- `TrackFadeManager` sets `_FadeParams` (z, w = fade rows as viewport heights from the top) on its "Fade Instance" materials. `Method_Public_Void_0` recalculates them; call it after the intro rise, or the fades stay one viewport too low.
+- `TrackFadeManager` sets `_FadeParams` (z, w = fade rows as viewport heights from the top) on its "Fade Instance" materials. `CloneHeroBindings.RecalculateTrackFade` recalculates them; call it after the intro rise, or the fades stay one viewport too low.
 - `GameManager.songTime` (seconds) drives the stage. The cue reader uses `GlobalVariables.instance.currentSongEntry` (`folderPath`, `ChartPath`, `Name_StrippedTags`, `Artist_StrippedTags`).
 
 ## Highway geometry

@@ -23,7 +23,7 @@ internal sealed class StageNoteHits
     public uint[] Update(BasePlayer player, double time)
     {
         if (player.engine == null || player.TryCast<GuitarPlayer>() == null) return Array.Empty<uint>();
-        var notes = player.engine.prop_List_1_ObjectPublicObInObDoSiDoUIInBoInUnique_0;
+        var notes = CloneHeroBindings.Notes(player.engine);
         if (notes == null) return Array.Empty<uint>();
         if (_engine != player.engine.Pointer || _notes.Length != notes.Count)
         {
@@ -47,9 +47,9 @@ internal sealed class StageNoteHits
             var hit = (flags & ObjectPublicObInObDoSiDoUIInBoInUnique.EnumNPublicSealedvaNoHiMiDyIsWa8vWaUnique.Hit) != 0;
             if (hit && !_seen[index] && time >= _time)
             {
-                var mask = note.prop_UInt16_1;
+                var mask = CloneHeroBindings.NoteLanes(note);
                 for (var lane = 0; lane < Events.Length; lane++)
-                    if ((mask & (2 << lane)) != 0) events.Add(Events[lane]);
+                    if ((mask & (2 << lane)) != 0) { events.Add(Events[lane]); BindingTrace.StageNoteEvents++; }
             }
             _seen[index] = hit;
             if (index == _first && (hit || (flags & ObjectPublicObInObDoSiDoUIInBoInUnique.EnumNPublicSealedvaNoHiMiDyIsWa8vWaUnique.Missed) != 0 || note.field_Public_Double_0 < time - 1)) _first++;

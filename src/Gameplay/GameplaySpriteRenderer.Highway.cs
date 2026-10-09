@@ -22,7 +22,7 @@ internal sealed partial class GameplaySpriteRenderer
         _highwayApplied = true;
         var scroll = neck.GetComponent<HighwayScroll>() ?? neck.GetComponentInParent<HighwayScroll>() ?? _player?.GetComponentInChildren<HighwayScroll>(true);
         if (scroll == null) { MelonLogger.Warning("GH3 highway: HighwayScroll was not found"); return; }
-        scroll.Method_Public_Void_Texture2D_0(_assets.HighwayTexture);
+        CloneHeroBindings.SetHighwayTexture(scroll, _assets.HighwayTexture);
         _scroll = scroll;
         MelonLogger.Msg("Applied GH3 highway through Clone Hero's highway scroll");
     }

@@ -61,7 +61,7 @@ internal sealed class WhammyHistory
 
     // Verification only: drives Clone Hero's own whammy input path for player 1, lanes green to orange.
     public static void Force(float deflection) =>
-        WhammyManager.Method_Public_Static_Void_Int32_UInt16_Byte_0(0, 0x3e, (byte)Math.Clamp(MathF.Round(deflection * 255), 0, 255));
+        CloneHeroBindings.SetWhammy(0, 0x3e, (byte)Math.Clamp(MathF.Round(deflection * 255), 0, 255));
 }
 
 // Replaces a held sustain's sliced sprite with a strip mesh while its whammy history is not flat, so the bar width can

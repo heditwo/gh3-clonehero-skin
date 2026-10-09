@@ -67,7 +67,7 @@ internal sealed class HitEffectsHud
         foreach (var (lanes, phraseComplete) in _scanner.Update(player, songTime))
         {
             for (var lane = 0; lane < HitEffectState.Lanes; lane++)
-                if ((lanes & (1 << lane)) != 0) _state.Hit(lane, state.StarPowerActive);
+                if ((lanes & (1 << lane)) != 0) { _state.Hit(lane, state.StarPowerActive); BindingTrace.FlameLanes++; }
             if (phraseComplete) _state.StarBonus(lanes);
         }
 
@@ -173,7 +173,7 @@ internal sealed class NoteHitScanner
     {
         var hits = new List<(int, bool)>();
         if (player.engine == null || player.TryCast<GuitarPlayer>() == null) return hits;
-        var notes = player.engine.prop_List_1_ObjectPublicObInObDoSiDoUIInBoInUnique_0;
+        var notes = CloneHeroBindings.Notes(player.engine);
         if (notes == null) return hits;
         if (_engine != player.engine.Pointer || _notes.Length != notes.Count)
         {
@@ -198,7 +198,7 @@ internal sealed class NoteHitScanner
             var hit = (state & NoteState.Hit) != 0;
             // Bit 0 is the open note, which GH3 does not have; bits 1-5 are green to orange.
             if (hit && !_seen[index] && time >= _time)
-                hits.Add(((note.prop_UInt16_1 >> 1) & 31, PhraseComplete(index)));
+                hits.Add(((CloneHeroBindings.NoteLanes(note) >> 1) & 31, PhraseComplete(index)));
             _seen[index] = hit;
             if (index == _first && (hit || (state & NoteState.Missed) != 0 || note.field_Public_Double_0 < time - 1)) _first++;
         }

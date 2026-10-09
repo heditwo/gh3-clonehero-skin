@@ -10,10 +10,19 @@ internal static class StageAudioBackend
     static StageAudioBackend()
     {
         var name = OperatingSystem.IsWindows() ? "bass.dll" : OperatingSystem.IsMacOS() ? "libbass.dylib" : "libbass.so";
+        // The data folder is clonehero_Data on Linux and Clone Hero_Data on Windows; Windows keeps plugins in x86_64.
+        var data = UnityEngine.Application.dataPath;
         var root = Environment.GetEnvironmentVariable("GH3_CLONE_HERO_DIR") ?? Environment.CurrentDirectory;
-        var candidates = new[] { Path.Combine(root, "clonehero_Data", "Plugins", name), Path.Combine(root, "clonehero_Data", "Plugins", "x86_64", name), Path.Combine(root, name) };
-        var path = candidates.FirstOrDefault(File.Exists) ?? throw new FileNotFoundException("Clone Hero's BASS audio library was not found");
-        Handle = NativeLibrary.Load(path);
+        var candidates = new[]
+        {
+            Path.Combine(data, "Plugins", name), Path.Combine(data, "Plugins", "x86_64", name),
+            Path.Combine(root, "clonehero_Data", "Plugins", name), Path.Combine(root, "clonehero_Data", "Plugins", "x86_64", name), Path.Combine(root, name)
+        };
+        var path = candidates.FirstOrDefault(File.Exists);
+        // The game has already loaded BASS, so the loader can also find it by name.
+        if (path != null) Handle = NativeLibrary.Load(path);
+        else if (!NativeLibrary.TryLoad(name, out Handle)) throw new FileNotFoundException($"Clone Hero's BASS audio library ({name}) was not found");
+        MelonLoader.MelonLogger.Msg($"Stage audio uses BASS from {path ?? name}");
         NativeLibrary.SetDllImportResolver(typeof(StageAudioBackend).Assembly, (library, _, _) => library == Library ? Handle : IntPtr.Zero);
     }
 

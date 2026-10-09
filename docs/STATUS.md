@@ -1,6 +1,6 @@
 # Current status and known gaps
 
-Version **0.9.8**. Clone Hero Linux `v1.1.0.6142-final` with MelonLoader 0.7.3 only.
+Version **0.9.8**. Clone Hero `v1.1.0.6142-final` with MelonLoader 0.7.3, Linux and Windows (one `Gh3Skin.dll`). Windows was tested under Wine with `-force-glcore` only; the stage shaders have no Direct3D 11 programs yet ([spike](spike/d3d11.md)). macOS is not supported.
 
 ## Complete
 

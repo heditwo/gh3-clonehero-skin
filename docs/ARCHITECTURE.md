@@ -26,11 +26,11 @@ flowchart LR
 
 ## Runtime modules
 
-`SkinMod` (`src/Gh3Skin.cs`) is the MelonLoader entry point. It checks the game version (`GameCompatibility`), reads the test options (`SkinOptions`), loads textures once (`SkinAssets`), and creates the per-scene parts when the gameplay scene loads. A scene change or a backward jump of the song clock resets them.
+`SkinMod` (`src/Gh3Skin.cs`) is the MelonLoader entry point. It checks the game version and platform (`GameCompatibility`), binds the obfuscated Clone Hero members (`CloneHeroBindings`), reads the test options (`SkinOptions`), loads textures once (`SkinAssets`), and creates the per-scene parts when the gameplay scene loads. A scene change or a backward jump of the song clock resets them.
 
 | Folder | Contents |
 | --- | --- |
-| `src/` | `SkinMod`, `SkinAssets`, `SkinOptions`, `GameCompatibility`, `PreviewCapture` (timed screenshots), `FrameProfile` (`GH3_SKIN_PROFILE`) |
+| `src/` | `SkinMod`, `SkinAssets`, `SkinOptions`, `GameCompatibility`, `CloneHeroBindings`, `PreviewCapture` (timed screenshots), `FrameProfile` (`GH3_SKIN_PROFILE`), `BindingTrace` (`GH3_SKIN_TRACE`) |
 | `src/Gameplay/` | `GameplayScene` (cached game objects), `GameplayStateReader` (score, streak, rock, and Star Power from the engine), `GameplaySpriteRenderer` (highway, gems, sustains, stock-effect hiding; split into `.Highway`, `.Gems`, `.Sustains` parts), `HighwayView` (GH3 camera and highway geometry), `BeatlineVisual`, `GemKind`, `GemAnimation`, `SustainBend` and `SustainVariant` (whammy bend, star whammy), `HitEffects` (GH3 2D hit particles) |
 | `src/Hud/` | `GameplayHud` builds the HUD tree. Components: `HighwayHud`, `ReadyBannerHud`, `RockMeterHud` (`RockGaugeHud`, `StarPowerBulbsHud`), `ScorePanelHud` (`AmpHud`, `LampColumnHud`, `ComboHud`, `ComboDigitHud`), `MessageHud`, `HitEffectsHud`, `YouRockHud`. Pure state and animation classes (`HudState`, `RockMeterState`, `ComboReelAnimation`, `StarPowerBulbAnimation`, `StarPowerHighwayAnimation`, `IntroHudAnimation`, `YouRockAnimation`, `ReadyAnimationTrigger`, `HudTuning`, `HudViewport`) have no Unity calls; the logic tests use them |
 | `src/Native/` | GH3 data and script engine: `Gh3Pak`, `Gh3Qb`, `Gh3QbText` (typed QB values), `Gh3Checksum`, `Gh3Song` (native song PAK), `Gh3ScriptCode` and `Gh3ScriptRuntime` (QB bytecode interpreter), `Gh3CommandDispatch`, `Gh3PcCommands`, `Gh3ComponentWait`, `Gh3Random` (GH3's RNG), `Gh3ScriptEvent` |
@@ -43,7 +43,7 @@ flowchart LR
 | `src/Stage/Particles/` | GH3 particle system: definitions, emission, motion, wind, LOD, visibility, render list and order, techniques, geometry, and batches (`StageParticles`) |
 | `src/Stage/Effects/` | `StageEffects` (pyro, sparks, smoke, fireworks), Tesla, screen color, outlines, movies |
 | `src/Stage/Scripts/` | `StageScripts`, `StageScriptState` (QB runtime bindings), `StageScriptBank`, `StageObjectState`, `StageActors`, `StageActorState`, `StageScriptActorState` |
-| `src/Stage/Audio/` | `StageAudio`, `StageAudioState`, `StageAudioBackend` (Clone Hero's BASS library), `StageSoundBank` |
+| `src/Stage/Audio/` | `StageAudio`, `StageAudioState`, `StageAudioBackend` (Clone Hero's BASS library from `Application.dataPath/Plugins`, also `Plugins/x86_64` on Windows), `StageSoundBank` |
 | `src/Spike/` | Packaging probes, off by default (`GH3_SKIN_SPIKE=textures`, `skinned`, `brotli`); see [docs/spike/](spike/) and [PACKAGE-FORMAT.md](PACKAGE-FORMAT.md#18-in-game-check-of-brotli) |
 
 ### Update order
@@ -62,7 +62,14 @@ Clone Hero is an Il2Cpp build. Many Unity methods are stripped or slow through t
 
 ### Clone Hero bindings
 
-The mod reads obfuscated fields of Linux Clone Hero `v1.1.0.6142-final` only. `GameCompatibility` rejects other versions before it reads them. The field map is in [PARITY-NOTES.md](PARITY-NOTES.md#clone-hero-bindings).
+The mod reads obfuscated members of Clone Hero `v1.1.0.6142-final` for Linux and Windows. One `Gh3Skin.dll` works on both:
+
+- `GameCompatibility` rejects other versions and other platforms (`Application.platform` must be `LinuxPlayer` or `WindowsPlayer`).
+- MelonLoader generates the interop assemblies for each game install. The mod compiles against the interop assemblies of one install (`install.sh` uses the target game). The interop type names and field names are the same on both platforms. Method names are not: Il2CppInterop names methods by position and caller count, and these are different in each build.
+- Thus the source does not call obfuscated methods by interop name. `CloneHeroBindings` finds them at start by their obfuscated metadata name (`il2cpp_method_get_name` on each `NativeMethodInfoPtr_*`) and makes delegates. It also checks the metadata name of each obfuscated field that the mod reads. If a check fails, the mod logs the member and stays off.
+- Add each new obfuscated member to `CloneHeroBindings` with its metadata name. Get the name with `tools/InteropMap`.
+
+The member map and the evidence are in [PARITY-NOTES.md](PARITY-NOTES.md#clone-hero-bindings).
 
 ## Song direction sources
 
@@ -115,4 +122,6 @@ Each GH3 material keeps its original template checksum, constant banks, samplers
 | `tools/disassemble-ps.py` | Prints a GH3 pixel shader |
 | `tools/gh3-reference/` | Start, drive, and stop the original GH3 under Wine for reference captures |
 | `tools/MoonscraperAudit/` | Moonscraper preservation probe |
-| `tools/rtmidi-stub.c` | Stub `libRtMidi.so` for test games without an ALSA sequencer seat |
+| `tools/rtmidi-stub.c` | Stub `libRtMidi.so` for Linux test games without an ALSA sequencer seat |
+| `tools/InteropMap/` | Maps the interop names that the mod uses to obfuscated metadata names, field offsets, and method RVAs, for one or more game installs |
+| `tools/native-offsets.py` | Compares a Linux and a Windows native method by the object offsets that they read |

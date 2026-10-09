@@ -24,6 +24,7 @@ internal sealed class GameplayStage
     private StageFixtures? _fixtures;
     private StageActors? _actors;
     private StageAudio? _audio;
+    public string AudioVoices => _audio?.Voices ?? "none";
     private StageScripts? _scripts;
     private StageParticles? _particles;
     private StageMovies? _movies;
@@ -238,7 +239,7 @@ internal sealed class GameplayStage
             // Clone Hero computed the track fade of its "Fade Instance" materials (sustains, gem bodies, hit flames)
             // through the raised projection, one viewport below the highway, which hides them. Compute it again.
             foreach (var fade in UnityEngine.Object.FindObjectsOfType<TrackFadeManager>())
-                fade.Method_Public_Void_0();
+                CloneHeroBindings.RecalculateTrackFade(fade);
             return;
         }
         var projection = camera.projectionMatrix;
@@ -248,7 +249,7 @@ internal sealed class GameplayStage
 
     private static double? LastNoteEnd(BasePlayer player)
     {
-        var notes = player.engine?.prop_List_1_ObjectPublicObInObDoSiDoUIInBoInUnique_0;
+        var notes = player.engine == null ? null : CloneHeroBindings.Notes(player.engine);
         if (notes == null || notes.Count == 0) return null;
         var end = double.NegativeInfinity;
         for (var index = 0; index < notes.Count; index++)

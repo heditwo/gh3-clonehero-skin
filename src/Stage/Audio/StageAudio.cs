@@ -78,6 +78,8 @@ internal sealed class StageAudio : IDisposable
             if (_reported.Add(diagnostic)) MelonLoader.MelonLogger.Warning("GH3 stage audio: " + diagnostic);
     }
 
+    public string Voices => $"{_sources.Values.Count(source => StageAudioBackend.State(source) == 1)}/{_sources.Count}";
+
     private Wave Clip(uint key)
     {
         if (_clips.TryGetValue(key, out var cached)) return cached;
