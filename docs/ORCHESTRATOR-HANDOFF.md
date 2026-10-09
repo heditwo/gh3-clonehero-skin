@@ -82,6 +82,7 @@ Tests: `bash scripts/test.sh` (C# logic tests, Python tests, shell syntax). Mate
   - Body and hand drift in close-ups differs from GH3.
   - The hit flame starts about 2 frames later than GH3.
   - Rock Band `VENUE` tracks are not read yet (planned in PACKAGING-PLAN section 4.2).
+- `scripts/regenerate.sh` (hud step) rewrites `assets/beatline*.png` with output that differs from the committed files. The committed files are the reference; restore them with `git checkout -- assets/beatline*.png` after a full regeneration, or fix the generator.
 - Two local, gitignored research scripts in `assets/event-audit/behavior-work/` were updated to import `pipeline.gh3.formats`.
 
 ## 8. Facts that matter for the packaging work
