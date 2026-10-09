@@ -18,6 +18,7 @@ from pipeline.stagepack.gltf import (
 )
 
 SKIN_VERTEX = np.dtype(VERTEX.descr + [("joints", "u1", 4), ("weights", "<f4", 4)])
+UNIT_SCALE = 1e-4
 
 
 def compile_actor(path, folder, material_import, mesh_write, mesh_split, root=None):
@@ -92,6 +93,14 @@ def compile_actor(path, folder, material_import, mesh_write, mesh_split, root=No
         duration = 0.
         for channel in track["channels"]:
             target = channel["target"]; sampler = track["samplers"][channel["sampler"]]
+            if target["path"] == "scale" and target["node"] in joints and sampler.get("interpolation", "LINEAR") in ("LINEAR", "STEP"):
+                # Blender writes a constant scale channel for every joint; unit scale keys carry no motion (PACKAGE-FORMAT 6.7).
+                error = float(np.abs(glb.accessor(sampler["output"]).astype(float) - 1).max(initial=0))
+                if error > UNIT_SCALE:
+                    joint = glb.data["nodes"][target["node"]].get("name", f"node {target['node']}")
+                    raise ValueError(f"Actor clip '{track.get('name', '')}' scales joint '{joint}' (|scale - 1| = {error:.3g}, limit {UNIT_SCALE}); "
+                                     "animate only joint translation and rotation")
+                continue
             if target["node"] not in joints or target["path"] not in ("translation", "rotation") or sampler.get("interpolation", "LINEAR") not in ("LINEAR", "STEP"):
                 raise ValueError("Bake actor animation to joint translation/rotation with LINEAR or STEP interpolation")
             pair = target["node"], target["path"]

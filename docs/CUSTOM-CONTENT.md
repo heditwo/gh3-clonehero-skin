@@ -328,7 +328,7 @@ The optional `actors` object maps names to:
 | `scale` | No | Default `[1, 1, 1]` |
 | `animationEvents` | No | Typed animation-event table (`time`, `scr`, `params` rows) |
 
-The compiler checks inverse bind matrices, the joint hierarchy, unit joint scale, weights, and channels. It accepts translation and rotation tracks (`LINEAR` or `STEP`), sampled at 60 Hz; at most 256 clips of 120 s each.
+The compiler checks inverse bind matrices, the joint hierarchy, unit joint scale, weights, and channels. It accepts translation and rotation tracks (`LINEAR` or `STEP`), sampled at 60 Hz; at most 256 clips of 120 s each. It drops scale tracks whose keys are all within 1e-4 of 1 (Blender writes one for each joint) and rejects other scale keys.
 
 ### Scripted scenery
 

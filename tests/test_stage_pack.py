@@ -226,6 +226,33 @@ class StagePackTests(unittest.TestCase):
             np.testing.assert_allclose(struct.unpack_from("<3f",animation,20),[3,0,-2])
             np.testing.assert_allclose(struct.unpack_from("<3f",animation,56),[3,0,-2])
 
+    def test_actor_unit_scale_channels_are_dropped_and_other_scales_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); source = root/"source"; output = root/"cache"
+            template.create(source)
+            compile_stage(source, output)
+            actor = load_json(output/"actors.json")["actors"][0]
+            reference = (output/"actors"/actor["id"]/"animation.bin").read_bytes()
+            original = GlbReader(source/"sign.glb")
+
+            def add_scale(values, interpolation="STEP"):
+                writer = GlbWriter(); writer.data = deepcopy(original.data); writer.binary = bytearray(original.binary)
+                track = writer.data["animations"][0]
+                times = writer.accessor(np.array([[0.], [4.]]), "SCALAR")
+                scales = writer.accessor(np.asarray(values, dtype=float), "VEC3")
+                track["samplers"].append({"input": times, "output": scales, "interpolation": interpolation})
+                track["channels"].append({"sampler": len(track["samplers"])-1, "target": {"node": writer.data["skins"][0]["joints"][0], "path": "scale"}})
+                writer.save(source/"sign.glb")
+
+            # Blender writes a constant scale channel for every joint (spike: |scale - 1| <= 3.5e-6).
+            add_scale([[1, 1, 1], [1+3.5e-6, 1-5e-5, 1]])
+            compile_stage(source, output)
+            self.assertEqual((output/"actors"/actor["id"]/"animation.bin").read_bytes(), reference)
+            add_scale([[1, 1, 1], [1, 1.5, 1]], "LINEAR")
+            with self.assertRaisesRegex(ValueError, r"scales joint .*\|scale - 1\| = 0\.5"): compile_stage(source, output)
+            add_scale([[1, 1, 1], [1, 1, 1]], "CUBICSPLINE")
+            with self.assertRaisesRegex(ValueError, "LINEAR or STEP"): compile_stage(source, output)
+
     def test_actor_actions_and_visibility_keep_clip_references(self):
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary)/"source"; output = Path(temporary)/"cache"
