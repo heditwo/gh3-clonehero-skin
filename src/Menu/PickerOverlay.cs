@@ -59,6 +59,7 @@ internal sealed class PickerOverlay
         var choices = PackageRuntime.Choices;
         MelonLogger.Msg($"GH3 picker closed: stage {choices.Stage}, song suggestions {(choices.SongSuggestions ? "on" : "off")}, " +
             $"VENUE tracks {(choices.VenueTrack ? "on" : "off")}, generated direction {(choices.GeneratedDirection ? "on" : "off")}, " +
+            $"reduce flashing {(choices.ReduceFlashing ? "on" : "off")}, " +
             string.Join(", ", PlayerChoices.Roles.Select(role => $"{role} {choices.Character(role)}")));
     }
 
@@ -219,10 +220,12 @@ internal sealed class PickerOverlay
                 PackageRuntime.SaveChoices();
             }
         }
-        var direction = image.yMax + 112 + PlayerChoices.Roles.Length * 32 + 8;
+        var direction = image.yMax + 112 + PlayerChoices.Roles.Length * 32 + 2;
         Option(new Rect(area.x, direction, 448, 22), choices.VenueTrack, " Use Rock Band VENUE tracks", value => choices.VenueTrack = value);
-        Option(new Rect(area.x, direction + 24, 448, 22), choices.GeneratedDirection, " Generate direction for charts without it",
+        Option(new Rect(area.x, direction + 22, 448, 22), choices.GeneratedDirection, " Generate direction for charts without it",
             value => choices.GeneratedDirection = value);
+        Option(new Rect(area.x, direction + 44, 448, 22), choices.ReduceFlashing, " Reduce flashing (Rock Band flares and strobes)",
+            value => choices.ReduceFlashing = value);
     }
 
     // A check box that saves the choices when it changes.
@@ -271,7 +274,7 @@ internal sealed class PickerOverlay
     }
 
     // Test aid (GH3_SKIN_PICKER_TEST, scripts/capture-menu.sh): the same selection code as the buttons, without a mouse.
-    // `venueTrack` and `generatedDirection` take `on` or `off`.
+    // `venueTrack`, `generatedDirection`, and `reduceFlashing` take `on` or `off`.
     public void Apply(string stage, IReadOnlyDictionary<string, string> characters)
     {
         Refresh();
@@ -280,6 +283,7 @@ internal sealed class PickerOverlay
         foreach (var (role, id) in characters)
             if (role == "venueTrack") choices.VenueTrack = id == "on";
             else if (role == "generatedDirection") choices.GeneratedDirection = id == "on";
+            else if (role == "reduceFlashing") choices.ReduceFlashing = id == "on";
             else if (PlayerChoices.Roles.Contains(role) && (id == PlayerChoices.DefaultCharacter || Choices(role).Any(c => c.Id == id))) choices.Characters[role] = id;
             else MelonLogger.Warning($"GH3 picker test: {id} cannot play the {role}");
         _hover = choices.Stage;

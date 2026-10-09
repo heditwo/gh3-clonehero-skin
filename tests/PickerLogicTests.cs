@@ -33,19 +33,20 @@ internal static class PickerLogicTests
     {
         var path = Path.Combine(root, "choices.json");
         var defaults = PlayerChoices.Load(path, out var problem);
-        Check(defaults.Stage == "song" && defaults.SongSuggestions && defaults.VenueTrack && defaults.GeneratedDirection && defaults.Character("bassist") == "default" &&
+        Check(defaults.Stage == "song" && defaults.SongSuggestions && defaults.VenueTrack && defaults.GeneratedDirection && !defaults.ReduceFlashing && defaults.Character("bassist") == "default" &&
             problem == "", "no file gives the defaults");
         defaults.Stage = PlayerChoices.RandomStage;
         defaults.SongSuggestions = false;
         defaults.VenueTrack = false;
+        defaults.ReduceFlashing = true;
         defaults.Characters["bassist"] = "gh3.axel";
         defaults.Save(path);
         var read = PlayerChoices.Load(path, out problem);
-        Check(read.Stage == "random" && !read.SongSuggestions && !read.VenueTrack && read.GeneratedDirection && read.Character("bassist") == "gh3.axel" &&
+        Check(read.Stage == "random" && !read.SongSuggestions && !read.VenueTrack && read.GeneratedDirection && read.ReduceFlashing && read.Character("bassist") == "gh3.axel" &&
             read.Character("singer") == "default", "choices round-trip");
         File.WriteAllText(path, "{\"stage\": \"gh3.budokan\", \"songSuggestions\": true}");
         read = PlayerChoices.Load(path, out _);
-        Check(read.Stage == "gh3.budokan" && read.VenueTrack && read.GeneratedDirection, "an older file keeps its stage and gets the direction defaults");
+        Check(read.Stage == "gh3.budokan" && read.VenueTrack && read.GeneratedDirection && !read.ReduceFlashing, "an older file keeps its stage and gets the direction defaults");
         File.WriteAllText(path, "{\"stage\": \"../evil\", \"characters\": {\"drummer\": \"Bad Id\"}}");
         read = PlayerChoices.Load(path, out _);
         Check(read.Stage == "song" && read.Character("drummer") == "default", "invalid values are ignored");

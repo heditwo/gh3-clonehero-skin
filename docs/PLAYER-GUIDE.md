@@ -68,12 +68,13 @@ A character that has an instrument in its own model keeps that instrument, also 
 
 ## 4. Direction options
 
-Two check boxes at the bottom of the picker control the camera and light direction of songs. Both are on by default. The change applies to the next song that you start.
+Three check boxes at the bottom of the picker control the camera and light direction of songs. The first two are on by default; **Reduce flashing** is off. The change applies to the next song that you start.
 
 | Option | On | Off |
 | --- | --- | --- |
 | **Use Rock Band VENUE tracks** | A chart with a Rock Band `VENUE` track gets camera cuts, lights, and effects from that track | The mod ignores `VENUE` tracks |
 | **Generate direction for charts without it** | A chart without camera or light direction gets camera cuts and light changes from its sections | Such a chart keeps one light mood and the automatic cameras |
+| **Reduce flashing** | Rock Band light flashes are weak and come at most once each second; strobes change at most five times each second | Light flashes follow the chart, at most about three each second |
 
 ## 5. Add stages and characters
 
@@ -94,5 +95,5 @@ When you remove a package, the mod deletes its cache folder at the next start.
 | A stage or a character is not in the list | Look in the log for `GH3 packages: skipped <file>: <reason>`. A package that imports shows `(importing)`; open the picker again later |
 | The wrong stage plays | Look in the log for `GH3 stage choice: <stage> (<reason>)` |
 | A band member has no instrument or the wrong instrument | Look in the log for `GH3 band <member>: character <id> ... with ...` |
-| The direction options do not apply | Look in the log for `GH3 direction: Rock Band VENUE tracks on/off, generated direction on/off`. The test variables `GH3_SKIN_VENUE_TRACK` and `GH3_SKIN_GENERATED_DIRECTION` override the picker |
+| The direction options do not apply | Look in the log for `GH3 direction: Rock Band VENUE tracks on/off, generated direction on/off, reduce flashing on/off`. The test variables `GH3_SKIN_VENUE_TRACK`, `GH3_SKIN_GENERATED_DIRECTION`, and `GH3_SKIN_REDUCE_FLASHING` override the picker |
 | You want the defaults again | Close the game and delete `UserData/GH3Skin/choices.json` in the game folder |

@@ -30,8 +30,8 @@ internal static class StageRockBandVenue
     private static double MinPulseGap(bool reduce) => reduce ? 1 : 0.34;
     private static double PulsePeak(bool reduce) => reduce ? 0.2 : 0.4;
     private const double MinToggleGap = 0.2;
-    // Player option: weaker and rarer flare pulses, and slower strobes. GH3_SKIN_REDUCE_FLASHING=1 sets it for a run.
-    public static bool ReduceFlashing { get; set; } = Environment.GetEnvironmentVariable("GH3_SKIN_REDUCE_FLASHING") is "1" or "on" or "true";
+    // Player option (PlayerChoices.ReduceFlashing): weaker and rarer flare pulses, and slower strobes.
+    public static bool ReduceFlashing { get; set; }
 
     private static readonly Dictionary<string, Light> Lights = new()
     {

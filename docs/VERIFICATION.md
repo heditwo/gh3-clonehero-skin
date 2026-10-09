@@ -74,7 +74,7 @@ flock /tmp/opencode/gh3-record.lock env GH3_CLONE_HERO_DIR=<copy> \
   bash scripts/capture-menu.sh
 ```
 
-The script starts the game in its menus in a temporary Xwayland display and runs the picker steps (`ready` waits for the package import; `apply` also takes `venueTrack=on|off` and `generatedDirection=on|off`). `GH3_SKIN_MENU_INPUT` runs a command on that display while the game runs, for example XTest mouse clicks and keys with `python-xlib`, to test the picker with real input. The picker writes `GH3 picker opened` and `GH3 picker closed: <choices>` to the log; each song writes `GH3 stage choice: <id> (<reason>)`, `GH3 direction: Rock Band VENUE tracks on|off, generated direction on|off`, and `GH3 band <role>: character <id> (...) with <instrument>`. Clone Hero's settings are in `~/.clonehero`, which all game copies share: add test packages to `~/.clonehero/Custom` only under the record lock, and remove them after the run.
+The script starts the game in its menus in a temporary Xwayland display and runs the picker steps (`ready` waits for the package import; `apply` also takes `venueTrack=on|off`, `generatedDirection=on|off`, and `reduceFlashing=on|off`). `GH3_SKIN_MENU_INPUT` runs a command on that display while the game runs, for example XTest mouse clicks and keys with `python-xlib`, to test the picker with real input. The picker writes `GH3 picker opened` and `GH3 picker closed: <choices>` to the log; each song writes `GH3 stage choice: <id> (<reason>)`, `GH3 direction: Rock Band VENUE tracks on|off, generated direction on|off, reduce flashing on|off`, and `GH3 band <role>: character <id> (...) with <instrument>`. Clone Hero's settings are in `~/.clonehero`, which all game copies share: add test packages to `~/.clonehero/Custom` only under the record lock, and remove them after the run.
 
 ## Video
 
@@ -158,6 +158,7 @@ These variables are for checks and captures. Normal play needs none of them.
 | `GH3_SKIN_CAMERA_SHOT` | Forces one shot name, to match a GH3 reference frame |
 | `GH3_SKIN_VENUE_TRACK=off` | Ignores Rock Band `VENUE` tracks. Overrides the picker option; another value turns the tracks on |
 | `GH3_SKIN_GENERATED_DIRECTION=off` | No cues from chart sections; a chart without direction keeps the static defaults (as before 2026-10-09). Overrides the picker option; another value turns it on |
+| `GH3_SKIN_REDUCE_FLASHING=on` | Weaker, rarer Rock Band flares and slower strobes. Overrides the picker option; `off` or `0` turns it off |
 | `GH3_SKIN_PREVIEW_SONG` | Chart folder for `run-gh3-skin.sh --preview` and the capture scripts |
 | `GH3_SKIN_PREVIEW_WIDTH`, `GH3_SKIN_PREVIEW_HEIGHT` | Window size; default 1600 × 900 |
 | `GH3_SKIN_CAPTURE_AFTER`, `GH3_SKIN_CAPTURE_TIMES` | Screenshot times |

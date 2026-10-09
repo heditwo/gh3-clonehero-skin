@@ -19,6 +19,8 @@ internal sealed class PlayerChoices
     // (StageChartReader.UseGeneratedDirection). GH3_SKIN_VENUE_TRACK and GH3_SKIN_GENERATED_DIRECTION override them.
     public bool VenueTrack { get; set; } = true;
     public bool GeneratedDirection { get; set; } = true;
+    // Weaker, rarer Rock Band flares and slower strobes (StageRockBandVenue.ReduceFlashing); GH3_SKIN_REDUCE_FLASHING overrides it.
+    public bool ReduceFlashing { get; set; }
     public Dictionary<string, string> Characters { get; } = Roles.ToDictionary(role => role, _ => DefaultCharacter);
 
     public string Character(string role) => Characters.TryGetValue(role, out var id) ? id : DefaultCharacter;
@@ -42,6 +44,7 @@ internal sealed class PlayerChoices
             if (PackageJson.Bool(root["showHint"]) is { } hint) choices.ShowHint = hint;
             if (PackageJson.Bool(root["venueTrack"]) is { } venue) choices.VenueTrack = venue;
             if (PackageJson.Bool(root["generatedDirection"]) is { } generated) choices.GeneratedDirection = generated;
+            if (PackageJson.Bool(root["reduceFlashing"]) is { } reduce) choices.ReduceFlashing = reduce;
             if (root["characters"] is JsonObject characters)
                 foreach (var role in Roles)
                     if (PackageJson.Text(characters[role]) is { } id && (id == DefaultCharacter || PackageManifest.ValidId(id))) choices.Characters[role] = id;
@@ -59,7 +62,7 @@ internal sealed class PlayerChoices
         PackageJson.Write(temporary, new JsonObject
         {
             ["version"] = 1, ["stage"] = Stage, ["songSuggestions"] = SongSuggestions, ["showHint"] = ShowHint,
-            ["venueTrack"] = VenueTrack, ["generatedDirection"] = GeneratedDirection,
+            ["venueTrack"] = VenueTrack, ["generatedDirection"] = GeneratedDirection, ["reduceFlashing"] = ReduceFlashing,
             ["characters"] = new JsonObject(Roles.Select(role => KeyValuePair.Create(role, (JsonNode?)Character(role)))),
         });
         File.Move(temporary, path, true);

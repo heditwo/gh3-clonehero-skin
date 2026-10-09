@@ -114,8 +114,10 @@ internal sealed class GameplayStage
             $"song suggestions {(choices.SongSuggestions ? "on" : "off")})");
         StageChartReader.UseVenueTrack = Packages.PlayerChoices.Switch(Environment.GetEnvironmentVariable("GH3_SKIN_VENUE_TRACK"), choices.VenueTrack);
         StageChartReader.UseGeneratedDirection = Packages.PlayerChoices.Switch(Environment.GetEnvironmentVariable("GH3_SKIN_GENERATED_DIRECTION"), choices.GeneratedDirection);
+        StageRockBandVenue.ReduceFlashing = Environment.GetEnvironmentVariable("GH3_SKIN_REDUCE_FLASHING") is { } reduce ?
+            reduce is not ("off" or "0") : choices.ReduceFlashing;
         MelonLogger.Msg($"GH3 direction: Rock Band VENUE tracks {(StageChartReader.UseVenueTrack ? "on" : "off")}, " +
-            $"generated direction {(StageChartReader.UseGeneratedDirection ? "on" : "off")}");
+            $"generated direction {(StageChartReader.UseGeneratedDirection ? "on" : "off")}, reduce flashing {(StageRockBandVenue.ReduceFlashing ? "on" : "off")}");
         _characterPackages.Clear();
         foreach (var role in Packages.PlayerChoices.Roles)
         {
