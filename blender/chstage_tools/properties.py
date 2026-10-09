@@ -213,6 +213,7 @@ class CHSTAGE_PG_material(PropertyGroup):
         ("lit", "Lit", "Stage lights light the surface"),
         ("ambient", "Ambient", "Ambient light only"),
         ("unlit", "Unlit", "Full brightness"),
+        ("NONE", "Not set", "No gh3Shading: the mod draws the material without the stage surface model (as some GH3 materials)"),
     ], default="lit")
     blend: EnumProperty(name="Transparency", items=[
         ("OPAQUE", "Opaque", ""),

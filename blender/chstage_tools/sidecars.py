@@ -488,7 +488,8 @@ def open_node(extras):
 
 def material_fields(material):
     """(gh3* material extras, standard glTF material fields) of one material description (PACKAGE-FORMAT 6.5)."""
-    extras = {"gh3Shading": material["shading"]}
+    # An absent gh3Shading is not "lit": the mod then draws the material without the stage surface model.
+    extras = {"gh3Shading": material["shading"]} if material["shading"] != "NONE" else {}
     gltf = {"alphaMode": "OPAQUE", "doubleSided": bool(material.get("twoSided"))}
     blend = material["blend"]
     if blend == "CUTOUT":
@@ -537,7 +538,7 @@ def open_material(material):
     blend = {"MASK": "CUTOUT", "BLEND": "ADDITIVE" if extras.get("gh3Additive") else "BLEND"}.get(mode, "OPAQUE")
     cutoff = material.get("alphaCutoff", 0.5) if mode == "MASK" else extras.get("gh3AlphaCutoff", 0.5)
     flipbook = extras.get("gh3TextureAnimation")
-    props = {"shading": extras.get("gh3Shading", "lit"), "blend": blend, "alpha_cutoff": cutoff,
+    props = {"shading": extras.get("gh3Shading", "NONE"), "blend": blend, "alpha_cutoff": cutoff,
              "use_blend_cutoff": mode == "BLEND" and "gh3AlphaCutoff" in extras, "two_sided": bool(material.get("doubleSided", False)),
              "color_scale": extras.get("gh3ColorScale", 1), "crowd_atlas": bool(extras.get("gh3CrowdAtlas", False)),
              "crowd_role": extras.get("gh3CrowdRole", "NONE"), "billboard": bool(extras.get("gh3Billboard", False)),

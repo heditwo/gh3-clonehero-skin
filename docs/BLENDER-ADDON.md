@@ -56,7 +56,7 @@ Keep the source package where it is. The actor GLBs stay in it, and export reads
 | | Stage Light (light selected) | Light ID, group, type, script object, override color, intensity, near, far, hotspot and field |
 | | Lighting | Snapshots (light settings with specular, and beams), **Capture** and **Apply**, moods, color presets |
 | | Crowd and Camera Notes | Crowd roles and models, GH3 camera note selectors |
-| Properties editor, tab **Material** | CH Stage Material | Shading (lit, ambient, unlit), transparency (opaque, cutout, blend, additive), alpha cutoff, two-sided, color alpha (opaque GH3 materials), color scale, lightmap and its UV map, movie slot, sorted transparency, crowd atlas, crowd role, billboard, flipbook. "Kept GH3 data" lists the GH3 shader data that export keeps |
+| Properties editor, tab **Material** | CH Stage Material | Shading (lit, ambient, unlit, not set), transparency (opaque, cutout, blend, additive), alpha cutoff, two-sided, color alpha (opaque GH3 materials), color scale, lightmap and its UV map, movie slot, sorted transparency, crowd atlas, crowd role, billboard, flipbook. "Kept GH3 data" lists the GH3 shader data that export keeps |
 
 ### 1.6 Validate
 
@@ -223,7 +223,11 @@ Differences that remain, and why:
 | Vertex order and count, primitive split, glTF defaults written or not | All venues | Blender rebuilds the vertex buffers; the triangles and their data are the same |
 | Zip size | −0.2 % to +1.0 % (GH3 venues) | Other GLB layout, PNG files outside the GLB |
 
-Export from the Blender data only (Keeper off), the differences to the source rows: numbers within 2.3e-6 in the sidecars (float32 and rounding to 6 digits), alpha cutoffs within 4.5e-5 (before this change the add-on rounded them to 4 digits), and keys with default values that the add-on does not write (`handCam`, `disableOrbit1`, `disableOrbit2`: false; `waypoints`: []; note `tag` and `type`: ""; `overrideColor`, `gh3FixtureFixedPosition`: false; `gh3ObjectScript`: ""; `gh3Shading` absent where the source had none: lit). The runtime reads a missing key as its default.
+Export from the Blender data only (Keeper off) is the path of an edited row. Its differences to the source rows: numbers within 2.3e-6 in the sidecars and within 3e-8 in the node extras (float32 and rounding to 6 digits), and keys with default values that the add-on does not write (`handCam`, `disableOrbit1`, `disableOrbit2`: false; `waypoints`: []; note `tag` and `type`: ""; `overrideColor`, `gh3FixtureFixedPosition`: false; `gh3ObjectScript`: ""). The compiler (`pipeline/stagepack/pack.py`) and the runtime (`StageCameraPath.cs` `OriginalCameraShot`, `StageLighting.cs`) read each missing key as the same default (false, empty node list, empty string; a shot without `waypoints` matches all nodes, as `[]` does).
+
+Check on the compiled runtime data: the source package and the Keeper-off export of artdeco, dive, hell, and credits, compiled with the pipeline compiler and compared by meaning (materials by `gh3SourceMaterial`, textures by PNG bytes, objects by ID, fixtures by script object). The only differences are numbers within 2.3e-6 and the default keys above (`/tmp/opencode/addon-export/evidence/compiled-edited-path.txt`).
+
+A missing `gh3Shading` is not the same as `lit`: the mod then draws the material without the stage surface model (`StageMaterial.ShadingMode` −1). The material panel has the shading value **Not set** for it; Open uses it for the 58 GH3 materials without `gh3Shading`. (Before this fix, an edited material of that kind became `lit`; `compiled-edited-path-before-fix.txt` shows it.)
 
 Evidence: `/tmp/opencode/addon-export/evidence/` (`roundtrip-summary.md`, one JSON report for each package and Blender version, screenshots, template preview). Command:
 

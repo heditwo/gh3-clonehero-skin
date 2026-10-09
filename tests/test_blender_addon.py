@@ -128,6 +128,7 @@ class SidecarTests(unittest.TestCase):
     def test_material_settings_map_to_gltf_and_extras(self):
         base = {"shading": "lit", "blend": "OPAQUE", "alphaCutoff": 0.5}
         self.assertEqual(sidecars.material_fields(base), ({"gh3Shading": "lit"}, {"alphaMode": "OPAQUE", "doubleSided": False}))
+        self.assertEqual(sidecars.material_fields(base | {"shading": "NONE"})[0], {})
         self.assertEqual(sidecars.material_fields(base | {"blend": "CUTOUT", "alphaCutoff": 0.3, "twoSided": True})[1],
                          {"alphaMode": "MASK", "alphaCutoff": 0.3, "doubleSided": True})
         extras, gltf = sidecars.material_fields(base | {"shading": "unlit", "blend": "ADDITIVE", "blendCutoff": True, "colorScale": 2.0,
@@ -313,7 +314,6 @@ class OpenTests(unittest.TestCase):
                            "flipbook": {k: props[f"flipbook_{k}"] for k in ("columns", "rows", "fps", "offset")} if props["use_flipbook"] else None,
                            "otherExtras": other, "opaqueAlpha": props["opaque_alpha"]}
             source = sidecars.gltf_material_row(material)
-            if "gh3Shading" not in source["extras"]: source["extras"]["gh3Shading"] = "lit"  # absent means lit
             json_close(self, source, sidecars.material_row(description))
         for node in gltf["nodes"]:
             props = sidecars.open_node(node.get("extras", {}))
