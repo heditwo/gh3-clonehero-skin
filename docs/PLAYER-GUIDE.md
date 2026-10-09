@@ -26,7 +26,9 @@ The **Stage** list has these items:
 | --- | --- |
 | A stage name | This stage plays for all songs |
 | **Random** | A different random stage plays for each song. The same stage does not play two times in sequence |
-| **Song's choice (else random)** | The stage that the song selects plays. If the song does not select a stage, a random stage plays |
+| **Song's choice (else Kaiju Megadome)** | The stage that the song selects plays. If the song does not select a stage, Kaiju Megadome (`gh3.budokan`) plays. If Kaiju Megadome is not installed, a random stage plays |
+
+**Song's choice** is the default when you have not used the picker. If you selected a stage with an earlier version of the mod, your choice stays.
 
 The image on the right shows the stage below the mouse pointer, or the selected stage.
 
@@ -58,7 +60,22 @@ A character plays with the animations of the member that it replaces. A characte
 
 If a character cannot load, the venue default plays, and the log tells you why.
 
-## 4. Add stages and characters
+### Instruments
+
+Each band member plays the instrument of the member that it replaces: the guitarist plays the guitar, the bassist plays the bass, the drummer plays the drum kit, and the singer has the microphone and stand. The mod adds the instrument to the character. Thus a guitarist character that plays the bassist has the bass.
+
+A character that has an instrument in its own model keeps that instrument, also when it plays another member. The log line `GH3 band <member>: character <id> ... with <instrument>` tells you which instrument plays.
+
+## 4. Direction options
+
+Two check boxes at the bottom of the picker control the camera and light direction of songs. Both are on by default. The change applies to the next song that you start.
+
+| Option | On | Off |
+| --- | --- | --- |
+| **Use Rock Band VENUE tracks** | A chart with a Rock Band `VENUE` track gets camera cuts, lights, and effects from that track | The mod ignores `VENUE` tracks |
+| **Generate direction for charts without it** | A chart without camera or light direction gets camera cuts and light changes from its sections | Such a chart keeps one light mood and the automatic cameras |
+
+## 5. Add stages and characters
 
 1. Find your Clone Hero `Custom` folder. This is the folder that has `Highways` and `Image Backgrounds` (on Linux, usually `~/.clonehero/Custom`; in portable mode, `PlayerData/Custom` in the game folder).
 2. Put stage files (`.chstage`) in `Custom/Stages/`.
@@ -69,11 +86,13 @@ You can use group folders, for example `Custom/Stages/My Stages/`, to a depth of
 
 When you remove a package, the mod deletes its cache folder at the next start.
 
-## 5. Problems
+## 6. Problems
 
 | Problem | Do this |
 | --- | --- |
 | F6 does nothing | Make sure that you are in the menus, not in a song. Look in `MelonLoader/Latest.log` for lines that start with `GH3 picker` |
 | A stage or a character is not in the list | Look in the log for `GH3 packages: skipped <file>: <reason>`. A package that imports shows `(importing)`; open the picker again later |
 | The wrong stage plays | Look in the log for `GH3 stage choice: <stage> (<reason>)` |
+| A band member has no instrument or the wrong instrument | Look in the log for `GH3 band <member>: character <id> ... with ...` |
+| The direction options do not apply | Look in the log for `GH3 direction: Rock Band VENUE tracks on/off, generated direction on/off`. The test variables `GH3_SKIN_VENUE_TRACK` and `GH3_SKIN_GENERATED_DIRECTION` override the picker |
 | You want the defaults again | Close the game and delete `UserData/GH3Skin/choices.json` in the game folder |

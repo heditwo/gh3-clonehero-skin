@@ -514,6 +514,11 @@ class Validator:
         except (OSError, ValueError) as error:
             self.report.error("--library", f"cannot read the profile rig: {error}"); return
         self.check_profile(entry["model"], glb, joints, names, joint_parents, profile)
+        instrument = character.get("attachments", {}).get("instrument")
+        known = library_instruments(self.library)
+        if instrument and known and instrument not in known:
+            self.report.warn(entry["character"], f"attachments.instrument '{instrument}' is not a library instrument ({', '.join(sorted(known))}); "
+                             "the game uses the instrument of the band role")
 
     def check_profile(self, name, glb, joints, names, joint_parents, profile):
         profile_names, profile_parents, translations, rotations = profile
@@ -609,6 +614,20 @@ class Validator:
 def gh3_key(name):
     """GH3 checksum of a name (pipeline.gh3.formats.key, repeated here so the add-on bundle has no other dependency)."""
     return ~zlib.crc32(name.lower().encode()) & 0xFFFFFFFF
+
+
+def library_instruments(library):
+    """The instrument IDs of band/band.json in a library package (zip or folder) or the current library folder."""
+    library = Path(library)
+    try:
+        if library.is_file() or (library/"manifest.json").is_file():
+            source = Source(library, Report())
+            band = json.loads(source.read("band/band.json")) if "band/band.json" in source.set else {}
+        else:
+            band = json.loads((library / "band" / "band.json").read_text())
+    except (OSError, ValueError):
+        return set()
+    return {m.get("instrument") for m in band.get("members", []) if m.get("instrument")}
 
 
 def load_profile(library, role):

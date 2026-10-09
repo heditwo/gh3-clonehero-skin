@@ -87,8 +87,10 @@ internal static class StageSelection
         if (mode is PlayerChoices.RandomStage or PlayerChoices.SongStage)
         {
             if (available.Count == 0) return new StageDecision(PlayerChoices.FallbackStage, "", "no stage is installed" + note);
+            if (mode == PlayerChoices.SongStage && available.Contains(PlayerChoices.FallbackStage))
+                return new StageDecision(PlayerChoices.FallbackStage, "", "the default stage: the song has no stage" + note);
             var pool = available.Count > 1 ? available.Where(id => id != previous).ToArray() : available.ToArray();
-            var reason = mode == PlayerChoices.RandomStage ? "random choice" : "random choice: the song has no stage";
+            var reason = mode == PlayerChoices.RandomStage ? "random choice" : $"random choice: the song has no stage and {PlayerChoices.FallbackStage} is not installed";
             return new StageDecision(pool[random.Next(pool.Length)], "", reason + note);
         }
         if (available.Contains(mode) || fixedByEnvironment) return new StageDecision(mode, "", (fixedByEnvironment ? "GH3_SKIN_STAGE" : "the player's choice") + note);

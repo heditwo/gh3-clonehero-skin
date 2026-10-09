@@ -1,12 +1,15 @@
 namespace Gh3Skin.Packages;
 
-// An imported character in the cache (CharacterImporter): its folder, joint names, and bind poses (row-major 4 × 4).
+// An imported character in the cache (CharacterImporter): its folder, joint names, named instrument, and bind poses
+// (row-major 4 × 4).
 internal sealed class CharacterModel
 {
     public string Folder { get; private init; } = "";
     public string Id { get; private init; } = "";
     public string Name { get; private init; } = "";
     public string Role { get; private init; } = "";
+    // character.json attachments.instrument; "" for the default (also in caches that are older than the field).
+    public string Instrument { get; private init; } = "";
     public string[] Joints { get; private init; } = Array.Empty<string>();
     public float[][] Bindposes { get; private init; } = Array.Empty<float[]>();
 
@@ -23,6 +26,7 @@ internal sealed class CharacterModel
         return new CharacterModel
         {
             Folder = folder, Id = PackageJson.Text(info["id"]) ?? "", Name = PackageJson.Text(info["name"]) ?? "", Role = PackageJson.Text(info["role"]) ?? "",
+            Instrument = PackageJson.Text(info["instrument"]) ?? "",
             Joints = joints, Bindposes = bindposes,
         };
     }

@@ -74,7 +74,7 @@ flock /tmp/opencode/gh3-record.lock env GH3_CLONE_HERO_DIR=<copy> \
   bash scripts/capture-menu.sh
 ```
 
-The script starts the game in its menus in a temporary Xwayland display and runs the picker steps (`ready` waits for the package import). `GH3_SKIN_MENU_INPUT` runs a command on that display while the game runs, for example XTest mouse clicks and keys with `python-xlib`, to test the picker with real input. The picker writes `GH3 picker opened` and `GH3 picker closed: <choices>` to the log; each song writes `GH3 stage choice: <id> (<reason>)` and `GH3 band <role>: character <id>`. Clone Hero's settings are in `~/.clonehero`, which all game copies share: add test packages to `~/.clonehero/Custom` only under the record lock, and remove them after the run.
+The script starts the game in its menus in a temporary Xwayland display and runs the picker steps (`ready` waits for the package import; `apply` also takes `venueTrack=on|off` and `generatedDirection=on|off`). `GH3_SKIN_MENU_INPUT` runs a command on that display while the game runs, for example XTest mouse clicks and keys with `python-xlib`, to test the picker with real input. The picker writes `GH3 picker opened` and `GH3 picker closed: <choices>` to the log; each song writes `GH3 stage choice: <id> (<reason>)`, `GH3 direction: Rock Band VENUE tracks on|off, generated direction on|off`, and `GH3 band <role>: character <id> (...) with <instrument>`. Clone Hero's settings are in `~/.clonehero`, which all game copies share: add test packages to `~/.clonehero/Custom` only under the record lock, and remove them after the run.
 
 ## Video
 
@@ -150,14 +150,14 @@ These variables are for checks and captures. Normal play needs none of them.
 
 | Variable | Purpose |
 | --- | --- |
-| `GH3_SKIN_STAGE` | Stage ID (package or older pack), for example `gh3.hell` or `example.studio`; it overrides the picker and the song's stage. `random` or `song` act as the picker items. `off` shows the stock background. Without the variable, the picker choice (`UserData/GH3Skin/choices.json`, default `gh3.budokan`) applies |
+| `GH3_SKIN_STAGE` | Stage ID (package or older pack), for example `gh3.hell` or `example.studio`; it overrides the picker and the song's stage. `random` or `song` act as the picker items. `off` shows the stock background. Without the variable, the picker choice (`UserData/GH3Skin/choices.json`, default `song`: the song's stage, else `gh3.budokan`) applies |
 | `GH3_SKIN_CHARACTER_GUITARIST`, `_BASSIST`, `_DRUMMER`, `_SINGER` | Character package ID for a band role (or `default`); overrides the picker |
 | `GH3_SKIN_PICKER_TEST` | Picker steps in the menus without a mouse (`src/Menu/PickerTest.cs`), for `scripts/capture-menu.sh` |
 | `GH3_SKIN_PACKAGES=off` | Ignores packages; the stage loads from the older install (`assets/stages`, `assets/libraries`) |
 | `GH3_SKIN_CAMERA` | `auto` (default), `fixed`, or a shot group: `wide`, `singer`, `guitarist`, `bassist`, `drummer`, `orbit` |
 | `GH3_SKIN_CAMERA_SHOT` | Forces one shot name, to match a GH3 reference frame |
-| `GH3_SKIN_VENUE_TRACK=off` | Ignores Rock Band `VENUE` tracks |
-| `GH3_SKIN_GENERATED_DIRECTION=off` | No cues from chart sections; a chart without direction keeps the static defaults (as before 2026-10-09) |
+| `GH3_SKIN_VENUE_TRACK=off` | Ignores Rock Band `VENUE` tracks. Overrides the picker option; another value turns the tracks on |
+| `GH3_SKIN_GENERATED_DIRECTION=off` | No cues from chart sections; a chart without direction keeps the static defaults (as before 2026-10-09). Overrides the picker option; another value turns it on |
 | `GH3_SKIN_PREVIEW_SONG` | Chart folder for `run-gh3-skin.sh --preview` and the capture scripts |
 | `GH3_SKIN_PREVIEW_WIDTH`, `GH3_SKIN_PREVIEW_HEIGHT` | Window size; default 1600 × 900 |
 | `GH3_SKIN_CAPTURE_AFTER`, `GH3_SKIN_CAPTURE_TIMES` | Screenshot times |

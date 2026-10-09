@@ -382,7 +382,7 @@ GH3 lightshow note numbers are in [PARITY-NOTES.md](PARITY-NOTES.md#lighting-and
 
 A MIDI track with the name `VENUE` holds Rock Band camera and lighting cues ([format](https://github.com/TheNathannator/GuitarGame_ChartFormats/blob/main/docs/Implementation-Specific/Rock-Band/MIDI-Tracks/Venue.md)). Many converted charts have one. The mod reads both variants: RB1/RB2 notes and text events, and RB3 text events. `.chart` files have no VENUE section (Moonscraper and YARG also read the track only from MIDI); the `[lighting (NAME)]` and `[bonusfx]` events in `[Events]` use the same name table. `MV VENUE` (RB2 music-video venues) is not read.
 
-The cues go into the normal channels (`camera`, `lighting`, `pyro`, `smoke`) and play through the same players as GH3 notes: camera cuts become `gh3-camera` notes, lighting becomes `lighting`, `color`, and `blend` cues, and keyframe steps become GH3 lightshow notes 58 (next snapshot) and 60 (strobe toggle). A channel uses the VENUE track only when no higher source supplies it ([channel selection](#channel-selection-and-fallback)). Set `GH3_SKIN_VENUE_TRACK=off` to ignore all VENUE tracks; `StageChartReader.UseVenueTrack` is the same switch for an in-game option. The loader log shows the counts (`Rock Band VENUE: ... mapped; N repeated lighting cues blend into the next cue; ignored ...`) and the first 16 mapped cues.
+The cues go into the normal channels (`camera`, `lighting`, `pyro`, `smoke`) and play through the same players as GH3 notes: camera cuts become `gh3-camera` notes, lighting becomes `lighting`, `color`, and `blend` cues, and keyframe steps become GH3 lightshow notes 58 (next snapshot) and 60 (strobe toggle). A channel uses the VENUE track only when no higher source supplies it ([channel selection](#channel-selection-and-fallback)). Clear **Use Rock Band VENUE tracks** in the picker ([PLAYER-GUIDE.md](PLAYER-GUIDE.md#4-direction-options)), or set `GH3_SKIN_VENUE_TRACK=off`, to ignore all VENUE tracks. The loader log shows the counts (`Rock Band VENUE: ... mapped; N repeated lighting cues blend into the next cue; ignored ...`) and the first 16 mapped cues.
 
 In the tables, **J** marks a choice by judgment. The other rows follow the name of the Rock Band cue directly.
 
@@ -510,7 +510,7 @@ A chart with no camera or lighting source (no GH track, no VENUE track, no song 
 - On each bar (four beats) from the first section to the last chart event: lightshow note 58 (next snapshot). GH3's random camera cuts then also end on bar lines, as in GH3 (`CameraCuts_CalcTime` extends a cut to the next note 58).
 - A chart without sections gets the `verse` mood at time 0 and the bar steps. The camera keeps GH3's random cuts.
 
-Before this, such a chart stayed in the `intro` mood for the whole song. Set `GH3_SKIN_GENERATED_DIRECTION=off` to get that behavior (for example, for older reference captures).
+Before this, such a chart stayed in the `intro` mood for the whole song. Clear **Generate direction for charts without it** in the picker, or set `GH3_SKIN_GENERATED_DIRECTION=off`, to get that behavior (for example, for older reference captures).
 
 ### Lip sync from vocals
 
@@ -526,7 +526,7 @@ For each syllable the mouth opens 0.05 s before the note over 0.1 s, holds for t
 
 The mouth shapes come from the 570 GH3 singer facial clips (`tools/lipsync-shapes.py`): the motion of 18 jaw, lip, cheek, and tongue bones per degree of jaw opening, and the main mouth-width motion. The mod adds them to the body clip in the bone's own axes, as GH3's `applydifference` does. From the first to the last sung syllable, the eyes blink at random intervals of 2 to 18 seconds (fixed for each song). The mod does not move the brows: the brow motion of the GH3 clips has no relation to the jaw.
 
-GH3 facial clips always have priority: a native song, an original song from the library, or a `face` cue keeps the GH3 face exactly. The guitarist does not get lip sync. Set `GH3_SKIN_LIPSYNC=off` to keep the face still (a later F6 picker option can set `StageLipSync.Enabled`). The mod does not analyze audio: the four tested Rock Band charts with a `vocals` stem also have `PART VOCALS`, and the song mix cannot isolate the voice.
+GH3 facial clips always have priority: a native song, an original song from the library, or a `face` cue keeps the GH3 face exactly. The guitarist does not get lip sync. Set `GH3_SKIN_LIPSYNC=off` to keep the face still (an F6 picker option can set `StageLipSync.Enabled` later). The mod does not analyze audio: the four tested Rock Band charts with a `vocals` stem also have `PART VOCALS`, and the song mix cannot isolate the voice.
 
 ### GH3 script calls in charts
 

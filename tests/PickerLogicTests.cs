@@ -33,19 +33,27 @@ internal static class PickerLogicTests
     {
         var path = Path.Combine(root, "choices.json");
         var defaults = PlayerChoices.Load(path, out var problem);
-        Check(defaults.Stage == "gh3.budokan" && defaults.SongSuggestions && defaults.Character("bassist") == "default" && problem == "", "no file gives the defaults");
+        Check(defaults.Stage == "song" && defaults.SongSuggestions && defaults.VenueTrack && defaults.GeneratedDirection && defaults.Character("bassist") == "default" &&
+            problem == "", "no file gives the defaults");
         defaults.Stage = PlayerChoices.RandomStage;
         defaults.SongSuggestions = false;
+        defaults.VenueTrack = false;
         defaults.Characters["bassist"] = "gh3.axel";
         defaults.Save(path);
         var read = PlayerChoices.Load(path, out problem);
-        Check(read.Stage == "random" && !read.SongSuggestions && read.Character("bassist") == "gh3.axel" && read.Character("singer") == "default", "choices round-trip");
+        Check(read.Stage == "random" && !read.SongSuggestions && !read.VenueTrack && read.GeneratedDirection && read.Character("bassist") == "gh3.axel" &&
+            read.Character("singer") == "default", "choices round-trip");
+        File.WriteAllText(path, "{\"stage\": \"gh3.budokan\", \"songSuggestions\": true}");
+        read = PlayerChoices.Load(path, out _);
+        Check(read.Stage == "gh3.budokan" && read.VenueTrack && read.GeneratedDirection, "an older file keeps its stage and gets the direction defaults");
         File.WriteAllText(path, "{\"stage\": \"../evil\", \"characters\": {\"drummer\": \"Bad Id\"}}");
         read = PlayerChoices.Load(path, out _);
-        Check(read.Stage == "gh3.budokan" && read.Character("drummer") == "default", "invalid values are ignored");
+        Check(read.Stage == "song" && read.Character("drummer") == "default", "invalid values are ignored");
         File.WriteAllText(path, "{not json");
         read = PlayerChoices.Load(path, out problem);
-        Check(read.Stage == "gh3.budokan" && problem.Contains("defaults"), "a damaged file gives the defaults and a message");
+        Check(read.Stage == "song" && problem.Contains("defaults"), "a damaged file gives the defaults and a message");
+        Check(PlayerChoices.Switch(null, true) && !PlayerChoices.Switch(null, false) && !PlayerChoices.Switch("off", true) && !PlayerChoices.Switch("0", true) &&
+            PlayerChoices.Switch("on", false), "environment switches override the choices");
     }
 
     private static void CheckSelection(string root)
@@ -65,7 +73,9 @@ internal static class PickerLogicTests
         choices.SongSuggestions = false;
         Check(StageSelection.Choose(choices, null, installed, suggestion, random).StageId == "gh3.dive", "song's choice uses the suggestion");
         var fallback = StageSelection.Choose(choices, null, installed, null, random);
-        Check(installed.Contains(fallback.StageId) && fallback.Reason.Contains("no stage"), "song's choice without a suggestion is random");
+        Check(fallback.StageId == "gh3.budokan" && fallback.Reason.Contains("no stage"), "song's choice without a suggestion plays the default stage");
+        var noBudokan = StageSelection.Choose(choices, null, new[] { "gh3.dive", "gh3.hell" }, null, random);
+        Check(noBudokan.StageId is "gh3.dive" or "gh3.hell" && noBudokan.Reason.Contains("random"), "song's choice without the default stage is random");
         var missing = StageSelection.Choose(choices, null, installed, new StageSuggestion("other.stage", "", "song.ini gh3_stage"), random);
         Check(installed.Contains(missing.StageId) && missing.Reason.Contains("not installed"), "an uninstalled suggestion is skipped with a reason");
         var package = StageSelection.Choose(choices, null, installed, new StageSuggestion("", "/songs/x/venue.chstage", "venue.chstage"), random);
@@ -248,28 +258,31 @@ internal static class PickerLogicTests
         return glb.Build();
     }
 
-    private static string CharacterPackage(string root, string name, byte[] glb)
+    private static string CharacterPackage(string root, string name, byte[] glb, string attachments = "")
     {
         var folder = Path.Combine(root, name + ".chchar");
         Directory.CreateDirectory(folder);
         File.WriteAllBytes(Path.Combine(folder, "character.glb"), glb);
-        File.WriteAllText(Path.Combine(folder, "character.json"), "{\"version\":1,\"library\":\"gh3-band-v1\",\"profile\":\"gh3-singer-male-v1\",\"hairMaterials\":[\"body\"]}");
+        File.WriteAllText(Path.Combine(folder, "character.json"), "{\"version\":1,\"library\":\"gh3-band-v1\",\"profile\":\"gh3-singer-male-v1\",\"hairMaterials\":[\"body\"]" +
+            (attachments.Length > 0 ? ",\"attachments\":" + attachments : "") + "}");
         File.WriteAllText(Path.Combine(folder, "manifest.json"), Manifest("chchar/1.0", "test." + name, "{\"model\":\"character.glb\",\"character\":\"character.json\"}"));
         return folder;
     }
 
-    private static string ImportCharacter(string package, string library, string output)
+    private static string ImportCharacter(string package, string library, string output, List<string>? warnings = null)
     {
         SemanticVersion.TryParse("0.9.8", out var version);
         var source = PackageSource.At(package);
         var manifest = PackageManifest.Parse(source.ReadAll("manifest.json"), PackageKind.Character, version);
         using var verified = new VerifiedPackage(source, manifest);
+        var importer = new CharacterImporter(verified, new TextureJobs(false, 1), library);
         try
         {
-            new CharacterImporter(verified, new TextureJobs(false, 1), library).Import(output);
+            importer.Import(output);
             return "";
         }
         catch (PackageException error) { return error.Message; }
+        finally { warnings?.AddRange(importer.Warnings); }
     }
 
     private static void CheckCharacters(string root)
@@ -295,6 +308,16 @@ internal static class PickerLogicTests
         Check(moved.Contains("joint positions differ"), "a joint 1 mm off the profile is rejected: " + moved);
         var unbound = ImportCharacter(CharacterPackage(root, "unbound", CharacterGlb(bindOffset: 0.01f)), library, Path.Combine(root, "unbound-cache"));
         Check(unbound.Contains("inverse bind matrices differ"), "inverse bind matrices that do not fit the joints are rejected: " + unbound);
+        Check(model.Instrument == "", "no attachments: the default instrument");
+        File.WriteAllText(Path.Combine(library, "band", "band.json"), "{\"version\":1,\"members\":[{\"role\":\"singer\",\"instrument\":\"Microphone001\"}]}");
+        var warnings = new List<string>();
+        error = ImportCharacter(CharacterPackage(root, "named", CharacterGlb(), "{\"instrument\":\"Microphone001\"}"), library, Path.Combine(root, "named-cache"), warnings);
+        Check(error == "" && warnings.Count == 0 && CharacterModel.Load(Path.Combine(root, "named-cache")).Instrument == "Microphone001", "a named library instrument goes to the cache");
+        error = ImportCharacter(CharacterPackage(root, "unknown", CharacterGlb(), "{\"instrument\":\"Kazoo\"}"), library, Path.Combine(root, "unknown-cache"), warnings);
+        Check(error == "" && warnings.Any(w => w.Contains("Kazoo")) && CharacterModel.Load(Path.Combine(root, "unknown-cache")).Instrument == "",
+            "an unknown instrument gives a warning and the default");
+        error = ImportCharacter(CharacterPackage(root, "badslot", CharacterGlb(), "{\"hat\":\"x\"}"), library, Path.Combine(root, "badslot-cache"));
+        Check(error.Contains("hat"), "an unknown attachment slot is rejected: " + error);
     }
 
     private static void CheckSamplerOnlyImage(string root)

@@ -58,6 +58,7 @@ internal sealed class PickerOverlay
         PackageRuntime.SaveChoices();
         var choices = PackageRuntime.Choices;
         MelonLogger.Msg($"GH3 picker closed: stage {choices.Stage}, song suggestions {(choices.SongSuggestions ? "on" : "off")}, " +
+            $"VENUE tracks {(choices.VenueTrack ? "on" : "off")}, generated direction {(choices.GeneratedDirection ? "on" : "off")}, " +
             string.Join(", ", PlayerChoices.Roles.Select(role => $"{role} {choices.Character(role)}")));
     }
 
@@ -164,7 +165,8 @@ internal sealed class PickerOverlay
     {
         var choices = PackageRuntime.Choices;
         GUI.Label(new Rect(area.x, area.y, area.width, 22), "<b>Stage</b>");
-        var rows = new List<(string Id, string Label)> { (PlayerChoices.SongStage, "Song's choice (else random)"), (PlayerChoices.RandomStage, "Random") };
+        var rows = new List<(string Id, string Label)>
+            { (PlayerChoices.SongStage, $"Song's choice (else {StageLabel(PlayerChoices.FallbackStage)})"), (PlayerChoices.RandomStage, "Random") };
         rows.AddRange(_stages.Select(s => (s.Id, $"{s.Name}  <color=#999999>{s.Detail}</color>")));
         var view = new Rect(0, 0, area.width - 20, rows.Count * 30);
         _scroll = GUI.BeginScrollView(new Rect(area.x, area.y + 26, area.width, area.height - 26), _scroll, view);
@@ -193,18 +195,8 @@ internal sealed class PickerOverlay
         if (shown != null && Preview(shown) is { } texture) GUI.Box(image, GUIContent.none, Style(texture));
         else GUI.Label(new Rect(image.x + 16, image.y + 116, 420, 22), shown == null ? StageLabel(_hover.Length > 0 ? _hover : choices.Stage) : "No preview image");
         GUI.Label(new Rect(area.x, image.yMax + 4, 448, 22), shown?.Name ?? StageLabel(choices.Stage));
-        var suggestions = GUI.Toggle(new Rect(area.x, image.yMax + 30, 448, 22), choices.SongSuggestions, " Songs can select their stage");
-        if (suggestions != choices.SongSuggestions)
-        {
-            choices.SongSuggestions = suggestions;
-            PackageRuntime.SaveChoices();
-        }
-        var hint = GUI.Toggle(new Rect(area.x, image.yMax + 54, 448, 22), choices.ShowHint, " Show the F6 hint in the menus");
-        if (hint != choices.ShowHint)
-        {
-            choices.ShowHint = hint;
-            PackageRuntime.SaveChoices();
-        }
+        Option(new Rect(area.x, image.yMax + 30, 448, 22), choices.SongSuggestions, " Songs can select their stage", value => choices.SongSuggestions = value);
+        Option(new Rect(area.x, image.yMax + 54, 448, 22), choices.ShowHint, " Show the F6 hint in the menus", value => choices.ShowHint = value);
         GUI.Label(new Rect(area.x, image.yMax + 86, 448, 22), "<b>Band</b>" + (_characters.Count == 0 ? "  <color=#999999>(no character packages in Custom/Characters)</color>" : ""));
         for (var i = 0; i < PlayerChoices.Roles.Length; i++)
         {
@@ -227,6 +219,19 @@ internal sealed class PickerOverlay
                 PackageRuntime.SaveChoices();
             }
         }
+        var direction = image.yMax + 112 + PlayerChoices.Roles.Length * 32 + 8;
+        Option(new Rect(area.x, direction, 448, 22), choices.VenueTrack, " Use Rock Band VENUE tracks", value => choices.VenueTrack = value);
+        Option(new Rect(area.x, direction + 24, 448, 22), choices.GeneratedDirection, " Generate direction for charts without it",
+            value => choices.GeneratedDirection = value);
+    }
+
+    // A check box that saves the choices when it changes.
+    private static void Option(Rect rect, bool value, string label, Action<bool> set)
+    {
+        var result = GUI.Toggle(rect, value, label);
+        if (result == value) return;
+        set(result);
+        PackageRuntime.SaveChoices();
     }
 
     private Texture2D? _background;
@@ -266,13 +271,16 @@ internal sealed class PickerOverlay
     }
 
     // Test aid (GH3_SKIN_PICKER_TEST, scripts/capture-menu.sh): the same selection code as the buttons, without a mouse.
+    // `venueTrack` and `generatedDirection` take `on` or `off`.
     public void Apply(string stage, IReadOnlyDictionary<string, string> characters)
     {
         Refresh();
         var choices = PackageRuntime.Choices;
         if (stage.Length > 0 && PlayerChoices.ValidStage(stage)) choices.Stage = stage;
         foreach (var (role, id) in characters)
-            if (PlayerChoices.Roles.Contains(role) && (id == PlayerChoices.DefaultCharacter || Choices(role).Any(c => c.Id == id))) choices.Characters[role] = id;
+            if (role == "venueTrack") choices.VenueTrack = id == "on";
+            else if (role == "generatedDirection") choices.GeneratedDirection = id == "on";
+            else if (PlayerChoices.Roles.Contains(role) && (id == PlayerChoices.DefaultCharacter || Choices(role).Any(c => c.Id == id))) choices.Characters[role] = id;
             else MelonLogger.Warning($"GH3 picker test: {id} cannot play the {role}");
         _hover = choices.Stage;
         PackageRuntime.SaveChoices();

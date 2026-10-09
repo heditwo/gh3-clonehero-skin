@@ -44,8 +44,7 @@ internal sealed class CharacterImporter
         var profile = Text(character["profile"]) ?? "";
         if (!Profiles.TryGetValue(profile, out var role)) throw new PackageException($"unknown character profile '{profile}'");
         var hair = (character["hairMaterials"] as JsonArray ?? new JsonArray()).Select(n => Text(n) ?? throw new PackageException("invalid hair material")).ToHashSet();
-        if (character["attachments"] is JsonObject { Count: > 0 })
-            Warnings.Add("attachments are not used by this mod version; the character GLB carries its instrument");
+        var instrument = Instrument(character["attachments"]);
         var (rigBones, rigParents, rigBind) = Rig(_library, role);
         var glb = new GlbDocument(_package.Read(entry["model"]));
         if (glb.List("animations").Count > 0) Warnings.Add("the GLB animations are ignored; the library supplies the clips");
@@ -229,9 +228,30 @@ internal sealed class CharacterImporter
         Write(Path.Combine(folder, "character.json"), new JsonObject
         {
             ["version"] = 1, ["id"] = _package.Manifest.Id, ["name"] = _package.Manifest.Name, ["profile"] = profile, ["role"] = role,
-            ["joints"] = new JsonArray(names.Select(n => (JsonNode?)n).ToArray()),
+            ["instrument"] = instrument, ["joints"] = new JsonArray(names.Select(n => (JsonNode?)n).ToArray()),
         });
         return (role, joints.Length, parts.Count, parts.Sum(p => p.Count));
+    }
+
+    // attachments.instrument: a library instrument ID (band/band.json `instrument`), or "" for the default. StageBand
+    // adds the instrument when the character plays (BandAttachments.Choose).
+    private string Instrument(JsonNode? attachments)
+    {
+        if (attachments == null) return "";
+        if (attachments is not JsonObject slots) throw new PackageException("character.json attachments must be an object");
+        Fields(slots, "attachments", new[] { "instrument" });
+        if (slots["instrument"] == null) return "";
+        var id = Text(slots["instrument"]) ?? throw new PackageException("attachments.instrument must be a string");
+        if (!Regex.IsMatch(id, @"\A[A-Za-z0-9_]{1,64}\z")) throw new PackageException($"invalid attachments.instrument '{id}'");
+        var band = Path.Combine(_library, "band", "band.json");
+        var known = File.Exists(band) ? (Object(File.ReadAllBytes(band))["members"] as JsonArray ?? new JsonArray())
+            .Select(m => Text(m?["instrument"]) ?? "").Where(i => i.Length > 0).ToHashSet() : new HashSet<string>();
+        if (!known.Contains(id))
+        {
+            Warnings.Add($"attachments.instrument {id} is not an instrument of the library ({string.Join(", ", known.OrderBy(i => i, StringComparer.Ordinal))}); the role's instrument plays");
+            return "";
+        }
+        return id;
     }
 
     // Runtime texture names are 8 hex digits: the image name when it is one (GH3 texture checksums), else a checksum of

@@ -247,9 +247,10 @@ internal sealed class StageAssets : IDisposable
     }
 
     public void Load(string directory, GameObject root, int layer, Transform[]? bones = null, bool lighting = false, string? lightGroup = null, Shader? surfaceShader = null,
-        System.Numerics.Vector3? lightAt = null, Matrix4x4[]? bindposes = null)
+        System.Numerics.Vector3? lightAt = null, Matrix4x4[]? bindposes = null, IReadOnlyCollection<int>? parts = null)
     {
         if (bindposes != null && (bones == null || bindposes.Length != bones.Length)) throw new InvalidDataException("Bind poses do not match the bones");
+        if (parts != null && bones == null) throw new InvalidDataException("Only band models can load some of their parts");
         Definition = JsonSerializer.Deserialize<StageDefinition>(File.ReadAllText(Path.Combine(directory, "stage.json")),
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? throw new InvalidDataException("Missing stage definition");
         if (Definition.Version != 1 || Definition.Materials.Count > 2048 ||
@@ -291,8 +292,12 @@ internal sealed class StageAssets : IDisposable
             return texture;
         }
         var materials = new Dictionary<uint, Material>();
+        // A part subset (a band model's attachment) loads only the materials and textures of its parts.
+        var partMaterials = parts == null ? null : Packages.BandAttachments.PartMaterials(meshPath);
+        var usedMaterials = partMaterials == null ? null : parts!.Where(p => p >= 0 && p < partMaterials.Length).Select(p => partMaterials[p]).ToHashSet();
         foreach (var (key, source) in Definition.Materials)
         {
+            if (usedMaterials != null && !usedMaterials.Contains(Convert.ToUInt32(key, 16))) continue;
             source.Gh3?.Validate();
             StageShaderTemplates.Template? template = null;
             // Template 00000000 marks GH3's unused placeholder material slot; no mesh draws with it.
@@ -385,12 +390,17 @@ internal sealed class StageAssets : IDisposable
         for (var part = 0; part < meshCount; part++)
         {
             var materialId = reader.ReadUInt32();
-            var material = materials[materialId];
-            var sorted = bones != null && Definition.Materials[materialId.ToString("x8")].SortedTransparency;
             var vertexCount = reader.ReadInt32();
             var indexCount = reader.ReadInt32();
             if (vertexCount < 1 || vertexCount > 65535 || indexCount < 0 || indexCount > 1000000 || indexCount % 3 != 0)
                 throw new InvalidDataException("Invalid stage mesh size");
+            if (parts != null && !parts.Contains(part))
+            {
+                reader.BaseStream.Seek((long)vertexCount * Packages.StageGeometry.SkinnedStride + indexCount * 4L, SeekOrigin.Current);
+                continue;
+            }
+            var material = materials[materialId];
+            var sorted = bones != null && Definition.Materials[materialId.ToString("x8")].SortedTransparency;
             var vertices = new Vector3[vertexCount];
             var normals = new Vector3[vertexCount];
             var uv = new Vector2[vertexCount];

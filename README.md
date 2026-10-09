@@ -39,7 +39,7 @@ MISE_QUIET=1 GH3_SKIN_STAGE=gh3.hell bash run-gh3-skin.sh
 | `gh3.artdeco` | Ye Olde Royal Odeon |
 | `gh3.prison` | Shanker's Island |
 | `gh3.wikker` | Desert Rock Tour |
-| `gh3.budokan` | Kaiju Megadome (default) |
+| `gh3.budokan` | Kaiju Megadome (default when the song selects no stage) |
 | `gh3.hell` | Lou's Inferno |
 | `gh3.soundcheck` | Soundcheck |
 | `gh3.credits` | Credits |

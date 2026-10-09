@@ -294,7 +294,7 @@ The field meanings are the same as in [CUSTOM-CONTENT.md, section 5](CUSTOM-CONT
 | `library` | Yes | `gh3-band-v1` |
 | `profile` | Yes | `gh3-guitarist-axel-v1`, `gh3-bassist-v1`, `gh3-singer-male-v1`, or `gh3-drummer-v1`. The profile also selects the band role |
 | `hairMaterials` | No | GLB material names with sorted hair transparency |
-| `attachments` | No | `instrument`: a library model ID. Absent: the profile default. The v1 library has one instrument for each profile. **Mod 0.9.8 does not use this field** (warning): the library models contain their instrument in the same mesh, so the character GLB must contain its instrument (see [section 20.6](#206-characters)) |
+| `attachments` | No | `instrument`: a library instrument ID (the `instrument` of a `band/band.json` member: `SG_Black`, `tobB4`, `Microphone001`, `Drum_Set001`). Absent: the default. The v1 library has one instrument for each band role, and the instrument follows the role that the character plays (rules in [section 20.6](#206-characters)). Do not model the instrument in the character GLB |
 
 ### 9.2 GLB rules
 
@@ -723,9 +723,37 @@ Visual result: the dive recording from packages and from `main` agree (aligned v
 | Vertices | `POSITION`, `NORMAL`, `JOINTS_0`, `WEIGHTS_0` (float or normalized integer; sum 1 within 0.01, normalized again) required; `TEXCOORD_0`, `COLOR_0`, and the `_GH3_UV0`–`_GH3_UV5`, `_GH3_BINORMAL`, `_GH3_TANGENT` streams optional. A material with a `gh3Shader` record and a mesh without the streams uses the surface model (warning) |
 | Materials | The library rules (`LibraryImporter`): `blend` from `gh3Shader.blend` when the record is present. `hairMaterials` add sorted transparency. Material and image names that are not 8 hex digits get checksum names |
 
-A GH3 band member exported as one GLB with its instrument gave a cache that is byte-equal to the library member (`meshes.bin`, `stage.json`, and all textures; checked for the four members on 2026-10-09 with an earlier exporter). `python -m pipeline.package.character` now writes the body and hair only (the instrument is an attachment); the loader does not add the attachment yet.
+A GH3 band member exported as one GLB with its instrument gave a cache that is byte-equal to the library member (`meshes.bin`, `stage.json`, and all textures; checked for the four members on 2026-10-09 with an earlier exporter). `python -m pipeline.package.character` now writes the body and hair only (the instrument is an attachment).
 
 At load, `StageBand` maps the character joints to the rig of the band role by name. A character can play another role when that rig has all of its joints (the GH3 guitarist and bassist rigs have the same 125 bone names). The role's rig, clips, hair, IK, and hand fire drive the mesh; the GLB inverse bind matrices skin it (`StageAssets.Load(bindposes:)`), so the mesh follows the role's bone positions.
+
+**Attachments (instrument).** The library has no separate instrument models: `band/<role>/model.glb` contains the member and its instrument in one mesh. The loader (`StageBand`, `BandAttachments`) takes the instrument from that model with the rule of `pipeline/package/character.py` `split_model`, which the Blender add-on and `python -m pipeline.package.character` use to leave the instrument out:
+
+- The body joints are the subtree of the parent of `bone_pelvis`. The other subtrees of the root are the instrument, the microphone stand, the drum kit, and IK helpers.
+- A mesh part (a GLB primitive; the cache keeps one part for each primitive) is an attachment when more than half of its vertices have their largest weight on a joint outside the body (the first influence wins a tie).
+
+```mermaid
+flowchart TD
+    Load[Character plays a band role] --> Own{The character mesh has<br/>attachment parts?}
+    Own -- yes --> Keep[Its own instrument plays.<br/>The library adds nothing]
+    Own -- no --> Add[The library adds the attachment parts<br/>of the band model of the role that it plays]
+```
+
+| Case | Result |
+| --- | --- |
+| No `attachments`, or `instrument` is the instrument of the role that the character plays | The role's instrument from the library |
+| `instrument` names the instrument of another role (for example a guitarist character with `SG_Black` that plays the bassist) | The role's instrument (`tobB4`). The v1 clips of a role are made for the instrument of that role. The log tells which instrument plays |
+| `instrument` is not a library instrument | Warning at the import (and in the validator); the role's instrument |
+| The character GLB has its own instrument (an earlier export of a GH3 member) | Its own instrument, also in another role. A name in `instrument` is not used |
+
+The instrument parts load with the library materials and textures of the role's band model (only the materials of these parts), on the role's bones with the library bind pose. The cache `character.json` keeps the `instrument` name; a cache that is older than this field reads as "no name". The format and the importer version did not change.
+
+Checks (2026-10-09):
+
+- Split: `tests/AttachmentLogicTests.cs` (C#, on the cache band models) and `tests/test_blender_addon_characters.py` (Python, on the library GLBs) find the same attachment parts: guitarist 11–13, bassist 1–2, singer 4–5, drummer 1.
+- Cache: for each role, the parts of the body-and-hair character from `python -m pipeline.package.character` are byte-equal to the library parts without the attachment parts, and its materials are equal to the library rows. Thus character plus attachment gives the full library model.
+- Game (Linux, gh3.dive, mycurse-native, the role cameras at 20, 30, and 40 s): the four characters with their library instruments against the default members. PSNR of character against default 16.5–51.3 dB; PSNR of runs of the same kind (default against default, `main` against this build, character against character) 16.7–47.0 dB. The difference comes from frame timing (edges of moving parts and notes), not from the models.
+- The Blender add-on test character (`tester.blocky-guitarist`) plays with the library guitar. A copy that names `SG_Black` plays the bassist with the bass (`tobB4`).
 
 ### 20.7 Cache clean-up
 

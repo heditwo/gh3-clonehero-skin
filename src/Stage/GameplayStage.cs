@@ -112,6 +112,10 @@ internal sealed class GameplayStage
         _stageId = decision.StageId.Length == 0 || StagePack.ValidId(decision.StageId) ? decision.StageId : "";
         MelonLogger.Msg($"GH3 stage choice: {(_stageId.Length > 0 ? _stageId : "none")} ({decision.Reason}; player choice {choices.Stage}, " +
             $"song suggestions {(choices.SongSuggestions ? "on" : "off")})");
+        StageChartReader.UseVenueTrack = Packages.PlayerChoices.Switch(Environment.GetEnvironmentVariable("GH3_SKIN_VENUE_TRACK"), choices.VenueTrack);
+        StageChartReader.UseGeneratedDirection = Packages.PlayerChoices.Switch(Environment.GetEnvironmentVariable("GH3_SKIN_GENERATED_DIRECTION"), choices.GeneratedDirection);
+        MelonLogger.Msg($"GH3 direction: Rock Band VENUE tracks {(StageChartReader.UseVenueTrack ? "on" : "off")}, " +
+            $"generated direction {(StageChartReader.UseGeneratedDirection ? "on" : "off")}");
         _characterPackages.Clear();
         foreach (var role in Packages.PlayerChoices.Roles)
         {

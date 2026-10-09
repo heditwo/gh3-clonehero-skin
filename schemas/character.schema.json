@@ -22,7 +22,7 @@
       "items": { "$ref": "common.schema.json#/$defs/name" }
     },
     "attachments": {
-      "description": "Attachment slot to a library model ID. An absent slot uses the profile default.",
+      "description": "Attachment slot to a library instrument ID (band/band.json member instrument). An absent slot uses the default. The instrument follows the band role that the character plays.",
       "type": "object",
       "additionalProperties": false,
       "properties": {

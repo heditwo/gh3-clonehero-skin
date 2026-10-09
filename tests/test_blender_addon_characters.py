@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ADDON = ROOT / "blender" / "chstage_tools"
 LIBRARY = ROOT / "assets" / "packages" / "gh3-band-v1.chlib"
 ROLES = ("guitarist", "bassist", "singer", "drummer")
+ATTACHMENT_PARTS = {"guitarist": [11, 12, 13], "bassist": [1, 2], "singer": [4, 5], "drummer": [1]}
 
 
 def addon_module(name):
@@ -119,6 +120,9 @@ class LibraryCharacterTests(unittest.TestCase):
             parts = character.split_model(data, hair)
             kinds = list(parts["kinds"].values())
             self.assertEqual(kinds.count("attachment"), expected[role][1], role)
+            # The game splits the cache band model with the same rule (src/Packages/BandAttachments.cs); tests/AttachmentLogicTests.cs
+            # expects the same parts.
+            self.assertEqual([p for (_, p), kind in sorted(parts["kinds"].items()) if kind == "attachment"], ATTACHMENT_PARTS[role], role)
             self.assertEqual(kinds.count("hair"), 1, role)
             sorted_hair = sorted(m["name"] for m in glb.list("materials") if m.get("extras", {}).get("gh3SortedTransparency"))
             self.assertEqual(parts["hairMaterials"], sorted_hair, role)
@@ -144,6 +148,22 @@ class LibraryCharacterTests(unittest.TestCase):
                 self.assertEqual(manifest["entry"], {"model": "character.glb", "character": "character.json"})
                 again = character.write_member(self.library, role, Path(temporary) / "again")
                 self.assertEqual(again.read_bytes(), target.read_bytes(), role)
+
+    def test_instrument_names_are_checked(self):
+        from pipeline.package import container
+        with tempfile.TemporaryDirectory() as temporary:
+            character.write_member(self.library, "bassist", Path(temporary))
+            folder = Path(temporary) / "unpacked" / "gh3.bassist.chchar"
+            for instrument, warned in (("tobB4", False), ("Kazoo", True)):
+                value = json.loads((folder / "character.json").read_text())
+                value["attachments"] = {"instrument": instrument}
+                (folder / "character.json").write_bytes(container.json_bytes(value))
+                manifest = json.loads((folder / "manifest.json").read_text())
+                manifest["files"] = container.file_list(folder, list(manifest["files"]))
+                (folder / "manifest.json").write_bytes(container.json_bytes(manifest))
+                report = Validator(folder, LIBRARY).run()
+                self.assertEqual(report.errors, [], instrument)
+                self.assertEqual(any("Kazoo" in w for w in report.warnings), warned, (instrument, report.warnings))
 
     def test_hair_chains(self):
         counts = {"guitarist": (5, 9), "bassist": (12, 15), "singer": (7, 15), "drummer": (9, 15)}

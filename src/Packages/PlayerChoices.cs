@@ -2,21 +2,29 @@ using System.Text.Json.Nodes;
 
 namespace Gh3Skin.Packages;
 
-// The player's stage and band choices from the in-game picker, kept in UserData/GH3Skin/choices.json.
+// The player's stage, band, and direction choices from the in-game picker, kept in UserData/GH3Skin/choices.json.
 internal sealed class PlayerChoices
 {
     public const string RandomStage = "random";
     public const string SongStage = "song";
     public const string DefaultCharacter = "default";
+    // The stage of "Song's choice" when the song selects none, and of a chosen stage that is not installed.
     public const string FallbackStage = "gh3.budokan";
     public static readonly string[] Roles = { "guitarist", "bassist", "drummer", "singer" };
 
-    public string Stage { get; set; } = FallbackStage;
+    public string Stage { get; set; } = SongStage;
     public bool SongSuggestions { get; set; } = true;
     public bool ShowHint { get; set; } = true;
+    // Rock Band VENUE tracks (StageChartReader.UseVenueTrack) and cues from chart sections for charts without direction
+    // (StageChartReader.UseGeneratedDirection). GH3_SKIN_VENUE_TRACK and GH3_SKIN_GENERATED_DIRECTION override them.
+    public bool VenueTrack { get; set; } = true;
+    public bool GeneratedDirection { get; set; } = true;
     public Dictionary<string, string> Characters { get; } = Roles.ToDictionary(role => role, _ => DefaultCharacter);
 
     public string Character(string role) => Characters.TryGetValue(role, out var id) ? id : DefaultCharacter;
+
+    // An environment switch ("off" or "0" turns it off, another value on) wins over the player's choice.
+    public static bool Switch(string? environment, bool choice) => environment == null ? choice : environment is not ("off" or "0");
 
     public static bool ValidStage(string value) => value is RandomStage or SongStage || PackageManifest.ValidId(value);
 
@@ -32,6 +40,8 @@ internal sealed class PlayerChoices
             if (PackageJson.Text(root["stage"]) is { } stage && ValidStage(stage)) choices.Stage = stage;
             if (PackageJson.Bool(root["songSuggestions"]) is { } suggestions) choices.SongSuggestions = suggestions;
             if (PackageJson.Bool(root["showHint"]) is { } hint) choices.ShowHint = hint;
+            if (PackageJson.Bool(root["venueTrack"]) is { } venue) choices.VenueTrack = venue;
+            if (PackageJson.Bool(root["generatedDirection"]) is { } generated) choices.GeneratedDirection = generated;
             if (root["characters"] is JsonObject characters)
                 foreach (var role in Roles)
                     if (PackageJson.Text(characters[role]) is { } id && (id == DefaultCharacter || PackageManifest.ValidId(id))) choices.Characters[role] = id;
@@ -49,6 +59,7 @@ internal sealed class PlayerChoices
         PackageJson.Write(temporary, new JsonObject
         {
             ["version"] = 1, ["stage"] = Stage, ["songSuggestions"] = SongSuggestions, ["showHint"] = ShowHint,
+            ["venueTrack"] = VenueTrack, ["generatedDirection"] = GeneratedDirection,
             ["characters"] = new JsonObject(Roles.Select(role => KeyValuePair.Create(role, (JsonNode?)Character(role)))),
         });
         File.Move(temporary, path, true);

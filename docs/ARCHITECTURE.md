@@ -95,10 +95,11 @@ flowchart TD
     Installed -- no --> Choice
     Suggest -- no --> Choice{Player choice}
     Choice -- stage ID --> Picked[That stage, else gh3.budokan]
-    Choice -- Random or Song's choice --> Random[Random installed stage]
+    Choice -- Song's choice, the default --> Fallback[gh3.budokan, else random]
+    Choice -- Random --> Random[Random installed stage]
 ```
 
-`GameplayStage` decides once for each song (`StageSelection`) and logs `GH3 stage choice: <id> (<reason>)`. For each band role with a character in `choices.json`, `StageBand` loads the character's cache folder through `StageAssets` (the same renderer setup as the library members) on the role's rig: the character joints map to the rig bones by name (`CharacterModel.Map`), and the GLB inverse bind matrices are the mesh bind poses. The role's clips, hair, IK, and hand fire stay. A character that fails to load gives the venue default.
+`GameplayStage` decides once for each song (`StageSelection`) and logs `GH3 stage choice: <id> (<reason>)`. For each band role with a character in `choices.json`, `StageBand` loads the character's cache folder through `StageAssets` (the same renderer setup as the library members) on the role's rig: the character joints map to the rig bones by name (`CharacterModel.Map`), and the GLB inverse bind matrices are the mesh bind poses. The role's clips, hair, IK, and hand fire stay. When the character mesh has no instrument, `StageBand` also loads the instrument parts of the role's library band model (`BandAttachments`, the split rule of `pipeline/package/character.py`) on the same bones. A character that fails to load gives the venue default. The same decision sets the direction switches from `choices.json` (`StageChartReader.UseVenueTrack`, `UseGeneratedDirection`; the environment variables win) before the chart loads.
 
 ## Song direction sources
 

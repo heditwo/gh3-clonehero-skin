@@ -15,6 +15,7 @@ internal sealed class BandMember
     public string Role { get; set; } = "";
     public float[] Position { get; set; } = Array.Empty<float>();
     public float Yaw { get; set; }
+    public string Instrument { get; set; } = "";
 }
 
 internal sealed class StageBand : IDisposable
@@ -25,6 +26,7 @@ internal sealed class StageBand : IDisposable
         public Transform Root = null!;
         public Transform[] Bones = Array.Empty<Transform>();
         public BandAnimation Animation = null!;
+        public StageAssets Model = null!;
         public PerformancePlayer? Performance;
         public PerformanceMember? Definition;
         public StageHair? Hair;
@@ -86,18 +88,22 @@ internal sealed class StageBand : IDisposable
                 Apply(bones[i], animation.BindPose[i]);
             }
             var assets = characters != null && characters.TryGetValue(member.Role, out var character)
-                ? LoadCharacter(character, directory, member.Role, performer, layer, bones, lighting, surfaceShader) : null;
+                ? LoadCharacter(character, directory, member, performer, layer, bones, lighting, surfaceShader) : null;
             if (assets == null)
             {
-                assets = new StageAssets();
-                assets.Load(folder, performer, layer, bones, lighting, surfaceShader: surfaceShader);
+                var model = new StageAssets();
+                assets = new List<StageAssets> { model };
+                model.Load(folder, performer, layer, bones, lighting, surfaceShader: surfaceShader);
             }
-            _assets.Add(assets);
-            stage.SurfaceMaterials.AddRange(assets.SurfaceMaterials);
-            stage.ShadedSurfaces.AddRange(assets.ShadedSurfaces);
-            stage.BandMeshes.AddRange(assets.BandMeshes);
-            stage.TransparentMeshes.AddRange(assets.TransparentMeshes);
-            var player = new Performer { Role = member.Role, Root = performer.transform, Bones = bones, Animation = animation,
+            foreach (var part in assets)
+            {
+                _assets.Add(part);
+                stage.SurfaceMaterials.AddRange(part.SurfaceMaterials);
+                stage.ShadedSurfaces.AddRange(part.ShadedSurfaces);
+                stage.BandMeshes.AddRange(part.BandMeshes);
+                stage.TransparentMeshes.AddRange(part.TransparentMeshes);
+            }
+            var player = new Performer { Role = member.Role, Root = performer.transform, Bones = bones, Animation = animation, Model = assets[0],
                 Start = performer.transform.localPosition, Rotation = performer.transform.localRotation, Pose = new BandPose[bones.Length] };
             if (hair != null && hair.Members.TryGetValue(member.Role, out var hairDefinition))
                 player.Hair = new StageHair(hairDefinition, animation.Parents, (time, pose) => SamplePose(player, time, pose));
@@ -108,15 +114,17 @@ internal sealed class StageBand : IDisposable
     }
 
     // A character package plays the role on the role's rig: its joints map to the rig bones by name, and its own inverse
-    // bind matrices skin the mesh. It draws through StageAssets as the library members do. Null: use the venue default.
-    private static StageAssets? LoadCharacter(Packages.CharacterModel character, string directory, string role, GameObject performer, int layer,
+    // bind matrices skin the mesh. It draws through StageAssets as the library members do. Without an instrument of its own,
+    // the role's instrument comes from the library band model (BandAttachments). Null: use the venue default.
+    private static List<StageAssets>? LoadCharacter(Packages.CharacterModel character, string directory, BandMember member, GameObject performer, int layer,
         Transform[] bones, bool lighting, Shader? surfaceShader)
     {
+        var role = member.Role;
         var children = performer.transform.childCount;
         StageAssets? assets = null;
         try
         {
-            var rig = Packages.CharacterImporter.Rig(Path.GetDirectoryName(Path.GetFullPath(directory))!, role).Bones;
+            var (rig, parents, _) = Packages.CharacterImporter.Rig(Path.GetDirectoryName(Path.GetFullPath(directory))!, role);
             var map = character.Map(rig) ?? throw new InvalidDataException($"its joints are not all in the {role} rig");
             var bindposes = character.Bindposes.Select(m => new Matrix4x4
             {
@@ -125,8 +133,13 @@ internal sealed class StageBand : IDisposable
             }).ToArray();
             assets = new StageAssets();
             assets.Load(character.Folder, performer, layer, map.Select(i => bones[i]).ToArray(), lighting, surfaceShader: surfaceShader, bindposes: bindposes);
-            MelonLogger.Msg($"GH3 band {role}: character {character.Id} ({character.Name}, {character.Role} profile)");
-            return assets;
+            var result = new List<StageAssets> { assets };
+            var body = Packages.BandAttachments.BodyJoints(rig, parents);
+            var own = Packages.BandAttachments.ReadParts(Path.Combine(character.Folder, "meshes.bin")).Any(p => Packages.BandAttachments.IsAttachment(p, body, map));
+            var (add, note) = Packages.BandAttachments.Choose(own, character.Instrument, member.Instrument, role);
+            if (add) note = LoadInstrument(Path.Combine(directory, role), body, performer, layer, bones, lighting, surfaceShader, result) ?? note;
+            MelonLogger.Msg($"GH3 band {role}: character {character.Id} ({character.Name}, {character.Role} profile) with {note}");
+            return result;
         }
         catch (Exception error) when (error is IOException or InvalidDataException or Packages.PackageException or UnauthorizedAccessException or InvalidOperationException)
         {
@@ -135,6 +148,32 @@ internal sealed class StageBand : IDisposable
                 UnityEngine.Object.Destroy(performer.transform.GetChild(i).gameObject);
             MelonLogger.Warning($"GH3 band {role}: character {character.Id} could not load ({error.Message}); the venue default plays");
             return null;
+        }
+    }
+
+    // The attachment parts of the role's library band model, on the role's bones with the library bind pose. A failure
+    // leaves the character without an instrument; returns the note for the log then.
+    private static string? LoadInstrument(string folder, HashSet<int> body, GameObject performer, int layer, Transform[] bones, bool lighting,
+        Shader? surfaceShader, List<StageAssets> result)
+    {
+        var children = performer.transform.childCount;
+        StageAssets? instrument = null;
+        try
+        {
+            var parts = Packages.BandAttachments.AttachmentParts(Packages.BandAttachments.ReadParts(Path.Combine(folder, "meshes.bin")), body);
+            if (parts.Length == 0) return "no instrument (the library band model has no attachment parts)";
+            instrument = new StageAssets();
+            instrument.Load(folder, performer, layer, bones, lighting, surfaceShader: surfaceShader, parts: parts);
+            result.Add(instrument);
+            return null;
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            instrument?.Dispose();
+            for (var i = performer.transform.childCount - 1; i >= children; i--)
+                UnityEngine.Object.Destroy(performer.transform.GetChild(i).gameObject);
+            MelonLogger.Warning($"GH3 band: the library instrument could not load ({error.Message})");
+            return "no instrument";
         }
     }
 
@@ -168,7 +207,7 @@ internal sealed class StageBand : IDisposable
             if (!_performance.Members.TryGetValue(player.Role, out var definition)) continue;
             player.Definition = definition;
             if (SkinnedGlbSpike.Enabled && player.Role == "guitarist")
-                _spike = SkinnedGlbSpike.Attach(player.Root, player.Bones, definition.Bones, _assets[_players.IndexOf(player)]);
+                _spike = SkinnedGlbSpike.Attach(player.Root, player.Bones, definition.Bones, player.Model);
             player.Performance = new PerformancePlayer(player.Role, directory, definition, player.Animation.BindPose, timeline,
                 player.Animation.Parents, _performance.Constants);
             player.Performance.Prepare();
