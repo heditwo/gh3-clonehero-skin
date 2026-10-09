@@ -84,7 +84,7 @@ Each character keeps the GH3 data as the library band does (`pipeline/library/ba
 
 Axel Steel (outfit 1, style 1) on his own rig gives the same body and hair parts as the library guitarist (byte-equal; the instrument differs). The `packages` step writes `assets/packages/<id>.chchar` (one package for each outfit and style, license and permissions from `pipeline/package/decisions.py`), and the validator checks them against the library profile rigs. `install.sh` and `scripts/build-release.sh` ship `assets/packages/gh3.*.chchar` in `Mods/GH3Skin/Packages/`.
 
-Sizes (2026-10-09): 72 packages, 411,351,870 bytes (2.1–8.3 MB, mean 5.7 MB). Installed `Mods/GH3Skin` 1,640,198,608 bytes (was 1,228,837,531). Cache after the first start 1.92 GB (the characters 0.50 GB). Cold import of all packages 45.1 s (was 22.0 s); the stage still waits only for the library, the venue, and the selected characters.
+Sizes (2026-10-09): 72 packages, 411,351,870 bytes (2.1–8.3 MB, mean 5.7 MB). Release zips (`scripts/build-release.sh`, commit 35d862f) 1,640,161,639 bytes (Linux) and 1,640,164,985 bytes (Windows), against 1,228.78 MB before. Installed `Mods/GH3Skin` 1,640,198,608 bytes (was 1,228,837,531). Cache after the first start 1.92 GB (the characters 0.50 GB). Cold import of all packages 45.1 s (was 22.0 s); the stage still waits only for the library, the venue, and the selected characters.
 
 ## Shader tools
 
