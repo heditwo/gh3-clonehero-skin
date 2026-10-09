@@ -381,7 +381,7 @@ A character library is a `.chlib` package with format `chlib/1.1` and one `entry
 |---|---|
 | `version`, `library` | `1`, the library ID |
 | `clipRig` | The rig that the clip files are recorded on: `profile` (its name), `bones`, `parents`, `bind` |
-| `profiles` | Profile ID to: `role` (`guitarist`), `name`, `outfit`, `skeleton` (GH3 checksum), `scale`, `animations` (set ID), `hair` (hair ID or `null`), `ik` (IK ID), and the rig: `bones` (checksums, the names and order of `clipRig`), `parents`, `bind` (local `[x, y, z, qx, qy, qz, qw]` for each bone, runtime coordinates) |
+| `profiles` | Profile ID to: `role` (`guitarist`), `name`, `outfit`, `skeleton` (GH3 checksum of the skeleton that the GH3 profile names; the God of Rock rig takes the accessory bones of another skeleton, [PARITY-NOTES.md](PARITY-NOTES.md#god-of-rock-hair)), `scale`, `animations` (set ID), `hair` (hair ID or `null`), `ik` (IK ID), and the rig: `bones` (checksums, the names and order of `clipRig`), `parents`, `bind` (local `[x, y, z, qx, qy, qz, qw]` for each bone, runtime coordinates) |
 | `animations` | Set ID to `animSet` (GH3 checksum of the `<name>_animations` struct), `groups`, `layers`, `clips`, `missingClips`: the layout of a `performance.json` member without `bones` |
 | `hair` | Hair ID (the ragdoll checksum) to `head`, `joints`, `capsule`, `ragdoll`, as in `band/hair.json`, with the joint types below |
 | `ik` | IK ID to a list of two-joint chains: `bones` (three checksums), `target`, `hinge`, `cosMax`, `cosMin` (GH3 `Hero_Ik_params`, `Satan_Ik_params`) |

@@ -19,7 +19,8 @@ co-op game is made by create_guitarist too, so a character plays the bass with i
   are. GH3 keys translations relative to the skeleton rest pose (pipeline.gh3.band_formats.sample_animation), so a
   profile plays a clip with the offset (profile rest position - clip rig rest position) on each position track; this is
   the GH3 result on the profile's own skeleton.
-- Hair: all accessory chains of the ragdoll (pipeline.library.hair, all_chains). On the PC port, create_guitarist does
+- Hair: all accessory chains of the ragdoll (pipeline.library.hair, all_chains). The God of Rock ragdoll and mesh fit
+  the accessory bones of GH3_Guitarist_RockGod, not those of the skeleton of his profile (ACCESSORY_SKELETONS). On the PC port, create_guitarist does
   not call ragdoll_setaccessorybones for the Grim Ripper (`IsWinPort`), so his profile has no hair.
 
 Output: assets/libraries/gh3-characters-v1/ (characters.json, clips/<clip>.bin.gz in GH3CLP01).
@@ -48,6 +49,10 @@ LIBRARY_ID = "gh3-characters-v1"
 CLIP_RIG = "GH3_Guitarist_Axel"
 # create_guitarist skips ragdoll_setaccessorybones for this character on the PC port (IsWinPort).
 NO_ACCESSORY_PHYSICS = {"Ripper"}
+# The God of Rock profile names Axel's skeleton, and create_band_member gives that skeleton to the model and the ragdoll.
+# His ragdoll and his mesh fit the accessory bones of GH3_Guitarist_RockGod (no profile names it): the hair hangs from
+# the head there, and from the chest on Axel's skeleton. His rig takes those accessory bones; the other bones stay Axel's.
+ACCESSORY_SKELETONS = {"RockGod": "GH3_Guitarist_RockGod"}
 IK_FIELDS = ("bone0", "bone1", "bone2")
 
 
@@ -60,6 +65,20 @@ def unity_rig(rig):
     names, parents, positions, rotations = rig
     bind = np.concatenate((positions * [1, 1, -1], rotations * [1, 1, -1, 1]), axis=1).astype(np.float32)
     return {"bones": [f"{n:08x}" for n in names], "parents": [int(p) for p in parents], "bind": [[float(v) for v in row] for row in bind]}
+
+
+def with_accessories(rig, source, accessories):
+    """`rig` with the parents and rest transforms of the accessory bones of `source` (a skeleton with the same bones)."""
+    names, parents, positions, rotations = rig
+    if list(names) != list(source[0]): raise ValueError("the accessory skeleton has other bones")
+    parents, positions, rotations = list(parents), positions.copy(), rotations.copy()
+    for i, name in enumerate(names):
+        if name not in accessories: continue
+        parents[i] = source[1][i]
+        positions[i], rotations[i] = source[2][i], source[3][i]
+    if any(names[p] in accessories for i, p in enumerate(parents) if p >= 0 and names[i] not in accessories):
+        raise ValueError("a body bone hangs from an accessory bone")
+    return names, parents, positions, rotations
 
 
 def ik_chains(data, name):
@@ -168,6 +187,7 @@ def build(data_directory, output):
                 if rig_name != key(CLIP_RIG) or ragdoll_name != 0xeaebb800: raise ValueError("Axel's first outfit is not the library profile")
                 continue
             rig = skeleton(rigs[rig_name])
+            if name in ACCESSORY_SKELETONS: rig = with_accessories(rig, skeleton(rigs[key(ACCESSORY_SKELETONS[name])]), accessories)
             hair = None
             if name not in NO_ACCESSORY_PHYSICS:
                 hair = f"{ragdoll_name:08x}"

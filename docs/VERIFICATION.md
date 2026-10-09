@@ -20,6 +20,7 @@ These optional variables add checks against real data to the C# tests:
 | `GH3_NATIVE_DATA=<GH3 DATA>` | Reads all native song PAKs; exact My Curse camera-edit round trip |
 | `GH3_EXPORTED_EVENTS=<events folder>` | Compares exported song direction with native playback |
 | `GH3_DIRECTION_ASSETS`, `GH3_CROWD_ASSETS`, `GH3_HAIR_ASSETS`, `GH3_LIGHTING_ASSETS`, `GH3_AUDIO_ASSETS` | Library parts |
+| `GH3_CHARACTER_HAIR_ASSETS=<assets>` | Plays My Curse (240 s) with each profile of `<assets>/libraries/gh3-characters-v1` (with `<assets>/libraries/gh3-band-v1` and `<assets>/stages/events`). It prints the fastest hair joint and the largest mean turn from the rest pose for each profile, and fails at 30 m/s (`StageHair.WarningSpeed`). 2026-10-09: 3.0–11.7 m/s, 14–36° |
 | `GH3_SCRIPT_SOURCE`, `GH3_STAGE_SCRIPT_REPORT` | Decoded GH3 scripts and a report path |
 | `GH3_NATIVE_*_ORACLE` | Reference JSON from the native emulation tools in the local `assets/event-audit/behavior-work/` folder (not in Git) |
 | `GH3_PACKAGE_ASSETS=$PWD/assets` | Imports `assets/packages/gh3-band-v1.chlib` with the mod's importer and compares all 1,240 decoded q48 clips with the `GH3CLP01` clips of `assets/libraries` (bound 0.0075°). Needs about 1 GB in `TMPDIR`; set `TMPDIR` to a disk folder |
@@ -182,6 +183,7 @@ The GH3 guitarists play on their own rig profiles (format 1.1). Check their moti
 1. Run the capture with `GH3_SKIN_TRACE=1` and a guitarist character, for example `GH3_SKIN_CHARACTER_GUITARIST=gh3.judy.outfit1.style1`. The log line `GH3 band guitarist: character <id> (...) on its GH3 profile <profile> with ...; animation set <set>, scale <s>, hair <n> joints | no hair physics, IK <ik>` names the profile.
 2. Run `MISE_QUIET=1 uv run --with numpy --with pillow python tools/check-character-trace.py <game>/MelonLoader/Latest.log`. It samples the GH3 clip of each `[trace] band` line on the GH3 skeleton of the profile, at the logged clip time, and prints the largest difference of the four logged bones. Expected: about 0.001 mm and less than 0.02° (q48 and the 30 fps resampling). The tool needs `assets/libraries/gh3-characters-v1` and the GH3 data.
 3. Look at the frames: the stance and the strum of the family, the fret hand on the neck, hand fire after the 100-note streak, and the size (Judy Nails 0.9).
+4. The log must not have `GH3 band <role>: hair joint <bone> moves at <n> m/s`. The mod writes this warning one time for each performer when a hair joint moves faster than 30 m/s (a ragdoll that does not fit the rig). With `GH3_SKIN_TRACE=1`, `hairPeak=` on each `[trace] band` line gives the fastest hair joint until that time.
 
 On 2026-10-09 (38 runs on gh3.dive, two guitarist characters and one singer in each run) every variant had a close-up in one role, each character family as guitarist and as bassist, and the colors and outfits agreed with the photos.
 

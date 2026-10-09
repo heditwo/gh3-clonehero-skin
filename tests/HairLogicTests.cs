@@ -38,6 +38,7 @@ internal static class HairLogicTests
             Check(pose[1] == expected, "hair is independent of render frame rate");
         }
         if (Environment.GetEnvironmentVariable("GH3_HAIR_ASSETS") is { } assets) CheckAssets(assets);
+        if (Environment.GetEnvironmentVariable("GH3_CHARACTER_HAIR_ASSETS") is { } characters) CheckCharacterAssets(characters);
         Console.WriteLine("Hair inertia, attachment, limits, frame rates, pause, and seek checks passed.");
     }
 
@@ -88,6 +89,64 @@ internal static class HairLogicTests
             Check(saved.SequenceEqual(definition.Joints.Select(j => pose[j.Bone])), "original hair survives a backward seek");
         }
         Console.WriteLine($"Validated {bank.Members.Values.Sum(m => m.Joints.Length)} original hair joints during My Curse.");
+    }
+
+    // Every profile of the character library plays My Curse as the guitarist with its own animation set; its hair must
+    // stay below StageHair.WarningSpeed (the runtime warning of StageBand).
+    private static void CheckCharacterAssets(string assets)
+    {
+        var folder = Path.Combine(assets, "libraries/gh3-characters-v1");
+        var library = Gh3Skin.Packages.CharacterLibrary.Load(folder);
+        var bank = CharacterMotionBank.Load(folder);
+        var performance = StagePerformance.Load(Path.Combine(assets, "libraries/gh3-band-v1/direction/performance.json"))!;
+        var timeline = StageChartReader.Load("", "", Path.Combine(assets, "stages/events"), "My Curse", "Killswitch Engage");
+        foreach (var (id, profile) in library.Profiles.OrderBy(p => p.Key, StringComparer.Ordinal))
+        {
+            if (profile.Hair.Length == 0) continue;
+            var set = bank.Animations[profile.Animations];
+            var motion = new CharacterMotion
+            {
+                Profile = profile, SetName = profile.Animations, Hair = bank.Hair[profile.Hair],
+                Member = new PerformanceMember { Bones = profile.Bones, Groups = set.Groups, Layers = set.Layers, Clips = set.Clips },
+                ClipDirectory = Path.Combine(folder, "clips"),
+                Offsets = CharacterMotion.RestOffsets(profile.Bones, profile.Bind, library.ClipRig.Bones, library.ClipRig.Bind),
+            };
+            var animation = BandAnimation.FromRig(profile.Parents, profile.Bind);
+            var player = new PerformancePlayer("guitarist", "", motion.Member, animation.BindPose, timeline, animation.Parents, performance.Constants, motion);
+            player.Prepare();
+            var hair = new StageHair(motion.Hair, animation.Parents, (time, output) =>
+            {
+                player.Sample(time); Array.Copy(player.Pose, output, output.Length);
+                return new(Vector3.Zero, Quaternion.Identity);
+            });
+            var pose = new BandPose[animation.Parents.Length];
+            var world = new BandPose[pose.Length];
+            var swing = new double[motion.Hair.Joints.Length];
+            var samples = 0;
+            var measured = 0;
+            for (double time = 0; time <= 240; time += 1 / 60.0)
+            {
+                hair.Sample(time);
+                if (samples++ % 6 != 0) continue;
+                measured++;
+                Array.Copy(player.Pose, pose, pose.Length); hair.Apply(pose);
+                for (var i = 0; i < pose.Length; i++)
+                {
+                    var parent = animation.Parents[i] < 0 ? new BandPose(Vector3.Zero, Quaternion.Identity) : world[animation.Parents[i]];
+                    world[i] = new(parent.Position + Vector3.Transform(pose[i].Position, parent.Rotation), Quaternion.Normalize(parent.Rotation * pose[i].Rotation));
+                }
+                for (var j = 0; j < swing.Length; j++)
+                {
+                    var joint = motion.Hair.Joints[j];
+                    var rest = world[joint.Parent].Rotation * new Quaternion(joint.Rotation[0], joint.Rotation[1], joint.Rotation[2], joint.Rotation[3]);
+                    swing[j] += 2 * Math.Acos(Math.Clamp(Math.Abs(Quaternion.Dot(Quaternion.Normalize(rest), world[joint.Bone].Rotation)), 0, 1));
+                }
+            }
+            var worst = Enumerable.Range(0, swing.Length).MaxBy(j => swing[j]);
+            Console.WriteLine(FormattableString.Invariant($"{id}: hair peak {hair.PeakSpeed:F2} m/s at {hair.PeakBone}, ") +
+                FormattableString.Invariant($"largest mean turn from the rest pose {swing[worst] / measured * 180 / Math.PI:F1} degrees at {motion.Hair.Joints[worst].Bone}"));
+            Check(hair.PeakSpeed < StageHair.WarningSpeed, $"{id}: hair moves faster than {StageHair.WarningSpeed} m/s");
+        }
     }
 
     private static void Check(bool condition, string message)

@@ -32,7 +32,7 @@ Since 0.9.9 each GH3 guitarist plays on its own GH3 rig profile of the character
 | --- | --- |
 | Clip data against GH3 (13 families as guitarist: Axel outfit 2 is the `axel` set; Casey, Izzy, Judy, Johnny, Lars, Midori, Xavier, Slash, Tom Morello, Lou, God of Rock, Grim Ripper) | The `[trace] band` lines of each run (74 song times from −6 s to 30 s, 4 bones) against the GH3 `.ska` clip sampled on the profile's GH3 skeleton at the same clip time: maximum 0.001 mm and 0.016°, all 12 runs (Axel's own run uses the library profile and is checked by the band library). The same for six outfit 2 profiles (Axel, Judy, Johnny, Izzy, Midori, Lou's Thick Izzy) and for Judy Nails as bassist with Lars Umlaut outfit 2 as guitarist (`tools/check-character-trace.py`). Each family plays its own clips: in these runs, the only body clip of Axel's set that another family plays is one `stance_b` clip of Lars Umlaut, which GH3's `LARS_animations` names. The God of Rock plays Axel's set, as in GH3 |
 | Pictures | Each family at song times 4–28 s (full body; [evidence](#evidence-gh3-characters)): its own stance, idle, and strum; fret-hand fingers on the neck; the strum hand at the strings; hand fire after the 100-note streak; Judy Nails at 0.9 |
-| Hair | Judy Nails: the hair swings with the head (video frames at 4 per second); all 20 profiles load their ragdoll (Grim Ripper: none, as on the GH3 PC port) |
+| Hair | Judy Nails: the hair swings with the head (video frames at 4 per second); all 20 profiles load their ragdoll (Grim Ripper: none, as on the GH3 PC port). God of Rock (2026-10-09, fix-rockgod-hair): on Axel's skeleton his hair covered his face; his rig now has the accessory bones of `GH3_Guitarist_RockGod`, which his ragdoll and mesh fit ([PARITY-NOTES.md](PARITY-NOTES.md#god-of-rock-hair)), and his hair and beard hang down as in his bind pose (gh3.artdeco close-ups, same camera sequence as before). All 19 profiles with hair, 240 s of My Curse outside the game (`GH3_CHARACTER_HAIR_ASSETS`): fastest hair joint 3.0–11.7 m/s; the other 18 profiles are byte-equal to before |
 | Bassist | Judy Nails as bassist with her own set and the library bass in her hands; Lars Umlaut outfit 2 as guitarist in the same run |
 | Default band and Axel | Unchanged: the band library and Axel's and the singers' packages are byte-equal to `main`. Screenshots at song times 4–20 s against `main`: 32–47 dB PSNR, as two runs of the same build (32–42 dB) |
 | Clip prefetch | 151–159 band clips for each song (157 with the default band), decoded in 29–59 ms on worker threads; no clip loads on the main thread; managed heap at the stage load 208–218 MB (`main`: 191–229 MB) |
@@ -40,7 +40,7 @@ Since 0.9.9 each GH3 guitarist plays on its own GH3 rig profile of the character
 
 ### Evidence (GH3 characters)
 
-`~/.cache/gh3-evidence/character-motion/` (frame strips, runs, logs, the trace check script `verify_trace.py`).
+`~/.cache/gh3-evidence/character-motion/` (frame strips, runs, logs, the trace check script `verify_trace.py`). God of Rock hair: `~/.cache/rockgod-hair/` (before and after videos and logs, `god-of-rock-before-after.mp4`; in `evidence/`: close-up pairs, the bind-pose render, the frame strip of the other characters, the measurement scripts and their output).
 
 ## Known differences from GH3
 

@@ -184,6 +184,17 @@ class InventoryTests(unittest.TestCase):
                           "gh3-guitarist-god-of-rock-v1", "gh3-guitarist-grim-ripper-v1", "gh3-singer-male-v1"])
 
 
+class AccessorySkeletonTests(unittest.TestCase):
+    def test_with_accessories_moves_only_the_accessory_bones(self):
+        from pipeline.character_library import with_accessories
+        names = [1, HEAD, key("Bone_ACC_01"), key("Bone_ACC_02"), 2]
+        body = rig(names, [-1, 0, 0, 2, 1], [[0, 0, 0], [0, 1, 0], [0, 0.5, 0], [0, 0.1, 0], [0, 0.1, 0]])
+        other = rig(names, [-1, 0, 1, 2, 1], [[0, 0, 0], [0, 1.1, 0], [0, 0.2, 0], [0, 0.2, 0], [0, 0.2, 0]])
+        _, parents, positions, _ = with_accessories(body, other, {key("Bone_ACC_01"), key("Bone_ACC_02")})
+        self.assertEqual(parents, [-1, 0, 1, 2, 1])
+        np.testing.assert_allclose(positions, [[0, 0, 0], [0, 1, 0], [0, 0.2, 0], [0, 0.2, 0], [0, 0.1, 0]])
+
+
 @unittest.skipUnless((DATA/"PAK/qb.pak.xen").is_file() and (CHARACTER_LIBRARY/"characters.json").is_file(), "needs the GH3 PC data and the character library")
 class CharacterLibraryTests(unittest.TestCase):
     def test_profiles_and_sets(self):
@@ -216,6 +227,27 @@ class CharacterLibraryTests(unittest.TestCase):
             if mask & 1: worst = max(worst, float(np.abs(poses[:, track, :3] + offset[bone] - p[:, bone] * [1, 1, -1]).max()))
             if mask & 2: np.testing.assert_allclose(np.abs((poses[:, track, 3:] * q[:, bone] * [1, 1, -1, 1]).sum(1)), 1, atol=1e-5)
         self.assertLess(worst, 1e-5)
+
+    def test_god_of_rock_hair_fits_his_ragdoll(self):
+        """GH3 gives the God of Rock Axel's skeleton; his ragdoll fits GH3_Guitarist_RockGod, so his rig takes its accessory bones."""
+        from pipeline.character_library import unity_rig
+        from pipeline.gh3.band_formats import skeleton
+        from pipeline.gh3.direction import Source
+        from pipeline.gh3.havok import Ragdoll
+        from pipeline.library import hair
+        source = Source(DATA)
+        entries = source.load("ZONES/global.pak.xen")
+        rigs = {n: b for k, n, b in entries if k == key(".ske")}
+        axel, own = (unity_rig(skeleton(rigs[key(n)])) for n in ("GH3_Guitarist_Axel", "GH3_Guitarist_RockGod"))
+        profile = json.loads((CHARACTER_LIBRARY/"characters.json").read_text())["profiles"]["gh3-guitarist-god-of-rock-v1"]
+        self.assertEqual(profile["skeleton"], f"{key('GH3_Guitarist_Axel'):08x}")
+        accessories = {f"{key(f'Bone_ACC_{i:02d}'):08x}" for i in range(1, 16)}
+        for i, bone in enumerate(profile["bones"]):
+            expected = own if bone in accessories else axel
+            self.assertEqual((profile["parents"][i], profile["bind"][i]), (expected["parents"][i], expected["bind"][i]))
+        ragdoll = Ragdoll(next(b for k, n, b in entries if k == key(".rag") and n == 0xa494694f))
+        with self.assertRaisesRegex(ValueError, "does not fit the skeleton"):
+            hair.ragdoll_member(ragdoll, skeleton(rigs[key("GH3_Guitarist_Axel")]), hair.accessory_bones(source.scripts()), all_chains=True)
 
 
 

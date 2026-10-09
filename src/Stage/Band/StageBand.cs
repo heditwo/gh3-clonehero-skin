@@ -30,6 +30,7 @@ internal sealed class StageBand : IDisposable
         public PerformancePlayer? Performance;
         public PerformanceMember? Definition;
         public StageHair? Hair;
+        public bool HairWarned;
         // A character on a character library profile: its rig, animation set, hair, and IK (null: the role's).
         public CharacterMotion? Motion;
         public BandPose[] RoleBind = Array.Empty<BandPose>();
@@ -419,6 +420,12 @@ internal sealed class StageBand : IDisposable
         foreach (var player in _players)
         {
             player.Hair?.Sample(time - _start);
+            if (player.Hair is { PeakSpeed: > StageHair.WarningSpeed } hair && !player.HairWarned)
+            {
+                player.HairWarned = true;
+                MelonLogger.Warning(FormattableString.Invariant($"GH3 band {player.Role}: hair joint {player.Definition?.Bones.ElementAtOrDefault(hair.PeakBone) ?? hair.PeakBone.ToString()} ") +
+                    FormattableString.Invariant($"moves at {hair.PeakSpeed:F0} m/s (profile {player.Motion?.Profile.Id ?? "library"}); its ragdoll may not fit the rig"));
+            }
             var root = SamplePose(player, time, player.Pose);
             Apply(player.Root, root);
             player.Hair?.Apply(player.Pose);
@@ -439,7 +446,7 @@ internal sealed class StageBand : IDisposable
             FormattableString.Invariant($"{i}:{raw[i].Position.X:F6},{raw[i].Position.Y:F6},{raw[i].Position.Z:F6},{raw[i].Rotation.X:F6},{raw[i].Rotation.Y:F6},{raw[i].Rotation.Z:F6},{raw[i].Rotation.W:F6}"));
         MelonLogger.Msg(FormattableString.Invariant($"[trace] band t={time:F3} role={player.Role} profile={player.Motion?.Profile.Id ?? "library"} ") +
             FormattableString.Invariant($"set={player.Motion?.SetName ?? "library"} stance={segment.Stance} clip={segment.Clip} clipTime={clipTime:F4} ") +
-            FormattableString.Invariant($"scale={player.Root.localScale.x:F3} bones={string.Join(";", values)}"));
+            FormattableString.Invariant($"scale={player.Root.localScale.x:F3} bones={string.Join(";", values)} hairPeak={player.Hair?.PeakSpeed ?? 0:F2}"));
     }
 
     private static BandPose SamplePose(Performer player, double time, BandPose[] pose)

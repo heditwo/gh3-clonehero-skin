@@ -93,6 +93,11 @@ internal sealed class StageHair
     private float _blend;
     private readonly Vector3 _capsuleA;
     private readonly Vector3 _capsuleB;
+    // The fastest joint end since the start (metres per second) and its bone. GH3 hair follows the head at a few metres
+    // per second; a chain whose rest pose does not fit its ragdoll whips much faster.
+    public const float WarningSpeed = 30;
+    public float PeakSpeed { get; private set; }
+    public int PeakBone { get; private set; } = -1;
 
     public StageHair(HairDefinition definition, int[] parents, PoseSampler sample)
     {
@@ -200,6 +205,7 @@ internal sealed class StageHair
                 }
                 _oldTails[i] = tick == 0 ? point : _tails[i];
                 _tails[i] = point;
+                Measure(i, tick);
                 _world[joint.Bone] = new(point, rotation);
                 continue;
             }
@@ -240,6 +246,7 @@ internal sealed class StageHair
             }
             _oldTails[i] = tick == 0 ? tail : _tails[i];
             _tails[i] = tail;
+            Measure(i, tick);
             _world[joint.Bone] = new(origin, rotation);
         }
         // The rig parent of a joint can be a later joint of the chains (the profile hair of a character on another
@@ -255,6 +262,15 @@ internal sealed class StageHair
         if (tick == 0) Array.Copy(_pose, _previous, _pose.Length);
         if (tick % Rate == 0 && !_checkpoints.ContainsKey(tick))
             _checkpoints.Add(tick, new(_tails.ToArray(), _oldTails.ToArray(), _pose.ToArray(), _previous.ToArray()));
+    }
+
+    private void Measure(int joint, int tick)
+    {
+        if (tick == 0) return;
+        var speed = Vector3.Distance(_tails[joint], _oldTails[joint]) * Rate;
+        if (speed <= PeakSpeed) return;
+        PeakSpeed = speed;
+        PeakBone = _definition.Joints[joint].Bone;
     }
 
     private BandPose World(int bone)

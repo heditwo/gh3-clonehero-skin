@@ -16,6 +16,11 @@ MEMBERS = [
     ("drummer", "GH3_drummer", 0xd6b5340d),
 ]
 REFLECT = np.diag([1, 1, -1, 1])
+# A Havok body of a GH3 ragdoll sits on its skeleton bone with this fixed turn of the axes (all GH3 ragdolls on their own
+# skeletons: at most 0.21 m and 20 degrees from it). A ragdoll on another skeleton is far outside the limits (the God of
+# Rock ragdoll on Axel's skeleton: 0.47 m and 150 degrees), and its hair hangs from the wrong place in the wrong direction.
+BODY_AXES = np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]])
+REST_OFFSET, REST_ANGLE = 0.25, np.radians(45)
 JOINT_TYPES = {"hkRagdollConstraintData": "ragdoll", "hkLimitedHingeConstraintData": "hinge", "hkPrismaticConstraintData": "prismatic"}
 
 
@@ -44,6 +49,12 @@ def body_shape(rag, body):
         shape = rag.field(shape, shape_class, "childShape")
         shape_class = rag.types[shape]
     return shape, shape_class
+
+
+def rest_error(body, bone):
+    """Distance (m) and angle (radians) of a Havok body transform from its skeleton bone (world 4 x 4 matrices)."""
+    turn = body[:3, :3].T @ bone[:3, :3] @ BODY_AXES.T
+    return float(np.linalg.norm(body[:3, 3] - bone[:3, 3])), float(np.arccos(np.clip((np.trace(turn) - 1) / 2, -1, 1)))
 
 
 def ragdoll_member(rag, rig, accessories, all_chains=False):
@@ -127,6 +138,10 @@ def ragdoll_member(rag, rig, accessories, all_chains=False):
             selected_bones.add(joint["bone"])
     for joint in selected:
         i, parent = joint["bone"], joint["parent"]
+        offset, angle = rest_error(body_matrix(rag, bodies[names[i]]), matrix(i))
+        if offset > REST_OFFSET or angle > REST_ANGLE:
+            raise ValueError(f"ragdoll body {names[i]:08x} is {offset:.2f} m and {np.degrees(angle):.0f} degrees from its skeleton bone: "
+                             "the ragdoll does not fit the skeleton")
         local = REFLECT @ np.linalg.inv(matrix(parent)) @ matrix(i) @ REFLECT
         joint["position"] = local[:3, 3].tolist()
         joint["rotation"] = quaternion(local).tolist()
