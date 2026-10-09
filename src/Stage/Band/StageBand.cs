@@ -71,6 +71,11 @@ internal sealed class StageBand : IDisposable
             var roleAnimation = new BandAnimation(reader);
             var character = characters != null && characters.TryGetValue(member.Role, out var chosen) ? chosen : null;
             CharacterMotion? motion = null;
+            if (character != null && character.Library.Length > 0 && member.Role is not ("guitarist" or "bassist"))
+            {
+                MelonLogger.Warning($"GH3 band {member.Role}: character {character.Id} has a guitarist profile of {character.Library}; the venue default plays");
+                character = null;
+            }
             if (character != null && character.Library.Length > 0)
                 try { motion = CharacterMotion.Create(character); }
                 catch (Exception error) when (error is IOException or InvalidDataException or Packages.PackageException or System.Text.Json.JsonException or UnauthorizedAccessException)
