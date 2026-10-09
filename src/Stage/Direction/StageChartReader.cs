@@ -422,6 +422,7 @@ internal static class StageChartReader
         {
             var time = Seconds(c.Tick);
             var duration = c.Length > 0 ? Seconds(checked(c.Tick + c.Length)) - time : 0;
+            if (c.Type == "blend" && c.Value.Length == 0) return new StageCue(time, "blend", duration.ToString("0.###", CultureInfo.InvariantCulture));
             return new StageCue(time, c.Type, c.Value, c.Type == "gh3-camera" && duration > StageRockBandVenue.MaxCameraHold ? 0 : duration);
         }).ToArray();
         var mapped = Convert(venue);

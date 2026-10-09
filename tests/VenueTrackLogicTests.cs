@@ -15,6 +15,7 @@ internal static class VenueTrackLogicTests
         {
             CheckRb1(directory);
             CheckRb3(directory);
+            CheckAuthoredPatterns(directory);
             CheckPriority(directory);
             CheckGenerated(directory);
             CheckPortableCameras();
@@ -79,6 +80,46 @@ internal static class VenueTrackLogicTests
         Check(timeline.Diagnostics.Any(d => d.Contains("1 post-processing", StringComparison.Ordinal) && d.Contains("1 sing-along", StringComparison.Ordinal) &&
             d.Contains("keyframe in automatic lighting", StringComparison.Ordinal) && d.Contains("unknown mystery_cut", StringComparison.Ordinal)),
             "RB3 diagnostics list ignored and unknown events: " + string.Join(" | ", timeline.Diagnostics));
+    }
+
+    // Patterns seen in real charts (Magma/Onyx RB3 customs and RBN charts, see docs/CUSTOM-CONTENT.md): stacked
+    // alternative cuts in name order, and two lighting cues on one tick.
+    private static void CheckAuthoredPatterns(string directory)
+    {
+        var song = Song(directory, "authored");
+        WriteMidi(Path.Combine(song, "notes.mid"), Venue(
+            Text(0, "[coop_all_behind]"), Text(0, "[coop_all_far]"), Text(0, "[coop_all_near]"),
+            Text(0, "[lighting (intro)]"), Text(0, "[lighting (silhouettes_spot)]"),
+            Text(1920, "[coop_d_behind]"), Text(1920, "[coop_d_closeup_hand]"), Text(1920, "[coop_d_closeup_head]"), Text(1920, "[coop_d_near]"),
+            Text(1920, "[lighting (loop_cool)]"), Text(1920, "[lighting (blackout_fast)]"),
+            Text(3840, "[coop_g_behind]"), Text(3840, "[lighting ()]"), Text(3840, "[verse]"),
+            Text(5760, "[coop_g_behind]"), Text(5760, "[coop_g_closeup_hand]"), Text(5760, "[coop_g_closeup_head]"), Text(5760, "[coop_g_near]"),
+            Text(5760, "[coop_kv_near]"), Text(5760, "[lighting (intro)]")));
+        var timeline = StageChartReader.Load(song, Path.Combine(song, "notes.mid"));
+        var cameras = timeline.Cameras.Select(c => $"{c.Time:0.###}:{c.Value}").ToArray();
+        Check(cameras.SequenceEqual(new[] { "0:87", "2:89", "4:102", "6:84" }),
+            "stacked cuts rotate over the alternatives that show the subject; a behind cut plays only alone: " + string.Join(" ", cameras));
+        var lighting = timeline.Cues.Where(c => StageSongDirection.Channel(c) == "lighting" && c.Type != "gh3-note")
+            .Select(c => $"{c.Time:0.###}:{c.Type}:{c.Value}").ToArray();
+        Check(lighting.SequenceEqual(new[] { "0:lighting:solo", "2:blend:0.2", "2:lighting:blackout", "4:blend:0.15", "4:lighting:verse", "6:lighting:intro" }),
+            "one lighting cue per tick: the last one, and intro yields to a real cue: " + string.Join(" ", lighting));
+        Check(timeline.Diagnostics.Any(d => d.Contains("4 camera cuts, 4 lighting cues", StringComparison.Ordinal)),
+            "the diagnostic counts the cues that play: " + string.Join(" | ", timeline.Diagnostics));
+
+        // A repeated cue starts a blend into the next different cue (RBN2 authoring docs). The flash pattern is from an Onyx chart.
+        WriteMidi(Path.Combine(song, "notes.mid"), Venue(
+            Text(0, "[lighting (flare_fast)]"), Text(240, "[lighting (flare_fast)]"), Text(1920, "[lighting (silhouettes_spot)]"),
+            Text(3840, "[lighting (harmony)]"), Text(5760, "[lighting (harmony)]"), Text(6720, "[lighting (loop_warm)]"),
+            Text(9600, "[lighting (loop_warm)]")));
+        timeline = StageChartReader.Load(song, Path.Combine(song, "notes.mid"));
+        lighting = timeline.Cues.Where(c => StageSongDirection.Channel(c) == "lighting").Select(c => $"{c.Time:0.###}:{c.Type}:{c.Value}").ToArray();
+        Check(lighting.SequenceEqual(new[] { "0:blend:0", "0:lighting:flare", "0.25:blend:1.75", "0.25:lighting:solo", "2:blend:0.15",
+                "4:lighting:verse", "5:gh3-note:58", "6:color:orange", "6:blend:1", "6:lighting:verse", "6:gh3-note:58", "7:blend:0.15",
+                "8:gh3-note:58", "9:gh3-note:58" }),
+            "a repeated cue moves the next cue to the repeat and blends over the span; steps restart after the span: " + string.Join(" ", lighting));
+        Check(timeline.Diagnostics.Any(d => d.Contains("4 lighting cues", StringComparison.Ordinal) &&
+            d.Contains("2 repeated lighting cues blend into the next cue", StringComparison.Ordinal)),
+            "the diagnostic counts the repeat blends: " + string.Join(" | ", timeline.Diagnostics));
     }
 
     private static void CheckPriority(string directory)

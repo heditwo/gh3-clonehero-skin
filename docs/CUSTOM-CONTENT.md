@@ -382,7 +382,7 @@ GH3 lightshow note numbers are in [PARITY-NOTES.md](PARITY-NOTES.md#lighting-and
 
 A MIDI track with the name `VENUE` holds Rock Band camera and lighting cues ([format](https://github.com/TheNathannator/GuitarGame_ChartFormats/blob/main/docs/Implementation-Specific/Rock-Band/MIDI-Tracks/Venue.md)). Many converted charts have one. The mod reads both variants: RB1/RB2 notes and text events, and RB3 text events. `.chart` files have no VENUE section (Moonscraper and YARG also read the track only from MIDI); the `[lighting (NAME)]` and `[bonusfx]` events in `[Events]` use the same name table. `MV VENUE` (RB2 music-video venues) is not read.
 
-The cues go into the normal channels (`camera`, `lighting`, `pyro`, `smoke`) and play through the same players as GH3 notes: camera cuts become `gh3-camera` notes, lighting becomes `lighting`, `color`, and `blend` cues, and keyframe steps become GH3 lightshow notes 58 (next snapshot) and 60 (strobe toggle). A channel uses the VENUE track only when no higher source supplies it ([channel selection](#channel-selection-and-fallback)). Set `GH3_SKIN_VENUE_TRACK=off` to ignore all VENUE tracks; `StageChartReader.UseVenueTrack` is the same switch for an in-game option. The loader log shows the counts (`Rock Band VENUE: ... mapped; ignored ...`) and the first 16 mapped cues.
+The cues go into the normal channels (`camera`, `lighting`, `pyro`, `smoke`) and play through the same players as GH3 notes: camera cuts become `gh3-camera` notes, lighting becomes `lighting`, `color`, and `blend` cues, and keyframe steps become GH3 lightshow notes 58 (next snapshot) and 60 (strobe toggle). A channel uses the VENUE track only when no higher source supplies it ([channel selection](#channel-selection-and-fallback)). Set `GH3_SKIN_VENUE_TRACK=off` to ignore all VENUE tracks; `StageChartReader.UseVenueTrack` is the same switch for an in-game option. The loader log shows the counts (`Rock Band VENUE: ... mapped; N repeated lighting cues blend into the next cue; ignored ...`) and the first 16 mapped cues.
 
 In the tables, **J** marks a choice by judgment. The other rows follow the name of the Rock Band cue directly.
 
@@ -430,7 +430,7 @@ GH3 camera notes select a group from the stage's camera bank (the GH3 `CameraCut
 Rules:
 
 - GH3 has no keyboard player. A cut that shows the keys player shows the other members of the cut; keys alone is a mid shot (J).
-- RB3 stacks cuts at one time and plays the one that fits the band. The mod takes a directed cut first, then a cut without keys, then the first cut.
+- RB3 stacks cuts at one time and plays the one that fits the band. The mod takes a directed cut first, then a cut without keys and not from behind, then a behind cut, then a cut with keys. When more than one cut has the best rank, the mod takes them in turn (the first stack takes the first cut, the next stack the second cut, and so on). Magma writes the stacked cuts in name order, so "the first cut" was nearly always `*_behind` (J: GH3 note 102 does not show the member of a behind cut).
 - `do_directed_cut` and `do_optional_cut` (RB1) play always: the mod does not know if the player "does well" (J). The cut starts at the event time; the Rock Band pre-roll is not used (J).
 - Each cut lasts until the next cut. When that is more than 8 s, the note has no length, and GH3's own 3–8 s cuts continue in the same group (J: GH3 shots move from one point to another, and a long hold is too slow).
 - Note 70 (no behind cuts) has no effect, because the random groups have no behind shots.
@@ -469,6 +469,8 @@ Rules:
 - `[next]`, `[prev]`, and `[first]` (RB1 notes 48, 49, 50) step only in a keyframed cue (the "keyframes" rows), as in Rock Band. GH3 cannot step back, so `prev` and `first` also go to the next snapshot (J); `first` at the time of its lighting cue has no effect. `stomp` reacts only to `next`.
 - A color override stays until a cue without a color. If the color changes while the mood stays the same, the mod adds a snapshot step, because GH3 applies a new color only with the next snapshot.
 - A blend other than 0.15 s applies to its own cue; the next cue sets 0.15 s again.
+- Two lighting cues at one time: the last one in the track plays. `intro` yields to the other cue.
+- A repeated cue starts a blend, as in Rock Band ([RBN2 docs](http://docs.c3universe.com/rbndocs/index.php?title=RBN2_Camera_And_Lights), "Lighting and Post Process Blending"): for `A … A … B`, the mod starts `B` at the second `A` and blends over the time to `B`. At the time of `B` the blend goes back to 0.15 s, and the snapshot steps of `B` start. Charts use this for fades and for flashes (`flare_fast`, `flare_fast` 1/8 beat later, then `silhouettes_spot`). Before, the second cue had no effect and the stage stayed in the flare mood until `B`.
 
 #### Effects and ignored cues
 
@@ -480,6 +482,25 @@ Rules:
 | Post-processing (RB1 notes 96–110, RB3 `[*.pp]`) | ignored: GH3 has no matching screen filters | J |
 | Spotlights (notes 37–41) | ignored: GH3 sets its spot flags from the players, not from the chart | J |
 | Sing-alongs (notes 85–87) | ignored: no GH3 band action is mapped | J |
+
+#### Tested charts
+
+These charts were read with the mod's reader, and four of them were played in the game (2026-10-09). The downloads are not in the repository. The C# tests use event patterns of these charts, not the chart data.
+
+| Chart | Charter | Kind | Music license | Played on |
+| --- | --- | --- | --- | --- |
+| Brad Sucks: Fake It, Gasoline, Out of It, There's Something Wrong, Total Breakdown, Understood by Your Dad, You're Not Going Anywhere | MB1Nightmare and Greninjo | RB3 text events, Clone Hero conversion with Onyx fields in `song.ini` | CC BY-SA ([Out of It](https://www.bradsucks.net/releases/out-of-it)) | You're Not Going Anywhere: `gh3.dive`, `gh3.hell` |
+| Jonathan Coulton: Skullcrusher Mountain | Harmonix (RB1 DLC) | RB1 notes (60–64, 70–73, 48) and text lighting | CC BY-NC (Thing a Week) | `gh3.hell`, `gh3.budokan` |
+| Jonathan Coulton: Big Bad World One, Mandelbrot Set | RBN1 | RB2 notes and text lighting | CC BY-NC | |
+| Jonathan Coulton: The Future Soon, The Stache, Shop Vac, Creepy Doll, Ikea, Chiron Beta Prime | RBN2 | RB3 text events | CC BY-NC (The Stache: not known) | The Future Soon: `gh3.budokan`, `gh3.dive` |
+
+The source is [Chorus Encore](https://www.enchor.us/) (`https://files.enchor.us/<md5>.sng`). The Brad Sucks charts are uploads by their charter. The Coulton charts come from Rock Band packages; their chart data is not under a free license, so use them only for local tests.
+
+Results:
+
+- No unknown event in the 16 charts. The mod ignores post-processing (11–62 per chart), spotlights (up to 581 notes), sing-alongs, `[FogOff]`, `[next]` in automatic cues, and `[first]`/`[prev]` in `stomp` (as Rock Band does).
+- Camera subjects match the cues on all three venues: drummer, bassist, singer, singer close-up, guitar hand close-up, pans, and wide shots.
+- Three bugs were found and fixed: stacked cuts played the behind shot (The Future Soon: 49 of 89 cuts, Creepy Doll: 70 of 104, Shop Vac: 73 of 94; now 0), repeated cues did not blend (66 repeats in You're Not Going Anywhere, 81 in The Stache), and two cues at one time played in a random order (List sort is not stable).
 
 ### Generated direction
 

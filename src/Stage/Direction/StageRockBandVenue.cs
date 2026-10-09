@@ -78,7 +78,7 @@ internal static class StageRockBandVenue
             if (!cameras.TryGetValue(tick, out var list)) cameras[tick] = list = new();
             list.Add((priority, note));
         }
-        var lights = new List<(long Tick, Light Light)>();
+        var lights = new List<(long Tick, string Name, Light Light)>();
         var keyframes = new List<(long Tick, string Kind)>();
         var effects = new List<StageTickCue>();
         unhandled = new();
@@ -114,7 +114,7 @@ internal static class StageRockBandVenue
                 Camera(tick, 0, note ?? 79);
             }
             else if (Coop.Match(text) is { Success: true } coop && CoopCut(coop.Groups[1].Value, coop.Groups[2].Value) is { } standard)
-                Camera(tick, standard.Keys ? 2 : 1, standard.Note);
+                Camera(tick, standard.Keys ? 3 : coop.Groups[2].Value == "behind" ? 2 : 1, standard.Note);
             else
             {
                 if (!text.StartsWith("stage ", StringComparison.Ordinal) && !text.StartsWith("gh3 ", StringComparison.Ordinal)) unknown.Add(text);
@@ -123,27 +123,49 @@ internal static class StageRockBandVenue
 
             void Add(string name)
             {
-                if (Moods.Contains(name) || Colors.Contains(name)) lights.Add((tick, new Light(name, Keyframed: name is "verse" or "chorus")));
-                else if (Lights.TryGetValue(name, out var light)) lights.Add((tick, light));
+                if (Moods.Contains(name) || Colors.Contains(name)) lights.Add((tick, name, new Light(name, Keyframed: name is "verse" or "chorus")));
+                else if (Lights.TryGetValue(name, out var light)) lights.Add((tick, name, light));
                 else
                 {
                     unknown.Add($"lighting ({name})");
-                    lights.Add((tick, Lights["verse"]));
+                    lights.Add((tick, name, Lights["verse"]));
                 }
             }
         }
 
         var output = new List<StageTickCue>();
         var cutTicks = cameras.Keys.ToArray();
+        var stacked = 0;
         for (var i = 0; i < cutTicks.Length; i++)
         {
-            var choice = cameras[cutTicks[i]].OrderBy(c => c.Priority).First();
+            var best = cameras[cutTicks[i]].Min(c => c.Priority);
+            var candidates = cameras[cutTicks[i]].Where(c => c.Priority == best).ToArray();
+            // Magma writes stacked alternatives in name order, so "first" would nearly always be the behind cut; rotate instead.
+            var choice = candidates.Length == 1 ? candidates[0] : candidates[stacked++ % candidates.Length];
             output.Add(new(cutTicks[i], "gh3-camera", choice.Note.ToString(CultureInfo.InvariantCulture),
                 i + 1 < cutTicks.Length ? cutTicks[i + 1] - cutTicks[i] : 0));
         }
 
-        lights.Sort((a, b) => a.Tick.CompareTo(b.Tick));
-        keyframes.Sort((a, b) => a.Tick.CompareTo(b.Tick));
+        // One lighting cue per tick: the last one in the track, but an intro transition yields to a real cue at the same time.
+        lights = lights.GroupBy(l => l.Tick).OrderBy(g => g.Key)
+            .Select(g => g.Where(l => l.Light.Mood != "intro").DefaultIfEmpty(g.Last()).Last()).ToList();
+        // Rock Band blends when a cue repeats: from the second cue to the next different cue. The next cue starts at the
+        // repeat and blends over the span. Length marks that span on the blend cue; the reader converts it to seconds.
+        var blends = new Dictionary<int, long>();
+        for (var i = 1; i < lights.Count; i++)
+        {
+            if (lights[i].Name != lights[i - 1].Name) continue;
+            var from = lights[i].Tick;
+            var j = i;
+            while (j < lights.Count && lights[j].Name == lights[i - 1].Name) j++;
+            lights.RemoveRange(i, j - i);
+            if (i < lights.Count)
+            {
+                blends[i] = lights[i].Tick - from;
+                lights[i] = lights[i] with { Tick = from };
+            }
+        }
+        keyframes = keyframes.OrderBy(k => k.Tick).ToList();
         string? color = null;
         var blend = DefaultBlend;
         var release = DefaultBlend;
@@ -151,7 +173,7 @@ internal static class StageRockBandVenue
         var lightCount = 0;
         for (var i = 0; i < lights.Count; i++)
         {
-            var (tick, light) = lights[i];
+            var (tick, _, light) = lights[i];
             var next = i + 1 < lights.Count ? lights[i + 1].Tick : end;
             for (; keyframe < keyframes.Count && keyframes[keyframe].Tick < tick; keyframe++)
                 Ignore(i == 0 ? "keyframe before lighting" : "keyframe in automatic lighting");
@@ -160,9 +182,20 @@ internal static class StageRockBandVenue
             var recolor = !passthrough && targetColor != color;
             if (recolor) output.Add(new(tick, "color", targetColor ?? "off"));
             color = targetColor;
-            var targetBlend = release != DefaultBlend ? release : light.Blend;
-            if (targetBlend != blend) output.Add(new(tick, "blend", targetBlend.ToString(CultureInfo.InvariantCulture)));
-            blend = targetBlend;
+            var origin = tick;
+            if (blends.TryGetValue(i, out var span))
+            {
+                origin = tick + span;
+                output.Add(new(tick, "blend", "", span));
+                output.Add(new(origin, "blend", light.Blend.ToString(CultureInfo.InvariantCulture)));
+                blend = light.Blend;
+            }
+            else
+            {
+                var targetBlend = release != DefaultBlend ? release : light.Blend;
+                if (targetBlend != blend) output.Add(new(tick, "blend", targetBlend.ToString(CultureInfo.InvariantCulture)));
+                blend = targetBlend;
+            }
             release = light.Release;
             output.Add(new(tick, "lighting", light.Mood));
             lightCount++;
@@ -181,7 +214,7 @@ internal static class StageRockBandVenue
             {
                 var step = Math.Max(1, (long)Math.Round(light.StepBeats * resolution));
                 var count = 0;
-                for (var at = tick + step; at < next && count < StepLimit; at += step, count++)
+                for (var at = origin + step; at < next && count < StepLimit; at += step, count++)
                     output.Add(new(at, "gh3-note", light.Toggle ? "60" : "58"));
             }
         }
@@ -192,6 +225,7 @@ internal static class StageRockBandVenue
         if (output.Count > 0 || ignored.Count > 0 || unknown.Count > 0)
         {
             parts.Add($"Rock Band VENUE: {cutTicks.Length} camera cuts, {lightCount} lighting cues, {effects.Count} effects mapped");
+            if (blends.Count > 0) parts.Add($"{blends.Count} repeated lighting cues blend into the next cue");
             if (ignored.Count > 0) parts.Add("ignored " + string.Join(", ", ignored.Select(pair => $"{pair.Value} {pair.Key}")));
             if (unknown.Count > 0) parts.Add("unknown " + string.Join(", ", unknown.Take(8)) + (unknown.Count > 8 ? ", ..." : ""));
         }
