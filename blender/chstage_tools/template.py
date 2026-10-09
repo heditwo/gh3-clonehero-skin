@@ -6,10 +6,9 @@ import bpy
 from mathutils import Matrix, Quaternion, Vector
 
 from . import sidecars
-from .vendor.package_format import container
 
-# A new stage has no scripts. The file is a text block (a kept package file), so creators can add script definitions.
-MINIMAL_SCRIPTS = {"version": 1, "definitions": {}}
+# A new stage has no scripts.json: with a script bank, the mod lights the stage through the GH3 script light scene,
+# and a bank without light nodes leaves the stage and the band dark.
 
 BOX_FACES = [(0, 1, 2, 3), (4, 7, 6, 5), (0, 4, 5, 1), (1, 5, 6, 2), (2, 6, 7, 3), (3, 7, 4, 0)]
 # Runtime positions of the example.studio pack; Blender position = (x, z, y).
@@ -163,10 +162,6 @@ def create(name="CH Stage"):
     package.authors.add().name = "Your name"
     requirement = package.requires.add()
     requirement.package_id, requirement.version = sidecars.LIBRARY_ID, "1.0.0"
-    scripts = scene.chstage.kept_files.add()
-    scripts.path, scripts.entry = "scripts.json", "scripts"
-    scripts.text = bpy.data.texts.new(f"{name}/scripts.json")
-    scripts.text.from_string(container.json_bytes(MINIMAL_SCRIPTS).decode())
 
     for item, center, size, color in SCENERY:
         obj = link(scene, bpy.data.objects.new(item, box_mesh(item, (size[0], size[2], size[1]))))

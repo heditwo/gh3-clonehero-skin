@@ -27,7 +27,7 @@ To remove the add-on, open **Edit > Preferences > Add-ons**, find **CH Stage Too
    - One waypoint (`guitarist_walk01`) and two emitters for each effect.
    - Two camera shots (`wide` and `guitar`).
    - Two stage lights (`Stage` and `Band`), the snapshots `fill` and `chorus`, and the moods `intro`, `blackout`, and `chorus`.
-   - An empty script bank (`scripts.json`, a text block).
+   - No script bank. With a `scripts.json`, the mod lights the stage through the GH3 script light scene, and a bank without light nodes makes the stage and the band dark (seen 2026-10-09).
 2. Change the scenery. Use usual Blender meshes and materials.
 3. Set the package information: open **Stage Package > Package Information**. Set the ID, the name, the version, the authors, and the license.
 

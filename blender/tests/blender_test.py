@@ -189,8 +189,8 @@ with zipfile.ZipFile(target) as package_zip:
     manifest = json.loads(package_zip.read("manifest.json"))
     stage_json = package_zip.read("stage.glb")
     cameras = json.loads(package_zip.read("cameras.json"))
-check("package files", names[0] == "manifest.json" and {"stage.glb", "placements.json", "cameras.json", "lighting.json", "scripts.json"} <= set(names)
-      and manifest["entry"].get("scripts") == "scripts.json" and set(manifest["files"]) == set(names) - {"manifest.json"}, names)
+check("package files", names[0] == "manifest.json" and {"stage.glb", "placements.json", "cameras.json", "lighting.json"} <= set(names)
+      and "scripts.json" not in names and "scripts" not in manifest["entry"] and set(manifest["files"]) == set(names) - {"manifest.json"}, names)
 summary["preview"] = "preview.png" in names
 check("preview image (render or warning)", "preview.png" in names and manifest.get("preview") == "preview.png"
       or any("preview" in m for _, m, _ in issues), issues)
@@ -218,7 +218,7 @@ floor_object = next(o for o in opened.objects if o.name.startswith("floor"))
 check("open package", result == {"FINISHED"} and opened.chstage.package.package_id == "tester.addon-stage"
       and point.anchor_role == "guitarist" and point.anchor_part == "bone" and point.anchor_bone == "c00e3395"
       and floor_object.active_material.chstage.lightmap is not None and opened.chstage.package.preview_mode in ("IMAGE", "NONE")
-      and [f.path for f in opened.chstage.kept_files] == ["scripts.json"], [(o.name, o.type) for o in opened.objects][:40])
+      and not opened.chstage.kept_files, [(o.name, o.type) for o in opened.objects][:40])
 again = output / "reopened" / target.name
 with bpy.context.temp_override(scene=opened, view_layer=opened_layer):
     result = bpy.ops.chstage.export_package(filepath=str(again))
