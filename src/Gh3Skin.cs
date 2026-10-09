@@ -63,12 +63,14 @@ public sealed class SkinMod : MelonMod
         _capture?.Reset();
         _comboOverride?.Reset();
         _stage?.Reset();
+        Spike.TextureSpike.Reset();
         if (_gameplay)
             MelonLogger.Msg("GH3 gameplay scene loaded");
     }
 
     public override void OnLateUpdate()
     {
+        if (_gameplay && Spike.TextureSpike.Enabled) Spike.TextureSpike.Update();
         if (_renderer == null || _hud == null || _options == null || _capture == null ||
             !_gameplay || !_scene.TryGetPlayer(out var player, out var score))
             return;
