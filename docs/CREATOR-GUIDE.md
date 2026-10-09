@@ -237,6 +237,7 @@ Look in `<game>/MelonLoader/Latest.log`:
 | Problem | Do this |
 | --- | --- |
 | The stage is not in the picker | Look for `skipped` in the log. Make sure that the file is in `Custom/Stages` and that its extension is `.chstage` |
-| The stage and the band are dark in the game | A stage with a `scripts.json` (script bank) uses the GH3 script lights. A bank without GH3 light objects gives no light. Make the stage from **New Stage from Template** of an add-on from 2026-10-09 or later (the template has no script bank) |
+| The stage and the band are dark in the game | Mod versions before 2026-10-09 lit a stage with a `scripts.json` (script bank) only through GH3 light objects (`LevelLight`), so a bank without them gave no light. Update the mod. Now the stage lights apply unless the bank has `LevelLight` objects |
+| `light '...' has no GH3 light object` (warning) | `scripts.json` has `LevelLight` objects, so only these light the stage. Set the **Script object** of the light to a `LevelLight` name, or remove the `LevelLight` objects from `scripts.json` |
 | The camera shows only the highway | Move the camera, or turn it so that the performers are to the left or the right of the highway |
 | A change does not show | Export again and start the game again. The mod imports a package again when its file changes. When two packages have the same ID, the mod uses the higher version |

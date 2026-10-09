@@ -25,7 +25,7 @@ To remove the add-on, open **Edit > Preferences > Add-ons**, find **CH Stage Too
    - One waypoint (`guitarist_walk01`) and two emitters for each effect.
    - Two camera shots (`wide` and `guitar`).
    - Two stage lights (`Stage` and `Band`), the snapshots `fill` and `chorus`, and the moods `intro`, `blackout`, and `chorus`.
-   - No script bank. With a `scripts.json`, the mod lights the stage through the GH3 script light scene, and a bank without light nodes makes the stage and the band dark (seen 2026-10-09).
+   - No script bank. A script bank is optional; the stage lights apply also with a `scripts.json`, unless the bank has GH3 light objects (section 1.7).
 2. Change the scenery. Use usual Blender meshes and materials.
 3. Set the package information: open **Stage Package > Package Information**. Set the ID, the name, the version, the authors, and the license.
 
@@ -85,6 +85,8 @@ The script bank holds the GH3 scripts of a venue as typed values. The **Script B
 - **Events**: the scripts that start: the bank startup scripts, the performance script, the trigger script of each node, the startup script of each stage object (`gh3ObjectScript`), and the script and animation events of each actor. A script shows its size; the add-on does not show or change GH3 script code.
 - **Values**: the startup scripts, the performance script, and the definitions with a simple value.
 - **Set a value**: the pencil button of a field changes a simple typed value (integer, number, text, vector, or checksum; a checksum takes a name or `0x` and 8 hex digits). The node name cannot change (it is the identity of the node). Script code, structures, and arrays cannot change.
+
+Lights: when the node arrays have one or more `LevelLight` objects (the GH3 lights), the game lights the stage with these objects. A stage light then has an effect only through its **Script object** (the name of a `LevelLight`); the validator warns for a stage light without one. Without `LevelLight` objects, the stage lights apply as in a stage without `scripts.json`.
 
 The text block of `scripts.json` is also editable in the Blender text editor. Click the reload button of the panel after a change there. Names show as checksums; the panel shows the names that it knows (common GH3 field names, the bank names, and the Blender object names).
 

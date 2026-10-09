@@ -251,6 +251,29 @@ class StagePackageTests(unittest.TestCase):
         placements["band"]["guitarist"]["rotation"] = [0, 0, 0, 2]
         self.assertTrue(any("unit length" in e for e in errors_of(package(self.folder, stage_files(**{"placements.json": placements})))))
 
+    def test_script_bank_lights(self):
+        def key(name): return f"0x{~zlib.crc32(name.lower().encode()) & 0xFFFFFFFF:08x}"
+        def node(name, kind): return [10, [[key("Name"), [13, key(name)]], [key("Class"), [13, key(kind)]]]]
+        def warnings(nodes, light_object=None):
+            scripts = {"version": 1, "definitions": {}}
+            if nodes is not None:
+                scripts = {"version": 1, "nodes": ["club_NodeArray"], "definitions": {key("club_NodeArray")[2:]: [12, nodes]}}
+            files = stage_files(**{"scripts.json": scripts})
+            if light_object:
+                lighting = json.loads(files["lighting.json"])
+                lighting["lights"][0]["object"] = light_object
+                files["lighting.json"] = json.dumps(lighting).encode()
+            entry = {"model": "stage.glb", "placements": "placements.json", "cameras": "cameras.json", "lighting": "lighting.json",
+                     "actors": "actors.json", "scripts": "scripts.json"}
+            report = validate(package(self.folder, files, entry=entry))
+            self.assertEqual(report.errors, [])
+            return [w for w in report.warnings if "GH3 light object" in w]
+        self.assertEqual(warnings(None), [])
+        self.assertEqual(warnings([node("club_box", "GameObject")]), [])
+        self.assertEqual(len(warnings([node("club_light", "LevelLight")])), 1)
+        self.assertEqual(warnings([node("club_light", "LevelLight")], "club_light"), [])
+        self.assertEqual(warnings([node("club_light", "LevelLight")], key("club_light")), [])
+
     def test_actor_skin_and_unit_scale_channels(self):
         self.assertEqual(errors_of(package(self.folder, stage_files(**{"sign.glb": skinned_glb(scale_key=1.00005)}))), [])
         self.assertTrue(any("scale keys" in e for e in errors_of(package(self.folder, stage_files(**{"sign.glb": skinned_glb(scale_key=1.1)})))))

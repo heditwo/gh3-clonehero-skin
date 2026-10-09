@@ -22,6 +22,9 @@ internal sealed class StageLightScene
     private int _version;
     public IReadOnlyList<StageLightNative> Lights { get; }
     public IReadOnlyDictionary<uint, StageLightGroup> Groups => _groups;
+    // GH3 lights exist only as LevelLight nodes, and every light command addresses one of them or its group.
+    // Without such a node the scene can light nothing, so the stage's own lights (lighting.json) apply.
+    public bool DrivesLighting => Lights.Count > 0;
 
     public StageLightScene(IEnumerable<Gh3QbValue> nodes, Gh3ScriptRuntime? runtime = null, StageLighting? lighting = null, Gh3QbValue? snapshots = null)
     {

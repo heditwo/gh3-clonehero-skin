@@ -190,6 +190,7 @@ finally
 var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../.."));
 var assetRoot = Path.Combine(root, "assets");
 Equal("README.md", string.Join(", ", Directory.GetFiles(assetRoot).Select(Path.GetFileName).Order()), "assets/ has only its README and folders");
+LightOwnershipTests.Run(assetRoot);
 // The HUD skips these optional files when they are missing, so a wrong path would not fail at load.
 foreach (var optional in new[] { "message-font.png", "yourock-font.png", "fit-font.png" }.Select(name => Path.Combine(SkinAssetPaths.Fonts(assetRoot), name))
     .Append(SkinAssetPaths.YouRockFlames(assetRoot)))

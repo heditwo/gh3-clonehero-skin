@@ -412,6 +412,7 @@ class Validator:
         if placements and cameras: self.check_cameras(entry["cameras"], cameras, placements)
         if lighting: self.check_lighting(entry["lighting"], lighting)
         if scripts: self.check_script_files(entry["scripts"], scripts)
+        if scripts and lighting: self.check_script_lights(entry["lighting"], lighting, scripts)
         glb = self.check_glb(entry["model"], skinned=False)
         if glb is not None:
             data = glb.json
@@ -473,6 +474,26 @@ class Validator:
         for mood, snapshots in lighting["moods"].items():
             for snapshot in snapshots:
                 if snapshot not in lighting["snapshots"]: self.report.error(name, f"mood '{mood}' refers to a missing snapshot '{snapshot}'")
+
+    def check_script_lights(self, name, lighting, scripts):
+        # The mod lights the stage through the GH3 light scene when scripts.json has LevelLight nodes; then a light
+        # without a script object that names one of these nodes does not light the scenery or the band.
+        definitions = scripts.get("definitions", {})
+        level_lights = set()
+        for array in scripts.get("nodes", []):
+            value = definitions.get(f"{name_key(array):08x}")
+            if not (isinstance(value, list) and len(value) == 2 and value[0] == 12 and isinstance(value[1], list)): continue
+            for node in value[1]:
+                fields = dict(field for field in node[1] if isinstance(field, list) and len(field) == 2) \
+                    if isinstance(node, list) and len(node) == 2 and node[0] == 10 and isinstance(node[1], list) else {}
+                node_class, node_name = fields.get(f"0x{gh3_key('Class'):08x}"), fields.get(f"0x{gh3_key('Name'):08x}")
+                if node_class == [13, f"0x{gh3_key('LevelLight'):08x}"] and isinstance(node_name, list) and len(node_name) == 2:
+                    level_lights.add(name_key(node_name[1]))
+        if not level_lights: return
+        for light in lighting["lights"]:
+            if not light.get("object") or name_key(light["object"]) not in level_lights:
+                self.report.warn(name, f"light '{light['id']}' has no GH3 light object: scripts.json has LevelLight nodes, so only these "
+                                 "light the stage. Set the script object of the light, or remove the LevelLight nodes")
 
     def check_script_files(self, name, scripts):
         for texture, file in scripts.get("textures", {}).items():
@@ -614,6 +635,11 @@ class Validator:
 def gh3_key(name):
     """GH3 checksum of a name (pipeline.gh3.formats.key, repeated here so the add-on bundle has no other dependency)."""
     return ~zlib.crc32(name.lower().encode()) & 0xFFFFFFFF
+
+
+def name_key(name):
+    """A GH3 name as the mod reads it (Gh3QbText.Key): a '0x' checksum or a name text."""
+    return int(name[2:], 16) if isinstance(name, str) and name.lower().startswith("0x") else gh3_key(str(name))
 
 
 def library_instruments(library):

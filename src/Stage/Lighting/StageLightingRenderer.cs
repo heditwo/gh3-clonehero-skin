@@ -155,7 +155,7 @@ internal sealed class StageLightingRenderer
             FrameProfile.Add(name, (now - mark) * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
             mark = now;
         }
-        var scene = _fixtures?.Scripts?.LightScene;
+        var scene = _fixtures?.Scripts?.LightScene is { DrivesLighting: true } native ? native : null;
         var poses = _lighting.Bank.Lights.Select(light => light.Object.Length > 0 ? scene?.RenderPose(Gh3QbText.Key(light.Object)) : null).ToArray();
         var posesChanged = !poses.SequenceEqual(_lightPoses);
         if (posesChanged)
