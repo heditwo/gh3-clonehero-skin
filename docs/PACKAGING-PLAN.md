@@ -21,6 +21,11 @@ Prepare the mod for a public release to the Clone Hero community:
 | 4 | HUD art | The HUD is GH3 art. Two small gem sets are not from GH3: tap gems (from BetterGH3) and the cyan overlapping Star Power phrase gems (from FastGH3). Credit those projects, ask their authors, or draw replacements. This is a small cleanup item, not a blocker. |
 | 5 | Release | Clean up the repository, then the owner posts it with a showcase video and a Discord link. No mod manager, gallery site, or index is needed for the first release. |
 | 6 | Chosen pitch | **Pitch A, growing into Pitch C** (section 5). Not Unity AssetBundles. |
+| 7 | Platforms | Linux and Windows for the first release. macOS later, with a community tester ([spike/macos.md](spike/macos.md)). |
+| 8 | Licenses | GH3-derived packages: `LicenseRef-GH3-Derived` (redistribution allowed, no changes, no sale). Blender add-on: GPL-3.0-or-later. The owner accepts the Windows SDK license for the shader build (`GH3_ACCEPT_WINDOWS_SDK_LICENSE=1`). |
+| 9 | Package sizes | GLB and PNG files are stored without compression in the zips. Library audio stays WAV. Movies stay PNG frames. Library extension `.chlib`. |
+| 10 | Direction | Charts without direction get generated cues by default (an option turns them off). The Rock Band `VENUE` mapping choices in [CUSTOM-CONTENT.md](CUSTOM-CONTENT.md#rock-band-venue-track) are accepted. |
+| 11 | Upstream | No upstream report of the MelonLoader Dobby hook-page bug. |
 
 ## 3. Research summary
 
