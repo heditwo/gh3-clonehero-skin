@@ -51,6 +51,7 @@ VenueTrackLogicTests.Run();
 BandLogicTests.Run();
 LipSyncLogicTests.Run();
 HairLogicTests.Run();
+CharacterMotionLogicTests.Run();
 DirectionLogicTests.Run();
 ShowFlowLogicTests.Run();
 HitEffectLogicTests.Run();

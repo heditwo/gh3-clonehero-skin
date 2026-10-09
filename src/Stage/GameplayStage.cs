@@ -175,7 +175,18 @@ internal sealed class GameplayStage
                 MelonLogger.Warning($"GH3 band {role}: character {package.Manifest.Id} is not ready ({package.State} {package.Error}); the venue default plays");
                 continue;
             }
-            try { result[role] = Packages.CharacterModel.Load(package.CacheDirectory); }
+            try
+            {
+                var model = Packages.CharacterModel.Load(package.CacheDirectory);
+                if (model.Library.Length > 0)
+                {
+                    // A character library profile: the character's import needed the library, so it is ready here.
+                    var library = Packages.PackageRuntime.Manager?.Find(Packages.PackageKind.Library, model.Library);
+                    if (library?.State != Packages.PackageState.Ready) throw new Packages.PackageException($"its library {model.Library} is not ready");
+                    model.LibraryFolder = library.CacheDirectory;
+                }
+                result[role] = model;
+            }
             catch (Exception error) when (error is IOException or Packages.PackageException or System.Text.Json.JsonException or UnauthorizedAccessException)
             {
                 MelonLogger.Warning($"GH3 band {role}: character {package.Manifest.Id} could not load ({error.Message}); the venue default plays");

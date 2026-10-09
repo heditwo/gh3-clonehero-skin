@@ -205,6 +205,24 @@ internal sealed class PerformanceClip
 
     private const double Sqrt1_2 = 0.70710678118654752440;
 
+    // Adds an offset for each bone to the position tracks (a clip of the character library clip rig on a profile rig;
+    // CharacterMotion).
+    public PerformanceClip Move(Vector3[]? offsets)
+    {
+        if (offsets == null) return this;
+        for (var i = 0; i < _bones.Length; i++)
+        {
+            if ((_masks[i] & 1) == 0 || _bones[i] >= offsets.Length) continue;
+            var offset = offsets[_bones[i]];
+            for (var f = 0; f < _frames; f++)
+            {
+                ref var pose = ref _poses[f * _bones.Length + i];
+                pose = pose with { Position = pose.Position + offset };
+            }
+        }
+        return this;
+    }
+
     private static ReadOnlySpan<byte> Take(ReadOnlySpan<byte> data, ref int cursor, int size)
     {
         if (cursor + size > data.Length) throw new InvalidDataException("Truncated q48 clip");
@@ -255,6 +273,8 @@ internal sealed class PerformancePlayer
     private readonly BandPose[] _previous;
     private readonly StageTimeline _timeline;
     private readonly PerformanceClipCache _clips;
+    private readonly PerformanceClipCache _faceClips;
+    private readonly PerformanceMember _faceMember;
     private readonly List<Segment> _segments = new();
     private readonly StageCue[] _commands;
     private readonly StageDrummer? _drummer;
@@ -275,14 +295,19 @@ internal sealed class PerformancePlayer
     public string CurrentClip { get; private set; } = "";
     public string CurrentStance { get; private set; } = "stance_a";
 
+    // `motion`: a character on a character library profile; its animation set replaces `member`, and the song facial clips
+    // come from the band library member of the role (CharacterMotion).
     public PerformancePlayer(string role, string directory, PerformanceMember member, BandPose[] bind, StageTimeline timeline,
-        int[]? parents = null, IReadOnlyDictionary<string, float>? constants = null)
+        int[]? parents = null, IReadOnlyDictionary<string, float>? constants = null, CharacterMotion? motion = null)
     {
         _role = role;
         _directory = directory;
-        _member = member;
+        _member = motion?.Member ?? member;
+        member = _member;
         _bind = bind;
-        _clips = new PerformanceClipCache(Path.Combine(directory, role), bind.Length, role);
+        _clips = new PerformanceClipCache(motion?.ClipDirectory ?? Path.Combine(directory, role), bind.Length, role, motion?.Offsets);
+        _faceMember = motion?.Face ?? member;
+        _faceClips = motion?.Face != null ? new PerformanceClipCache(motion.FaceDirectory, bind.Length, role + " face", motion.FaceOffsets) : _clips;
         _timeline = timeline;
         Pose = new BandPose[bind.Length];
         _previous = new BandPose[bind.Length];
@@ -294,7 +319,7 @@ internal sealed class PerformancePlayer
         if (role == "drummer" && parents != null) _rig = new StageGuitarRig(parents, bind, member.Bones, "Bone_IK_Hand_Slave");
         if (role is "guitarist" or "bassist" && parents != null)
         {
-            _rig = new StageGuitarRig(parents, bind, member.Bones);
+            _rig = new StageGuitarRig(parents, bind, member.Bones, ik: motion?.Ik);
             _armTracks = new[] { StrumTrack(constants), FretTrack(constants), FingerTrack(constants) };
         }
         if (role == "drummer") _drummer = new StageDrummer(member, timeline, constants ?? new Dictionary<string, float>());
@@ -314,12 +339,19 @@ internal sealed class PerformancePlayer
         var end = Math.Min(3600, Math.Max(60, _timeline.Cues.LastOrDefault()?.Time ?? 0));
         _ = At(end);
         var needed = _segments.Select(s => s.Clip)
-            .Concat(_member.Layers.Where(pair => !pair.Key.StartsWith("strum/")).SelectMany(pair => pair.Value)).Concat(_armTracks.SelectMany(t => t.Clips))
-            .Concat(_timeline.Track("face", _role).Select(c => c.Value)).Where(_member.Clips.ContainsKey).Distinct();
-        _clips.Prefetch(needed);
+            .Concat(_member.Layers.Where(pair => !pair.Key.StartsWith("strum/")).SelectMany(pair => pair.Value)).Concat(_armTracks.SelectMany(t => t.Clips));
+        var faces = _timeline.Track("face", _role).Select(c => c.Value).Where(_faceMember.Clips.ContainsKey);
+        if (_faceClips == _clips) _clips.Prefetch(needed.Concat(faces).Where(_member.Clips.ContainsKey).Distinct());
+        else
+        {
+            _clips.Prefetch(needed.Where(_member.Clips.ContainsKey).Distinct());
+            _faceClips.Prefetch(faces.Distinct());
+        }
     }
 
     public PerformanceClipCache Clips => _clips;
+    // The facial clip cache when it is not `Clips` (a character library profile), else null.
+    public PerformanceClipCache? FaceClips => _faceClips == _clips ? null : _faceClips;
     public StageLipSync? LipSync => _lipSync;
 
     public void Sample(double time, double walkAge = -1, float walkWeight = 1)
@@ -359,11 +391,22 @@ internal sealed class PerformancePlayer
         }
         else if (_rig != null) Arms(time);
         var face = Last(_timeline.Track("face", _role), time);
-        if (face != null && _member.Clips.TryGetValue(face.Value, out var info) && time < face.Time + info.Duration)
-            Clip(face.Value).Apply(Pose, _bind, time - face.Time, weight: (float)Math.Clamp((time - face.Time) / 0.1, 0, 1));
+        if (face != null && _faceMember.Clips.TryGetValue(face.Value, out var info) && time < face.Time + info.Duration)
+            _faceClips.Get(face.Value).Apply(Pose, _bind, time - face.Time, weight: (float)Math.Clamp((time - face.Time) / 0.1, 0, 1));
         _lipSync?.Apply(Pose, time);
         var next = _segments[Math.Min(index + 1, _segments.Count - 1)];
         _ = Clip(next.Clip);
+    }
+
+    // Verification (GH3_SKIN_TRACE): the body clip at `time` without blends, layers, or IK, as GH3 samples it.
+    public (Segment Segment, double ClipTime) SampleClip(double time, BandPose[] output)
+    {
+        time = Math.Max(_timeline.Start, time);
+        var segment = At(time);
+        Array.Copy(_bind, output, output.Length);
+        var clipTime = (time - segment.Time) * segment.Rate;
+        Clip(segment.Clip).Apply(output, _bind, clipTime);
+        return (segment, clipTime);
     }
 
     private void AddSegment()
@@ -553,6 +596,7 @@ internal sealed class PerformanceClipCache
     private readonly string _directory;
     private readonly int _bones;
     private readonly string _label;
+    private readonly Vector3[]? _offsets;
     private HashSet<string> _pending = new();
     private Task? _prefetch;
     public int Prefetched { get; private set; }
@@ -561,11 +605,12 @@ internal sealed class PerformanceClipCache
     public static double LateMilliseconds;
     public static Action<string>? Report { get; set; }
 
-    public PerformanceClipCache(string directory, int bones, string label)
+    public PerformanceClipCache(string directory, int bones, string label, Vector3[]? offsets = null)
     {
         _directory = directory;
         _bones = bones;
         _label = label;
+        _offsets = offsets;
     }
 
     public void Prefetch(IEnumerable<string> names)
@@ -577,7 +622,7 @@ internal sealed class PerformanceClipCache
         {
             var clock = Stopwatch.StartNew();
             Parallel.ForEach(list, new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount / 2, 1, 4) },
-                name => _clips.TryAdd(name, PerformanceClip.Load(Path.Combine(_directory, name), _bones)));
+                name => _clips.TryAdd(name, PerformanceClip.Load(Path.Combine(_directory, name), _bones).Move(_offsets)));
             PrefetchMilliseconds = clock.Elapsed.TotalMilliseconds;
         });
     }
@@ -603,7 +648,7 @@ internal sealed class PerformanceClipCache
             if (_clips.TryGetValue(name, out clip)) return clip;
         }
         var clock = Stopwatch.StartNew();
-        clip = PerformanceClip.Load(Path.Combine(_directory, name), _bones);
+        clip = PerformanceClip.Load(Path.Combine(_directory, name), _bones).Move(_offsets);
         _clips[name] = clip;
         LateLoads++;
         LateMilliseconds += clock.Elapsed.TotalMilliseconds;

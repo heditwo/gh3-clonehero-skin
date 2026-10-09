@@ -129,8 +129,10 @@
         "properties": {
           "entry": {
             "additionalProperties": false,
-            "required": ["catalog", "band", "performance"],
+            "description": "A band library (catalog, band, performance) or, from format 1.1, a character library (characters).",
+            "anyOf": [{ "required": ["catalog", "band", "performance"] }, { "required": ["characters"] }],
             "properties": {
+              "characters": { "$ref": "common.schema.json#/$defs/jsonPath" },
               "catalog": { "$ref": "common.schema.json#/$defs/jsonPath" },
               "band": { "$ref": "common.schema.json#/$defs/jsonPath" },
               "hair": { "$ref": "common.schema.json#/$defs/jsonPath" },

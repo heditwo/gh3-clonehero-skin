@@ -36,6 +36,27 @@ def flatten(data, prefix=""):
     return result
 
 
+def hand_layers(data, common, profile, profiles):
+    """The strum, chord, and fret tables of a guitarist profile (`strum_anims`, `finger_anims`, `fret_anims` of
+    Musician_Profiles). `data` is the QB file of the profile's animation set."""
+    layers = {}
+    styles = ["Normal", "Mute", "bad", "Bass_Normal", "Bass_Pick", "Bass_Slap"] + ["Normal" + p[key("Name")] for p in profiles]
+    strum_sets = {style.lower(): found for style in styles for source in [data, common]
+                  if (found := find_struct(source, style + "_Strums")) is not None}
+    strum_sets["default"] = next(found for style, found in strum_sets.items() if key(style) == profile[key("strum_anims")])
+    for style, found in strum_sets.items():
+        for field, refs in flatten(found).items(): layers[f"strum/{style}/{field}"] = refs
+    fingers = find_struct(data, profile[key("finger_anims")])
+    for mask in range(32):
+        colors = [color for i, color in enumerate(["green", "red", "yellow", "blue", "orange"]) if mask & (1 << i)][:4]
+        ref = fingers.get(key("_".join(colors) or "none"), fingers.get(key("none")))
+        if ref: layers[f"chord/{mask}"] = [f"{ref:08x}"]
+    frets = find_struct(common, profile[key("fret_anims")])
+    for pitch in range(101, 128):
+        if key(f"track_{pitch}") in frets: layers[f"fret/{pitch}"] = [f"{frets[key(f'track_{pitch}')]:08x}"]
+    return layers
+
+
 def write_clip(path, data, rig, source_rig=None, rotations_only=False):
     names, parents, positions, rotations = rig
     source_names, _, source_positions, source_rotations = source_rig or rig
@@ -108,20 +129,7 @@ def convert(data_directory, output, shared=False):
         layers = {}
         if role in ("guitarist", "bassist"):
             profile = next(p for p in profiles if p.get(key("Skeleton")) == key(rig_name) and p.get(key("Type")) == key(role))
-            styles = ["Normal", "Mute", "bad", "Bass_Normal", "Bass_Pick", "Bass_Slap"] + ["Normal" + p[key("Name")] for p in profiles]
-            strum_sets = {style.lower(): found for style in styles for data in [script(scripts, qb), common]
-                          if (found := find_struct(data, style + "_Strums")) is not None}
-            strum_sets["default"] = next(found for style, found in strum_sets.items() if key(style) == profile[key("strum_anims")])
-            for style, found in strum_sets.items():
-                for field, refs in flatten(found).items(): layers[f"strum/{style}/{field}"] = refs
-            fingers = find_struct(script(scripts, qb), profile[key("finger_anims")])
-            for mask in range(32):
-                colors = [color for i, color in enumerate(["green", "red", "yellow", "blue", "orange"]) if mask & (1 << i)][:4]
-                ref = fingers.get(key("_".join(colors) or "none"), fingers.get(key("none")))
-                if ref: layers[f"chord/{mask}"] = [f"{ref:08x}"]
-            frets = find_struct(common, profile[key("fret_anims")])
-            for pitch in range(101, 128):
-                if key(f"track_{pitch}") in frets: layers[f"fret/{pitch}"] = [f"{frets[key(f'track_{pitch}')]:08x}"]
+            layers = hand_layers(script(scripts, qb), common, profile, profiles)
         if role == "drummer":
             drums = find_struct(common, "drummer_anims")
             for pitch in range(36, 58):

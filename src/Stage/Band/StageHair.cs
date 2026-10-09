@@ -30,7 +30,7 @@ internal sealed class HairDefinition
         var joints = Joints.Select(j => new HairJoint
         {
             Bone = bone(j.Bone), Parent = bone(j.Parent), Position = j.Position, Rotation = j.Rotation, Length = j.Length, Mass = j.Mass,
-            Friction = j.Friction, AngularDamping = j.AngularDamping, Limits = j.Limits,
+            Friction = j.Friction, AngularDamping = j.AngularDamping, LinearDamping = j.LinearDamping, Limits = j.Limits, Type = j.Type, Axis = j.Axis, Range = j.Range,
         }).ToArray();
         return head < 0 || joints.Any(j => j.Bone < 0 || j.Parent < 0) ? null : new HairDefinition { Head = head, Joints = joints, Capsule = Capsule };
     }
@@ -53,7 +53,14 @@ internal sealed class HairJoint
     public float Mass { get; set; }
     public float Friction { get; set; }
     public float AngularDamping { get; set; }
+    public float LinearDamping { get; set; }
     public Dictionary<string, float[]> Limits { get; set; } = new();
+    // Character library joints (PACKAGE-FORMAT.md section 10.1): "ragdoll" (the default), "hinge" (Havok limited hinge:
+    // rotation about Axis within Range radians), or "prismatic" (Havok prismatic: translation along Axis within Range
+    // metres, no rotation). Axis is in the joint's bind frame; Range is relative to the bind pose.
+    public string Type { get; set; } = "ragdoll";
+    public float[] Axis { get; set; } = Array.Empty<float>();
+    public float[] Range { get; set; } = Array.Empty<float>();
 }
 
 internal sealed class StageHair
@@ -75,6 +82,11 @@ internal sealed class StageHair
     private readonly Vector3[] _oldTails;
     private readonly float[] _retention;
     private readonly float[] _limits;
+    private readonly int[] _types;
+    private readonly Vector3[] _axes;
+    private readonly float[] _low;
+    private readonly float[] _high;
+    private const int Ragdoll = 0, Hinge = 1, Prismatic = 2;
     private readonly SortedDictionary<int, Checkpoint> _checkpoints = new();
     private int _tick = -1;
     private BandPose _root;
@@ -93,24 +105,46 @@ internal sealed class StageHair
         _capsuleB = Vector(definition.Capsule.B);
         if (!float.IsFinite(definition.Capsule.Radius) || definition.Capsule.Radius is <= 0 or > 1)
             throw new InvalidDataException("Invalid hair collider");
-        var seen = new HashSet<int> { definition.Head };
         var count = definition.Joints.Length;
+        // A chain starts at a bone that is not a hair joint (the head; on the character library profiles also the chest,
+        // pelvis, arms, or legs); a joint after it can hang from an earlier joint.
+        var seen = Enumerable.Range(0, parents.Length).Except(definition.Joints.Select(j => j.Bone)).ToHashSet();
+        if (!seen.Contains(definition.Head)) throw new InvalidDataException("Invalid hair skeleton");
         _local = new BandPose[count]; _pose = new BandPose[count]; _previous = new BandPose[count];
         _tails = new Vector3[count]; _oldTails = new Vector3[count]; _retention = new float[count]; _limits = new float[count];
+        _types = new int[count]; _axes = new Vector3[count]; _low = new float[count]; _high = new float[count];
         for (var i = 0; i < count; i++)
         {
             var joint = definition.Joints[i];
             if (joint.Bone < 0 || joint.Bone >= parents.Length || !seen.Contains(joint.Parent) || !seen.Add(joint.Bone) ||
                 !float.IsFinite(joint.Length) || joint.Length is < 0.005f or > 1 || !float.IsFinite(joint.Mass) || joint.Mass is <= 0 or > 100 ||
                 !float.IsFinite(joint.Friction) || joint.Friction is < 0 or > 100 || !float.IsFinite(joint.AngularDamping) || joint.AngularDamping is < 0 or > 100 ||
-                joint.Rotation.Length != 4 || !joint.Rotation.All(float.IsFinite) ||
-                !joint.Limits.TryGetValue("coneLimit", out var cone) || cone.Length != 2 || !cone.All(float.IsFinite) || cone[1] is <= 0 or > 1.6f)
+                !float.IsFinite(joint.LinearDamping) || joint.LinearDamping is < 0 or > 100 ||
+                joint.Rotation.Length != 4 || !joint.Rotation.All(float.IsFinite))
                 throw new InvalidDataException("Invalid hair joint");
             var q = new Quaternion(joint.Rotation[0], joint.Rotation[1], joint.Rotation[2], joint.Rotation[3]);
             if (Math.Abs(q.LengthSquared() - 1) > 0.01) throw new InvalidDataException("Invalid hair bind rotation");
             _local[i] = new(Vector(joint.Position), Quaternion.Normalize(q));
-            _limits[i] = cone[1];
-            _retention[i] = MathF.Exp(-Step * (joint.AngularDamping + joint.Friction / (joint.Mass * joint.Length * joint.Length)));
+            _types[i] = joint.Type switch { "ragdoll" or "" => Ragdoll, "hinge" => Hinge, "prismatic" => Prismatic, _ => throw new InvalidDataException("Invalid hair joint type") };
+            if (_types[i] == Ragdoll)
+            {
+                if (!joint.Limits.TryGetValue("coneLimit", out var cone) || cone.Length != 2 || !cone.All(float.IsFinite) || cone[1] is <= 0 or > 1.6f)
+                    throw new InvalidDataException("Invalid hair joint");
+                _limits[i] = cone[1];
+                _retention[i] = MathF.Exp(-Step * (joint.AngularDamping + joint.Friction / (joint.Mass * joint.Length * joint.Length)));
+                continue;
+            }
+            var axis = Vector(joint.Axis);
+            var limit = _types[i] == Hinge ? MathF.PI : 1;
+            if (Math.Abs(axis.LengthSquared() - 1) > 0.01f || joint.Range.Length != 2 || !joint.Range.All(float.IsFinite) ||
+                joint.Range[0] > joint.Range[1] || joint.Range[0] < -limit || joint.Range[1] > limit)
+                throw new InvalidDataException("Invalid hair joint axis or range");
+            _axes[i] = Vector3.Normalize(axis);
+            _low[i] = joint.Range[0];
+            _high[i] = joint.Range[1];
+            _retention[i] = _types[i] == Hinge
+                ? MathF.Exp(-Step * (joint.AngularDamping + joint.Friction / (joint.Mass * joint.Length * joint.Length)))
+                : MathF.Exp(-Step * (joint.LinearDamping + joint.Friction / joint.Mass));
         }
         _animated = new BandPose[parents.Length]; _world = new BandPose[parents.Length]; _visited = new bool[parents.Length];
     }
@@ -154,6 +188,21 @@ internal sealed class StageHair
             var parent = _world[joint.Parent];
             var origin = parent.Position + Vector3.Transform(_local[i].Position, parent.Rotation);
             var rotation = Quaternion.Normalize(parent.Rotation * _local[i].Rotation);
+            if (_types[i] == Prismatic)
+            {
+                // The joint slides along its axis between the limits; gravity and the motion of its parent move it.
+                var axis = Vector3.Transform(_axes[i], rotation);
+                var point = origin;
+                if (tick > 0)
+                {
+                    var moved = _tails[i] + (_tails[i] - _oldTails[i]) * _retention[i] + new Vector3(0, -9.81f, 0) * (Step * Step);
+                    point = origin + axis * Math.Clamp(Vector3.Dot(moved - origin, axis), _low[i], _high[i]);
+                }
+                _oldTails[i] = tick == 0 ? point : _tails[i];
+                _tails[i] = point;
+                _world[joint.Bone] = new(point, rotation);
+                continue;
+            }
             var direction = Vector3.Transform(Vector3.UnitX, rotation);
             var goal = origin + direction * joint.Length;
             var tail = goal;
@@ -162,6 +211,7 @@ internal sealed class StageHair
                 var velocity = (_tails[i] - _oldTails[i]) * _retention[i];
                 var acceleration = new Vector3(0, -9.81f, 0) + (goal - _tails[i]) * (9.81f / joint.Length);
                 tail = _tails[i] + velocity + acceleration * (Step * Step);
+                var hingeAxis = Vector3.Transform(_axes[i], rotation);
                 for (var pass = 0; pass < 3; pass++)
                 {
                     var axis = cb - ca;
@@ -171,9 +221,19 @@ internal sealed class StageHair
                         tail = closest + Vector3.Normalize(outward) * _definition.Capsule.Radius;
                     var proposed = tail - origin;
                     proposed = proposed.LengthSquared() < 1e-10f ? direction : Vector3.Normalize(proposed);
-                    var swing = FromTo(direction, proposed);
-                    var angle = 2 * MathF.Acos(Math.Clamp(Math.Abs(swing.W), 0, 1));
-                    if (angle > _limits[i]) swing = Quaternion.Slerp(Quaternion.Identity, swing, _limits[i] / angle);
+                    Quaternion swing;
+                    if (_types[i] == Hinge)
+                    {
+                        // Only the turn about the hinge axis, within the limits from the bind pose.
+                        var angle = MathF.Atan2(Vector3.Dot(Vector3.Cross(direction, proposed), hingeAxis), Vector3.Dot(direction, proposed));
+                        swing = Quaternion.CreateFromAxisAngle(hingeAxis, Math.Clamp(angle, _low[i], _high[i]));
+                    }
+                    else
+                    {
+                        swing = FromTo(direction, proposed);
+                        var angle = 2 * MathF.Acos(Math.Clamp(Math.Abs(swing.W), 0, 1));
+                        if (angle > _limits[i]) swing = Quaternion.Slerp(Quaternion.Identity, swing, _limits[i] / angle);
+                    }
                     tail = origin + Vector3.Transform(direction, swing) * joint.Length;
                 }
                 rotation = Quaternion.Normalize(FromTo(direction, Vector3.Normalize(tail - origin)) * rotation);

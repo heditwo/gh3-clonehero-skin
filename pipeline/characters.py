@@ -1,4 +1,4 @@
-"""Export the playable GH3 characters (every outfit and style) as runtime band models on the fixed library rigs.
+"""Export the playable GH3 characters (every outfit and style) as runtime band models on their GH3 rig profiles.
 
 The inventory comes from the GH3 QB tables: `Musician_Profiles` (guitar_band_profile.qb) gives the characters, their
 outfits, styles, skeletons, and default instruments; `musician_body` and `musician_instrument`
@@ -7,8 +7,10 @@ outfits, styles, skeletons, and default instruments; `musician_body` and `musici
 exported.
 
 Each variant keeps the GH3 meshes, materials (GH3 templates and constants), textures, and hair cards as the library band
-does (pipeline/library/band.py). Package format v1 has fixed rig profiles (docs/PACKAGE-FORMAT.md section 9), so the
-mesh moves from the character's own GH3 skeleton to the profile rig of its role:
+does (pipeline/library/band.py). A guitarist keeps its own GH3 skeleton: the rig profile of its GH3 profile and outfit
+in the character library gh3-characters-v1 (pipeline.character_library; Axel's first outfit uses the library profile
+gh3-guitarist-axel-v1). The two singers use the fixed library profile gh3-singer-male-v1 (package format v1.0), so their
+mesh moves from their own GH3 skeleton to the profile rig:
 
 - body and instrument bones: each vertex keeps its place in the frame of its bone (the bone moves to the profile rest pose);
 - face bones (below `bone_head`): the vertices move with the head, so that the face keeps its shape;
@@ -40,8 +42,9 @@ from pipeline.gh3.mesh_cutout import trim_prop_cutouts
 from pipeline.paths import CHARACTERS, GH3_DATA, LIBRARY
 from pipeline.stagepack.gltf import SKINNED_GH3_VERTEX
 
-PROFILES = {"guitarist": "gh3-guitarist-axel-v1", "singer": "gh3-singer-male-v1"}
-PROFILE_RIGS = {"guitarist": "GH3_Guitarist_Axel", "singer": "GH3_Singer_Male"}
+SINGER_PROFILE = "gh3-singer-male-v1"
+SINGER_RIG = "GH3_Singer_Male"
+CLIP_RIG_PROFILE = "gh3-guitarist-axel-v1"
 # The GH3 vocalist profiles that have their own model. Singer_Alt and the *_Alt profiles only change the microphone.
 SINGERS = ("Singer_Female", "Singer_Bret")
 # Hair joints of a character that are farther than this from every joint of the profile hair chain stay on the head.
@@ -71,6 +74,25 @@ def slug(name):
     return SLUGS.get(name, re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-"))
 
 
+def profile_id(name, second):
+    """The rig profile ID of a GH3 guitarist profile and outfit (second: the outfit 2 skeleton or ragdoll differs)."""
+    if name == "Axel" and not second: return CLIP_RIG_PROFILE
+    return f"gh3-guitarist-{slug(name)}{'-outfit2' if second else ''}-v1"
+
+
+def outfits(profile):
+    """(outfit number, skeleton, ragdoll, second) for each outfit of a guitarist profile. create_band_member
+    (guitar_anim_tree.qb) uses `skeleton2` and `ragdoll2` for outfit 2."""
+    rows = profile.get(key("outfits")) or [None]
+    first = (profile[key("Skeleton")], profile[key("ragdoll")])
+    result = []
+    for outfit in range(1, len(rows) + 1):
+        use_second = outfit == 2 and profile.get(key("skeleton2")) not in (None, key("None"))
+        rig, ragdoll = (profile[key("skeleton2")], profile[key("ragdoll2")]) if use_second else first
+        result.append((outfit, rig, ragdoll, use_second and (rig, ragdoll) != first))
+    return result
+
+
 def pak_file(directory, pak_path):
     """The PAK file of a QB `pak` path, for example 'pak\\models\\guitarists\\Judy_1\\Judy_1.pak' -> PAK/Judy_1.pak.xen."""
     name = pak_path.replace("\\", "/").rsplit("/", 1)[-1].lower().removesuffix(".pak") + ".pak.xen"
@@ -95,7 +117,7 @@ def inventory(data_directory):
     bonus_styles = {row[key("id")] for row in store[key("Bonus_Styles")]}
     variants, skipped = [], []
 
-    def add(profile, role, outfit, style, desc, rig, outfit_name, style_name, instrument):
+    def add(profile, role, outfit, style, desc, rig, outfit_name, style_name, instrument, rig_profile):
         body = bodies[desc]
         unlock = ("store (secret character)" if desc in secret else "store (bonus outfit)" if desc in bonus_outfits
                   else "store (bonus style)" if desc in bonus_styles else "start")
@@ -108,7 +130,7 @@ def inventory(data_directory):
         row = instruments.get(instrument)
         variants.append({
             "id": identifier, "name": label, "character": name, "profileName": text(profile[key("name")]), "role": role,
-            "profile": PROFILES[role], "outfit": outfit, "style": style, "outfitName": outfit_name, "styleName": style_name.strip(),
+            "profile": rig_profile, "outfit": outfit, "style": style, "outfitName": outfit_name, "styleName": style_name.strip(),
             "descId": f"{desc:08x}", "model": pak_file(source.directory, text(body[key("pak")])).name, "mesh": text(body[key("mesh")]),
             "skeleton": rig_names[rig], "instrument": (text(row.get(key("desc_name"))) or text(row.get(key("name")))) if row else "", "instrumentModel": pak_file(source.directory, text(row[key("pak")])).name if row else "",
             "instrumentName": " ".join(text(row.get(key(f))).strip() for f in ("logo", "name", "name2", "finish") if text(row.get(key(f))).strip()) if row else "",
@@ -129,18 +151,18 @@ def inventory(data_directory):
             skipped.append({"profile": name, "reason": "debug_only (GH3 does not offer it)"}); continue
         instrument = (profile.get(key("musician_instrument")) or {}).get(key("desc_id"))
         if kind == key("Guitarist"):
-            outfits = profile.get(key("outfits")) or []
-            if not outfits:
-                add(profile, "guitarist", 1, 1, profile[key("musician_body")][key("desc_id")], profile[key("Skeleton")], "", "", instrument)
+            rows = profile.get(key("outfits")) or []
+            if not rows:
+                add(profile, "guitarist", 1, 1, profile[key("musician_body")][key("desc_id")], profile[key("Skeleton")], "", "", instrument,
+                    profile_id(name, False))
                 continue
-            for outfit, row in enumerate(outfits, 1):
+            for (outfit, rig, _, second), row in zip(outfits(profile), rows):
                 styles = row.get(key("styles")) or [" "]
-                rig = profile[key("Skeleton")] if outfit == 1 or profile.get(key("skeleton2")) in (None, key("None")) else profile[key("skeleton2")]
                 for style, style_name in enumerate(styles, 1):
                     desc = key(f"Guitarist_{name}_Outfit{outfit}_Style{style}")
-                    add(profile, "guitarist", outfit, style, desc, rig, text(row[key("name")]), text(style_name), instrument)
+                    add(profile, "guitarist", outfit, style, desc, rig, text(row[key("name")]), text(style_name), instrument, profile_id(name, second))
         elif kind == key("vocalist") and name in SINGERS:
-            add(profile, "singer", 1, 1, profile[key("musician_body")][key("desc_id")], profile[key("Skeleton")], "", "", instrument)
+            add(profile, "singer", 1, 1, profile[key("musician_body")][key("desc_id")], profile[key("Skeleton")], "", "", instrument, SINGER_PROFILE)
         else:
             skipped.append({"profile": name, "reason": "the library band member of this role" if kind != key("vocalist") else
                             "the same model as another vocalist profile (only the microphone differs)"})
@@ -286,11 +308,11 @@ def export(variant, source, rigs, hair, output):
     # guitarist). A singer keeps its microphone only when it is not the library one.
     instrument = variant["instrumentModel"] if role == "guitarist" or variant["instrument"].lower().endswith("_fem") else ""
     materials, meshes = load_models(source, [variant["model"], instrument], directory, role)
-    character = skeleton(rigs[key(variant["skeleton"])])
-    profile = skeleton(rigs[key(PROFILE_RIGS[role])])
-    chain = [joint["bone"] for joint in hair["members"][role]["joints"]]
-    plan, hair_map = retarget_plan(character, profile, chain)
-    meshes = retarget(meshes, plan)
+    hair_map = []
+    if role == "singer":
+        chain = [joint["bone"] for joint in hair["members"][role]["joints"]]
+        plan, hair_map = retarget_plan(skeleton(rigs[key(variant["skeleton"])]), skeleton(rigs[key(SINGER_RIG)]), chain)
+        meshes = retarget(meshes, plan)
     with (directory/"meshes.bin").open("wb") as stream:
         stream.write(b"GH3BND02" + struct.pack("<I", len(meshes)))
         for material, count, vertices, faces in meshes:

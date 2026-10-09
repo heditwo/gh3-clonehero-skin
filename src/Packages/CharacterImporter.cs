@@ -8,7 +8,9 @@ namespace Gh3Skin.Packages;
 // Character package (`.chchar`, PACKAGE-FORMAT.md section 9) to a band model folder that StageAssets draws as the library
 // members: GH3BND02 meshes, stage.json, and textures, plus the joint list (character.json) and the GLB inverse bind matrices
 // (bindposes.bin). The material rules are the library rules (LibraryImporter.ImportModel), so a library member exported as a
-// character gives the same meshes and materials. The band role's rig and clips drive it; joints map by name.
+// character gives the same meshes and materials. On a fixed profile of the band library (format 1.0), the band role's rig
+// and clips drive it; joints map by name. On a profile of a character library (format 1.1), its own rig, animation set,
+// hair, and IK drive it (StageBand).
 internal sealed class CharacterImporter
 {
     public const double JointPosition = 1e-4;
@@ -22,13 +24,16 @@ internal sealed class CharacterImporter
     private readonly VerifiedPackage _package;
     private readonly TextureJobs _textures;
     private readonly string _library;
+    private readonly IReadOnlyDictionary<string, string> _libraries;
     public List<string> Warnings { get; } = new();
 
-    public CharacterImporter(VerifiedPackage package, TextureJobs textures, string libraryCache)
+    // `libraries`: the cache folders of the required libraries by ID; the band library is `libraryCache`.
+    public CharacterImporter(VerifiedPackage package, TextureJobs textures, string libraryCache, IReadOnlyDictionary<string, string>? libraries = null)
     {
         _package = package;
         _textures = textures;
         _library = libraryCache;
+        _libraries = libraries ?? new Dictionary<string, string>();
     }
 
     private static string Key(string text) => Gh3Checksum.Of(text);
@@ -39,13 +44,36 @@ internal sealed class CharacterImporter
     {
         var entry = _package.Manifest.Entry;
         var character = Object(_package.Read(entry["character"]));
-        Fields(character, "character.json", new[] { "version", "library", "profile", "hairMaterials", "attachments" }, "version", "library", "profile");
+        var minor = _package.Manifest.Format.EndsWith(".0") ? 0 : 1;
+        Fields(character, "character.json", minor == 0 ? new[] { "version", "library", "profile", "hairMaterials", "attachments" } :
+            new[] { "version", "library", "profile", "animations", "hairMaterials", "attachments" }, "version", "library", "profile");
         if (Number(character["version"], "version") != 1) throw new PackageException("character.json version must be 1");
         var profile = Text(character["profile"]) ?? "";
-        if (!Profiles.TryGetValue(profile, out var role)) throw new PackageException($"unknown character profile '{profile}'");
+        var libraryId = Text(character["library"]) ?? "";
+        var animations = "";
+        string role;
+        string[] rigBones;
+        int[] rigParents;
+        float[][] rigBind;
+        if (Profiles.TryGetValue(profile, out var fixedRole))
+        {
+            role = fixedRole;
+            (rigBones, rigParents, rigBind) = Rig(_library, role);
+            libraryId = "";
+        }
+        else
+        {
+            // Format 1.1: a profile of a required character library (PACKAGE-FORMAT.md section 10.1).
+            var library = _libraries.TryGetValue(libraryId, out var libraryFolder) && CharacterLibrary.Has(libraryFolder) ? CharacterLibrary.Load(libraryFolder)
+                : throw new PackageException($"unknown character profile '{profile}' (library {libraryId} is not a required character library)");
+            var own = library.Profiles.TryGetValue(profile, out var found) ? found : throw new PackageException($"library {libraryId} has no profile '{profile}'");
+            animations = Text(character["animations"]) ?? "";
+            if (character["animations"] != null && !library.Animations.Contains(animations))
+                throw new PackageException($"library {libraryId} has no animation set '{animations}'");
+            (role, rigBones, rigParents, rigBind) = (own.Role, own.Bones, own.Parents, own.Bind);
+        }
         var hair = (character["hairMaterials"] as JsonArray ?? new JsonArray()).Select(n => Text(n) ?? throw new PackageException("invalid hair material")).ToHashSet();
         var instrument = Instrument(character["attachments"]);
-        var (rigBones, rigParents, rigBind) = Rig(_library, role);
         var glb = new GlbDocument(_package.Read(entry["model"]));
         if (glb.List("animations").Count > 0) Warnings.Add("the GLB animations are ignored; the library supplies the clips");
         var skins = glb.List("skins");
@@ -229,6 +257,7 @@ internal sealed class CharacterImporter
         {
             ["version"] = 1, ["id"] = _package.Manifest.Id, ["name"] = _package.Manifest.Name, ["profile"] = profile, ["role"] = role,
             ["instrument"] = instrument, ["joints"] = new JsonArray(names.Select(n => (JsonNode?)n).ToArray()),
+            ["library"] = libraryId, ["animations"] = animations,
         });
         return (role, joints.Length, parts.Count, parts.Sum(p => p.Count));
     }

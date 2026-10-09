@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.gh3skin.invalid/v1/character.schema.json",
   "title": "Character description (character.json)",
-  "description": "Selects the fixed GH3 rig profile of the character GLB. The profile also selects the band role.",
+  "description": "Selects the GH3 rig profile of the character GLB: a fixed profile of the band library (format 1.0) or a profile of a character library (format 1.1). The profile also selects the band role.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "library", "profile"],
@@ -12,7 +12,12 @@
     "profile": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
-      "examples": ["gh3-guitarist-axel-v1", "gh3-bassist-v1", "gh3-singer-male-v1", "gh3-drummer-v1"]
+      "examples": ["gh3-guitarist-axel-v1", "gh3-bassist-v1", "gh3-singer-male-v1", "gh3-drummer-v1", "gh3-guitarist-judy-v1"]
+    },
+    "animations": {
+      "description": "Format 1.1: an animation set of the character library that has the profile. Absent: the set of the profile.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
     },
     "hairMaterials": {
       "description": "GLB material names whose triangles use sorted hair transparency.",

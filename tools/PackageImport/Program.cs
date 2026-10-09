@@ -17,7 +17,7 @@ for (var i = arguments.IndexOf("--custom"); i >= 0; i = arguments.IndexOf("--cus
     arguments.RemoveRange(i, 2);
 }
 var threads = arguments.IndexOf("--threads") is var t and >= 0 ? int.Parse(arguments[t + 1]) : Math.Clamp(Environment.ProcessorCount / 2, 1, 4);
-SemanticVersion.TryParse("0.9.8", out var version);
+SemanticVersion.TryParse(Gh3Skin.ModInfo.Version, out var version);
 var settings = new PackageSettings(Path.GetFullPath(arguments[0]), custom, Path.GetFullPath(arguments[1]), !arguments.Contains("--rgba"),
     "Tool", "None", version, "", threads);
 var manager = new PackageManager(settings);

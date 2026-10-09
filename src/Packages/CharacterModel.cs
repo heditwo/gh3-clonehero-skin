@@ -10,6 +10,13 @@ internal sealed class CharacterModel
     public string Role { get; private init; } = "";
     // character.json attachments.instrument; "" for the default (also in caches that are older than the field).
     public string Instrument { get; private init; } = "";
+    // Format 1.1: the character library that has the profile, and the animation set that character.json names ("" for the
+    // profile's set). "" for a profile of the band library (also in caches that are older than the fields).
+    public string Library { get; private init; } = "";
+    public string Profile { get; private init; } = "";
+    public string Animations { get; private init; } = "";
+    // The cache folder of `Library`; the stage sets it before the band loads.
+    public string LibraryFolder { get; set; } = "";
     public string[] Joints { get; private init; } = Array.Empty<string>();
     public float[][] Bindposes { get; private init; } = Array.Empty<float[]>();
 
@@ -26,7 +33,8 @@ internal sealed class CharacterModel
         return new CharacterModel
         {
             Folder = folder, Id = PackageJson.Text(info["id"]) ?? "", Name = PackageJson.Text(info["name"]) ?? "", Role = PackageJson.Text(info["role"]) ?? "",
-            Instrument = PackageJson.Text(info["instrument"]) ?? "",
+            Instrument = PackageJson.Text(info["instrument"]) ?? "", Library = PackageJson.Text(info["library"]) ?? "",
+            Profile = PackageJson.Text(info["profile"]) ?? "", Animations = PackageJson.Text(info["animations"]) ?? "",
             Joints = joints, Bindposes = bindposes,
         };
     }

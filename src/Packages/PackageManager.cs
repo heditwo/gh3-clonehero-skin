@@ -439,9 +439,11 @@ internal sealed class PackageManager
             }
             else if (package.Manifest.Kind == PackageKind.Character)
             {
-                var library = package.Manifest.Requires.Select(r => Find(PackageKind.Library, r.Id)).FirstOrDefault(p => p?.State == PackageState.Ready)
+                var libraries = package.Manifest.Requires.Select(r => Find(PackageKind.Library, r.Id)).Where(p => p?.State == PackageState.Ready)
+                    .ToDictionary(p => p!.Manifest.Id, p => p!.CacheDirectory);
+                var library = libraries.TryGetValue("gh3-band-v1", out var band) ? band : libraries.Values.FirstOrDefault()
                     ?? throw new PackageException("a character needs the band library (requires gh3-band-v1)");
-                var importer = new CharacterImporter(verified, textures, library.CacheDirectory);
+                var importer = new CharacterImporter(verified, textures, library, libraries);
                 var result = importer.Import(temporary);
                 CopyPreview(verified, temporary);
                 verified.VerifyRemaining();

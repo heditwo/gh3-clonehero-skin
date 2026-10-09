@@ -7,7 +7,8 @@ namespace Gh3Skin.Packages;
 // Library package (`.chlib`, PACKAGE-FORMAT.md section 10) to the runtime library folder that the mod loads. The C# side of
 // pipeline/package/roundtrip.py library_round_trip: model GLBs become GH3BND02 meshes, GH3ANM01 rigs, and stage.json;
 // movies become GH3VID01; WAV samples become raw PCM (`<sample>.pcm`). Clips stay q48 + Brotli (`.q48.br`) and are decoded
-// by the clip prefetch (PerformanceClip). Songs go to `songs/`, the effect files to `render/`.
+// by the clip prefetch (PerformanceClip). Songs go to `songs/`, the effect files to `render/`. A character library keeps
+// characters.json and `clips/`.
 internal sealed class LibraryImporter
 {
     private static readonly Dictionary<string, string> EffectFiles = new()
@@ -78,12 +79,21 @@ internal sealed class LibraryImporter
         }
 
         var models = 0;
-        var band = Object(_package.Read("band/band.json"));
-        foreach (var member in (JsonArray)band["members"]!)
+        if (_package.Contains("band/band.json"))
         {
-            var role = Text(member!["role"]) ?? throw new PackageException("invalid band member");
-            ImportModel($"band/{role}/model.glb", Target(folder, $"band/{role}"), animated: true);
-            models++;
+            var band = Object(_package.Read("band/band.json"));
+            foreach (var member in (JsonArray)band["members"]!)
+            {
+                var role = Text(member!["role"]) ?? throw new PackageException("invalid band member");
+                ImportModel($"band/{role}/model.glb", Target(folder, $"band/{role}"), animated: true);
+                models++;
+            }
+        }
+        // A character library (format 1.1, section 10.1): characters.json and its clips, copied.
+        if (_package.Manifest.Entry.TryGetValue("characters", out var characters))
+        {
+            if (characters != CharacterLibrary.FileName) throw new PackageException($"the characters entry must be {CharacterLibrary.FileName}");
+            Copy(characters);
         }
         if (_package.Contains("crowd/crowd.json"))
         {
@@ -101,7 +111,7 @@ internal sealed class LibraryImporter
         }
 
         var clips = 0;
-        foreach (var name in _package.Names.Where(n => n.EndsWith(".q48.br") && (n.StartsWith("direction/") || n.StartsWith("crowd/clips/"))).ToList())
+        foreach (var name in _package.Names.Where(n => n.EndsWith(".q48.br") && (n.StartsWith("direction/") || n.StartsWith("crowd/clips/") || n.StartsWith("clips/"))).ToList())
         {
             Copy(name);
             clips++;

@@ -30,6 +30,9 @@ internal sealed class StageBand : IDisposable
         public PerformancePlayer? Performance;
         public PerformanceMember? Definition;
         public StageHair? Hair;
+        // A character on a character library profile: its rig, animation set, hair, and IK (null: the role's).
+        public CharacterMotion? Motion;
+        public BandPose[] RoleBind = Array.Empty<BandPose>();
         public BandPose[] Pose = Array.Empty<BandPose>();
         public Vector3 Start;
         public Quaternion Rotation;
@@ -65,7 +68,16 @@ internal sealed class StageBand : IDisposable
                 throw new InvalidDataException("Invalid band member");
             var folder = Path.Combine(directory, member.Role);
             using var reader = new BinaryReader(File.OpenRead(Path.Combine(folder, "animation.bin")));
-            var animation = new BandAnimation(reader);
+            var roleAnimation = new BandAnimation(reader);
+            var character = characters != null && characters.TryGetValue(member.Role, out var chosen) ? chosen : null;
+            CharacterMotion? motion = null;
+            if (character != null && character.Library.Length > 0)
+                try { motion = CharacterMotion.Create(character); }
+                catch (Exception error) when (error is IOException or InvalidDataException or Packages.PackageException or System.Text.Json.JsonException or UnauthorizedAccessException)
+                {
+                    MelonLogger.Warning($"GH3 band {member.Role}: character {character.Id} could not load ({error.Message}); the venue default plays");
+                    character = null;
+                }
             var performer = new GameObject("GH3 Band " + member.Role) { layer = layer };
             performer.transform.SetParent(root.transform, false);
             performer.transform.localPosition = StageAssets.Vector(member.Position);
@@ -78,17 +90,44 @@ internal sealed class StageBand : IDisposable
                 performer.transform.localRotation = new(q[0], q[1], q[2], q[3]);
             }
             Positions.Add(member.Role, performer.transform.localPosition);
-            var bones = new Transform[animation.Parents.Length];
-            for (var i = 0; i < bones.Length; i++)
-                bones[i] = new GameObject($"GH3 {member.Role} Bone {i}") { layer = layer }.transform;
-            for (var i = 0; i < bones.Length; i++)
+            Transform[] Bones(BandAnimation rig)
             {
-                bones[i].SetParent(animation.Parents[i] < 0 ? performer.transform : bones[animation.Parents[i]], false);
-                Apply(bones[i], animation.BindPose[i]);
+                var created = new Transform[rig.Parents.Length];
+                for (var i = 0; i < created.Length; i++)
+                    created[i] = new GameObject($"GH3 {member.Role} Bone {i}") { layer = layer }.transform;
+                for (var i = 0; i < created.Length; i++)
+                {
+                    created[i].SetParent(rig.Parents[i] < 0 ? performer.transform : created[rig.Parents[i]], false);
+                    Apply(created[i], rig.BindPose[i]);
+                }
+                return created;
             }
+            var animation = roleAnimation;
+            Transform[] bones;
             HairDefinition? characterHair = null;
-            var assets = characters != null && characters.TryGetValue(member.Role, out var character)
-                ? LoadCharacter(character, directory, member, performer, layer, bones, lighting, surfaceShader, hair, out characterHair) : null;
+            List<StageAssets>? assets = null;
+            if (motion != null)
+            {
+                // GH3 create_guitarist: the profile `scale` scales the whole band member (Judy 0.9).
+                performer.transform.localScale = new Vector3(motion.Profile.Scale, motion.Profile.Scale, motion.Profile.Scale);
+                animation = BandAnimation.FromRig(motion.Profile.Parents, motion.Profile.Bind);
+                bones = Bones(animation);
+                assets = LoadOwnCharacter(character!, motion, directory, member, performer, layer, bones, roleAnimation, lighting, surfaceShader);
+                if (assets == null)
+                {
+                    for (var i = performer.transform.childCount - 1; i >= 0; i--) UnityEngine.Object.Destroy(performer.transform.GetChild(i).gameObject);
+                    performer.transform.localScale = Vector3.one;
+                    motion = null;
+                    animation = roleAnimation;
+                    bones = Bones(animation);
+                }
+            }
+            else
+            {
+                bones = Bones(animation);
+                if (character != null)
+                    assets = LoadCharacter(character, directory, member, performer, layer, bones, lighting, surfaceShader, hair, out characterHair);
+            }
             if (assets == null)
             {
                 var model = new StageAssets();
@@ -104,8 +143,10 @@ internal sealed class StageBand : IDisposable
                 stage.TransparentMeshes.AddRange(part.TransparentMeshes);
             }
             var player = new Performer { Role = member.Role, Root = performer.transform, Bones = bones, Animation = animation, Model = assets[0],
-                Start = performer.transform.localPosition, Rotation = performer.transform.localRotation, Pose = new BandPose[bones.Length] };
-            var hairDefinition = characterHair ?? (hair != null && hair.Members.TryGetValue(member.Role, out var roleHair) ? roleHair : null);
+                Start = performer.transform.localPosition, Rotation = performer.transform.localRotation, Pose = new BandPose[bones.Length],
+                Motion = motion, RoleBind = roleAnimation.BindPose };
+            var hairDefinition = motion != null ? motion.Hair :
+                characterHair ?? (hair != null && hair.Members.TryGetValue(member.Role, out var roleHair) ? roleHair : null);
             if (hairDefinition != null)
                 player.Hair = new StageHair(hairDefinition, animation.Parents, (time, pose) => SamplePose(player, time, pose));
             _players.Add(player);
@@ -167,10 +208,86 @@ internal sealed class StageBand : IDisposable
         }
     }
 
+    // A character on a character library profile (format 1.1): its mesh on its own rig, with the GLB inverse bind matrices.
+    // Its own instrument plays in the role of its profile. In another role (GH3 co-op: a guitarist character plays the
+    // bass with its own animation set), the role's library instrument hangs on the bones with the same names, bound
+    // with the role rig's rest pose, so that it follows the character's instrument bones.
+    private static List<StageAssets>? LoadOwnCharacter(Packages.CharacterModel character, CharacterMotion motion, string directory, BandMember member,
+        GameObject performer, int layer, Transform[] bones, BandAnimation roleRig, bool lighting, Shader? surfaceShader)
+    {
+        var role = member.Role;
+        StageAssets? assets = null;
+        try
+        {
+            var profile = motion.Profile;
+            var (map, bind) = Packages.CharacterRig.Map(character.Joints, profile.Bones, profile.Parents, profile.Bones, new HashSet<int>(), ownRole: true)
+                ?? throw new InvalidDataException($"its joints are not all in profile {profile.Id}");
+            var bindposes = bind.Select(b => character.Bindposes[b]).Select(Unity).ToArray();
+            var body = Packages.BandAttachments.BodyJoints(profile.Bones, profile.Parents);
+            var parts = Packages.BandAttachments.ReadParts(Path.Combine(character.Folder, "meshes.bin"));
+            var ownParts = Packages.BandAttachments.AttachmentParts(parts, body, map);
+            var ownRole = character.Role == role;
+            var (add, keepOwn, note) = Packages.BandAttachments.Choose(ownParts.Length > 0, ownRole, character.Instrument, member.Instrument, role);
+            assets = new StageAssets();
+            assets.Load(character.Folder, performer, layer, map.Select(i => bones[i]).ToArray(), lighting, surfaceShader: surfaceShader, bindposes: bindposes,
+                parts: keepOwn || ownParts.Length == 0 ? null : Enumerable.Range(0, parts.Length).Except(ownParts).ToArray());
+            var result = new List<StageAssets> { assets };
+            if (add)
+            {
+                var library = Path.GetDirectoryName(Path.GetFullPath(directory))!;
+                var (roleBones, roleParents, _) = Packages.CharacterImporter.Rig(library, role);
+                var byName = roleBones.Select(name => Array.IndexOf(profile.Bones, name)).ToArray();
+                if (byName.Any(i => i < 0)) throw new InvalidDataException($"the {role} instrument bones are not in profile {profile.Id}");
+                note = LoadInstrument(Path.Combine(directory, role), Packages.BandAttachments.BodyJoints(roleBones, roleParents), performer, layer,
+                    byName.Select(i => bones[i]).ToArray(), lighting, surfaceShader, result, RestBindposes(roleRig)) ?? note;
+            }
+            MelonLogger.Msg($"GH3 band {role}: character {character.Id} ({character.Name}) on its GH3 profile {profile.Id} with {note}; " +
+                $"animation set {motion.SetName}, scale {profile.Scale:0.##}, {(motion.Hair != null ? $"hair {motion.Hair.Joints.Length} joints" : "no hair physics")}, IK {profile.Ik}");
+            return result;
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or Packages.PackageException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            assets?.Dispose();
+            MelonLogger.Warning($"GH3 band {role}: character {character.Id} could not load ({error.Message}); the venue default plays");
+            return null;
+        }
+    }
+
+    private static Matrix4x4 Unity(float[] m) => new()
+    {
+        m00 = m[0], m01 = m[1], m02 = m[2], m03 = m[3], m10 = m[4], m11 = m[5], m12 = m[6], m13 = m[7],
+        m20 = m[8], m21 = m[9], m22 = m[10], m23 = m[11], m30 = m[12], m31 = m[13], m32 = m[14], m33 = m[15],
+    };
+
+    // Inverse bind matrices of a rig at its rest pose, in the space of the performer (row-major, as bindposes.bin).
+    private static Matrix4x4[] RestBindposes(BandAnimation rig)
+    {
+        var world = new System.Numerics.Matrix4x4[rig.Parents.Length];
+        var result = new Matrix4x4[world.Length];
+        for (var i = 0; i < world.Length; i++)
+        {
+            var pose = rig.BindPose[i];
+            // System.Numerics uses row vectors: local = rotation, then translation; world = local, then the parent's world.
+            var local = System.Numerics.Matrix4x4.CreateFromQuaternion(pose.Rotation) * System.Numerics.Matrix4x4.CreateTranslation(pose.Position);
+            world[i] = rig.Parents[i] < 0 ? local : local * world[rig.Parents[i]];
+        }
+        for (var i = 0; i < world.Length; i++)
+        {
+            if (!System.Numerics.Matrix4x4.Invert(world[i], out var inverse)) throw new InvalidDataException("Invalid rig rest pose");
+            // Transposed to the column-vector layout of Unity.
+            result[i] = Unity(new[]
+            {
+                inverse.M11, inverse.M21, inverse.M31, inverse.M41, inverse.M12, inverse.M22, inverse.M32, inverse.M42,
+                inverse.M13, inverse.M23, inverse.M33, inverse.M43, inverse.M14, inverse.M24, inverse.M34, inverse.M44,
+            });
+        }
+        return result;
+    }
+
     // The attachment parts of the role's library band model, on the role's bones with the library bind pose. A failure
     // leaves the character without an instrument; returns the note for the log then.
     private static string? LoadInstrument(string folder, HashSet<int> body, GameObject performer, int layer, Transform[] bones, bool lighting,
-        Shader? surfaceShader, List<StageAssets> result)
+        Shader? surfaceShader, List<StageAssets> result, Matrix4x4[]? bindposes = null)
     {
         var children = performer.transform.childCount;
         StageAssets? instrument = null;
@@ -179,7 +296,7 @@ internal sealed class StageBand : IDisposable
             var parts = Packages.BandAttachments.AttachmentParts(Packages.BandAttachments.ReadParts(Path.Combine(folder, "meshes.bin")), body);
             if (parts.Length == 0) return "no instrument (the library band model has no attachment parts)";
             instrument = new StageAssets();
-            instrument.Load(folder, performer, layer, bones, lighting, surfaceShader: surfaceShader, parts: parts);
+            instrument.Load(folder, performer, layer, bones, lighting, surfaceShader: surfaceShader, parts: parts, bindposes: bindposes);
             result.Add(instrument);
             return null;
         }
@@ -201,9 +318,13 @@ internal sealed class StageBand : IDisposable
         foreach (var player in _players)
         {
             if (player.Performance == null) continue;
-            waited += player.Performance.Clips.Wait();
-            clips += player.Performance.Clips.Prefetched;
-            worker = Math.Max(worker, player.Performance.Clips.PrefetchMilliseconds);
+            foreach (var cache in new[] { player.Performance.Clips, player.Performance.FaceClips })
+            {
+                if (cache == null) continue;
+                waited += cache.Wait();
+                clips += cache.Prefetched;
+                worker = Math.Max(worker, cache.PrefetchMilliseconds);
+            }
         }
         return (clips, worker, waited);
     }
@@ -221,9 +342,19 @@ internal sealed class StageBand : IDisposable
         foreach (var player in _players)
         {
             if (!_performance.Members.TryGetValue(player.Role, out var definition)) continue;
+            if (player.Motion is { } motion)
+            {
+                // The song facial clips stay on the band library member of the role; they move to the profile rig as the
+                // set clips do.
+                motion.Face = definition;
+                motion.FaceDirectory = Path.Combine(directory, player.Role);
+                motion.FaceOffsets = CharacterMotion.RestOffsets(motion.Profile.Bones, motion.Profile.Bind, definition.Bones,
+                    player.RoleBind.Select(p => new[] { p.Position.X, p.Position.Y, p.Position.Z }).ToArray());
+                definition = motion.Member;
+            }
             player.Definition = definition;
             player.Performance = new PerformancePlayer(player.Role, directory, definition, player.Animation.BindPose, timeline,
-                player.Animation.Parents, _performance.Constants);
+                player.Animation.Parents, _performance.Constants, player.Motion);
             player.Performance.Prepare();
             var position = player.Start;
             var speed = 1.0;
@@ -275,6 +406,11 @@ internal sealed class StageBand : IDisposable
 
     public void Update(double time)
     {
+        if (BindingTrace.Enabled && time >= _traceNext)
+        {
+            _traceNext = Math.Floor(time * 2 + 1) / 2;
+            foreach (var player in _players.Where(p => p.Performance != null && p.Role is "guitarist" or "bassist")) Trace(player, time);
+        }
         foreach (var player in _players)
         {
             player.Hair?.Sample(time - _start);
@@ -283,6 +419,22 @@ internal sealed class StageBand : IDisposable
             player.Hair?.Apply(player.Pose);
             for (var i = 0; i < player.Bones.Length; i++) Apply(player.Bones[i], player.Pose[i]);
         }
+    }
+
+    private double _traceNext = double.NegativeInfinity;
+    private static readonly string[] TraceBones = { "bone_pelvis", "bone_head", "Bone_IK_Hand_Guitar_R", "Bone_IK_Hand_Guitar_L" };
+
+    // GH3_SKIN_TRACE: the body clip and its local pose of a few bones, to compare with the GH3 clip on the GH3 skeleton.
+    private static void Trace(Performer player, double time)
+    {
+        var raw = new BandPose[player.Bones.Length];
+        var (segment, clipTime) = player.Performance!.SampleClip(time, raw);
+        var bones = player.Definition!.Bones;
+        var values = TraceBones.Select(name => Array.IndexOf(bones, Gh3Checksum.Of(name))).Where(i => i >= 0).Select(i =>
+            FormattableString.Invariant($"{i}:{raw[i].Position.X:F6},{raw[i].Position.Y:F6},{raw[i].Position.Z:F6},{raw[i].Rotation.X:F6},{raw[i].Rotation.Y:F6},{raw[i].Rotation.Z:F6},{raw[i].Rotation.W:F6}"));
+        MelonLogger.Msg(FormattableString.Invariant($"[trace] band t={time:F3} role={player.Role} profile={player.Motion?.Profile.Id ?? "library"} ") +
+            FormattableString.Invariant($"set={player.Motion?.SetName ?? "library"} stance={segment.Stance} clip={segment.Clip} clipTime={clipTime:F4} ") +
+            FormattableString.Invariant($"scale={player.Root.localScale.x:F3} bones={string.Join(";", values)}"));
     }
 
     private static BandPose SamplePose(Performer player, double time, BandPose[] pose)
@@ -311,6 +463,7 @@ internal sealed class StageBand : IDisposable
             player.Performance.Sample(time, walkAge, walkWeight);
             Array.Copy(player.Performance.Pose, pose, pose.Length);
         }
+        else if (player.Animation.Clips.Length == 0) Array.Copy(player.Animation.BindPose, pose, pose.Length);
         else
         {
             var sample = player.Animation.At(time);

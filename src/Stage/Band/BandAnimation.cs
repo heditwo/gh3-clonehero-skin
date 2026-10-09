@@ -19,6 +19,22 @@ internal sealed class BandAnimation
     private readonly double _duration;
     private const float Transition = 0.25f;
 
+    private BandAnimation(int[] parents, BandPose[] bind)
+    {
+        Parents = parents;
+        BindPose = bind;
+        Clips = Array.Empty<BandClip>();
+    }
+
+    // A rig without clips (a character library profile; PACKAGE-FORMAT.md section 10.1): parents and the local bind rows
+    // [x, y, z, qx, qy, qz, qw] in runtime coordinates.
+    public static BandAnimation FromRig(int[] parents, float[][] bind)
+    {
+        if (parents.Length is < 1 or > 255 || bind.Length != parents.Length || bind.Any(r => r.Length != 7))
+            throw new InvalidDataException("Invalid band rig");
+        return new BandAnimation(parents, bind.Select(r => new BandPose(new Vector3(r[0], r[1], r[2]), Quaternion.Normalize(new Quaternion(r[3], r[4], r[5], r[6])))).ToArray());
+    }
+
     public BandAnimation(BinaryReader reader)
     {
         if (System.Text.Encoding.ASCII.GetString(reader.ReadBytes(8)) != "GH3ANM01")

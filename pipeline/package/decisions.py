@@ -23,6 +23,7 @@ GH3_PERMISSIONS = {"redistribute": True, "modify": True, "commercial": False}
 GH3_VENUE_AUTHORS = [{"name": "Neversoft", "role": "original venue"}]
 GH3_LIBRARY_AUTHORS = [{"name": "Neversoft", "role": "original band, crowd, animations, and audio"}]
 GH3_CHARACTER_AUTHORS = [{"name": "Neversoft", "role": "original band member"}]
+GH3_CHARACTER_LIBRARY_AUTHORS = [{"name": "Neversoft", "role": "original skeletons, animations, and ragdolls"}]
 CONVERTER_CREDIT = "Converted from the GH3 PC data by the GH3 Gameplay Skin pipeline."
 
 # The example stage is made by the pipeline from boxes, not from GH3 data.
@@ -47,3 +48,5 @@ PREVIEW_SIZE = (512, 288)
 
 PACKAGE_VERSION = "1.0.0"
 LIBRARY_VERSION = "1.0.0"
+# The first mod version that reads format 1.1 packages (the character library and the characters on its profiles).
+FORMAT_1_1_MOD_VERSION = "0.9.9"

@@ -69,11 +69,22 @@ internal sealed class StageBlendTrack
     }
 }
 
+// One chain of a GH3 IK parameter array (guitar_anim_tree.qb): bone0-2 and boneTarget as bone checksums, HingeAxis, and
+// the hinge cosine limits.
+internal sealed class IkChainDefinition
+{
+    public string[] Bones { get; set; } = Array.Empty<string>();
+    public string Target { get; set; } = "";
+    public float[] Hinge { get; set; } = Array.Empty<float>();
+    public float CosMax { get; set; }
+    public float CosMin { get; set; }
+}
+
 // GH3 guitarist_static_tree and drummer_static_tree after the animation layers: Havok two-joint IK (Hero_Ik_params,
 // drummer_IK_params; they differ only in the hand target bones), then hero_ConstraintBones.
 internal sealed class StageGuitarRig
 {
-    private sealed record Chain(int First, int Second, int End, int Target, Vector3 Hinge, int Side);
+    private sealed record Chain(int First, int Second, int End, int Target, Vector3 Hinge, int Side, float CosMax, float CosMin);
     private sealed record Constraint(int Type, int Bone, int Target, float Amount);
     private const float CosMaxArm = -0.97f, CosMinArm = 0.97f, CosMaxLeg = -0.98999995f, CosMinLeg = 0.97f;
     private readonly int[] _parents;
@@ -83,7 +94,8 @@ internal sealed class StageGuitarRig
     private readonly Vector3[] _position;
     private readonly Quaternion[] _rotation;
 
-    public StageGuitarRig(int[] parents, BandPose[] bind, string[] bones, string handTarget = "Bone_IK_Hand_Guitar")
+    // `ik`: the IK chains of a character library profile (Hero_Ik_params or Satan_Ik_params); null: Hero_Ik_params.
+    public StageGuitarRig(int[] parents, BandPose[] bind, string[] bones, string handTarget = "Bone_IK_Hand_Guitar", IkChainDefinition[]? ik = null)
     {
         _parents = parents;
         _bind = bind;
@@ -91,13 +103,15 @@ internal sealed class StageGuitarRig
         _rotation = new Quaternion[bind.Length];
         int Bone(string name) => Array.IndexOf(bones, Gh3Checksum.Of(name));
         // Hinge axes are the original values; mirroring Z to Unity space keeps a Z axis unchanged for an axis-angle pair.
-        _chains = new[]
+        int Key(string checksum) => Array.IndexOf(bones, checksum);
+        _chains = (ik != null ? ik.Select(c => new Chain(Key(c.Bones[0]), Key(c.Bones[1]), Key(c.Bones[2]), Key(c.Target), new Vector3(c.Hinge[0], c.Hinge[1], c.Hinge[2]),
+                c.Target == Gh3Checksum.Of(handTarget + "_R") ? 1 : c.Target == Gh3Checksum.Of(handTarget + "_L") ? -1 : 0, c.CosMax, c.CosMin)).ToArray() : new[]
         {
-            new Chain(Bone("Bone_Bicep_R"), Bone("Bone_Forearm_R"), Bone("Bone_Palm_R"), Bone(handTarget + "_R"), -Vector3.UnitZ, 1),
-            new Chain(Bone("Bone_Bicep_L"), Bone("Bone_Forearm_L"), Bone("Bone_Palm_L"), Bone(handTarget + "_L"), -Vector3.UnitZ, -1),
-            new Chain(Bone("Bone_Thigh_L"), Bone("Bone_Knee_L"), Bone("Bone_Ankle_L"), Bone("Bone_IK_Foot_Slave_L"), Vector3.UnitZ, 0),
-            new Chain(Bone("Bone_Thigh_R"), Bone("Bone_Knee_R"), Bone("Bone_Ankle_R"), Bone("Bone_IK_Foot_Slave_R"), Vector3.UnitZ, 0),
-        }.Where(c => c.First >= 0 && c.Second >= 0 && c.End >= 0 && c.Target >= 0 &&
+            new Chain(Bone("Bone_Bicep_R"), Bone("Bone_Forearm_R"), Bone("Bone_Palm_R"), Bone(handTarget + "_R"), -Vector3.UnitZ, 1, CosMaxArm, CosMinArm),
+            new Chain(Bone("Bone_Bicep_L"), Bone("Bone_Forearm_L"), Bone("Bone_Palm_L"), Bone(handTarget + "_L"), -Vector3.UnitZ, -1, CosMaxArm, CosMinArm),
+            new Chain(Bone("Bone_Thigh_L"), Bone("Bone_Knee_L"), Bone("Bone_Ankle_L"), Bone("Bone_IK_Foot_Slave_L"), Vector3.UnitZ, 0, CosMaxLeg, CosMinLeg),
+            new Chain(Bone("Bone_Thigh_R"), Bone("Bone_Knee_R"), Bone("Bone_Ankle_R"), Bone("Bone_IK_Foot_Slave_R"), Vector3.UnitZ, 0, CosMaxLeg, CosMinLeg),
+        }).Where(c => c.First >= 0 && c.Second >= 0 && c.End >= 0 && c.Target >= 0 &&
             parents[c.Second] == c.First && parents[c.End] == c.Second).ToArray();
         const int split = 1, splitR = 2, twist = 3, twistChild = 4;
         _constraints = new (int, string, string, float)[]
@@ -156,7 +170,7 @@ internal sealed class StageGuitarRig
         var lower = Vector3.Distance(second, end);
         if (upper < 1e-5f || lower < 1e-5f) return;
         var reach = Vector3.DistanceSquared(first, target);
-        var (cosMax, cosMin) = chain.Side == 0 ? (CosMaxLeg, CosMinLeg) : (CosMaxArm, CosMinArm);
+        var (cosMax, cosMin) = (chain.CosMax, chain.CosMin);
         var cosine = Math.Max(Math.Min((reach - upper * upper - lower * lower) / (-2 * upper * lower), cosMin), cosMax);
         var current = MathF.Acos(Math.Clamp(Vector3.Dot(Vector3.Normalize(first - second), Vector3.Normalize(end - second)), -1, 1));
         var axis = Vector3.Transform(chain.Hinge, _rotation[chain.Second]);

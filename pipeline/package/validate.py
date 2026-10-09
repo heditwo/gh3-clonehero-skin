@@ -1,6 +1,6 @@
 """Validate a package (zip or unpacked folder) against package format v1 (docs/PACKAGE-FORMAT.md).
 
-Usage: python -m pipeline.package.validate PACKAGE [--library FOLDER] [--json]
+Usage: python -m pipeline.package.validate PACKAGE [--library FOLDER] [--character-library PACKAGE] [--json]
 """
 
 import argparse
@@ -22,14 +22,16 @@ from . import q48
 from .glb import Glb, GlbError, decompose, quaternion_angle
 from .schema import Schemas
 
-FORMAT_MINOR = {"chstage": 0, "chchar": 0, "chlib": 0}
+FORMAT_MINOR = {"chstage": 0, "chchar": 1, "chlib": 1}
 EXTENSIONS = {".chstage": "chstage", ".chchar": "chchar", ".chlib": "chlib"}
 STORED = {".glb", ".png", ".br", ".ogg", ".mp3", ".opus"}
 DEFLATED = {".json", ".wav"}
 WINDOWS_RESERVED = re.compile(r"^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$", re.IGNORECASE)
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+PROFILE_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 PROFILES = {"gh3-guitarist-axel-v1": "guitarist", "gh3-bassist-v1": "bassist", "gh3-singer-male-v1": "singer", "gh3-drummer-v1": "drummer"}
 LIBRARY_ID = "gh3-band-v1"
+CHARACTER_LIBRARY_ID = "gh3-characters-v1"
 LIBRARY_SCHEMAS = {"catalog": "catalog.schema.json", "band": "band.schema.json", "performance": "performance.schema.json",
                    "hair": "hair.schema.json", "crowd": "crowd.schema.json", "handFire": "hand-fire.schema.json",
                    "audio": "audio.schema.json", "scripts": "scripts.schema.json", "songs": "songs.schema.json"}
@@ -190,10 +192,11 @@ def png_problem(data):
 
 
 class Validator:
-    def __init__(self, path, library=None, schemas=None, files=None):
+    def __init__(self, path, library=None, schemas=None, files=None, character_library=None):
         self.report = Report()
         self.schemas = schemas or Schemas()
         self.library = Path(library) if library else None
+        self.character_library = Path(character_library) if character_library else None
         self.source = MappedSource(path, files, self.report) if files is not None else Source(path, self.report)
         self.manifest = None
         self.kind = None
@@ -209,7 +212,7 @@ class Validator:
             return self.report
         self.manifest = manifest
         self.kind, version = manifest["format"].split("/")
-        minor = int(version.split(".")[1])
+        minor = self.minor = int(version.split(".")[1])
         if minor > FORMAT_MINOR[self.kind]:
             self.report.error("manifest.json", f"format {manifest['format']} needs a newer mod (this validator reads {self.kind}/1.{FORMAT_MINOR[self.kind]})")
             return self.report
@@ -507,7 +510,29 @@ class Validator:
         character = self.json_entry("character", "character.schema.json")
         glb = self.check_glb(entry["model"], skinned=True)
         if character is None or glb is None: return
-        if character["profile"] not in PROFILES: self.report.error(entry["character"], f"unknown profile '{character['profile']}'")
+        own = None
+        if "animations" in character and self.minor < 1:
+            self.report.error(entry["character"], "'animations' needs format chchar/1.1")
+        if character["profile"] not in PROFILES:
+            if self.minor < 1:
+                self.report.error(entry["character"], f"unknown profile '{character['profile']}'")
+            elif character["library"] == LIBRARY_ID:
+                self.report.error(entry["character"], f"the band library has no profile '{character['profile']}'")
+            elif not any(r["id"] == character["library"] for r in self.manifest.get("requires", [])):
+                self.report.error("manifest.json", f"'requires' must list the character library {character['library']}")
+            if self.minor >= 1 and self.character_library is not None:
+                try:
+                    library = load_character_library(self.character_library)
+                except (OSError, ValueError) as error:
+                    self.report.error("--character-library", f"cannot read the character library: {error}"); return
+                if library.get("library") != character["library"]:
+                    self.report.warn(entry["character"], f"the profile is not checked: --character-library is {library.get('library')}, not {character['library']}")
+                elif character["profile"] not in library["profiles"]:
+                    self.report.error(entry["character"], f"library {character['library']} has no profile '{character['profile']}'")
+                else:
+                    own = character_profile(library, character["profile"])
+                    if "animations" in character and character["animations"] not in library["animations"]:
+                        self.report.error(entry["character"], f"library {character['library']} has no animation set '{character['animations']}'")
         materials = {m.get("name") for m in glb.list("materials")}
         for material in character.get("hairMaterials", []):
             if material not in materials: self.report.error(entry["character"], f"hair material '{material}' is not in the GLB")
@@ -527,14 +552,18 @@ class Validator:
                 above = glb.world(parents[joint], parents, cache)
                 if np.abs(above - np.eye(4)).max() > JOINT_POSITION:
                     self.report.error(entry["model"], "nodes above the root joint must have the identity transform")
-        if character["profile"] not in PROFILES or self.library is None:
-            self.report.warn(entry["model"], "joints are not checked against the profile (no --library)")
+        if own is not None:
+            self.check_profile(entry["model"], glb, joints, names, joint_parents, own)
+        elif character["profile"] not in PROFILES or self.library is None:
+            self.report.warn(entry["model"], "joints are not checked against the profile (no --library or --character-library)")
             return
-        try:
-            profile = load_profile(self.library, PROFILES[character["profile"]])
-        except (OSError, ValueError) as error:
-            self.report.error("--library", f"cannot read the profile rig: {error}"); return
-        self.check_profile(entry["model"], glb, joints, names, joint_parents, profile)
+        else:
+            try:
+                profile = load_profile(self.library, PROFILES[character["profile"]])
+            except (OSError, ValueError) as error:
+                self.report.error("--library", f"cannot read the profile rig: {error}"); return
+            self.check_profile(entry["model"], glb, joints, names, joint_parents, profile)
+        if self.library is None: return
         instrument = character.get("attachments", {}).get("instrument")
         known = library_instruments(self.library)
         if instrument and known and instrument not in known:
@@ -568,7 +597,12 @@ class Validator:
     # Library.
     def check_library(self):
         entry = self.manifest["entry"]
-        if self.manifest["id"] != LIBRARY_ID: self.report.warn("manifest.json", f"the mod v1 uses the library {LIBRARY_ID}")
+        if "characters" in entry:
+            if self.minor < 1: self.report.error("manifest.json", "a character library needs format chlib/1.1")
+            if self.manifest["id"] != CHARACTER_LIBRARY_ID: self.report.warn("manifest.json", f"the mod uses the character library {CHARACTER_LIBRARY_ID}")
+            if any(key in entry for key in LIBRARY_SCHEMAS): self.report.error("manifest.json", "a character library has only the entry 'characters'")
+            self.check_character_library(entry["characters"])
+        elif self.manifest["id"] != LIBRARY_ID: self.report.warn("manifest.json", f"the mod v1 uses the library {LIBRARY_ID}")
         data = {key: self.json_entry(key, schema) for key, schema in LIBRARY_SCHEMAS.items() if key in entry}
         if data.get("scripts"): self.check_script_files(entry["scripts"], data["scripts"])
         self.check_library_files(entry, data)
@@ -586,6 +620,40 @@ class Validator:
             elif name.endswith(".glb"):
                 glb = self.check_glb(name, skinned=True)
                 if glb is not None and glb.list("skins"): self.check_skin(name, glb)
+
+    def check_character_library(self, name):
+        """characters.json (PACKAGE-FORMAT.md section 10.1): references between profiles, sets, hair, IK, and clip files."""
+        library = self.json_entry("characters", "characters.schema.json")
+        if library is None: return
+        rig = library["clipRig"]
+        if not len(rig["bones"]) == len(rig["parents"]) == len(rig["bind"]): self.report.error(name, "clipRig: bones, parents, and bind differ in length")
+        for set_name, animations in library["animations"].items():
+            for table in ("groups", "layers"):
+                for field, clips in animations[table].items():
+                    for clip in clips:
+                        if clip not in animations["clips"]: self.report.error(name, f"animation set {set_name}: {table} {field} names clip {clip}, which is not in its clips")
+            for clip in animations["clips"]:
+                if f"clips/{clip}.q48.br" not in self.source.set: self.report.error(name, f"animation set {set_name}: clip file is missing: clips/{clip}.q48.br")
+        for profile_id, profile in library["profiles"].items():
+            where = f"{name}: profile {profile_id}"
+            if not PROFILE_ID.fullmatch(profile_id): self.report.error(where, "invalid profile ID")
+            if profile_id in PROFILES: self.report.error(where, "the band library has a profile with this ID")
+            if profile["animations"] not in library["animations"]: self.report.error(where, f"no animation set {profile['animations']}")
+            if profile["hair"] is not None and profile["hair"] not in library["hair"]: self.report.error(where, f"no hair {profile['hair']}")
+            if profile["ik"] not in library["ik"]: self.report.error(where, f"no IK chains {profile['ik']}")
+            if profile["bones"] != rig["bones"]: self.report.error(where, "the bones differ from clipRig (names and order)")
+            if not len(profile["bones"]) == len(profile["parents"]) == len(profile["bind"]): self.report.error(where, "bones, parents, and bind differ in length")
+            elif any(p >= len(profile["bones"]) or p == i for i, p in enumerate(profile["parents"])): self.report.error(where, "invalid parent")
+            if any(abs(math.sqrt(sum(v * v for v in row[3:])) - 1) > 0.001 for row in profile["bind"]): self.report.error(where, "bind rotations must have unit length")
+            hair = library["hair"].get(profile["hair"]) if profile["hair"] else None
+            if hair:
+                joints = {j["bone"] for j in hair["joints"]}
+                for joint in hair["joints"]:
+                    if max(joint["bone"], joint["parent"]) >= len(profile["bones"]): self.report.error(where, f"hair joint {joint['bone']} is outside the rig")
+                if hair["head"] >= len(profile["bones"]) or hair["head"] in joints: self.report.error(where, "invalid hair head bone")
+            bones = set(profile["bones"])
+            for chain in library["ik"].get(profile["ik"], []):
+                if not set(chain["bones"]) <= bones or chain["target"] not in bones: self.report.error(where, "an IK chain names a bone that is not in the rig")
 
     def check_library_files(self, entry, data):
         """The fixed-path files of a library (PACKAGE-FORMAT.md section 10) that its JSON files refer to."""
@@ -682,19 +750,38 @@ def load_profile(library, role):
     return [b.lower() for b in bones], [r[0] for r in rows], translations, rotations
 
 
-def validate(path, library=None):
-    return Validator(path, library).run()
+def load_character_library(path):
+    """characters.json of a character library package (zip or folder) or of the pipeline folder."""
+    path = Path(path)
+    if path.is_file() or (path/"manifest.json").is_file():
+        report = Report()
+        source = Source(path, report)
+        if report.errors or "characters.json" not in source.set: raise ValueError("the package has no characters.json")
+        return json.loads(source.read("characters.json"))
+    return json.loads((path/"characters.json").read_text())
+
+
+def character_profile(library, profile):
+    """A character library profile as load_profile returns it: names, parents, glTF-space translations and rotations."""
+    row = library["profiles"][profile]
+    bind = np.array(row["bind"], dtype=np.float64)
+    return [b.lower() for b in row["bones"]], row["parents"], bind[:, :3] * [1, 1, -1], bind[:, 3:] * [-1, -1, 1, 1]
+
+
+def validate(path, library=None, character_library=None):
+    return Validator(path, library, character_library=character_library).run()
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="python -m pipeline.package.validate", description=__doc__.splitlines()[0])
     parser.add_argument("package", type=Path, nargs="+")
     parser.add_argument("--library", type=Path, help="library package (gh3-band-v1.chlib) or current library folder for the character profile check")
+    parser.add_argument("--character-library", type=Path, help="character library package (gh3-characters-v1.chlib) or folder for the profile check of format 1.1 characters")
     parser.add_argument("--json", action="store_true", help="print one JSON report for each package")
     args = parser.parse_args(argv)
     failed = False
     for package in args.package:
-        report = validate(package, args.library)
+        report = validate(package, args.library, args.character_library)
         failed |= not report.ok
         if args.json:
             print(json.dumps({"package": str(package), "errors": report.errors, "warnings": report.warnings}))

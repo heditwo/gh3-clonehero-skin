@@ -1,6 +1,6 @@
 # Package format v1
 
-Status: **frozen** (PACKAGING-PLAN step 3, part 1). This document is the reference for venue, character, and library packages. The JSON Schemas are in [`schemas/`](../schemas). The validator is `pipeline/package/validate.py`. The converter is `pipeline/package/build.py` ([section 19](#19-converter)). The C# importer is `src/Packages/` ([section 20](#20-c-importer)).
+Status: **frozen** (PACKAGING-PLAN step 3, part 1), with the additive minor 1.1 for characters and libraries ([changelog](#21-changelog)). This document is the reference for venue, character, and library packages. The JSON Schemas are in [`schemas/`](../schemas). The validator is `pipeline/package/validate.py`. The converter is `pipeline/package/build.py` ([section 19](#19-converter)). The C# importer is `src/Packages/` ([section 20](#20-c-importer)).
 
 The words "must" and "must not" give rules. The validator reports a rule failure as an error. "Should" gives a recommendation. The validator reports it as a warning.
 
@@ -18,8 +18,8 @@ flowchart LR
 | Kind | Extension | `format` | Contents |
 |---|---|---|---|
 | Venue | `.chstage` | `chstage/1.0` | `stage.glb`, cameras, lighting, scripts, placements, actors |
-| Character | `.chchar` | `chchar/1.0` | One skinned GLB on a fixed GH3 rig profile, `character.json` |
-| Library | `.chlib` | `chlib/1.0` | The shared GH3 band, crowd, clips, audio, movies, particle textures, and song direction |
+| Character | `.chchar` | `chchar/1.0`, `chchar/1.1` | One skinned GLB on a GH3 rig profile, `character.json`. 1.0: a fixed profile of the band library. 1.1: also a profile of a character library |
+| Library | `.chlib` | `chlib/1.0`, `chlib/1.1` | 1.0: the shared GH3 band, crowd, clips, audio, movies, particle textures, and song direction (`gh3-band-v1`). 1.1: also a character library (`gh3-characters-v1`, [section 10.1](#101-character-library-format-11)) |
 
 The extension selects the kind. The `format` field in `manifest.json` must agree with the extension.
 
@@ -113,7 +113,7 @@ Example (venue):
 | Item | Rule |
 |---|---|
 | Format major (`chstage/1`) | An incompatible change gives a new major. The mod rejects a major that it does not know |
-| Format minor (`chstage/1.0`) | A new minor only adds optional fields, files, or extras. A mod that knows minor *n* reads all packages with minor ≤ *n*. It rejects a higher minor with the message "needs a newer mod" |
+| Format minor (`chstage/1.0`) | A new minor only adds optional fields, files, or extras. A mod that knows minor *n* reads all packages with minor ≤ *n*. It rejects a higher minor with the message "needs a newer mod". The minor is counted for each kind: mod 0.9.9 reads `chstage/1.0`, `chchar/1.1`, and `chlib/1.1` |
 | Package `version` | The author increments it for each release. With two packages of one `id`, the mod uses the higher version |
 | `requires[].version` | Satisfied by an installed package with the same `id`, the same major version, and a version that is not lower |
 | `minModVersion` | The mod rejects the package when the mod version is lower |
@@ -291,8 +291,9 @@ The field meanings are the same as in [CUSTOM-CONTENT.md, section 5](CUSTOM-CONT
 | Field | Required | Meaning |
 |---|---|---|
 | `version` | Yes | `1` |
-| `library` | Yes | `gh3-band-v1` |
-| `profile` | Yes | `gh3-guitarist-axel-v1`, `gh3-bassist-v1`, `gh3-singer-male-v1`, or `gh3-drummer-v1`. The profile also selects the band role |
+| `library` | Yes | `gh3-band-v1` for a fixed profile. Format 1.1: the ID of the character library that has the profile (`gh3-characters-v1`); the manifest `requires` lists it with `gh3-band-v1` |
+| `profile` | Yes | `gh3-guitarist-axel-v1`, `gh3-bassist-v1`, `gh3-singer-male-v1`, or `gh3-drummer-v1` (the fixed profiles of `gh3-band-v1`). Format 1.1: also a profile of the character library that `library` names, for example `gh3-guitarist-judy-v1` ([section 10.1](#101-character-library-format-11)). The profile also selects the band role |
+| `animations` | No | Format 1.1 only: an animation set of the same character library. Absent: the set of the profile. A format 1.0 package must not have this field |
 | `hairMaterials` | No | GLB material names with sorted hair transparency |
 | `attachments` | No | `instrument`: a library instrument ID (the `instrument` of a `band/band.json` member: `SG_Black`, `tobB4`, `Microphone001`, `Drum_Set001`). Absent: the default. The v1 library has one instrument for each band role, and the instrument follows the role that the character plays (rules in [section 20.6](#206-characters)). Do not model the instrument in the character GLB |
 
@@ -300,7 +301,7 @@ The field meanings are the same as in [CUSTOM-CONTENT.md, section 5](CUSTOM-CONT
 
 - One skin. All mesh nodes use it. Inverse bind matrices are required.
 - Joints map to GH3 bones **by name**: `bone-<8 hex digits>` (the GH3 checksum) or the GH3 bone name. Joint order and vertex order are free.
-- The skin contains every joint of the profile and no other joints, with the profile parents.
+- The skin contains every joint of the profile and no other joints, with the profile parents. A character library profile gives its rig in `characters.json` (`bones`, `parents`, `bind`); the checks are the same.
 - Nodes above the root joint (for example the Blender `Armature` node) have the identity transform (1e-4).
 - Maximum four influences for each vertex. Blend shapes (morph targets) are optional. Mod 0.9.8 accepts them but does not animate them (warning): the GH3 clips move the face with bones.
 - Animations in the GLB are ignored (warning). The library supplies the clips.
@@ -371,6 +372,30 @@ Library model GLBs (`band/<role>/model.glb`, `crowd/…/model.glb`):
 - The joints are the rig, named `bone-<checksum>`, in rig order. The GLB has the bind pose and the start clips of `band.json` `clips` (or `crowd.json` `clips`) as animations with these names. The crowd hand models use the crowd rig without animations.
 - Each material keeps the raw GH3 blend value in `gh3Shader.blend`. The importer takes `blend` from `gh3Shader.blend` when the record is present (section 17.2), and the cutoff from `alphaCutoff` (`MASK`) or `gh3AlphaCutoff` (`BLEND`). `color` is `baseColorFactor` × `gh3ColorScale`.
 - The GLB also holds the materials that no mesh uses, so that the importer can write the full material table.
+
+### 10.1 Character library (format 1.1)
+
+A character library is a `.chlib` package with format `chlib/1.1` and one `entry` key, `characters` (`characters.json`, [schema](../schemas/characters.schema.json)). It gives rig profiles to characters, with their own animation sets, hair physics, and IK. It must not have the band library entries. The release ships `gh3-characters-v1`: the GH3 skeletons, animation sets, ragdolls, and IK parameters of the playable GH3 guitarists (`pipeline/character_library.py`, [PIPELINE.md](PIPELINE.md#gh3-characters)). It requires `gh3-band-v1` and has `minModVersion` 0.9.9.
+
+| `characters.json` field | Contents |
+|---|---|
+| `version`, `library` | `1`, the library ID |
+| `clipRig` | The rig that the clip files are recorded on: `profile` (its name), `bones`, `parents`, `bind` |
+| `profiles` | Profile ID to: `role` (`guitarist`), `name`, `outfit`, `skeleton` (GH3 checksum), `scale`, `animations` (set ID), `hair` (hair ID or `null`), `ik` (IK ID), and the rig: `bones` (checksums, the names and order of `clipRig`), `parents`, `bind` (local `[x, y, z, qx, qy, qz, qw]` for each bone, runtime coordinates) |
+| `animations` | Set ID to `animSet` (GH3 checksum of the `<name>_animations` struct), `groups`, `layers`, `clips`, `missingClips`: the layout of a `performance.json` member without `bones` |
+| `hair` | Hair ID (the ragdoll checksum) to `head`, `joints`, `capsule`, `ragdoll`, as in `band/hair.json`, with the joint types below |
+| `ik` | IK ID to a list of two-joint chains: `bones` (three checksums), `target`, `hinge`, `cosMax`, `cosMin` (GH3 `Hero_Ik_params`, `Satan_Ik_params`) |
+
+Other files: `clips/<clip>.q48.br`, one file for each clip ID of all sets ([section 11](#11-clip-encoding-q48)). Sets share clip files: a clip ID is one clip in the whole library.
+
+Rules:
+
+- **Clip offsets.** Clips hold local transforms on `clipRig`. A profile plays a clip with an offset on each position track: the profile rest position of the bone minus the `clipRig` rest position of the bone. GH3 keys the translations of a clip relative to the rest pose of the skeleton, so the result is the GH3 clip on the profile's own skeleton. The rotations do not change. The same offsets apply to the song facial clips of the band library member of the role (they are on the role rig of `gh3-band-v1`; the offset uses that rig).
+- **Hair joints.** A joint without `type`, or with `type` `ragdoll`, has `limits` as in `band/hair.json`. `hinge` (Havok limited hinge): the joint turns only about `axis` (a unit vector in the bind frame of the joint), within `range` radians from the bind pose. `prismatic` (Havok prismatic): the joint slides along `axis` within `range` metres from the bind pose and does not turn; `linearDamping` is the body's linear damping. A chain can start at any bone that is not a hair joint (head, chest, pelvis, arms, legs). A joint `parent` can be a bone other than the rig parent (the ragdoll constraint pair).
+- **Scale.** The profile `scale` scales the whole band member (GH3 `create_guitarist`: Judy Nails 0.9).
+- The profile IDs must not be IDs of the fixed profiles. Every reference (set, hair, IK, clip file) must exist.
+
+A character on a profile of a character library plays its own role with its own rig, set, hair, IK, and scale, and also the bassist role with the same set and the bassist's library instrument (GH3 makes the co-op bassist with `create_guitarist`, so the character keeps its animation set; [PARITY-NOTES.md](PARITY-NOTES.md#playable-characters)).
 
 ## 11. Clip encoding q48
 
@@ -480,10 +505,11 @@ The importer converts a package one time and writes a per-machine cache.
 ## 15. Validation
 
 ```sh
-MISE_QUIET=1 uv run --with numpy --with brotli python -m pipeline.package.validate PACKAGE [--library assets/libraries/gh3-band-v1]
+MISE_QUIET=1 uv run --with numpy --with brotli python -m pipeline.package.validate PACKAGE [--library assets/libraries/gh3-band-v1] \
+  [--character-library assets/packages/gh3-characters-v1.chlib]
 ```
 
-- The validator reads a zip or a development folder. It checks the container, the paths, the manifest, the hashes, the schemas, the references, the GLB rules, and the extras. For a character, `--library` adds the profile rig check (section 9.3); the value is a library package (`gh3-band-v1.chlib`, the rig comes from `band/<role>/model.glb`) or the current library folder. For a library, it decodes all clips (needs the `brotli` module) and checks the library schemas and file references (section 10).
+- The validator reads a zip or a development folder. It checks the container, the paths, the manifest, the hashes, the schemas, the references, the GLB rules, and the extras. For a character, `--library` adds the profile rig check (section 9.3); the value is a library package (`gh3-band-v1.chlib`, the rig comes from `band/<role>/model.glb`) or the current library folder. For a format 1.1 character on a character library profile, `--character-library` (`gh3-characters-v1.chlib` or the folder `assets/libraries/gh3-characters-v1`) gives the rig. For a library, it decodes all clips (needs the `brotli` module) and checks the library schemas and file references (sections 10 and 10.1).
 - `pipeline/package/schema.py` evaluates the schemas without third-party packages, so the Blender add-on can bundle the validator (`blender/build.py` copies `pipeline/package` and `schemas/`). The tests compare it with the `jsonschema` reference implementation.
 - Dry conversion check of the current outputs: `python -m pipeline.package.sources --json report.json` (see [section 16](#16-mapping-of-the-current-pipeline-outputs)).
 
@@ -566,7 +592,7 @@ Evidence: `~/.cache/gh3-evidence/format-v1/brotli-Latest.log`. A run without `GH
 
 ## 19. Converter
 
-`python -m pipeline.package.build` (the `packages` step of `scripts/regenerate.sh`) writes all packages to `assets/packages/`: `<id>.chstage` for each source pack, `gh3-band-v1.chlib`, and the same packages as development folders in `assets/packages/unpacked/`. The folder and the zip have the same files, with a full `files` list in `manifest.json`.
+`python -m pipeline.package.build` (the `packages` step of `scripts/regenerate.sh`) writes all packages to `assets/packages/`: `<id>.chstage` for each source pack, `gh3-band-v1.chlib`, `gh3-characters-v1.chlib` (from `assets/libraries/gh3-characters-v1`, `--no-character-library` skips it), the GH3 characters, and the same packages as development folders in `assets/packages/unpacked/`. The folder and the zip have the same files, with a full `files` list in `manifest.json`.
 
 ### 19.1 Texture references
 
@@ -629,6 +655,7 @@ Not carried into the library package, by design: the shader bundles and `render/
 | `example.studio` | 0.05 | 0.05 |
 | **Ten venues** (without `example.studio`) | **572.4** | **550.9** |
 | **`gh3-band-v1.chlib`** | **856.9** | **658.1** |
+| `gh3-characters-v1.chlib` (format 1.1, 2026-10-09) | 35.2 | 33.6 |
 | **Total** | **1,429.3** | **1,209.0** |
 
 Library parts:
@@ -770,8 +797,29 @@ Checks (2026-10-09):
 - Game (Linux, gh3.dive, mycurse-native, the role cameras at 20, 30, and 40 s): the four characters with their library instruments against the default members. PSNR of character against default 16.5–51.3 dB; PSNR of runs of the same kind (default against default, `main` against this build, character against character) 16.7–47.0 dB. The difference comes from frame timing (edges of moving parts and notes), not from the models.
 - The Blender add-on test character (`tester.blocky-guitarist`) plays with the library guitar. A copy that names `SG_Black` plays the bassist with the bass (`tobB4`).
 
-GH3 characters (2026-10-09): `python -m pipeline.characters` and the `packages` step write the 72 playable GH3 characters as `gh3.<name>[.outfit<n>[.style<m>]].chchar` (one package for each outfit and style; v1 has no variants in one package). They use the profiles `gh3-guitarist-axel-v1` (70 guitarists) and `gh3-singer-male-v1` (Bret Michaels, female singer), and keep their GH3 meshes, materials, textures, hair cards, and the default instrument of their GH3 profile ([PIPELINE.md](PIPELINE.md#gh3-characters)). The format did not change; the profiles and clips stay the v1 ones.
+GH3 characters (2026-10-09): `python -m pipeline.characters` and the `packages` step write the 72 playable GH3 characters as `gh3.<name>[.outfit<n>[.style<m>]].chchar` (one package for each outfit and style; v1 has no variants in one package). They keep their GH3 meshes, materials, textures, hair cards, and the default instrument of their GH3 profile ([PIPELINE.md](PIPELINE.md#gh3-characters)). Axel Steel's first outfit (4 packages) uses `gh3-guitarist-axel-v1` and the two singers use `gh3-singer-male-v1` (format 1.0, unchanged). The other 66 guitarists are format 1.1 packages on their own GH3 skeleton: a profile of `gh3-characters-v1` (section 10.1).
+
+**Characters on a character library profile (format 1.1).** `CharacterImporter` takes the rig of the profile from `characters.json` of the required character library (the checks of the table above are the same). The cache `character.json` also records `library` and `animations` (empty for a fixed profile). At load (`StageBand`, `CharacterMotion`):
+
+| Item | Rule |
+| --- | --- |
+| Rig | The performer's bones are the profile rig (not the role rig); each joint follows the bone with the same name |
+| Scale | The performer root has the profile `scale` |
+| Animations | The set of `character.json` `animations`, else of the profile; its clips come from `clips/` of the library with the clip offsets of section 10.1. The song facial clips of the role come from the band library, with the offsets from the role rig |
+| IK, fingers, frets, strums | The same player as the library members (`PerformancePlayer`, `StageGuitarRig`), on the profile rig, with the IK chains of the profile |
+| Hair | The profile hair (all chains, hinge and prismatic joints). A profile without hair has no hair physics (not the role's hair) |
+| Hand fire, camera anchors | The bones with the GH3 names on the profile rig |
+| Another role | Only roles whose role rig has all joints (guitarist and bassist). The character keeps its rig, set, hair, and scale; the role's library instrument hangs on the bones with the same names, bound with the role rig's rest pose |
+
+A character that cannot load gives the venue default, as in format 1.0. With `GH3_SKIN_TRACE=1`, the log has a `[trace] band` line for the guitarist and the bassist twice per song second: the profile, the set, the stance, the body clip, its clip time, the scale, and the local pose of four bones of the clip without blends, layers, or IK ([VERIFICATION.md](VERIFICATION.md#gh3-characters)).
 
 ### 20.7 Cache clean-up
 
 When all imports end (or at a warm start, on a worker thread), `PackageManager.CleanCache` deletes the cache folders that no package uses. It keeps the cache folder of each loaded package and the folder of each `index.json` entry whose package file still exists (so the cache of a song's `venue.chstage` stays while the song folder has it). It deletes other folders with the cache name pattern `<64 hex>-i<number>`, which includes all other importer versions, and removes the `index.json` entries of missing package files. It only deletes inside the cache root, never follows links, and leaves other folders.
+
+## 21. Changelog
+
+| Version | Date | Change |
+|---|---|---|
+| 1.0 | 2026-10-09 | First frozen version |
+| 1.1 | 2026-10-09 | Additive, for `chchar` and `chlib` only (`chstage` stays 1.0). The character library: a `chlib/1.1` package with the entry `characters` (section 10.1): rig profiles, animation sets, hair with hinge and prismatic joints, IK chains, and `clips/`. `character.json` of a `chchar/1.1` package can name a profile of a required character library and an optional `animations` set (section 9.1). Mod 0.9.9 reads 1.1; packages of 1.1 set `minModVersion` 0.9.9. Format 1.0 packages and readers are unchanged: mod 0.9.8 rejects 1.1 packages with "needs a newer mod", and mod 0.9.9 reads all 1.0 packages as before |
