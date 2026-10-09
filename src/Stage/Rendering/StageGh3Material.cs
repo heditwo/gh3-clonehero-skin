@@ -38,7 +38,7 @@ internal readonly record struct StageGh3RenderState(int SrcBlend, int DstBlend, 
     // Packed colour blend per mode: bits 0-4 source factor, 5-7 operation, 8-15 destination factor (GH3.exe 0x6491d2).
     private static readonly int[] Modes = { 0x122, 0x225, 0x265, 0x625, 0x521, 0x229, 0x129, 0x222, 0x625, 0x622, 0x229, 0x26a, 0x262 };
 
-    public static StageGh3RenderState From(long flags, int blend, int alphaRef, float drawOrder)
+    public static StageGh3RenderState From(long flags, int blend, int alphaRef, float drawOrder, bool billboard = false)
     {
         var packed = Modes[blend is >= 0 and < 13 ? blend : 0];
         var blended = packed != Modes[0];
@@ -46,7 +46,12 @@ internal readonly record struct StageGh3RenderState(int SrcBlend, int DstBlend, 
         // Bit 3 disables culling; otherwise bit 8 selects counter-clockwise culling. The stage meshes reverse GH3's winding.
         var cull = (flags & 0x08) != 0 ? 0 : (flags & 0x100) != 0 ? 1 : 2;
         var order = (int)Math.Clamp(Math.Round(drawOrder), -400, 400);
-        return new(BlendFactors[packed & 31], BlendFactors[packed >> 8 & 255], BlendOps[packed >> 5 & 7], (flags & 0x20) == 0,
+        var destination = BlendFactors[packed >> 8 & 255];
+        // The additive Flare billboards (up to 9 m wide) draw before the band's sorted hair (draw order 1 < 2). With their depth write,
+        // the alpha-tested core of a card in front of a performer removed the hair behind it in the flare mood. A glow adds light only,
+        // so it does not write depth. The hair stays in GH3 recordings of the flare mood.
+        var depthWrite = (flags & 0x20) == 0 && !(billboard && blended && destination == 1);
+        return new(BlendFactors[packed & 31], destination, BlendOps[packed >> 5 & 7], depthWrite,
             (flags & 0x10) != 0 ? 8 : 4, cull, alphaTest, alphaRef, blended, (blended ? 3000 : alphaTest ? 2450 : 2000) + order);
     }
 

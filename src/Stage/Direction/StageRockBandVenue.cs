@@ -3,7 +3,8 @@ using System.Text.RegularExpressions;
 
 namespace Gh3Skin;
 
-internal readonly record struct StageTickCue(long Tick, string Type, string Value, long Length = 0);
+// Delay: seconds after Tick (a flare pulse returns a fixed time after its peak, independent of the tempo).
+internal readonly record struct StageTickCue(long Tick, string Type, string Value, long Length = 0, double Delay = 0);
 
 // Maps the Rock Band VENUE track (RB1/RB2 notes and text events, RB3 text events) to GH3 camera notes,
 // lightshow moods and notes, and effects. The table and the reasons are in docs/CUSTOM-CONTENT.md.
@@ -18,7 +19,19 @@ internal static class StageRockBandVenue
     private static readonly Regex Coop = new(@"^coop_([a-z]+)_(behind|near|far|closeup_hand|closeup_head|closeup)$", RegexOptions.CultureInvariant);
 
     private sealed record Light(string Mood, string? Color = null, double Blend = DefaultBlend, bool Keyframed = false,
-        double StepBeats = 0, bool Toggle = false, double Release = DefaultBlend);
+        double StepBeats = 0, bool Toggle = false, double Release = DefaultBlend, bool Pulse = false);
+    // Origin: the tick where the cue is fully reached and its steps start; Fade: the blend in seconds into this cue.
+    private sealed record Entry(long Tick, string Name, Light Light, double Delay = 0, double? Fade = null, long Origin = -1);
+
+    // A flare rises over GH3's default blend and the light turns back before the peak, as in GH3's own pulses (flare note,
+    // then a mood note a moment later). The peak is a fraction of the flare snapshot, not a white-out.
+    private const double PulseRise = DefaultBlend;
+    // WCAG 2.3.1: at most three flashes in any one second.
+    private static double MinPulseGap(bool reduce) => reduce ? 1 : 0.34;
+    private static double PulsePeak(bool reduce) => reduce ? 0.2 : 0.4;
+    private const double MinToggleGap = 0.2;
+    // Player option: weaker and rarer flare pulses, and slower strobes. GH3_SKIN_REDUCE_FLASHING=1 sets it for a run.
+    public static bool ReduceFlashing { get; set; } = Environment.GetEnvironmentVariable("GH3_SKIN_REDUCE_FLASHING") is "1" or "on" or "true";
 
     private static readonly Dictionary<string, Light> Lights = new()
     {
@@ -42,8 +55,8 @@ internal static class StageRockBandVenue
         ["blackout_spot"] = new("blackout"),
         ["blackout_fast"] = new("blackout", Blend: 0.2),
         ["blackout_slow"] = new("blackout", Blend: 2),
-        ["flare_fast"] = new("flare", Blend: 0),
-        ["flare_slow"] = new("flare", Blend: 0, Release: 1),
+        ["flare_fast"] = new("flare", Release: 0.3, Pulse: true),
+        ["flare_slow"] = new("flare", Release: 1, Pulse: true),
         ["strobe_fast"] = new("strobe", StepBeats: 0.125, Toggle: true),
         ["strobe_slow"] = new("strobe", StepBeats: 0.25, Toggle: true),
     };
@@ -67,7 +80,7 @@ internal static class StageRockBandVenue
     }
 
     public static List<StageTickCue> Decode(IEnumerable<(long Tick, int Note, long Length)> notes, IEnumerable<(long Tick, string Text)> texts,
-        int resolution, long end, out string? diagnostic, out List<(long Tick, string Text)> unhandled)
+        int resolution, long end, out string? diagnostic, out List<(long Tick, string Text)> unhandled, Func<long, double>? seconds = null)
     {
         var ignored = new SortedDictionary<string, int>();
         var unknown = new SortedSet<string>();
@@ -147,67 +160,81 @@ internal static class StageRockBandVenue
         }
 
         // One lighting cue per tick: the last one in the track, but an intro transition yields to a real cue at the same time.
-        lights = lights.GroupBy(l => l.Tick).OrderBy(g => g.Key)
-            .Select(g => g.Where(l => l.Light.Mood != "intro").DefaultIfEmpty(g.Last()).Last()).ToList();
+        seconds ??= tick => tick * 0.5 / resolution;
+        var entries = lights.GroupBy(l => l.Tick).OrderBy(g => g.Key)
+            .Select(g => g.Where(l => l.Light.Mood != "intro").DefaultIfEmpty(g.Last()).Last())
+            .Select(l => new Entry(l.Tick, l.Name, l.Light)).ToList();
         // Rock Band blends when a cue repeats: from the second cue to the next different cue. The next cue starts at the
-        // repeat and blends over the span. Length marks that span on the blend cue; the reader converts it to seconds.
-        var blends = new Dictionary<int, long>();
-        for (var i = 1; i < lights.Count; i++)
+        // repeat and blends over the span; its snapshot steps start at its own time.
+        var repeats = 0;
+        for (var i = 1; i < entries.Count; i++)
         {
-            if (lights[i].Name != lights[i - 1].Name) continue;
-            var from = lights[i].Tick;
+            if (entries[i].Name != entries[i - 1].Name) continue;
+            var from = entries[i].Tick;
             var j = i;
-            while (j < lights.Count && lights[j].Name == lights[i - 1].Name) j++;
-            lights.RemoveRange(i, j - i);
-            if (i < lights.Count)
+            while (j < entries.Count && entries[j].Name == entries[i - 1].Name) j++;
+            entries.RemoveRange(i, j - i);
+            if (i < entries.Count)
             {
-                blends[i] = lights[i].Tick - from;
-                lights[i] = lights[i] with { Tick = from };
+                repeats++;
+                entries[i] = entries[i] with { Tick = from, Origin = entries[i].Tick, Fade = seconds(entries[i].Tick) - seconds(from) };
             }
         }
+        var (pulses, dropped) = Pulses(entries, seconds);
         keyframes = keyframes.OrderBy(k => k.Tick).ToList();
         string? color = null;
         var blend = DefaultBlend;
         var release = DefaultBlend;
         var keyframe = 0;
         var lightCount = 0;
-        for (var i = 0; i < lights.Count; i++)
+        var lastToggle = double.NegativeInfinity;
+        void Toggle(long at)
         {
-            var (tick, _, light) = lights[i];
-            var next = i + 1 < lights.Count ? lights[i + 1].Tick : end;
+            // Reduce flashing: at most 2.5 strobe flashes (on and off) per second.
+            if (ReduceFlashing && seconds(at) - lastToggle < MinToggleGap) return;
+            lastToggle = seconds(at);
+            output.Add(new(at, "gh3-note", "60"));
+        }
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var (tick, _, light, delay, fade, start) = entries[i];
+            var origin = start >= 0 ? start : tick;
+            var next = i + 1 < entries.Count ? entries[i + 1].Tick : end;
             for (; keyframe < keyframes.Count && keyframes[keyframe].Tick < tick; keyframe++)
                 Ignore(i == 0 ? "keyframe before lighting" : "keyframe in automatic lighting");
             var passthrough = Colors.Contains(light.Mood);
             var targetColor = passthrough ? light.Mood : light.Color;
             var recolor = !passthrough && targetColor != color;
-            if (recolor) output.Add(new(tick, "color", targetColor ?? "off"));
+            if (recolor) output.Add(new(tick, "color", targetColor ?? "off", Delay: delay));
             color = targetColor;
-            var origin = tick;
-            if (blends.TryGetValue(i, out var span))
+            if (fade is { } span)
             {
-                origin = tick + span;
-                output.Add(new(tick, "blend", "", span));
-                output.Add(new(origin, "blend", light.Blend.ToString(CultureInfo.InvariantCulture)));
-                blend = light.Blend;
+                output.Add(new(tick, "blend", span.ToString("0.###", CultureInfo.InvariantCulture), Delay: delay));
+                blend = span;
+                if (origin != tick)
+                {
+                    output.Add(new(origin, "blend", light.Blend.ToString(CultureInfo.InvariantCulture)));
+                    blend = light.Blend;
+                }
             }
             else
             {
                 var targetBlend = release != DefaultBlend ? release : light.Blend;
-                if (targetBlend != blend) output.Add(new(tick, "blend", targetBlend.ToString(CultureInfo.InvariantCulture)));
+                if (targetBlend != blend) output.Add(new(tick, "blend", targetBlend.ToString(CultureInfo.InvariantCulture), Delay: delay));
                 blend = targetBlend;
             }
             release = light.Release;
-            output.Add(new(tick, "lighting", light.Mood));
+            output.Add(new(tick, "lighting", light.Mood, Delay: delay));
             lightCount++;
             // GH3 keeps the running snapshot when the mood does not change, so a new override color needs a snapshot step.
-            if (recolor && i > 0 && lights[i - 1].Light.Mood == light.Mood) output.Add(new(tick, "gh3-note", "58"));
-            var stepped = new HashSet<long> { tick };
+            if (recolor && i > 0 && entries[i - 1].Light.Mood == light.Mood) output.Add(new(tick, "gh3-note", "58", Delay: delay));
+            var stepped = new HashSet<long> { tick, origin };
             for (; keyframe < keyframes.Count && keyframes[keyframe].Tick < next; keyframe++)
             {
                 var (at, kind) = keyframes[keyframe];
                 if (!light.Keyframed) Ignore("keyframe in automatic lighting");
                 else if (light.Toggle && kind != "next") Ignore("stomp keyframe other than next");
-                else if (light.Toggle) output.Add(new(at, "gh3-note", "60"));
+                else if (light.Toggle) Toggle(at);
                 else if (stepped.Add(at)) output.Add(new(at, "gh3-note", "58"));
             }
             if (light.StepBeats > 0)
@@ -215,7 +242,8 @@ internal static class StageRockBandVenue
                 var step = Math.Max(1, (long)Math.Round(light.StepBeats * resolution));
                 var count = 0;
                 for (var at = origin + step; at < next && count < StepLimit; at += step, count++)
-                    output.Add(new(at, "gh3-note", light.Toggle ? "60" : "58"));
+                    if (light.Toggle) Toggle(at);
+                    else output.Add(new(at, "gh3-note", "58"));
             }
         }
         for (; keyframe < keyframes.Count; keyframe++) Ignore(lights.Count == 0 ? "keyframe before lighting" : "keyframe in automatic lighting");
@@ -225,12 +253,52 @@ internal static class StageRockBandVenue
         if (output.Count > 0 || ignored.Count > 0 || unknown.Count > 0)
         {
             parts.Add($"Rock Band VENUE: {cutTicks.Length} camera cuts, {lightCount} lighting cues, {effects.Count} effects mapped");
-            if (blends.Count > 0) parts.Add($"{blends.Count} repeated lighting cues blend into the next cue");
+            if (repeats > 0) parts.Add($"{repeats} repeated lighting cues blend into the next cue");
+            if (pulses > 0) parts.Add($"{pulses} flares play as {PulsePeak(ReduceFlashing) * 100:0}% pulses" +
+                (dropped > 0 ? $", {dropped} dropped to keep flares {MinPulseGap(ReduceFlashing):0.##} s apart" : "") +
+                (ReduceFlashing ? " (reduce flashing)" : ""));
             if (ignored.Count > 0) parts.Add("ignored " + string.Join(", ", ignored.Select(pair => $"{pair.Value} {pair.Key}")));
             if (unknown.Count > 0) parts.Add("unknown " + string.Join(", ", unknown.Take(8)) + (unknown.Count > 8 ? ", ..." : ""));
         }
         diagnostic = parts.Count > 0 ? string.Join("; ", parts) + "." : null;
         return output;
+    }
+
+    // Shapes each flare into a pulse: the next cue (or, when it is far, the cue before the flare) starts at the pulse peak and
+    // fades in, so it is reached at its own time. Flares closer than the minimum gap are dropped.
+    private static (int Pulses, int Dropped) Pulses(List<Entry> entries, Func<long, double> seconds)
+    {
+        var hold = PulseRise * PulsePeak(ReduceFlashing);
+        var last = double.NegativeInfinity;
+        var pulses = 0;
+        var dropped = 0;
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var flare = entries[i];
+            if (!flare.Light.Pulse) continue;
+            var time = seconds(flare.Tick) + flare.Delay;
+            if (time - last < MinPulseGap(ReduceFlashing))
+            {
+                entries.RemoveAt(i--);
+                dropped++;
+                continue;
+            }
+            last = time;
+            pulses++;
+            if (i + 1 < entries.Count && seconds(entries[i + 1].Tick) + entries[i + 1].Delay - time <= hold) continue;
+            if (i + 1 < entries.Count && (entries[i + 1].Fade != null ||
+                seconds(entries[i + 1].Tick) + entries[i + 1].Delay - time <= hold + flare.Light.Release))
+            {
+                var next = entries[i + 1];
+                var reached = next.Origin >= 0 ? next.Origin : next.Tick;
+                entries[i + 1] = next with { Tick = flare.Tick, Delay = hold, Origin = reached, Fade = Math.Max(0, seconds(reached) - time - hold) };
+                continue;
+            }
+            var before = entries.Take(i).LastOrDefault(entry => !entry.Light.Pulse) ?? new Entry(0, "intro", Lights["intro"]);
+            entries.Insert(i + 1, before with { Tick = flare.Tick, Delay = hold, Fade = flare.Light.Release, Origin = -1 });
+            i++;
+        }
+        return (pulses, dropped);
     }
 
     // RB1/RB2 camera notes: 60 random, 61–64 focus on bass, drums, guitar, vocals; 70–73 constraints.

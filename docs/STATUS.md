@@ -27,7 +27,7 @@ Version **0.9.8**. Clone Hero `v1.1.0.6142-final` with MelonLoader 0.7.3, Linux 
 | Band | Body and palm motion relative to close-up cameras differs; the finger motion agrees with GH3. Velocity does not change animation strength |
 | Lip sync | GH3 has no lip sync for songs without facial clips (the face stays still). The mod's lip sync on custom charts is its own addition, with mouth shapes measured from the GH3 facial clips. It reads syllable times, not the voice, so it does not show loudness or pitch. Off with `GH3_SKIN_LIPSYNC=off`; no picker option yet |
 | Show flow | No song title text, no button ripple, the hand fire does not stop at the win, no crowd `Idle` at the win. Practice mode keeps Clone Hero's lead-in |
-| Lightshow | GH3 changes occur about 0.15 s before the cue times in the recording |
+| Lightshow | GH3 changes occur about 0.15 s before the cue times in the recording. The additive `Flare` billboards write no depth (GH3's material flags let them write depth, but the mod's draw order then removed the hair behind a card) |
 
 ## Remaining work
 

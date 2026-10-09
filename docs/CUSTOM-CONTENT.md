@@ -456,8 +456,8 @@ Rules:
 | `silhouettes_spot` | `solo` | off | 0.15 s | | J |
 | `blackout_fast` | `blackout` | off | 0.2 s | | |
 | `blackout_slow` | `blackout` | off | 2 s | | |
-| `flare_fast` | `flare` | off | 0 s | | |
-| `flare_slow` | `flare` | off | 0 s; the next cue blends in 1 s | | J |
+| `flare_fast` | `flare`, as a pulse | off | see the flare rule; back in 0.3 s | | J |
+| `flare_slow` | `flare`, as a pulse | off | see the flare rule; back in 1 s | | J |
 | `strobe_fast` | `strobe` | off | | strobe toggle each 32nd note | |
 | `strobe_slow` | `strobe` | off | | strobe toggle each 16th note | |
 | a GH3 mood or color name | the same | | 0.15 s | | |
@@ -470,7 +470,9 @@ Rules:
 - A color override stays until a cue without a color. If the color changes while the mood stays the same, the mod adds a snapshot step, because GH3 applies a new color only with the next snapshot.
 - A blend other than 0.15 s applies to its own cue; the next cue sets 0.15 s again.
 - Two lighting cues at one time: the last one in the track plays. `intro` yields to the other cue.
-- A repeated cue starts a blend, as in Rock Band ([RBN2 docs](http://docs.c3universe.com/rbndocs/index.php?title=RBN2_Camera_And_Lights), "Lighting and Post Process Blending"): for `A … A … B`, the mod starts `B` at the second `A` and blends over the time to `B`. At the time of `B` the blend goes back to 0.15 s, and the snapshot steps of `B` start. Charts use this for fades and for flashes (`flare_fast`, `flare_fast` 1/8 beat later, then `silhouettes_spot`). Before, the second cue had no effect and the stage stayed in the flare mood until `B`.
+- A flare is a short pulse, not a full flare snapshot (J). The light blends toward the flare snapshot over GH3's 0.15 s, and at 40% of the way (0.06 s) it turns back: to the next cue, which then reaches its own time, or, when the next cue is more than the return time away, to the cue before the flare. GH3 itself plays its flare mood (note 71) as a short state: in My Curse the next mood note comes 0.33 s after each flare. Rock Band charts often put a flare on each beat (You're Not Going Anywhere: 128 `flare_fast` in 3 minutes); the full Dive flare snapshot sets the ambient light to 2.0 and makes the walls nearly white on each beat. Measured on that chart on `gh3.dive` (frames 600–2400 of a 45 s recording, 160 × 90 mean luma): mean 69 → 50, peak 139 → 95, median rise of a flash 73 → 34 luma steps.
+- Photosensitivity (WCAG 2.3.1, three flashes in one second): flares closer than 0.34 s to the last one are dropped. `StageRockBandVenue.ReduceFlashing` (`GH3_SKIN_REDUCE_FLASHING=1`) is a player option for a later menu hook: flare pulses peak at 20% and come at most once each second, and strobe toggles are at least 0.2 s apart. It is off by default, because the default pulses already stay below three flashes per second.
+- A repeated cue starts a blend, as in Rock Band ([RBN2 docs](http://docs.c3universe.com/rbndocs/index.php?title=RBN2_Camera_And_Lights), "Lighting and Post Process Blending"): for `A … A … B`, the mod starts `B` at the second `A` and blends over the time to `B`. At the time of `B` the blend goes back to 0.15 s, and the snapshot steps of `B` start. Charts use this for fades and for flashes (`flare_fast`, `flare_fast` 1/8 beat later, then `silhouettes_spot`). Before, the second cue had no effect and the stage stayed in the flare mood until `B`. A flare before `A … A` uses the flare rule: the fade starts at the pulse peak.
 
 #### Effects and ignored cues
 
@@ -500,6 +502,7 @@ Results:
 
 - No unknown event in the 16 charts. The mod ignores post-processing (11–62 per chart), spotlights (up to 581 notes), sing-alongs, `[FogOff]`, `[next]` in automatic cues, and `[first]`/`[prev]` in `stomp` (as Rock Band does).
 - Camera subjects match the cues on all three venues: drummer, bassist, singer, singer close-up, guitar hand close-up, pans, and wide shots.
+- Flares: each beat flash showed the full Dive flare snapshot (nearly white walls) and, on the singer, removed the hair (see [STATUS](STATUS.md)). Both are fixed; see the flare rule.
 - Three bugs were found and fixed: stacked cuts played the behind shot (The Future Soon: 49 of 89 cuts, Creepy Doll: 70 of 104, Shop Vac: 73 of 94; now 0), repeated cues did not blend (66 repeats in You're Not Going Anywhere, 81 in The Stache), and two cues at one time played in a random order (List sort is not stable).
 
 ### Generated direction

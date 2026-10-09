@@ -118,9 +118,9 @@ internal sealed class StageAssets : IDisposable
 
     // GH3's material bind applied to the translated template (see StageGh3RenderState).
     private Material MakeTemplateMaterial(Shader shader, StageGh3Material source, StageShaderTemplates.Template template,
-        Func<string, bool, bool, Texture2D> load, bool skinned)
+        Func<string, bool, bool, Texture2D> load, bool skinned, bool billboard)
     {
-        var state = StageGh3RenderState.From(source.Flags, source.Blend, source.AlphaRef, source.DrawOrder);
+        var state = StageGh3RenderState.From(source.Flags, source.Blend, source.AlphaRef, source.DrawOrder, billboard);
         var material = Own(new Material(shader));
         material.SetInt("_SrcBlend", state.SrcBlend);
         material.SetInt("_DstBlend", state.DstBlend);
@@ -310,7 +310,7 @@ internal sealed class StageAssets : IDisposable
             }
             if (template != null)
             {
-                var generic = MakeTemplateMaterial(surfaceShader!, source.Gh3!, template, LoadAddressedTexture, bones != null);
+                var generic = MakeTemplateMaterial(surfaceShader!, source.Gh3!, template, LoadAddressedTexture, bones != null, source.Billboard);
                 generic.name = "GH3 Stage " + key + " " + template.Name;
                 materials.Add(Convert.ToUInt32(key, 16), generic);
                 SurfaceMaterials.Add(generic);

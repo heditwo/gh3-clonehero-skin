@@ -370,7 +370,7 @@ internal static class StageChartReader
                     Type = "strum", Role = trackName == "PART GUITAR" ? "guitarist" : "bassist", Note = 1 << (c.Note - 96)
                 }));
         }
-        var venue = StageRockBandVenue.Decode(venueNotes, venueTexts, resolution, end, out var diagnostic, out var custom);
+        var venue = StageRockBandVenue.Decode(venueNotes, venueTexts, resolution, end, out var diagnostic, out var custom, Clock(tempos, resolution, 0));
         cues.AddRange(custom.Select(text => new TickCue(text.Tick, text.Text)));
         var generated = StageGeneratedDirection.FromSections(sections, resolution, end);
         cues.AddRange(vocals.GetValueOrDefault("PART VOCALS") is { Count: > 0 } lead ? lead : vocals.GetValueOrDefault("HARM1") ?? new());
@@ -408,6 +408,25 @@ internal static class StageChartReader
 
     private static bool Gh3Text(string text) => text.Trim().TrimStart('[').TrimStart().StartsWith("gh3 ", StringComparison.OrdinalIgnoreCase);
 
+    private static Func<long, double> Clock(List<Tempo> tempos, int resolution, double offset)
+    {
+        var changes = tempos.OrderBy(t => t.Tick).ToArray();
+        return tick =>
+        {
+            long previous = 0;
+            var elapsed = offset;
+            var tempo = 500000.0;
+            foreach (var change in changes)
+            {
+                if (change.Tick > tick) break;
+                elapsed += (change.Tick - previous) * tempo / (resolution * 1000000.0);
+                previous = change.Tick;
+                tempo = change.Microseconds;
+            }
+            return elapsed + (tick - previous) * tempo / (resolution * 1000000.0);
+        };
+    }
+
     private static StageChartData ConvertTicks(List<TickCue> cues, List<Tempo> tempos, int resolution, double offset, string source,
         List<StageTickCue>? venue = null, List<StageTickCue>? generated = null, string? diagnostic = null)
     {
@@ -421,20 +440,8 @@ internal static class StageChartReader
         var output = new List<StageCue>();
         var noteStrums = new List<StageCue>();
         var sung = new List<StageCue>();
-        double Seconds(long tick)
-        {
-            long previous = 0;
-            var elapsed = offset;
-            var tempo = 500000.0;
-            foreach (var change in changes)
-            {
-                if (change.Tick > tick) break;
-                elapsed += (change.Tick - previous) * tempo / (resolution * 1000000.0);
-                previous = change.Tick;
-                tempo = change.Microseconds;
-            }
-            return elapsed + (tick - previous) * tempo / (resolution * 1000000.0);
-        }
+        var clock = Clock(tempos, resolution, offset);
+        double Seconds(long tick) => clock(tick);
         var timing = changes.Select(tempo => new StageCue(Seconds(tempo.Tick), "tempo",
             (60000000 / tempo.Microseconds).ToString(CultureInfo.InvariantCulture))).ToArray();
         foreach (var cue in cues.OrderBy(c => c.Tick))
@@ -462,9 +469,9 @@ internal static class StageChartReader
         var timeline = new StageTimeline(timing.Concat(output).Concat(chords).Concat(sung), source);
         if (changes.Length > 0 && changes[0].Tick > 0)
             timing = new[] { new StageCue(offset, "tempo", "120") }.Concat(timing).ToArray();
-        StageCue[] Convert(List<StageTickCue>? ticks) => (ticks ?? new()).OrderBy(c => c.Tick).Select(c =>
+        StageCue[] Convert(List<StageTickCue>? ticks) => (ticks ?? new()).OrderBy(c => Seconds(c.Tick) + c.Delay).Select(c =>
         {
-            var time = Seconds(c.Tick);
+            var time = Seconds(c.Tick) + c.Delay;
             var duration = c.Length > 0 ? Seconds(checked(c.Tick + c.Length)) - time : 0;
             if (c.Type == "blend" && c.Value.Length == 0) return new StageCue(time, "blend", duration.ToString("0.###", CultureInfo.InvariantCulture));
             return new StageCue(time, c.Type, c.Value, c.Type == "gh3-camera" && duration > StageRockBandVenue.MaxCameraHold ? 0 : duration);

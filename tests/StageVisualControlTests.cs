@@ -108,6 +108,9 @@ internal static class StageVisualControlTests
             var additive = StageGh3RenderState.From(0x08, 1, 1, 30);
             Check(additive is { SrcBlend: 5, DstBlend: 1, BlendOp: 0, ZWrite: true, AlphaTest: true, AlphaRef: 1, Cull: 0, Blended: true, Queue: 3030 },
                 "GH3 additive materials add source alpha × colour, keep the alpha test, and sort by their draw order.");
+            Check(StageGh3RenderState.From(1, 1, 32, 1, billboard: true) is { ZWrite: false, AlphaTest: true, Queue: 3001 } &&
+                StageGh3RenderState.From(1, 3, 32, 1, billboard: true).ZWrite && StageGh3RenderState.From(1, 1, 32, 1).ZWrite,
+                "An additive Flare billboard does not write depth, so it cannot remove the band's hair behind it.");
             var blended = StageGh3RenderState.From(0x20, 3, 20, 10);
             Check(blended is { SrcBlend: 5, DstBlend: 10, ZWrite: false, AlphaTest: true, AlphaRef: 20, Queue: 3010 }, "GH3 blend mode 3 is source-alpha blending.");
             Check(StageGh3RenderState.From(0, 4, 0, 0) is { SrcBlend: 0, DstBlend: 5, BlendOp: 0 } && StageGh3RenderState.From(0, 12, 0, 0) is { SrcBlend: 1, DstBlend: 1, BlendOp: 2 },

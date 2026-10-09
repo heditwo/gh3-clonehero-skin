@@ -113,13 +113,46 @@ internal static class VenueTrackLogicTests
             Text(9600, "[lighting (loop_warm)]")));
         timeline = StageChartReader.Load(song, Path.Combine(song, "notes.mid"));
         lighting = timeline.Cues.Where(c => StageSongDirection.Channel(c) == "lighting").Select(c => $"{c.Time:0.###}:{c.Type}:{c.Value}").ToArray();
-        Check(lighting.SequenceEqual(new[] { "0:blend:0", "0:lighting:flare", "0.25:blend:1.75", "0.25:lighting:solo", "2:blend:0.15",
+        Check(lighting.SequenceEqual(new[] { "0:lighting:flare", "0.06:blend:1.94", "0.06:lighting:solo", "2:blend:0.15",
                 "4:lighting:verse", "5:gh3-note:58", "6:color:orange", "6:blend:1", "6:lighting:verse", "6:gh3-note:58", "7:blend:0.15",
                 "8:gh3-note:58", "9:gh3-note:58" }),
-            "a repeated cue moves the next cue to the repeat and blends over the span; steps restart after the span: " + string.Join(" ", lighting));
+            "a flare is a pulse: the next cue starts at the 40% peak and blends to its own time; steps restart after the span: " + string.Join(" ", lighting));
         Check(timeline.Diagnostics.Any(d => d.Contains("4 lighting cues", StringComparison.Ordinal) &&
             d.Contains("2 repeated lighting cues blend into the next cue", StringComparison.Ordinal)),
             "the diagnostic counts the repeat blends: " + string.Join(" | ", timeline.Diagnostics));
+
+        // A flare far from the next cue returns to the cue before it; flares closer than 0.34 s are dropped (WCAG 2.3.1).
+        WriteMidi(Path.Combine(song, "notes.mid"), Venue(
+            Text(0, "[lighting (verse)]"), Text(960, "[lighting (flare_fast)]"), Text(9600, "[lighting (chorus)]"),
+            Text(10560, "[lighting (flare_slow)]"), Text(10680, "[lighting (verse)]"), Text(10800, "[lighting (flare_fast)]"),
+            Text(10920, "[lighting (verse)]"), Text(11040, "[lighting (flare_fast)]")));
+        timeline = StageChartReader.Load(song, Path.Combine(song, "notes.mid"));
+        lighting = timeline.Cues.Where(c => StageSongDirection.Channel(c) == "lighting").Select(c => $"{c.Time:0.###}:{c.Type}:{c.Value}").ToArray();
+        Check(lighting.SequenceEqual(new[] { "0:lighting:verse", "1:lighting:flare", "1.06:blend:0.3", "1.06:lighting:verse", "10:blend:0.15",
+                "10:lighting:chorus", "11:lighting:flare", "11.06:blend:0.065", "11.06:lighting:verse", "11.125:blend:0.15", "11.375:lighting:verse",
+                "11.5:lighting:flare", "11.56:blend:0.3", "11.56:lighting:verse" }),
+            "a lone flare returns to the cue before it, and a flare 0.25 s after another one is dropped: " + string.Join(" ", lighting));
+        Check(timeline.Diagnostics.Any(d => d.Contains("3 flares play as 40% pulses, 1 dropped to keep flares 0.34 s apart", StringComparison.Ordinal)),
+            "the diagnostic counts the pulses and the dropped flares: " + string.Join(" | ", timeline.Diagnostics));
+
+        StageRockBandVenue.ReduceFlashing = true;
+        try
+        {
+            WriteMidi(Path.Combine(song, "notes.mid"), Venue(
+                Text(0, "[lighting (flare_fast)]"), Text(240, "[lighting (verse)]"), Text(480, "[lighting (flare_fast)]"),
+                Text(960, "[lighting (strobe_fast)]"), Text(1920, "[lighting (verse)]")));
+            timeline = StageChartReader.Load(song, Path.Combine(song, "notes.mid"));
+            var flares = timeline.Cues.Where(c => c.Type == "lighting" && c.Value == "flare").Select(c => c.Time).ToArray();
+            var toggles = timeline.Cues.Where(c => c.Type == "strobe-toggle" || c.Type == "gh3-note" && c.Value == "60").Select(c => c.Time).ToArray();
+            Check(flares.SequenceEqual(new[] { 0.0 }) && toggles.Length == 4 && toggles.Zip(toggles.Skip(1), (a, b) => b - a).All(gap => gap >= .2 - 1e-9),
+                $"reduce flashing keeps one flare per second and strobe toggles at least 0.2 s apart: {string.Join(" ", flares)} / {string.Join(" ", toggles)}");
+            Check(timeline.Cues.Any(c => c.Type == "blend" && c.Time == .03),
+                "reduce flashing turns back at a 20% peak");
+        }
+        finally
+        {
+            StageRockBandVenue.ReduceFlashing = false;
+        }
     }
 
     private static void CheckPriority(string directory)
