@@ -142,11 +142,13 @@ internal static class StageSongDirection
         Select(chart.Direction, chart.Timeline.Source, validate: true);
         Select(chart.Strums, chart.Timeline.Source + " Expert notes");
         if (original != null) Select(original.Cues, original.Source);
+        if (StageChartReader.UseVenueTrack) Select(chart.Venue, chart.Timeline.Source + " VENUE", validate: true);
+        if (StageChartReader.UseGeneratedDirection) Select(chart.Generated, "generated");
         var source = authored.Source + " v2 [" + string.Join("; ", selected.OrderBy(pair => pair.Key)
             .Select(pair => pair.Key + "=" + pair.Value)) + "]";
         return new StageTimeline(cues, source) { ChannelSources = selected,
             SourceSong = authored.SourceSong.Length > 0 ? authored.SourceSong : original?.SourceSong ?? "",
-            Countoff = authored.Countoff.Length > 0 ? authored.Countoff : original?.Countoff ?? "" };
+            Countoff = authored.Countoff.Length > 0 ? authored.Countoff : original?.Countoff ?? "", Diagnostics = StageChartReader.UseVenueTrack ? chart.Diagnostics : Array.Empty<string>() };
     }
 
     private static void ValidateReference(StageCue cue, StagePerformance? performance, string source)

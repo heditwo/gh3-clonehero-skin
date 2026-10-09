@@ -262,7 +262,7 @@ internal sealed class StageTimeline
         var value = text.Trim().Trim('[', ']').Trim().ToLowerInvariant();
         if (value is "bonusfx" or "bonusfx_optional") return new(time, "pyro");
         if (value.StartsWith("lighting (") && value.EndsWith(")"))
-            return new(time, "lighting", value[10..^1]);
+            return new(time, "lighting", StageRockBandVenue.LightingValue(value[10..^1]));
         if (!value.StartsWith("stage ")) return null;
         var parts = value[6..].Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0) return null;

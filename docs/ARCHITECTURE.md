@@ -43,7 +43,7 @@ flowchart LR
 | `src/Packages/` | Package format v1 at runtime ([PACKAGE-FORMAT.md section 20](PACKAGE-FORMAT.md#20-c-importer)): `PackageManager` (scan, checks, cache keys, one import at a time on a background thread), `PackageManifest`, `PackageSource` (zip or folder, SHA-256 checks), `GlbDocument`, `StageCompiler` and `StageGeometry` (port of `pipeline/stagepack`), `LibraryImporter`, `TextureCodec`, `Png`, `BlockCompression` (BC1/BC3), `PackageJson`, and `PackageRuntime` (Unity glue: content folders, GPU formats, log lines). Only `PackageRuntime` uses Unity |
 | `src/Stage/` | `GameplayStage` (stage source: package cache or older install; stage camera, scene resources, per-frame update order), `StagePack` (compiled pack loader), `Shaders/` (GLSL sources for the bundles) |
 | `src/Stage/Rendering/` | `StageAssets` (meshes, materials, translated GH3 templates, fallback surface model), `StageShader` (loads a bundle shader and stops the stage with an error when the graphics API has no program), `StageGh3Material` (template table and GH3 render state), `StageMaterialState`, `StageRenderControlState`, `StageTextureAnimation`, `StageUvWibble`, `StageTransparency`, `StageTriangleOrder`, `StageHighwayMask` |
-| `src/Stage/Direction/` | Song direction: `StageTimeline` (cue evaluation on the song clock), `StageCue`, `StageChartReader` (chart and MIDI tracks), `StageNativeSong`, `StageSongDirection` (version 2 channels), `StageGh3Events`, `StageShowFlow` (intro and win sequences), `StageCameraPath` (GH3 camera cuts), `StageNoteHits` |
+| `src/Stage/Direction/` | Song direction: `StageTimeline` (cue evaluation on the song clock), `StageCue`, `StageChartReader` (chart and MIDI tracks), `StageRockBandVenue` (Rock Band `VENUE` track to GH3 cues) and `StageGeneratedDirection` (cues from chart sections), `StageNativeSong`, `StageSongDirection` (version 2 channels), `StageGh3Events`, `StageShowFlow` (intro and win sequences), `StageCameraPath` (GH3 camera cuts), `StageNoteHits` |
 | `src/Stage/Band/` | `StageBand`, `StagePerformance`, `BandAnimation`, `StageGuitarArms` (DegenerateBlend tracks, Havok-style IK), `StageDrummer`, `StageHair`, `StageHandFire` |
 | `src/Stage/Crowd/` | `StageCrowd` (one impostor render texture per row), `StageCrowdState`, `StageCrowdPerformance` |
 | `src/Stage/Lighting/` | `StageLighting`, `StageLightShowState`, `StageLightScene`, `StageLightSpatial`, `StageLightNative`, `StageLightTransition`, `StageLightingRenderer` (light-data texture), `StageBeamMotion`, `StageHousingRotation`, `StageFixtures` |
@@ -88,14 +88,14 @@ flowchart TD
     Native{Native song PAK<br/>in the song folder?} -- yes --> NativeDirection[Native direction]
     Native -- no --> File{stage-events.json}
     File -- version 1 --> Replace[File replaces all direction]
-    File -- version 2 or none --> Channels[Per channel: file or clear,<br/>then chart or MIDI tracks,<br/>then original song library,<br/>then defaults]
+    File -- version 2 or none --> Channels[Per channel: file or clear,<br/>then GH chart or MIDI tracks,<br/>then original song library,<br/>then Rock Band VENUE track,<br/>then cues from chart sections,<br/>then defaults]
     NativeDirection --> Dispatch[Gh3CommandDispatch]
     Replace --> Dispatch
     Channels --> Dispatch
     Dispatch --> Timeline[StageTimeline and stage players]
 ```
 
-Native, converted, and authored commands share `Gh3CommandDispatch`. Authored GH3 script calls in charts use the text `gh3 ` followed by the JSON of `Gh3ScriptEvent.Encode`. The original song library matches the song by title and artist. The playable chart's tempo map always controls timing. See [CUSTOM-CONTENT.md](CUSTOM-CONTENT.md) for the formats.
+Native, converted, and authored commands share `Gh3CommandDispatch`. The Rock Band `VENUE` track becomes GH3 camera notes, lightshow moods, colors, blends, and lightshow notes 58 and 60, so it plays through the same players; the mapping is in [CUSTOM-CONTENT.md](CUSTOM-CONTENT.md#rock-band-venue-track). Authored GH3 script calls in charts use the text `gh3 ` followed by the JSON of `Gh3ScriptEvent.Encode`. The original song library matches the song by title and artist. The playable chart's tempo map always controls timing. See [CUSTOM-CONTENT.md](CUSTOM-CONTENT.md) for the formats.
 
 ## Asset formats
 

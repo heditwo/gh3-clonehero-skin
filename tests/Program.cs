@@ -47,6 +47,7 @@ TeslaNativeTests.Run();
 TeslaRenderTests.Run();
 StageScriptAssetTests.Run();
 SongDirectionLogicTests.Run();
+VenueTrackLogicTests.Run();
 BandLogicTests.Run();
 HairLogicTests.Run();
 DirectionLogicTests.Run();

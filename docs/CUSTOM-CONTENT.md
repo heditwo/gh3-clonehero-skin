@@ -202,9 +202,13 @@ The library supplies a catalog of valid stances, actions, styles, and clip IDs f
 Version 2 chooses each channel separately. The source order is:
 
 1. Cues in the song's version 2 file, or a matching `clearChannels` entry.
-2. Explicit direction cues in the chart or MIDI.
+2. Explicit direction cues in the chart or MIDI (GH tracks such as `CAMERAS` and `LIGHTSHOW`, and `stage ...` or `gh3 ...` text events).
 3. Original song cues matched by title and artist, when `originalSongLookup` is `auto`.
-4. Shared default behavior.
+4. The Rock Band `VENUE` track of the MIDI file ([section 10](#rock-band-venue-track)).
+5. Cues that the mod makes from the chart's sections ([section 10](#generated-direction)).
+6. Shared default behavior.
+
+Without a song file, the same order applies from step 2.
 
 A source with events for a channel replaces that channel for the whole song. It does not append its events to a lower-priority source. A `clearChannels` entry selects an empty channel. A file cannot both clear and supply the same channel. Channels omitted from the file keep their inherited data.
 
@@ -229,7 +233,7 @@ Two channels have source rules that preserve the playable chart:
 - **Strums:** explicit song-file cues, then explicit chart direction cues, then gestures derived from the chart's Expert guitar/bass notes, then the original-song library. A camera-only file therefore keeps note-driven playing gestures.
 - **Timing:** use the playable chart's tempo map when available. File timing is a fallback for charts without timing data, followed by original-song timing and the shared default tempo. `timing` cannot appear in `clearChannels`.
 
-Missing body cues use GH3 idle groups at the song tempo. Missing camera cues use automatic selection from the stage's camera bank. Missing lighting cues keep the initial lighting state. Missing effects produce no bursts. Missing face or drum direction adds no song-specific facial or drum-hit layers. Clearing a channel selects these same defaults; it does not hide the performer or disable the stage.
+Missing body cues use GH3 idle groups at the song tempo. Missing camera cues use automatic selection from the stage's camera bank. Missing lighting cues keep the initial lighting state (the venue's `intro` mood). Missing effects produce no bursts. Missing face or drum direction adds no song-specific facial or drum-hit layers. Clearing a channel selects these same defaults, without the cues of steps 4 and 5; it does not hide the performer or disable the stage.
 
 Version 1 files keep their complete-timeline replacement behavior. Migrating a full original export to version 2 must check the new channel boundaries, especially the combined body and lighting channels. Raw legacy `vocal` and `crowd` note tracks remain import metadata until a playback rule is implemented; they are not advertised as version 2 authored features.
 
@@ -359,7 +363,7 @@ At 120 BPM and resolution 192, this is camera note 89 at 0.5 s for 1 s: the drum
 
 ### Text events
 
-In `[Events]` (or MIDI `EVENTS`, `VENUE`, `GH3 VENUE`, `LIGHTSHOW`):
+In `[Events]` (or MIDI `EVENTS`, `VENUE`, `GH3 VENUE`, `LIGHTSHOW`; on the MIDI `VENUE` track, only the `stage ...` and `gh3 ...` forms, because the Rock Band rules below read the other text):
 
 | Text | Result |
 | --- | --- |
@@ -367,12 +371,125 @@ In `[Events]` (or MIDI `EVENTS`, `VENUE`, `GH3 VENUE`, `LIGHTSHOW`):
 | `stage flash`, `stage blackout`, `stage strobe` | Light states |
 | `stage lights NAME` | Color (`red`, `green`, `blue`, `yellow`, `orange`, `purple`, `magenta`, `cyan`, `white`) or mood (`intro`, `verse`, `chorus`, `solo`, `flare`, `blackout`, `strobe`) |
 | `[bonusfx]`, `[bonusfx_optional]` | Pyro |
-| `[lighting (NAME)]` | Color or mood |
+| `[lighting (NAME)]` | Color or mood. A Rock Band lighting name gives its GH3 mood from the table below; `[lighting ()]` gives `verse` |
 | `[stage camera GROUP]` | Camera group |
 | `stage stance ROLE STANCE`, `stage perform ROLE ACTION`, `stage walk ROLE WAYPOINT` | Band actions |
 | `stage clip ROLE ID`, `stage arms ROLE MODE`, `stage strum-style ROLE STYLE`, `stage strum ROLE MASK`, `stage fret NOTE`, `stage drum NOTE` | Band animation |
 
 GH3 lightshow note numbers are in [PARITY-NOTES.md](PARITY-NOTES.md#lighting-and-node-flags).
+
+### Rock Band VENUE track
+
+A MIDI track with the name `VENUE` holds Rock Band camera and lighting cues ([format](https://github.com/TheNathannator/GuitarGame_ChartFormats/blob/main/docs/Implementation-Specific/Rock-Band/MIDI-Tracks/Venue.md)). Many converted charts have one. The mod reads both variants: RB1/RB2 notes and text events, and RB3 text events. `.chart` files have no VENUE section (Moonscraper and YARG also read the track only from MIDI); the `[lighting (NAME)]` and `[bonusfx]` events in `[Events]` use the same name table. `MV VENUE` (RB2 music-video venues) is not read.
+
+The cues go into the normal channels (`camera`, `lighting`, `pyro`, `smoke`) and play through the same players as GH3 notes: camera cuts become `gh3-camera` notes, lighting becomes `lighting`, `color`, and `blend` cues, and keyframe steps become GH3 lightshow notes 58 (next snapshot) and 60 (strobe toggle). A channel uses the VENUE track only when no higher source supplies it ([channel selection](#channel-selection-and-fallback)). Set `GH3_SKIN_VENUE_TRACK=off` to ignore all VENUE tracks; `StageChartReader.UseVenueTrack` is the same switch for an in-game option. The loader log shows the counts (`Rock Band VENUE: ... mapped; ignored ...`) and the first 16 mapped cues.
+
+In the tables, **J** marks a choice by judgment. The other rows follow the name of the Rock Band cue directly.
+
+#### Camera cuts
+
+GH3 camera notes select a group from the stage's camera bank (the GH3 `CameraCuts_NoteMapping` table, the same in all ten venues). A stage without a note table (a custom stage) maps each note to its portable group: 84 and 86 closeup shots, 85 mid shots, 87 `wide`, 88 `singer`, 89 `drummer`, 97 `bassist`, 95 `guitarist`, the orbit notes `orbit`, and the other notes `default`.
+
+| Rock Band cue | GH3 note | GH3 group | |
+| --- | --- | --- | --- |
+| RB1 note 60 (random) | 79 | `cameras`, any type | |
+| note 60 + 71 (only far) | 87 | `cameras`, type `stage` | |
+| note 60 + 72 (only close-ups) | 84 | `cameras`, type `closeup` | |
+| note 60 + 73 (no close-ups) | 85 | `cameras`, type `mid` | |
+| note 61 (bassist) | 97 | `cameras_bassist` | |
+| note 62 (drummer) | 89 | `cameras_drummer` | |
+| note 63 (guitarist); with 72 | 84; 95 | `cameras` closeup (they aim at the guitarist); `cameras_guitar_closeup` | J |
+| note 64 (vocalist); with 72 | 88; 104 | `cameras_singer`; `cameras_singer_closeup` | |
+| two or more focus notes | 85 | `cameras`, type `mid` | J |
+| `coop_g_near`, `coop_g_closeup_head` | 84 | `cameras` closeup | J |
+| `coop_g_closeup_hand` | 95 | `cameras_guitar_closeup` | |
+| `coop_b_*` | 97 | `cameras_bassist` | |
+| `coop_d_*` | 89 | `cameras_drummer` | |
+| `coop_v_near`; `coop_v_closeup` | 88; 104 | `cameras_singer`; `cameras_singer_closeup` | |
+| `coop_gv_near` | 114 | `cameras_pan` (the GH3 pans move between the guitarist and the singer) | J |
+| other two- and three-member `*_near`, `coop_all_near` | 85 | `cameras`, type `mid` | J |
+| all `*_behind` | 102 | `cameras_vert_stagerear` (behind the drummer, looks over the band to the crowd) | J |
+| all `*_far` | 87 | `cameras`, type `stage` | |
+| `directed_guitar`, `_np`, `directed_crowd_g` | 84 | `cameras` closeup | J |
+| `directed_guitar_cam`, `_cam_pr`, `_cam_pt`, `directed_all_cam` | 112 | `cameras_zoom_fast` | J |
+| `directed_guitar_cls` | 95 | `cameras_guitar_closeup` | |
+| `directed_bass*`, `directed_crowd_b`, `directed_duo_kb` | 97 | `cameras_bassist` | |
+| `directed_drums*`, `directed_duo_drums` | 89 | `cameras_drummer` | |
+| `directed_drums_lt` | 92 | `cameras_orbit`, `orbit_drummer` | |
+| `directed_vocal(s)*`, `directed_duo_kv` | 88 | `cameras_singer` | |
+| `directed_vocal(s)_cls` | 104 | `cameras_singer_closeup` | |
+| `directed_stagedive`, `directed_crowdsurf` | 117 | `cameras_stagedive` | |
+| `directed_duo_guitar` | 114 | `cameras_pan` | J |
+| `directed_all`, `directed_duo_gb`, `directed_duo_bass`, `directed_keys*` | 85 | `cameras`, type `mid` | J |
+| `directed_all_yeah`, `directed_brej`, `directed_crowd` | 87 | `cameras`, type `stage` | J |
+| `directed_all_lt` | 113 | `cameras_zoom_out` | |
+| `directed_bre` | 82 | `cameras_orbit`, `orbit_stage` | J |
+| `directed_duo_kg` | 84 | `cameras` closeup | J |
+| unknown `directed_*` | 79 | `cameras` | |
+
+Rules:
+
+- GH3 has no keyboard player. A cut that shows the keys player shows the other members of the cut; keys alone is a mid shot (J).
+- RB3 stacks cuts at one time and plays the one that fits the band. The mod takes a directed cut first, then a cut without keys, then the first cut.
+- `do_directed_cut` and `do_optional_cut` (RB1) play always: the mod does not know if the player "does well" (J). The cut starts at the event time; the Rock Band pre-roll is not used (J).
+- Each cut lasts until the next cut. When that is more than 8 s, the note has no length, and GH3's own 3–8 s cuts continue in the same group (J: GH3 shots move from one point to another, and a long hold is too slow).
+- Note 70 (no behind cuts) has no effect, because the random groups have no behind shots.
+
+#### Lighting
+
+| Rock Band cue | GH3 mood | Color override | Blend | Steps | |
+| --- | --- | --- | --- | --- | --- |
+| `()`, `verse`, RB1 `[verse]` | `verse` | off | 0.15 s | keyframes | |
+| `chorus`, RB1 `[chorus]` | `chorus` | off | 0.15 s | keyframes | |
+| `intro` | `intro` | off | 0.15 s | | |
+| `manual_cool` | `verse` | blue | 0.15 s | keyframes | J |
+| `manual_warm` | `verse` | orange | 0.15 s | keyframes | J |
+| `dischord` | `chorus` | red | 0.15 s | keyframes | J |
+| `stomp` | `strobe` | off | 0.15 s | `next` toggles the strobe (note 60) | J |
+| `loop_cool` | `verse` | blue | 0.15 s | snapshot each 2 beats | J |
+| `loop_warm` | `verse` | orange | 0.15 s | snapshot each 2 beats | J |
+| `harmony` | `verse` | off | 0.15 s | snapshot each 2 beats | J |
+| `searchlights` | `verse` | off | 0.15 s | snapshot each beat | J |
+| `sweep` | `chorus` | off | 0.15 s | snapshot each 2 beats | J |
+| `frenzy`, `bre` | `chorus` | off | 0.15 s | snapshot each beat | J |
+| `silhouettes`, `blackout_spot` | `blackout` | off | 0.15 s | | J |
+| `silhouettes_spot` | `solo` | off | 0.15 s | | J |
+| `blackout_fast` | `blackout` | off | 0.2 s | | |
+| `blackout_slow` | `blackout` | off | 2 s | | |
+| `flare_fast` | `flare` | off | 0 s | | |
+| `flare_slow` | `flare` | off | 0 s; the next cue blends in 1 s | | J |
+| `strobe_fast` | `strobe` | off | | strobe toggle each 32nd note | |
+| `strobe_slow` | `strobe` | off | | strobe toggle each 16th note | |
+| a GH3 mood or color name | the same | | 0.15 s | | |
+| unknown name | `verse` | off | 0.15 s | | J |
+
+Rules:
+
+- GH3 has seven moods and steps through each mood's snapshots on lightshow notes. Rock Band's automatic cues move by themselves, so the mod adds snapshot steps at a fixed beat rate until the next lighting cue (J: the rate follows the speed of the Rock Band cue).
+- `[next]`, `[prev]`, and `[first]` (RB1 notes 48, 49, 50) step only in a keyframed cue (the "keyframes" rows), as in Rock Band. GH3 cannot step back, so `prev` and `first` also go to the next snapshot (J); `first` at the time of its lighting cue has no effect. `stomp` reacts only to `next`.
+- A color override stays until a cue without a color. If the color changes while the mood stays the same, the mod adds a snapshot step, because GH3 applies a new color only with the next snapshot.
+- A blend other than 0.15 s applies to its own cue; the next cue sets 0.15 s again.
+
+#### Effects and ignored cues
+
+| Rock Band cue | Result | |
+| --- | --- | --- |
+| `[bonusfx]`, `[bonusfx_optional]` | `pyro` (GH3 lightshow pyro script where the venue has one) | |
+| `[FogOn]` | `smoke` | J |
+| `[FogOff]` | ignored: GH3 smoke ends by itself | |
+| Post-processing (RB1 notes 96–110, RB3 `[*.pp]`) | ignored: GH3 has no matching screen filters | J |
+| Spotlights (notes 37–41) | ignored: GH3 sets its spot flags from the players, not from the chart | J |
+| Sing-alongs (notes 85–87) | ignored: no GH3 band action is mapped | J |
+
+### Generated direction
+
+A chart with no camera or lighting source (no GH track, no VENUE track, no song file, and no original song) gets small cues from its sections (`[Events]` `section NAME`, or MIDI `EVENTS` `[section NAME]` and `[prc_NAME]`):
+
+- At each section: a lighting mood from the name (`solo` if the name contains "solo", `chorus` if it contains "chorus" but not "pre-chorus", `intro` if it starts with "intro", else `verse`) and a camera cut (GH3 note 81, `cameras_solo`, for a solo; else note 79).
+- On each bar (four beats) from the first section to the last chart event: lightshow note 58 (next snapshot). GH3's random camera cuts then also end on bar lines, as in GH3 (`CameraCuts_CalcTime` extends a cut to the next note 58).
+- A chart without sections gets the `verse` mood at time 0 and the bar steps. The camera keeps GH3's random cuts.
+
+Before this, such a chart stayed in the `intro` mood for the whole song. Set `GH3_SKIN_GENERATED_DIRECTION=off` to get that behavior (for example, for older reference captures).
 
 ### GH3 script calls in charts
 

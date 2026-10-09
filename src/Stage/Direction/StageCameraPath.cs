@@ -194,7 +194,7 @@ internal sealed class StageCameraPath
             var cue = timeline.Cameras[_cueIndex++];
             start = Math.Max(start, cue.Time);
             if (cue.Type == "camera") _selector = Named(cue.Value);
-            else if (_bank!.Notes.TryGetValue(int.Parse(cue.Value), out var selector))
+            else if ((_bank!.Notes.Count > 0 ? _bank.Notes.GetValueOrDefault(int.Parse(cue.Value)) : PortableNote(int.Parse(cue.Value))) is { } selector)
             {
                 if (selector.Array.Length == 0) _enabled = selector.Enable;
                 else { _selector = selector; _enabled = true; }
@@ -286,6 +286,23 @@ internal sealed class StageCameraPath
 
     private BandPose Anchor(string role, string bone) => _anchor?.Invoke(role, bone) ??
         new BandPose(_band.GetValueOrDefault(role, Vector3.Zero), Quaternion.Identity);
+
+    // Custom stages have no GH3 note table; GH3 camera notes (also the mapped Rock Band cuts) select their portable groups.
+    private static OriginalCameraSelector? PortableNote(int note) => note switch
+    {
+        77 => new() { Enable = true },
+        78 => new() { Enable = false },
+        84 or 86 => new() { Array = "cameras", Type = "closeup" },
+        85 => new() { Array = "cameras", Type = "mid" },
+        87 or 110 => Named("wide"),
+        88 or 104 => Named("singer"),
+        89 or 92 or 100 => Named("drummer"),
+        97 => Named("bassist"),
+        81 or 90 or 95 or 96 or 99 => Named("guitarist"),
+        82 or 91 or 93 or 94 or 103 => Named("orbit"),
+        >= 79 and <= 117 => Named("default"),
+        _ => null
+    };
 
     private static OriginalCameraSelector Named(string name) => name switch
     {

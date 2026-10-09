@@ -17,7 +17,12 @@ internal sealed class StageEventFile
     public string Countoff { get; set; } = "";
 }
 
-internal sealed record StageChartData(StageTimeline Timeline, StageCue[] Direction, StageCue[] Strums, StageCue[] Timing);
+internal sealed record StageChartData(StageTimeline Timeline, StageCue[] Direction, StageCue[] Strums, StageCue[] Timing)
+{
+    public StageCue[] Venue { get; init; } = Array.Empty<StageCue>();
+    public StageCue[] Generated { get; init; } = Array.Empty<StageCue>();
+    public string[] Diagnostics { get; init; } = Array.Empty<string>();
+}
 
 internal sealed class StageEventIndex
 {
@@ -37,6 +42,10 @@ internal static class StageChartReader
     private sealed record TickCue(long Tick, string Text, int Note = -1, string Type = "", string Role = "", long Length = 0, int? Velocity = null);
     private sealed record Tempo(long Tick, double Microseconds);
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+    // Player option: GH3_SKIN_VENUE_TRACK=off ignores Rock Band VENUE tracks. A menu option can set this before the song loads.
+    public static bool UseVenueTrack { get; set; } = Environment.GetEnvironmentVariable("GH3_SKIN_VENUE_TRACK") is not ("off" or "0");
+    // GH3_SKIN_GENERATED_DIRECTION=off keeps charts without direction on the static defaults (for older reference captures).
+    public static bool UseGeneratedDirection { get; set; } = Environment.GetEnvironmentVariable("GH3_SKIN_GENERATED_DIRECTION") is not ("off" or "0");
 
     public static StageTimeline Load(string songDirectory, string chartPath, string? library = null, string title = "", string artist = "",
         StagePerformance? performance = null)
@@ -64,13 +73,41 @@ internal static class StageChartReader
         if (file != null)
             return StageSongDirection.Resolve(file, EventTimeline(file, sidecar), chart, original, performance);
         var timeline = chart.Timeline;
-        if (original == null) return timeline;
-        var venue = timeline.Cues.Where(c => c.Type is not ("strum" or "beat" or "tempo")).ToArray();
-        if (venue.Length == 0) return original;
-        static string Channel(StageCue cue) => StageSongDirection.Channel(cue) ?? cue.Type + "/" + cue.Role;
-        var overridden = venue.Select(Channel).ToHashSet();
-        return new StageTimeline(original.Cues.Where(c => !overridden.Contains(Channel(c))).Concat(venue), original.Source + " + " + timeline.Source)
-            { SourceSong = original.SourceSong, Countoff = original.Countoff };
+        if (original != null)
+        {
+            var direction = timeline.Cues.Where(c => c.Type is not ("strum" or "beat" or "tempo")).ToArray();
+            static string Channel(StageCue cue) => StageSongDirection.Channel(cue) ?? cue.Type + "/" + cue.Role;
+            var overridden = direction.Select(Channel).ToHashSet();
+            timeline = direction.Length == 0 ? original :
+                new StageTimeline(original.Cues.Where(c => !overridden.Contains(Channel(c))).Concat(direction), original.Source + " + " + timeline.Source)
+                    { SourceSong = original.SourceSong, Countoff = original.Countoff };
+        }
+        return Fallback(timeline, chart);
+    }
+
+    // The VENUE track and the generated cues fill only the channels that no other source supplies.
+    private static StageTimeline Fallback(StageTimeline timeline, StageChartData chart)
+    {
+        var present = timeline.Cues.Select(StageSongDirection.Channel).OfType<string>().ToHashSet();
+        var added = new List<StageCue>();
+        var sources = new List<string>();
+        void Add(IEnumerable<StageCue> cues, string source)
+        {
+            var channels = cues.GroupBy(StageSongDirection.Channel).Where(g => g.Key != null && !present.Contains(g.Key)).ToArray();
+            if (channels.Length == 0) return;
+            foreach (var channel in channels)
+            {
+                added.AddRange(channel);
+                present.Add(channel.Key!);
+            }
+            sources.Add($"{source} ({string.Join(", ", channels.Select(g => g.Key).OrderBy(k => k, StringComparer.Ordinal))})");
+        }
+        if (UseVenueTrack) Add(chart.Venue, chart.Timeline.Source + " VENUE");
+        if (UseGeneratedDirection) Add(chart.Generated, "generated");
+        var diagnostics = UseVenueTrack ? chart.Diagnostics : Array.Empty<string>();
+        if (added.Count == 0 && diagnostics.Length == 0) return timeline;
+        return new StageTimeline(timeline.Cues.Concat(added), string.Join(" + ", sources.Prepend(timeline.Source)))
+            { SourceSong = timeline.SourceSong, Countoff = timeline.Countoff, Diagnostics = timeline.Diagnostics.Concat(diagnostics).ToArray() };
     }
 
     private static StageTimeline? ReadOriginal(string? library, string title, string artist)
@@ -149,6 +186,8 @@ internal static class StageChartReader
         var offset = 0.0;
         var tempos = new List<Tempo>();
         var cues = new List<TickCue>();
+        var sections = new List<(long Tick, string Name)>();
+        long end = 0;
         foreach (var raw in text.Split('\n'))
         {
             var line = raw.Trim();
@@ -164,6 +203,7 @@ internal static class StageChartReader
                 continue;
             }
             if (!long.TryParse(left, out var tick) || tick < 0) continue;
+            end = Math.Max(end, tick);
             if (section == "SyncTrack" && right.StartsWith("B "))
             {
                 var bpm = double.Parse(right[2..], CultureInfo.InvariantCulture);
@@ -173,6 +213,7 @@ internal static class StageChartReader
             {
                 var value = right[2..].Trim();
                 if (value.StartsWith('"') && value.EndsWith('"') && value.Length >= 2) value = value[1..^1];
+                if (section == "Events" && StageGeneratedDirection.Section(value) is { } name) sections.Add((tick, name));
                 if (section == "Events" || DirectionTrack(section).Length > 0 || Gh3Text(value)) cues.Add(new TickCue(tick, value));
             }
             else if (DirectionTrack(section) is { Length: > 0 } direction && right.StartsWith("N "))
@@ -188,10 +229,14 @@ internal static class StageChartReader
                 var fields = right.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 if (fields.Length == 3 && int.TryParse(fields[1], out var lane) && lane is >= 0 and < 5 &&
                     long.TryParse(fields[2], out var length) && length >= 0)
+                {
                     cues.Add(new TickCue(tick, "", 1 << lane, "strum", section == "ExpertSingle" ? "guitarist" : "bassist", length));
+                    end = Math.Max(end, tick + length);
+                }
             }
         }
-        return ConvertTicks(cues, tempos, resolution, offset, "notes.chart");
+        var generated = StageGeneratedDirection.FromSections(sections, resolution, end);
+        return ConvertTicks(cues, tempos, resolution, offset, "notes.chart", generated: generated);
     }
 
     public static StageTimeline ReadMidi(byte[] data) => ParseMidi(data).Timeline;
@@ -228,6 +273,10 @@ internal static class StageChartReader
         cursor.Skip((int)headerSize - 6);
         var tempos = new List<Tempo>();
         var cues = new List<TickCue>();
+        var sections = new List<(long Tick, string Name)>();
+        var venueNotes = new List<(long Tick, int Note, long Length)>();
+        var venueTexts = new List<(long Tick, string Text)>();
+        long end = 0;
         for (var track = 0; track < trackCount; track++)
         {
             if (cursor.Ascii(4) != "MTrk") throw new InvalidDataException("Missing MIDI track");
@@ -292,7 +341,18 @@ internal static class StageChartReader
                 }
                 else throw new InvalidDataException("Unsupported MIDI status");
             }
-            if (trackName is "VENUE" or "EVENTS") cues.AddRange(trackCues.Where(cue => cue.Note < 0));
+            end = Math.Max(end, tick);
+            if (trackName == "VENUE")
+            {
+                venueNotes.AddRange(trackCues.Where(cue => cue.Note >= 0).Select(cue => (cue.Tick, cue.Note, cue.Length)));
+                venueTexts.AddRange(trackCues.Where(cue => cue.Note < 0).Select(cue => (cue.Tick, cue.Text)));
+            }
+            if (trackName == "EVENTS")
+            {
+                cues.AddRange(trackCues.Where(cue => cue.Note < 0));
+                sections.AddRange(trackCues.Where(cue => cue.Note < 0).Select(cue => (cue.Tick, Name: StageGeneratedDirection.Section(cue.Text)))
+                    .Where(section => section.Name != null).Select(section => (section.Tick, section.Name!)));
+            }
             var direction = DirectionTrack(trackName);
             if (direction.Length > 0) cues.AddRange(trackCues.Select(c => c with { Type = direction }));
             else if (trackName is not ("VENUE" or "EVENTS")) cues.AddRange(trackCues.Where(c => c.Note < 0 && Gh3Text(c.Text)));
@@ -302,12 +362,16 @@ internal static class StageChartReader
                     Type = "strum", Role = trackName == "PART GUITAR" ? "guitarist" : "bassist", Note = 1 << (c.Note - 96)
                 }));
         }
-        return ConvertTicks(cues, tempos, resolution, 0, "notes.mid");
+        var venue = StageRockBandVenue.Decode(venueNotes, venueTexts, resolution, end, out var diagnostic, out var custom);
+        cues.AddRange(custom.Select(text => new TickCue(text.Tick, text.Text)));
+        var generated = StageGeneratedDirection.FromSections(sections, resolution, end);
+        return ConvertTicks(cues, tempos, resolution, 0, "notes.mid", venue, generated, diagnostic);
     }
 
     private static bool Gh3Text(string text) => text.Trim().TrimStart('[').TrimStart().StartsWith("gh3 ", StringComparison.OrdinalIgnoreCase);
 
-    private static StageChartData ConvertTicks(List<TickCue> cues, List<Tempo> tempos, int resolution, double offset, string source)
+    private static StageChartData ConvertTicks(List<TickCue> cues, List<Tempo> tempos, int resolution, double offset, string source,
+        List<StageTickCue>? venue = null, List<StageTickCue>? generated = null, string? diagnostic = null)
     {
         if (resolution <= 0 || !double.IsFinite(offset) || tempos.Any(t => !double.IsFinite(t.Microseconds) || t.Microseconds <= 0))
             throw new InvalidDataException("Invalid chart timing");
@@ -354,7 +418,16 @@ internal static class StageChartReader
         var timeline = new StageTimeline(timing.Concat(output).Concat(chords), source);
         if (changes.Length > 0 && changes[0].Tick > 0)
             timing = new[] { new StageCue(offset, "tempo", "120") }.Concat(timing).ToArray();
-        return new(timeline, output.ToArray(), chords, timing);
+        StageCue[] Convert(List<StageTickCue>? ticks) => (ticks ?? new()).OrderBy(c => c.Tick).Select(c =>
+        {
+            var time = Seconds(c.Tick);
+            var duration = c.Length > 0 ? Seconds(checked(c.Tick + c.Length)) - time : 0;
+            return new StageCue(time, c.Type, c.Value, c.Type == "gh3-camera" && duration > StageRockBandVenue.MaxCameraHold ? 0 : duration);
+        }).ToArray();
+        var mapped = Convert(venue);
+        var diagnostics = diagnostic == null ? Array.Empty<string>() : new[] { diagnostic, "Rock Band VENUE cues (first 16): " +
+            string.Join(", ", mapped.Take(16).Select(c => $"{c.Time.ToString("0.000", CultureInfo.InvariantCulture)} {c.Type} {c.Value}")) };
+        return new(timeline, output.ToArray(), chords, timing) { Venue = mapped, Generated = Convert(generated), Diagnostics = diagnostics };
     }
 
     private sealed class MidiCursor
