@@ -100,7 +100,7 @@ GH3_WINE=~/games/gh3-test-tools/wine-root/usr/bin/wine GH3_ACCEPT_WINDOWS_SDK_LI
 | One song, for a song folder | `python3 -m pipeline.events DATA/SONGS/mycurse_song.pak.xen --output "<song folder>/stage-events.json"` |
 | A custom stage pack | `python -m pipeline.stagepack.install <source pack folder>` |
 | Venue preview images (`assets/previews/<id>.png`) | `GH3_CLONE_HERO_DIR=<game copy> scripts/capture-venue-previews.sh [id ...]` (one game run for each venue, under the record lock), then `python -m pipeline.package.build --no-library` |
-| Test characters from the library members | `python -m pipeline.package.character --role guitarist [--role bassist ...] [--output DIR]` writes `gh3.axel.chchar` and the others (default `assets/packages/characters/`, not installed by `install.sh`) |
+| Test characters from the library members | `python -m pipeline.package.character --library assets/packages/gh3-band-v1.chlib --output DIR [--role ROLE ...]` writes `gh3.<role>.chchar` (body and hair, no instrument; not installed by `install.sh`) |
 
 After a change, run `install.sh`. The installer copies `assets/*.png`, `*.dds`, the font and ready-animation JSON, `assets/counter-tuning.json`, `assets/stages`, and `assets/libraries` into the game. It also copies the packages (`assets/packages/*.chstage`, `gh3-band-v1.chlib`, zip form, with their file times) to `Mods/GH3Skin/Packages/` and the shader bundles to `Mods/GH3Skin/render/`. The mod prefers the packages; `assets/stages` and `assets/libraries` stay in the game as a fallback until a later cleanup. A changed package gets a new cache entry in `UserData/GH3Skin/Cache/` at the next start.
 

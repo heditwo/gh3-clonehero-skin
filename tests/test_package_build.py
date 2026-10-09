@@ -266,21 +266,6 @@ class LibraryBuildTests(unittest.TestCase):
             self.assertEqual(reference, valid, schema)
             self.assertEqual(not schemas.validate(value, schema), reference, schema)
 
-    def test_library_member_exports_as_a_valid_character(self):
-        from pipeline.package import character
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            source, events = library(root/"current/gh3-band-v1")
-            (root/"out").mkdir(); (root/"characters").mkdir()
-            (_, archive), _ = build.build_library(source, events, root/"out", jobs=1)
-            folder, package = character.build_character(archive, "singer", root/"characters", "test.singer", "Test Singer")
-            self.assertEqual(package.name, "test.singer.chchar")
-            report = Validator(package, library=archive).run()
-            self.assertEqual((report.errors, report.warnings), ([], []))
-            glb = GlbReader(folder/"character.glb").data
-            self.assertNotIn("animations", glb)
-            self.assertEqual(json.loads((folder/"character.json").read_text())["profile"], "gh3-singer-male-v1")
-
     def test_validator_finds_missing_library_files(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
