@@ -11,6 +11,9 @@ def combine_hair(meshes, materials, texture_directory):
     selected = [m for m in meshes if materials[m[0]]["template"] == "6f3f03f3" and materials[m[0]]["blend"] == 3]
     if not selected:
         return meshes
+    stride = len(selected[0][2]) // selected[0][1]
+    if stride not in (56, 128):
+        raise ValueError("Invalid hair vertex layout")
     names = sorted({materials[m[0]]["texture"] for m in selected})
     transforms = {}
     directory = Path(texture_directory)
@@ -19,7 +22,7 @@ def combine_hair(meshes, materials, texture_directory):
     if len(names) > 1:
         tiles = []
         for name in names:
-            uv = [struct.unpack_from("<2f", data, i * 56 + 24)
+            uv = [struct.unpack_from("<2f", data, i * stride + 24)
                   for key, count, data, _ in selected if materials[key]["texture"] == name for i in range(count)]
             low = [math.floor(min(v[k] for v in uv)) for k in range(2)]
             high = [math.floor(max(v[k] for v in uv)) + 1 for k in range(2)]
@@ -53,21 +56,27 @@ def combine_hair(meshes, materials, texture_directory):
         texture = names[0]
     vertices, faces, count = bytearray(), [], 0
     for key, size, data, triangles in selected:
-        if len(data) != size * 56:
+        if len(data) != size * stride:
             raise ValueError("Invalid hair vertex layout")
         packed = bytearray(data)
         name = materials[key]["texture"]
         if name in transforms:
             sx, sy, ox, oy = transforms[name]
             for i in range(size):
-                u, v = struct.unpack_from("<2f", packed, i * 56 + 24)
-                struct.pack_into("<2f", packed, i * 56 + 24, u * sx + ox, v * sy + oy)
+                u, v = struct.unpack_from("<2f", packed, i * stride + 24)
+                struct.pack_into("<2f", packed, i * stride + 24, u * sx + ox, v * sy + oy)
+                if stride == 128:
+                    # HairShader samples its diffuse (s1) with UV set 1, stored with D3D's top-down V.
+                    u, v = struct.unpack_from("<2f", packed, i * stride + 64)
+                    struct.pack_into("<2f", packed, i * stride + 64, u * sx + ox, 1 - ((1 - v) * sy + oy))
         vertices.extend(packed)
         faces.extend(tuple(v + count for v in face) for face in triangles)
         count += size
     if count > 65535:
         raise ValueError("Combined hair exceeds the vertex limit")
     material["texture"] = texture
+    if "gh3" in material and len(material["gh3"]["textures"]) > 1:
+        material["gh3"]["textures"][1] = texture
     material["sortedTransparency"] = True
     selected_ids = {m[0] for m in selected}
     return [m for m in meshes if m[0] not in selected_ids] + [(material_id, count, bytes(vertices), faces)]

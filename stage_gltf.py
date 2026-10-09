@@ -15,6 +15,10 @@ STATIC_VERTEX = np.dtype(VERTEX.descr + [("lightmap", "<f4", 2), ("layer", "<f4"
                                           ("gh3uv", "<f4", (6, 2)), ("gh3binormal", "<f4", 3), ("gh3position1", "<f4", 3), ("gh3binormal1", "<f4", 3)])
 # The original GH3 vertex streams that GH3 material templates read (see prepare-stage.GH3_STREAMS).
 GH3_STREAM_ATTRIBUTES = [f"_GH3_UV{i}" for i in range(6)] + ["_GH3_BINORMAL", "_GH3_POSITION1", "_GH3_BINORMAL1"]
+SKINNED_VERTEX = np.dtype(VERTEX.descr + [("joints", "u1", 4), ("weights", "<f4", 4)])
+# Skinned vertex with the GH3 streams (GH3BND02, see prepare-stage.SKIN_STREAMS); skinned GLB primitives carry the
+# tangent as _GH3_TANGENT and have no position 1 or binormal 1.
+SKINNED_GH3_VERTEX = np.dtype(SKINNED_VERTEX.descr + [("gh3uv", "<f4", (6, 2)), ("gh3binormal", "<f4", 3), ("gh3tangent", "<f4", 3)])
 SHADING = ("lit", "ambient", "unlit")
 
 
@@ -87,7 +91,7 @@ class GlbWriter:
             self.textures[blob] = i
         return self.textures[blob]
 
-    def material(self, name, definition, textures, layered=True):
+    def material(self, name, definition, textures, layered=True, streams=None):
         if name in self.materials: return self.materials[name]
         gh3 = definition.get("gh3")
         row = {"name": name, "pbrMetallicRoughness": {"metallicFactor": 0, "roughnessFactor": 1}, "doubleSided": definition.get("doubleSided", True)}
@@ -122,7 +126,7 @@ class GlbWriter:
         if definition.get("sortedTransparency"): extras["gh3SortedTransparency"] = True
         if definition.get("shading"): extras["gh3Shading"] = definition["shading"]
         if scale > 1: extras["gh3ColorScale"] = scale
-        if layered and gh3:
+        if (layered if streams is None else streams) and gh3:
             # GH3 template, constant banks, samplers, and render state; the stage shader runs the template's own shaders.
             extras["gh3Shader"] = {**{k: gh3[k] for k in ("template", "vertexConstants", "pixelConstants", "addressing", "flags", "blend", "alphaRef", "drawOrder")},
                                    "textures": [self.texture(textures[t]) if t in textures else -1 for t in gh3["textures"]]}
@@ -136,28 +140,32 @@ class GlbWriter:
         for material, count, packed, faces in parts:
             if not faces: continue
             stride = len(packed) // count
-            dtype = {36: VERTEX, STATIC_VERTEX.itemsize: STATIC_VERTEX}.get(stride) or np.dtype(VERTEX.descr + [("joints", "u1", 4), ("weights", "<f4", 4)])
+            dtype = {36: VERTEX, STATIC_VERTEX.itemsize: STATIC_VERTEX, SKINNED_GH3_VERTEX.itemsize: SKINNED_GH3_VERTEX}.get(stride, SKINNED_VERTEX)
             vertices = np.frombuffer(packed, dtype=dtype)
             p = vertices["position"] * [1, 1, -1]; n = vertices["normal"] * [1, 1, -1]
             uv = vertices["uv"].copy(); uv[:, 1] = 1-uv[:, 1]
             attrs = {"POSITION": self.accessor(p, "VEC3"), "NORMAL": self.accessor(n, "VEC3"),
                      "TEXCOORD_0": self.accessor(uv, "VEC2"), "COLOR_0": self.accessor(vertices["color"], "VEC4", 5121, True)}
             layered = stride == STATIC_VERTEX.itemsize
+            streams = stride in (STATIC_VERTEX.itemsize, SKINNED_GH3_VERTEX.itemsize) and materials[material].get("gh3")
             for field, attribute, used in (("lightmap", "TEXCOORD_1", materials[material].get("lightmap")),
                                            ("layer", "TEXCOORD_2", materials[material].get("layer")), ("mask", "TEXCOORD_3", materials[material].get("mask"))):
                 if layered and used:
                     channel = vertices[field].copy(); channel[:, 1] = 1-channel[:, 1]
                     attrs[attribute] = self.accessor(channel, "VEC2")
-            if layered and materials[material].get("gh3"):
+            if streams:
                 for i in range(6): attrs[f"_GH3_UV{i}"] = self.accessor(vertices["gh3uv"][:, i], "VEC2")
                 attrs["_GH3_BINORMAL"] = self.accessor(vertices["gh3binormal"] * [1, 1, -1], "VEC3")
-                attrs["_GH3_POSITION1"] = self.accessor(vertices["gh3position1"] * [1, 1, -1], "VEC3")
-                attrs["_GH3_BINORMAL1"] = self.accessor(vertices["gh3binormal1"] * [1, 1, -1], "VEC3")
-            if stride == 56:
+                if layered:
+                    attrs["_GH3_POSITION1"] = self.accessor(vertices["gh3position1"] * [1, 1, -1], "VEC3")
+                    attrs["_GH3_BINORMAL1"] = self.accessor(vertices["gh3binormal1"] * [1, 1, -1], "VEC3")
+                else:
+                    attrs["_GH3_TANGENT"] = self.accessor(vertices["gh3tangent"] * [1, 1, -1], "VEC3")
+            if stride in (SKINNED_VERTEX.itemsize, SKINNED_GH3_VERTEX.itemsize):
                 attrs.update(JOINTS_0=self.accessor(vertices["joints"], "VEC4", 5121), WEIGHTS_0=self.accessor(vertices["weights"], "VEC4"))
             indices = np.asarray(faces)[:, [0, 2, 1]].reshape(-1)
             primitives.append({"attributes": attrs, "indices": self.accessor(indices, "SCALAR", 5125),
-                               "material": self.material(material, materials[material], textures, layered), "mode": 4})
+                               "material": self.material(material, materials[material], textures, layered, bool(streams)), "mode": 4})
         if not primitives: return None
         index = len(self.data["meshes"])
         self.data["meshes"].append({"name": name, "primitives": primitives})
@@ -291,16 +299,18 @@ class GlbReader:
             color = color * material.get("pbrMetallicRoughness", {}).get("baseColorFactor", [1, 1, 1, 1])
         packed = np.zeros(count, dtype=STATIC_VERTEX)
         packed["position"] = positions; packed["normal"] = normals
-        if all(name in attrs for name in GH3_STREAM_ATTRIBUTES):
+        if all(name in attrs for name in GH3_STREAM_ATTRIBUTES[:7]):
             for i in range(6):
                 channel = self.accessor(attrs[f"_GH3_UV{i}"])
                 if channel.shape != (count, 2): raise ValueError("Invalid GH3 UV stream")
                 packed["gh3uv"][:, i] = channel
-            binormals = self.accessor(attrs["_GH3_BINORMAL"]); pivots = self.accessor(attrs["_GH3_POSITION1"]); binormals1 = self.accessor(attrs["_GH3_BINORMAL1"])
+            binormals = self.accessor(attrs["_GH3_BINORMAL"])
+            pivots = self.accessor(attrs["_GH3_POSITION1"]) if "_GH3_POSITION1" in attrs else positions @ np.linalg.inv(transform[:3, :3]).T
+            binormals1 = self.accessor(attrs["_GH3_BINORMAL1"]) if "_GH3_BINORMAL1" in attrs else np.zeros((count, 3))
             if binormals.shape != (count, 3) or pivots.shape != (count, 3) or binormals1.shape != (count, 3): raise ValueError("Invalid GH3 vertex stream")
             packed["gh3binormal"] = binormals @ transform[:3, :3].T
             packed["gh3binormal1"] = binormals1 @ transform[:3, :3].T
-            packed["gh3position1"] = pivots @ transform[:3, :3].T + transform[:3, 3]
+            packed["gh3position1"] = pivots @ transform[:3, :3].T + transform[:3, 3] if "_GH3_POSITION1" in attrs else positions
         packed["uv"] = uv; packed["uv"][:, 1] = 1-uv[:, 1]
         packed["lightmap"] = lightmap; packed["lightmap"][:, 1] = 1-lightmap[:, 1]
         packed["layer"] = layer; packed["layer"][:, 1] = 1-layer[:, 1]

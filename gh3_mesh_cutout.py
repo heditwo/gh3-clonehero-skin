@@ -33,7 +33,7 @@ def trim_mesh(mesh, image, cutoff, region=None):
 
     material, count, vertices, faces = mesh
     stride = len(vertices) // count
-    if stride not in (36, 44, 56, 60, 144) or len(vertices) != count * stride:
+    if stride not in (36, 44, 56, 60, 128, 144) or len(vertices) != count * stride:
         raise ValueError("Invalid cutout mesh vertex layout")
     width, height = image.size
     region = alpha_region(image, cutoff) if region is None else region
@@ -85,7 +85,7 @@ def trim_mesh(mesh, image, cutoff, region=None):
                 channels = (stride - 36) // 4
                 extra = [struct.unpack_from(f"<{channels}f", packed[i], 36) for i in face]
                 data += struct.pack(f"<{channels}f", *(sum(w * row[k] for w, row in zip(weights, extra)) for k in range(channels)))
-            if stride == 56:
+            if stride in (56, 128):
                 influences = {}
                 for w, i in zip(weights, face):
                     bone_indices = struct.unpack_from("<4B", packed[i], 36)
@@ -98,6 +98,9 @@ def trim_mesh(mesh, image, cutoff, region=None):
                 total = sum(w for _, w in influences)
                 data += struct.pack("<4B4f", *(i for i, _ in influences), *([0] * (4 - len(influences))),
                                     *(w / total for _, w in influences), *([0] * (4 - len(influences))))
+            if stride == 128:
+                extra = [struct.unpack_from("<18f", packed[i], 56) for i in face]
+                data += struct.pack("<18f", *(sum(w * row[k] for w, row in zip(weights, extra)) for k in range(18)))
             if data not in indices:
                 indices[data] = len(packed)
                 packed.append(data)

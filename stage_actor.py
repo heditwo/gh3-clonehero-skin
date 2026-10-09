@@ -7,7 +7,7 @@ import re
 import numpy as np
 from gh3_formats import key
 
-from stage_gltf import GlbReader, REFLECTION, VERTEX, matrix_quaternion, transform_matrix
+from stage_gltf import GlbReader, REFLECTION, SKINNED_GH3_VERTEX, VERTEX, matrix_quaternion, transform_matrix
 from gh3_mesh_cutout import alpha_region, trim_mesh
 
 
@@ -46,8 +46,14 @@ def compile_actor(path, folder, material_import, mesh_write, mesh_split):
             indices = glb.accessor(attrs["JOINTS_0"])
             if indices.shape != (len(packed),4) or weights.shape != indices.shape or np.any(indices >= len(joints)) or np.any(weights < 0) or not np.allclose(weights.sum(1), 1, atol=1e-4):
                 raise ValueError("Invalid actor skin weights")
-            vertices = np.zeros(len(packed), dtype=SKIN_VERTEX)
+            # Actor meshes always use the extended GH3BND02 layout; meshes without GH3 streams keep zero streams.
+            vertices = np.zeros(len(packed), dtype=SKINNED_GH3_VERTEX)
             for field in VERTEX.names: vertices[field] = packed[field]
+            vertices["gh3uv"] = packed["gh3uv"]; vertices["gh3binormal"] = packed["gh3binormal"]
+            if "_GH3_TANGENT" in attrs:
+                tangents = glb.accessor(attrs["_GH3_TANGENT"])
+                if tangents.shape != (len(packed), 3): raise ValueError("Invalid GH3 tangent stream")
+                vertices["gh3tangent"] = tangents @ (matrix @ REFLECTION)[:3, :3].T
             vertices["joints"] = indices; vertices["weights"] = weights
             material = material_ids[primitive.get("material", len(material_ids)-1)]
             meshes.extend(mesh_split(material, vertices, faces))
@@ -55,11 +61,11 @@ def compile_actor(path, folder, material_import, mesh_write, mesh_split):
     trimmed = []; masks = {}
     for mesh in meshes:
         material = materials[mesh[0]]
-        if material["texture"] and material["cutoff"] > 0 and not material["crowd"]:
+        if material["texture"] and material["cutoff"] > 0 and not material["crowd"] and not material.get("gh3"):
             pair = material["texture"], material["cutoff"]
             if pair not in masks: masks[pair] = alpha_region(images[pair[0]], pair[1])
             mesh = trim_mesh(mesh, images[pair[0]], pair[1], masks[pair])
-        if mesh[3]: trimmed.extend(mesh_split(mesh[0], np.frombuffer(mesh[2],dtype=SKIN_VERTEX), np.asarray(mesh[3])))
+        if mesh[3]: trimmed.extend(mesh_split(mesh[0], np.frombuffer(mesh[2],dtype=SKINNED_GH3_VERTEX), np.asarray(mesh[3])))
     meshes = trimmed
     if not meshes: raise ValueError("Actor alpha masks remove all geometry")
     mesh_write(folder, meshes, materials, skinned=True)

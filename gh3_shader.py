@@ -235,6 +235,10 @@ def _input_expression(usage, index):
     if usage == "normal" and index == 0: return "gh3_normal"
     if usage == "binormal" and index == 0: return "gh3_binormal"
     if usage == "binormal" and index == 1: return "gh3_binormal1"
+    if usage == "tangent" and index == 0: return "gh3_tangent"
+    # GH3 PC skins characters on the CPU: its vertex shaders read already-skinned streams and have no bone palette.
+    # A palette (blend weights or indices) would need its own mapping, so it is reported instead of translated.
+    if usage in ("blendweight", "blendindices"): raise Unsupported(f"GPU skinning input {usage}{index} is not supported")
     if usage == "color" and index == 0: return "in_COLOR0"
     if usage == "texcoord" and 0 <= index <= 5: return f"vec4(in_TEXCOORD{index}, 0.0, 1.0)"
     if usage in ("binormal", "tangent", "color", "texcoord"):
@@ -325,7 +329,7 @@ in vec2 in_TEXCOORD6;
 in vec2 in_TEXCOORD7;
 """ + "".join(f"out vec4 gh3_T{i};\n" for i in range(10)) + """out vec4 gh3_C0;
 out vec4 gh3_C1;
-vec4 gh3_position, gh3_position1, gh3_normal, gh3_binormal, gh3_binormal1;
+vec4 gh3_position, gh3_position1, gh3_normal, gh3_binormal, gh3_binormal1, gh3_tangent;
 vec4 gh3_c119, gh3_c120, gh3_c121, gh3_c122, gh3_c124, gh3_c125, gh3_c126, gh3_c127, gh3_c155;
 vec4 gh3_zero = vec4(0.0);
 vec4 gh3_c160, gh3_c161, gh3_c162, gh3_c163, gh3_c168, gh3_c169, gh3_c170, gh3_c171;
@@ -352,7 +356,11 @@ void gh3_vertex_main()
     // D3D expands FLOAT3 vertex elements to (x, y, z, 1).
     gh3_position = vec4(in_POSITION0.xyz * flip.xyz, 1.0);
     gh3_normal = vec4(in_NORMAL0 * flip.xyz, 1.0);
-    gh3_binormal = vec4(in_TANGENT0.xyz * flip.xyz, 1.0);
+    // Static meshes carry binormal 0 in the tangent channel. Skinned meshes (_Gh3Template.w) carry tangent 0 there, skinned by
+    // Unity like GH3's CPU skinning; binormal 0 is the skinned normal x tangent with the sign GH3's own binormal had.
+    bool skinned = _Gh3Template.w > 0.5;
+    gh3_tangent = skinned ? vec4(in_TANGENT0.xyz * flip.xyz, 1.0) : vec4(0.0, 0.0, 0.0, 1.0);
+    gh3_binormal = skinned ? vec4(cross(in_NORMAL0, in_TANGENT0.xyz) * in_TANGENT0.w * flip.xyz, 1.0) : vec4(in_TANGENT0.xyz * flip.xyz, 1.0);
     // Texture coordinates 6-7 carry the template's extra stream: position 1 (billboards) or binormal 1 (two-tangent meshes).
     gh3_position1 = vec4(vec3(in_TEXCOORD6, in_TEXCOORD7.x) * flip.xyz, 1.0);
     gh3_binormal1 = gh3_position1;

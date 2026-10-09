@@ -18,23 +18,25 @@ internal sealed class StageCrowd : IDisposable
         public CrowdAnimationPlayer? Performance;
         public Dictionary<string, GameObject> Hands = new();
         public Transform Person = null!;
-        public System.Numerics.Vector2 Cell;
         public bool Turned;
+        public Camera Camera = null!;
     }
-    // AddCrowdModelCam (GH3.exe 0x433c20) gives each crowd camera the orientation of the bg_viewport camera, aims it at
-    // the point 1 unit above the ped, and, for rows without roty, turns it about world Y by 25 degrees times the x part
-    // of the view axis.
+    // AddCrowdModelCam (GH3.exe 0x433c20) gives each crowd camera the orientation of the bg_viewport camera, places it
+    // 3.5 units back from the point 1 unit above the ped, and, for rows without roty, turns it about world Y by 25 degrees
+    // times the x part of the view axis. create_crowd_models gives the camera a 20 degree horizontal field of view, a far
+    // clip of 20, and the imposter_rendering viewport (128 x 256), whose texture the venue's crowd cards show whole.
     private const float TurnDegreesPerAxis = 25;
-    private const float CameraDistance = 5;
-    private static readonly System.Numerics.Vector3 FixedGroupOffset = new(50, 0, 0);
+    private const float CameraDistance = 3.5f;
+    private const float CameraLift = 1;
+    private const float HorizontalFov = 20;
+    private const float FarClip = 20;
+    private const int CellPixelsWide = 128;
+    private const int CellPixelsHigh = 256;
+    // create_crowd_models parks ped n at (-500, -200 - 100n, 0); the atlas keeps that spacing so no camera sees another ped.
+    private const float PedSpacing = 100;
     public const int Layer = 29;
     private int Columns = 8;
     private int Rows = 3;
-    private float CellWidth = 1.4f;
-    private float CellHeight = 2.4f;
-    // GH3 crowd cards are 1.15 x 2.58 m and show one model's render across the whole card (AddCrowdModelCam).
-    private const float CardAspect = 1.15f / 2.58f;
-    private const float RoleCellHeight = 2.3f;
     private readonly List<StageAssets> _assets = new();
     private readonly List<Player> _players = new();
     private readonly Dictionary<string, PerformanceClip> _clips = new();
@@ -43,11 +45,9 @@ internal sealed class StageCrowd : IDisposable
     private StageAssets? _stage;
     private string _directory = "";
     private GameObject? _root;
-    private RenderTexture? _atlas;
-    private Camera? _camera;
-    private Camera? _fixedCamera;
+    // One render target per crowd row, like GH3's viewport texture overrides (tw_billboardNN): each card shows its row's ped whole.
+    private readonly List<RenderTexture> _targets = new();
     private Transform? _stageRoot;
-    private float _lift;
 
     public void Load(string directory, StageAssets stage, GameObject root, Camera stageCamera, StageCrowdMember[] members, Shader? surfaceShader = null)
     {
@@ -81,8 +81,6 @@ internal sealed class StageCrowd : IDisposable
         {
             Columns = roles.Length;
             Rows = 1;
-            CellHeight = RoleCellHeight;
-            CellWidth = RoleCellHeight * CardAspect;
         }
         for (var cell = 0; cell < Columns * Rows; cell++)
         {
@@ -94,9 +92,7 @@ internal sealed class StageCrowd : IDisposable
             var animation = animations[model];
             var person = new GameObject($"GH3 Crowd {cell}") { layer = Layer };
             person.transform.SetParent(_root.transform, false);
-            _lift = CellHeight * 0.5f - (roles.Length > 0 ? 0.02f : 0.1f);
-            var cellCenter = new System.Numerics.Vector2((cell % Columns - (Columns - 1) * 0.5f) * CellWidth,
-                ((Rows - 1) * 0.5f - cell / Columns) * CellHeight);
+            person.transform.localPosition = new Vector3(0, -200 - PedSpacing * cell, 0);
             // GH3 parks every crowd ped with quat (0, 1, 0); only rows with roty call Obj_SetOrientation and keep an unturned camera.
             var yaw = member?.Yaw ?? 0;
             var turned = yaw == 0;
@@ -129,7 +125,7 @@ internal sealed class StageCrowd : IDisposable
             }
             Alpha(assets, person);
             var player = new Player { Role = role, Bones = bones, Animation = animation, Phase = cell * 0.371,
-                Pose = new BandPose[bones.Length], Previous = new BandPose[bones.Length], Person = person.transform, Cell = cellCenter, Turned = turned };
+                Pose = new BandPose[bones.Length], Previous = new BandPose[bones.Length], Person = person.transform, Turned = turned };
             foreach (var hand in definition.Hands)
             {
                 var item = new GameObject("GH3 Crowd " + hand) { layer = Layer };
@@ -144,48 +140,37 @@ internal sealed class StageCrowd : IDisposable
             }
             _players.Add(player);
         }
-        _atlas = new RenderTexture(Columns * 128, Rows * (roles.Length > 0 ? 288 : 256), 24, RenderTextureFormat.ARGB32)
+        _stageRoot = root.transform;
+        for (var cell = 0; cell < _players.Count; cell++)
         {
-            name = "GH3 Animated Crowd Atlas",
-            wrapMode = TextureWrapMode.Clamp,
-            filterMode = FilterMode.Bilinear,
-        };
-        if (!_atlas.Create()) throw new InvalidOperationException("Could not create the crowd atlas");
-        Camera AtlasCamera(string name, float depth, CameraClearFlags clear)
-        {
-            var cameraObject = new GameObject(name) { layer = Layer };
+            var cameraObject = new GameObject("GH3 Crowd Camera " + cell) { layer = Layer };
             cameraObject.transform.SetParent(_root.transform, false);
             var camera = cameraObject.AddComponent<Camera>();
             camera.cullingMask = 1 << Layer;
-            camera.depth = depth;
-            camera.clearFlags = clear;
+            camera.depth = stageCamera.depth - 1;
+            camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = Color.clear;
-            camera.orthographic = true;
-            camera.orthographicSize = Rows * CellHeight * 0.5f;
             camera.nearClipPlane = 0.1f;
-            camera.farClipPlane = CameraDistance * 2;
+            camera.farClipPlane = FarClip;
             camera.allowHDR = false;
             camera.allowMSAA = false;
             camera.useOcclusionCulling = false;
-            camera.targetTexture = _atlas;
-            camera.aspect = Columns * CellWidth / (Rows * CellHeight);
-            return camera;
+            var target = new RenderTexture(CellPixelsWide, CellPixelsHigh, 24, RenderTextureFormat.ARGB32)
+            {
+                name = "GH3 Crowd Viewport " + _players[cell].Role, wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear,
+            };
+            if (!target.Create()) throw new InvalidOperationException("Could not create a crowd viewport texture");
+            _targets.Add(target);
+            camera.targetTexture = target;
+            camera.aspect = (float)CellPixelsWide / CellPixelsHigh;
+            camera.fieldOfView = 2 * MathF.Atan(MathF.Tan(HorizontalFov * MathF.PI / 360) / camera.aspect) * 180 / MathF.PI;
+            _players[cell].Camera = camera;
         }
-        _stageRoot = root.transform;
-        _camera = AtlasCamera("GH3 Crowd Camera", stageCamera.depth - 1, CameraClearFlags.SolidColor);
-        // Peds with a fixed camera stand far enough away that the turned camera cannot see them, and the reverse.
-        if (_players.Any(player => !player.Turned))
-            _fixedCamera = AtlasCamera("GH3 Fixed Crowd Camera", stageCamera.depth - 0.5f, CameraClearFlags.Depth);
         Place(System.Numerics.Quaternion.CreateFromAxisAngle(System.Numerics.Vector3.UnitY, MathF.PI));
         foreach (var material in stage.CrowdMaterials)
         {
-            material.mainTexture = _atlas;
-            if (roles.Length > 0)
-            {
-                var tile = Array.IndexOf(roles, stage.CrowdRoles.GetValueOrDefault(material, roles[0]));
-                material.mainTextureScale = new Vector2 { x = 1f / Columns, y = 1 };
-                material.mainTextureOffset = new Vector2 { x = (float)Math.Max(0, tile) / Columns, y = 0 };
-            }
+            var tile = roles.Length > 0 ? Math.Max(0, Array.IndexOf(roles, stage.CrowdRoles.GetValueOrDefault(material, roles[0]))) : 0;
+            material.mainTexture = _targets[tile];
             // The atlas already contains alpha-blended color against a transparent background.
             if (material.shader.name != "GH3/Stage") material.SetInt("_SrcBlend", (int)BlendMode.One);
         }
@@ -243,27 +228,42 @@ internal sealed class StageCrowd : IDisposable
         var forward = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitZ, view);
         var turned = System.Numerics.Quaternion.CreateFromAxisAngle(System.Numerics.Vector3.UnitY,
             TurnDegreesPerAxis * MathF.PI / 180 * forward.X) * view;
-        Aim(_camera, turned, System.Numerics.Vector3.Zero);
-        Aim(_fixedCamera, view, FixedGroupOffset);
         foreach (var player in _players)
         {
+            if (player.Camera == null) continue;
             var orientation = player.Turned ? turned : view;
-            var target = (player.Turned ? System.Numerics.Vector3.Zero : FixedGroupOffset) +
-                System.Numerics.Vector3.Transform(new System.Numerics.Vector3(player.Cell.X, player.Cell.Y, 0), orientation);
-            player.Person.localPosition = new Vector3(target.X, target.Y - _lift, target.Z);
+            var ped = player.Person.localPosition;
+            var position = new System.Numerics.Vector3(ped.x, ped.y + CameraLift, ped.z) +
+                System.Numerics.Vector3.Transform(new System.Numerics.Vector3(0, 0, -CameraDistance), orientation);
+            player.Camera.transform.localPosition = new Vector3(position.X, position.Y, position.Z);
+            player.Camera.transform.localRotation = new Quaternion(orientation.X, orientation.Y, orientation.Z, orientation.W);
         }
     }
 
-    private static void Aim(Camera? camera, System.Numerics.Quaternion orientation, System.Numerics.Vector3 anchor)
+    // Capture aid: GH3_SKIN_CROWD_ATLAS=<png path> writes each crowd viewport once, 2 s into the song.
+    private static readonly string? AtlasDump = Environment.GetEnvironmentVariable("GH3_SKIN_CROWD_ATLAS");
+    private bool _dumped;
+
+    private void DumpAtlas(double time)
     {
-        if (camera == null) return;
-        var position = anchor + System.Numerics.Vector3.Transform(new System.Numerics.Vector3(0, 0, -CameraDistance), orientation);
-        camera.transform.localPosition = new Vector3(position.X, position.Y, position.Z);
-        camera.transform.localRotation = new Quaternion(orientation.X, orientation.Y, orientation.Z, orientation.W);
+        if (AtlasDump == null || _dumped || _targets.Count == 0 || time < 2) return;
+        _dumped = true;
+        var previous = RenderTexture.active;
+        for (var i = 0; i < _targets.Count; i++)
+        {
+            var image = new Texture2D(CellPixelsWide, CellPixelsHigh, TextureFormat.RGBA32, false);
+            RenderTexture.active = _targets[i];
+            image.ReadPixels(new Rect(0, 0, CellPixelsWide, CellPixelsHigh), 0, 0);
+            image.Apply();
+            File.WriteAllBytes(AtlasDump.Replace(".png", $"-{i}.png"), ImageConversion.EncodeToPNG(image).ToArray());
+            UnityEngine.Object.Destroy(image);
+        }
+        RenderTexture.active = previous;
     }
 
     public void Update(double time, float rock)
     {
+        DumpAtlas(time);
         _state?.Update(time, rock);
         _stage?.SetVisible("crowd-lighters", _state?.VisibleAt(time));
         foreach (var player in _players)
@@ -305,18 +305,19 @@ internal sealed class StageCrowd : IDisposable
 
     public void Dispose()
     {
-        if (_camera != null) _camera.targetTexture = null;
-        if (_fixedCamera != null) _fixedCamera.targetTexture = null;
+        foreach (var player in _players)
+            if (player.Camera != null) player.Camera.targetTexture = null;
         if (_root != null)
         {
             _root.SetActive(false);
             UnityEngine.Object.Destroy(_root);
         }
-        if (_atlas != null)
+        foreach (var target in _targets)
         {
-            _atlas.Release();
-            UnityEngine.Object.Destroy(_atlas);
+            target.Release();
+            UnityEngine.Object.Destroy(target);
         }
+        _targets.Clear();
         foreach (var assets in _assets) assets.Dispose();
         _assets.Clear();
         _players.Clear();
@@ -325,9 +326,6 @@ internal sealed class StageCrowd : IDisposable
         _definition = null;
         _stage = null;
         _root = null;
-        _camera = null;
-        _fixedCamera = null;
         _stageRoot = null;
-        _atlas = null;
     }
 }

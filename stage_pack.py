@@ -202,7 +202,7 @@ def split_mesh(material, packed, faces):
 def write_meshes(folder, meshes, materials, groups=None, skinned=False):
     folder.mkdir(parents=True, exist_ok=True)
     with (folder/"meshes.bin").open("wb") as stream:
-        stream.write((b"GH3BND01" if skinned else b"GH3STG04") + struct.pack("<I", len(meshes)))
+        stream.write((b"GH3BND02" if skinned else b"GH3STG04") + struct.pack("<I", len(meshes)))
         for material, count, vertices, faces in meshes:
             stream.write(struct.pack("<III", int(material, 16), count, len(faces)*3)); stream.write(vertices)
             stream.write(np.asarray(faces, dtype="<u4").tobytes())

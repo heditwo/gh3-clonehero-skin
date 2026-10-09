@@ -18,6 +18,19 @@ def module(name):
     return result
 
 
+def manifest(output):
+    write_json(output/"library.json", {"version": 1, "id": "gh3-band-v1", "files": {
+        str(p.relative_to(output)): sha256(p.read_bytes()).hexdigest() for p in sorted(output.rglob("*")) if p.is_file() and p.name != "library.json"}})
+
+
+def prepare_models(data, output):
+    """Rebuild only the band and crowd models (meshes, materials, textures), keeping every other library part."""
+    module("prepare-band").convert(data, output/"band", shared=True)
+    module("prepare-hair").convert(data, output/"band/hair.json")
+    module("prepare-crowd").convert(data, output/"crowd")
+    manifest(output)
+
+
 def prepare(data, output, existing=None):
     output.mkdir(parents=True, exist_ok=True)
     if existing:
@@ -45,8 +58,7 @@ def prepare(data, output, existing=None):
     write_json(output/"catalog.json", {"version": 1, "library": "gh3-band-v1", "members": {
         role: {"bones": member["bones"], "groups": member["groups"], "layers": member["layers"], "clips": member["clips"]}
         for role, member in performance["members"].items()}})
-    write_json(output/"library.json", {"version": 1, "id": "gh3-band-v1", "files": {
-        str(p.relative_to(output)): sha256(p.read_bytes()).hexdigest() for p in sorted(output.rglob("*")) if p.is_file() and p.name != "library.json"}})
+    manifest(output)
     print(output)
 
 
@@ -55,5 +67,7 @@ if __name__ == "__main__":
     parser.add_argument("--data", type=Path, default=Path.home()/"games/gh3-test-tools/game/DATA")
     parser.add_argument("--output", type=Path, default=Path("assets/libraries/gh3-band-v1"))
     parser.add_argument("--existing", type=Path, help="Reuse a complete generated band, direction, and hand-fire set; rebuild the crowd")
+    parser.add_argument("--models-only", action="store_true", help="Rebuild only the band and crowd models")
     args = parser.parse_args()
-    prepare(args.data, args.output, args.existing)
+    if args.models_only: prepare_models(args.data, args.output)
+    else: prepare(args.data, args.output, args.existing)

@@ -55,7 +55,7 @@ def write_model(directory, materials, meshes, images):
     for material in materials.values():
         material["texture"] = stage.diffuse_texture(material, images)
     with (directory / "meshes.bin").open("wb") as stream:
-        stream.write(b"GH3BND01" + struct.pack("<I", len(meshes)))
+        stream.write(b"GH3BND02" + struct.pack("<I", len(meshes)))
         for material, count, vertices, faces in meshes:
             stream.write(struct.pack("<III", int(material, 16), count, len(faces) * 3))
             stream.write(vertices)
@@ -96,7 +96,7 @@ def convert(data_dir, output):
         raise ValueError("Missing original crowd animations")
     for model, clip_names in MODELS:
         directory = output / model
-        materials, meshes, images = {}, [], {}
+        materials, meshes, images, cubes = {}, [], {}, set()
         embedded = model in ("crowd_biker_01", "crowd_biker_02")
         archive = "ZONES/z_hell.pak.xen" if embedded else f"PAK/{model}.pak.xen"
         for kind, name, blob in load(archive):
@@ -106,8 +106,10 @@ def convert(data_dir, output):
                 materials, meshes = stage.scene(blob, skinned=True)
             elif kind == key(".tex"):
                 images.update(stage.textures(blob))
+                cubes.update(stage.cube_names(blob))
         if not meshes:
             raise ValueError(f"Missing crowd model: {model}")
+        stage.mark_cube_samplers(materials, cubes)
         write_model(directory, materials, meshes, images)
         with (directory / "animation.bin").open("wb") as stream:
             stream.write(b"GH3ANM01" + struct.pack("<II", len(names), len(clip_names)))

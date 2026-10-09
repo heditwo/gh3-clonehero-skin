@@ -10,6 +10,7 @@ import math
 from pathlib import Path
 import struct
 
+import numpy as np
 from PIL import Image
 import gh3_materials
 from gh3_formats import find_array, key, pak_entries, values, word
@@ -26,6 +27,64 @@ LAYERED_TEMPLATES = {"D_3ChkBox_Pass0_Pass1": (0, 1, 1, 2, 2, 1), "D_3ChkBox_Pas
 WIBBLE_SIMPLE = "d825b71c"
 
 
+def cube_map(blob):
+    """GH3 environment maps are DDS cube maps (DDSCAPS2_CUBEMAP)."""
+    return blob[:4] == b"DDS " and len(blob) >= 128 and struct.unpack_from("<I", blob, 112)[0] & 0x200 != 0
+
+
+def cube_to_equirect(blob):
+    """Resample an uncompressed DDS cube map to the latitude-longitude image that gh3_shader's gh3_cube() reads."""
+    height, width = struct.unpack_from("<2I", blob, 12)
+    flags, _, bits, *masks = struct.unpack_from("<7I", blob, 80)
+    mips = max(1, struct.unpack_from("<I", blob, 28)[0])
+    if width != height or bits != 32 or not flags & 0x40 or struct.unpack_from("<I", blob, 112)[0] & 0xFE00 != 0xFE00:
+        raise ValueError("Unsupported GH3 cube map layout")
+    pixels = np.frombuffer(blob, "<u4", offset=128)
+    face_words = sum((width >> level) ** 2 for level in range(mips))
+    def channel(mask, values):
+        shift = (mask & -mask).bit_length() - 1
+        return ((values & mask) >> shift).astype(np.uint8)
+    faces = []
+    for face in range(6):
+        level0 = pixels[face*face_words:face*face_words + width*width].reshape(width, width)
+        faces.append(np.stack([channel(mask, level0) for mask in masks], axis=-1))
+    out_height = 2 * width; out_width = 4 * width
+    v, u = np.meshgrid((np.arange(out_height) + 0.5) / out_height, (np.arange(out_width) + 0.5) / out_width, indexing="ij")
+    phi = (u - 0.5) * 2 * np.pi; theta = v * np.pi
+    x, y, z = np.sin(theta) * np.sin(phi), np.cos(theta), np.sin(theta) * np.cos(phi)
+    ax, ay, az = np.abs(x), np.abs(y), np.abs(z)
+    # D3D face selection and (sc, tc) per face: +X, -X, +Y, -Y, +Z, -Z.
+    face = np.where((ax >= ay) & (ax >= az), np.where(x > 0, 0, 1), np.where(ay >= az, np.where(y > 0, 2, 3), np.where(z > 0, 4, 5)))
+    major = np.choose(face, [ax, ax, ay, ay, az, az])
+    sc = np.choose(face, [-z, z, x, x, x, -x]) / major
+    tc = np.choose(face, [-y, -y, z, -z, -y, -y]) / major
+    column = np.clip(((sc + 1) / 2 * width).astype(int), 0, width - 1)
+    row = np.clip(((tc + 1) / 2 * width).astype(int), 0, width - 1)
+    image = np.zeros((out_height, out_width, 4), np.uint8)
+    for index in range(6):
+        selected = face == index
+        image[selected] = faces[index][row[selected], column[selected]]
+    return Image.fromarray(image, "RGBA")
+
+
+def mark_cube_samplers(materials, cubes):
+    """The equirectangular image of a GH3 cube map wraps in U and clamps in V, whatever the cube sampler's address mode is."""
+    for material in materials.values():
+        gh3 = material.get("gh3", {})
+        for slot, name in enumerate(gh3.get("textures", [])):
+            if name in cubes: gh3["addressing"][slot] = 2
+
+
+def cube_names(data):
+    """Names of the cube maps in a GH3 texture dictionary."""
+    table = word(data, 8)
+    result = set()
+    for index in range(values(data, 6, "H")[0]):
+        start, size = values(data, table + 40*index + 28, "II")
+        if cube_map(data[start:start + size]): result.add(f"{word(data, table + 40*index + 4):08x}")
+    return result
+
+
 def textures(data):
     if word(data, 0) != 0xFACECAA7:
         raise ValueError("Expected a GH3 PC texture dictionary")
@@ -35,7 +94,8 @@ def textures(data):
         header = table + 40 * index
         name = word(data, header + 4)
         start, size = values(data, header + 28, "II")
-        image = Image.open(BytesIO(data[start:start + size])).convert("RGBA")
+        blob = data[start:start + size]
+        image = cube_to_equirect(blob) if cube_map(blob) else Image.open(BytesIO(blob)).convert("RGBA")
         yield f"{name:08x}", image
 
 
@@ -107,6 +167,10 @@ def crowd_uvs(vertices, count, faces, seed, stride):
 # Positions and directions use the stage mesh convention (z negated); UVs keep D3D's top-down V.
 GH3_STREAMS = struct.Struct("<12f3f3f3f")
 STATIC_STRIDE = 60 + GH3_STREAMS.size
+# Extended skinned vertex (GH3BND02): the 56-byte skinned vertex, then UV sets 0–3, texcoord4, texcoord5, binormal 0, and
+# tangent 0. GH3 PC skins on the CPU; its weighted rows hold position, normal, binormal 0, and tangent 0 for each vertex.
+SKIN_STREAMS = struct.Struct("<12f3f3f")
+SKINNED_STRIDE = 56 + SKIN_STREAMS.size
 
 
 def material_record(data, offset, samples):
@@ -253,7 +317,7 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
                     cursor += 16
                     for _ in range(count):
                         row = values(data, cursor, "14f")
-                        weighted_vertices.append(((row[0], row[4], row[8]), (row[1], row[5], row[9])))
+                        weighted_vertices.append(((row[0], row[4], row[8]), (row[1], row[5], row[9]), (row[2], row[6], row[10]), (row[3], row[7], row[11])))
                         amounts = (row[12], row[13], 1 - row[12] - row[13])[:influences]
                         amounts = [max(0, amount) for amount in amounts]
                         total = sum(amounts)
@@ -269,9 +333,10 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
         vertex_data = bytearray()
         for vertex in range(vertex_count):
             start = vertices_at + vertex * stride
+            tangent = (0, 0, 0)
             if weighted:
-                position, normal = weighted_vertices[vertex]
-                pivot, binormal, binormal1 = position, (0, 0, 0), (0, 0, 0)
+                position, normal, binormal, tangent = weighted_vertices[vertex]
+                pivot, binormal1 = position, (0, 0, 0)
                 cursor = start
             else:
                 position = values(data, start, "3f")
@@ -329,11 +394,13 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
                 vertex_data.extend(GH3_STREAMS.pack(*(v if math.isfinite(v) else 0.0 for v in raw)))
             if skinned:
                 vertex_data.extend(weights[vertex] if weighted else struct.pack("<4B4f", 0, 0, 0, 0, 1, 0, 0, 0))
+                raw = (*(c for uv_pair in streams for c in uv_pair), binormal[0], binormal[1], -binormal[2], tangent[0], tangent[1], -tangent[2])
+                vertex_data.extend(SKIN_STREAMS.pack(*(v if math.isfinite(v) else 0.0 for v in raw)))
         faces = triangles(values(data, indices_at, f"{index_count}H"), kind)
         if any(max(face) >= vertex_count for face in faces):
             raise ValueError("Triangle index outside vertex buffer")
         if crowd_cards and materials[material]["template"] == "a17d40ed":
-            crowd_uvs(vertex_data, vertex_count, faces, index, 56 if skinned else STATIC_STRIDE)
+            crowd_uvs(vertex_data, vertex_count, faces, index, SKINNED_STRIDE if skinned else STATIC_STRIDE)
         if material not in materials:
             raise ValueError("Mesh has no material")
         if skinned or not flags & 0x0F000000:

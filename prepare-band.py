@@ -57,7 +57,7 @@ def convert(data_dir, output, shared=False):
         directory = output / role
         (directory / "textures").mkdir(parents=True, exist_ok=True)
         names, parents, positions, rotations = skeleton(rigs[key(rig)])
-        materials, meshes, available = {}, [], set()
+        materials, meshes, available, cubes = {}, [], set(), set()
         for asset in [model, *([instrument] if instrument else [])]:
             for kind, _, data in load(f"PAK/{asset}.pak.xen"):
                 if kind == key(".skin"):
@@ -67,16 +67,18 @@ def convert(data_dir, output, shared=False):
                     materials.update(mat)
                     meshes.extend(parts)
                 elif kind == key(".tex"):
+                    cubes.update(stage.cube_names(data))
                     for name, image in stage.textures(data):
                         image.save(directory / "textures" / f"{name}.png")
                         available.add(name)
         for mat in materials.values():
             mat["texture"] = stage.diffuse_texture(mat, available)
+        stage.mark_cube_samplers(materials, cubes)
         if role in ("singer", "drummer"):
             meshes = trim_prop_cutouts(meshes, materials, directory / "textures")
         meshes = combine_hair(meshes, materials, directory / "textures")
         with (directory / "meshes.bin").open("wb") as stream:
-            stream.write(b"GH3BND01" + struct.pack("<I", len(meshes)))
+            stream.write(b"GH3BND02" + struct.pack("<I", len(meshes)))
             for material, count, vertices, faces in meshes:
                 stream.write(struct.pack("<III", int(material, 16), count, len(faces) * 3))
                 stream.write(vertices)

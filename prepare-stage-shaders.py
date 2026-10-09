@@ -26,8 +26,9 @@ def stage_templates(code, output):
     """Insert the GH3 material templates used by the compiled stages into the stage surface shader."""
     stages = output.parent.parent.parent.parent/'stages'
     used = set()
-    for path in stages.glob('*/**/stage.json'):
-        used.update(m['gh3']['template'] for m in load_json(path)['materials'].values() if 'gh3' in m)
+    # Venue scenery and actors, and the shared band and crowd library next to the output bundle.
+    for path in [*stages.glob('*/**/stage.json'), *output.parent.parent.glob('band/*/stage.json'), *output.parent.parent.glob('crowd/**/stage.json')]:
+        used.update(m['gh3']['template'] for m in load_json(path)['materials'].values() if 'gh3' in m and m['gh3']['template'] != '00000000')
     if not used:
         used = set(gh3_shader.library())
     vertex, fragment, table, failures = gh3_shader.uber(used)

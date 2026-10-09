@@ -131,7 +131,7 @@ internal sealed class StageAssets : IDisposable
 
     // GH3's material bind applied to the translated template (see StageGh3RenderState).
     private Material MakeTemplateMaterial(Shader shader, StageGh3Material source, StageShaderTemplates.Template template,
-        Func<string, bool, bool, Texture2D> load)
+        Func<string, bool, bool, Texture2D> load, bool skinned)
     {
         var state = StageGh3RenderState.From(source.Flags, source.Blend, source.AlphaRef, source.DrawOrder);
         var material = Own(new Material(shader));
@@ -142,7 +142,7 @@ internal sealed class StageAssets : IDisposable
         material.SetInt("_ZTest", state.ZTest);
         material.SetInt("_Cull", state.Cull);
         material.SetColor("_Color", Color.white);
-        material.SetVector(TemplateId, new Vector4 { x = template.Index, y = state.AlphaTest ? 1 : 0, z = state.AlphaRef });
+        material.SetVector(TemplateId, new Vector4 { x = template.Index, y = state.AlphaTest ? 1 : 0, z = state.AlphaRef, w = skinned ? 1 : 0 });
         for (var i = 0; i < Math.Min(source.VertexConstants.Length, 16); i++)
         {
             var c = source.VertexConstants[i];
@@ -305,7 +305,8 @@ internal sealed class StageAssets : IDisposable
         var meshPath = Path.Combine(directory, "meshes.bin");
         string header;
         using (var stream = File.OpenRead(meshPath)) header = System.Text.Encoding.ASCII.GetString(new BinaryReader(stream).ReadBytes(8));
-        var templateStreams = bones == null && header == "GH3STG04";
+        // GH3STG04 static meshes and GH3BND02 skinned meshes carry the original GH3 vertex streams for the translated templates.
+        var templateStreams = bones == null ? header == "GH3STG04" : header == "GH3BND02";
         var textures = new Dictionary<string, Texture2D>();
         Texture2D LoadAddressedTexture(string name, bool clampU, bool clampV)
         {
@@ -332,7 +333,8 @@ internal sealed class StageAssets : IDisposable
         {
             source.Gh3?.Validate();
             StageShaderTemplates.Template? template = null;
-            if (source.Gh3 != null && surfaceShader != null && templateStreams && !source.Crowd)
+            // Template 00000000 marks GH3's unused placeholder material slot; no mesh draws with it.
+            if (source.Gh3 != null && source.Gh3.Template != "00000000" && surfaceShader != null && templateStreams)
             {
                 if (SkippedTemplates.Contains("all") || SkippedTemplates.Contains(source.Gh3.Template) || SkippedTemplates.Contains(source.Source)) template = null;
                 else if (Templates != null && Templates.TryGet(source.Gh3.Template, out var found)) template = found;
@@ -342,11 +344,17 @@ internal sealed class StageAssets : IDisposable
             }
             if (template != null)
             {
-                var generic = MakeTemplateMaterial(surfaceShader!, source.Gh3!, template, LoadAddressedTexture);
+                var generic = MakeTemplateMaterial(surfaceShader!, source.Gh3!, template, LoadAddressedTexture, bones != null);
                 generic.name = "GH3 Stage " + key + " " + template.Name;
                 materials.Add(Convert.ToUInt32(key, 16), generic);
                 SurfaceMaterials.Add(generic);
                 TemplateMaterials.Add(generic, template);
+                if (source.Crowd && source.CrowdRole.Length > 0)
+                {
+                    // Billboard_Fast crowd cards: StageCrowd replaces the card texture with its role's live ped render.
+                    CrowdMaterials.Add(generic);
+                    CrowdRoles[generic] = source.CrowdRole;
+                }
                 if (source.MovieSlot is < -1 or > 31) throw new InvalidDataException("Invalid movie surface slot");
                 if (source.MovieSlot >= 0) MovieSurfaces.Add((source.MovieSlot, generic, generic.mainTexture));
                 continue;
@@ -400,7 +408,7 @@ internal sealed class StageAssets : IDisposable
         }
         using var reader = new BinaryReader(File.OpenRead(meshPath));
         reader.ReadBytes(8);
-        if (bones == null ? header is not ("GH3STG01" or "GH3STG02" or "GH3STG03" or "GH3STG04") : header != "GH3BND01")
+        if (bones == null ? header is not ("GH3STG01" or "GH3STG02" or "GH3STG03" or "GH3STG04") : header is not ("GH3BND01" or "GH3BND02"))
             throw new InvalidDataException("Invalid stage mesh header");
         var lightmapped = header is "GH3STG02" or "GH3STG03" or "GH3STG04";
         var layered = header is "GH3STG03" or "GH3STG04";
@@ -452,6 +460,7 @@ internal sealed class StageAssets : IDisposable
             var pivotZ = templateStreams ? new Vector2[vertexCount] : null;
             var binormal1Xy = templateStreams ? new Vector2[vertexCount] : null;
             var binormal1Z = templateStreams ? new Vector2[vertexCount] : null;
+            var tangents = templateStreams && bones != null ? new Vector4[vertexCount] : null;
             var weights = bones == null ? null : new List<SkinWeight>(vertexCount * 3);
             var boneCounts = bones == null ? null : new byte[vertexCount];
             for (var v = 0; v < vertexCount; v++)
@@ -463,7 +472,7 @@ internal sealed class StageAssets : IDisposable
                 if (lightmapUv != null) lightmapUv[v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
                 if (layerUv != null) layerUv[v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
                 if (maskUv != null) maskUv[v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
-                if (streams != null)
+                if (streams != null && bones == null)
                 {
                     for (var i = 0; i < 6; i++) streams[i][v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
                     var b = ReadVector(reader);
@@ -486,6 +495,15 @@ internal sealed class StageAssets : IDisposable
                     var used = influences.Where(w => w.Weight > 0).OrderByDescending(w => w.Weight).ToArray();
                     boneCounts![v] = (byte)used.Length;
                     weights.AddRange(used);
+                }
+                if (streams != null && tangents != null)
+                {
+                    for (var i = 0; i < 6; i++) streams[i][v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
+                    var b = ReadVector(reader);
+                    var t = ReadVector(reader);
+                    // The translated vertex shader rebuilds binormal 0 as normal x tangent with this sign (see gh3_shader.VERTEX_MAIN).
+                    var sign = Vector3.Dot(b, Vector3.Cross(normals[v], t)) < 0 ? -1f : 1f;
+                    tangents[v] = new Vector4 { x = t.x, y = t.y, z = t.z, w = sign };
                 }
             }
             var indices = new int[indexCount];
@@ -512,9 +530,12 @@ internal sealed class StageAssets : IDisposable
                 mesh.uv5 = new Il2CppStructArray<Vector2>(streams[4]);
                 mesh.uv6 = new Il2CppStructArray<Vector2>(streams[5]);
                 var binormal1 = TemplateMaterials[material].Extra == "binormal1";
-                mesh.uv7 = new Il2CppStructArray<Vector2>(binormal1 ? binormal1Xy! : pivotXy!);
-                mesh.uv8 = new Il2CppStructArray<Vector2>(binormal1 ? binormal1Z! : pivotZ!);
-                mesh.tangents = new Il2CppStructArray<Vector4>(binormals!);
+                if (tangents == null)
+                {
+                    mesh.uv7 = new Il2CppStructArray<Vector2>(binormal1 ? binormal1Xy! : pivotXy!);
+                    mesh.uv8 = new Il2CppStructArray<Vector2>(binormal1 ? binormal1Z! : pivotZ!);
+                }
+                mesh.tangents = new Il2CppStructArray<Vector4>(tangents ?? binormals!);
             }
             else
             {
@@ -548,7 +569,7 @@ internal sealed class StageAssets : IDisposable
                 bounds.Expand(crowdCards ? 4 : bounds.size.magnitude);
                 mesh.bounds = bounds;
             }
-            if (bones != null && surfaceShader != null && Definition.Materials[materialId.ToString("x8")].Character != null)
+            if (bones != null && surfaceShader != null && !templateMesh && Definition.Materials[materialId.ToString("x8")].Character != null)
                 mesh.RecalculateTangentsImpl(UnityEngine.Rendering.MeshUpdateFlags.Default);
             var shadedMode = templateMesh ? TemplateMaterials[material].Shading switch { "lit" => 2, "ambient" => 1, _ => 0 } :
                 surfaceShader != null ? Definition.Materials[materialId.ToString("x8")].ShadingMode : -1;
