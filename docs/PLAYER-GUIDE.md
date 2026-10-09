@@ -111,7 +111,7 @@ The **Band** section has one line for each band member: guitarist, bassist, drum
 
 ### GH3 characters
 
-The mod has all the characters that GH3 lets you play, with all their outfits and styles (72 characters; [PARITY-NOTES.md](PARITY-NOTES.md#playable-characters) has the list):
+The mod has all the characters that GH3 lets you play, with all their outfits and styles (72 characters):
 
 - Axel Steel, Casey Lynch, Izzy Sparks, Judy Nails, Johnny Napalm, Lars Umlaut, Midori, and Xavier Stone: two outfits with four styles each, for example "Judy Nails: Skool Grrl (Stripes)".
 - Slash, Tom Morello, Lou (also his outfit "Thick Izzy"), God of Rock, and Grim Ripper.
