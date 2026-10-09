@@ -20,6 +20,9 @@ public sealed class SkinMod : MelonMod
 
     public override void OnEarlyInitializeMelon()
     {
+        // MelonLoader installs its Il2Cpp hooks after this call, so the guard is in place for them.
+        var guard = HookPageGuard.Install();
+        if (guard != null) MelonLogger.Msg($"Linux hook page guard: {guard}");
         // MelonLoader retries a bHaptics WebSocket on a timer; disposing those sockets has crashed the CLR in this game.
         if (Environment.GetEnvironmentVariable("GH3_SKIN_KEEP_BHAPTICS") == "1") return;
         try
@@ -36,6 +39,8 @@ public sealed class SkinMod : MelonMod
 
     public override void OnInitializeMelon()
     {
+        var placed = HookPageGuard.TakePlaced();
+        if (placed.Length > 0) MelonLogger.Msg($"Linux hook page guard: {placed.Length} hook page(s) moved to safe pages ({string.Join(", ", placed)})");
         var problem = GameCompatibility.Problem(Application.version, Application.platform.ToString());
         if (problem != null)
         {

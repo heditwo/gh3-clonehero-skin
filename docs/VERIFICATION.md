@@ -56,7 +56,7 @@ Settings in the test copy that prevent crashes:
 - The mod stops MelonLoader's bHaptics client at start (`GH3_SKIN_KEEP_BHAPTICS=1` keeps it).
 - Linux only: without an ALSA sequencer seat (headless runs), use `tools/rtmidi-stub.c` as the game's `libRtMidi.so`. The Windows build has its own `RtMidi.dll` and needs no stub (it starts under Wine without one).
 
-The loader log always has one `Unable to create a snapshot of process` error and an `Il2CppInterop` warning. They are not caused by the mod. Any other exception is a fault.
+The loader log always has one `Unable to create a snapshot of process` error and an `Il2CppInterop` warning. They are not caused by the mod. Any other exception is a fault. On Linux the log must show `Linux hook page guard: on` and `hook page(s) moved to safe pages` (see [STATUS.md](STATUS.md#stability)). Each start leaves a second `clonehero` process; the capture scripts stop it, but stop it yourself after manual runs.
 
 ## Screenshots
 

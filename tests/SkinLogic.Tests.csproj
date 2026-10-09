@@ -23,6 +23,7 @@
     <Compile Include="../src/Gameplay/HitEffects.cs" Link="HitEffects.cs" />
     <Compile Include="../src/Gameplay/GemAnimation.cs" Link="GemAnimation.cs" />
     <Compile Include="../src/GameCompatibility.cs" Link="GameCompatibility.cs" />
+    <Compile Include="../src/HookPageGuard.cs" Link="HookPageGuard.cs" />
     <Compile Include="../src/Stage/Direction/StageTimeline.cs" Link="StageTimeline.cs" />
     <Compile Include="../src/Stage/Direction/StageCue.cs" Link="StageCue.cs" />
     <Compile Include="../src/Stage/Direction/StageGh3Events.cs" Link="StageGh3Events.cs" />

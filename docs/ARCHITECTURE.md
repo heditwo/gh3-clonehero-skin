@@ -68,7 +68,7 @@ Clone Hero is an Il2Cpp build. Many Unity methods are stripped or slow through t
 - `Shader.isSupported` is true also when Unity replaces a shader with its error shader (no program for the graphics API). `StageShader` checks the pass name `GH3` instead (`Material.GetPassName`). `Shader.FindPassTagValue` is stripped.
 - Keep loaded shaders and textures with `HideFlags.DontUnloadUnusedAsset`. Stage cleanup runs in `OnApplicationQuit` and `OnDeinitializeMelon`.
 - Background threads run only managed code without Unity or Il2Cpp objects: the package import thread and the clip prefetch (`Parallel.ForEach`). They hand results to the main thread through files, thread-safe collections, and a log queue that `PackageRuntime.Update` writes on the main thread. The main thread waits for the clip prefetch in the stage load, so no other mod code runs on it at the same time. A warm start starts no import thread.
-- Known runtime risk: this Clone Hero and MelonLoader runtime sometimes fails inside CoreCLR (crashes in the type loader or the tiered-compilation thread, and one wrong `uint.Parse` result, also seen before packages). See [STATUS.md](STATUS.md).
+- Linux: MelonLoader's hook library (Dobby) maps its hook pages with `MAP_FIXED` over memory in use, which crashed the game at random places (CoreCLR type loader, JIT, hook jumps). `HookPageGuard` runs first in `OnEarlyInitializeMelon` and moves these pages to the relocation table of `GameAssembly.so`. Keep it the first statement there. See [STATUS.md](STATUS.md#stability).
 
 ### Clone Hero bindings
 
