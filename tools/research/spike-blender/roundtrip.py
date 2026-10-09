@@ -41,7 +41,7 @@ if mode == "import":
         import_settings = "default"
     if os.environ.get("SPIKE_GLTF_FIX"):
         # The add-on's fix for the Blender 4.2 custom attribute import (blender/chstage_tools/gltf_io.py).
-        spec = importlib.util.spec_from_file_location("gltf_io", Path(__file__).resolve().parents[2]/"blender/chstage_tools/gltf_io.py")
+        spec = importlib.util.spec_from_file_location("gltf_io", Path(__file__).resolve().parents[3]/"blender/chstage_tools/gltf_io.py")
         gltf_io = importlib.util.module_from_spec(spec); spec.loader.exec_module(gltf_io)
         print("SPIKE fix", gltf_io.fix_custom_attribute_import())
     bpy.ops.import_scene.gltf(filepath=source, **IMPORT[import_settings])

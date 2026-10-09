@@ -1,7 +1,7 @@
 """Spike: size and error of quantized band clip encodings.
 
 Run from the repository root:
-PYTHONPATH=. uv run --with numpy --with brotli --with zstandard python tools/spike-clips/analyze.py \
+PYTHONPATH=. uv run --with numpy --with brotli --with zstandard python tools/research/spike-clips/analyze.py \
     ~/games/gh3-test-tools/game/DATA assets/libraries/gh3-band-v1/direction /tmp/opencode/spike-clips
 """
 

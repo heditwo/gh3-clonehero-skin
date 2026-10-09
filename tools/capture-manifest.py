@@ -30,16 +30,13 @@ if timing_path.is_file():
         "sha256": hashlib.sha256(timing_path.read_bytes()).hexdigest(),
         "summary": {key: value for key, value in timing.items() if key != "frames"},
     }
-stage_name = os.environ.get("GH3_SKIN_STAGE", "budokan")
-stage_dir = binary.parent / "GH3Skin/assets/stages" / stage_name
-if stage_name != "off" and (stage_dir / "stage.json").is_file():
-    manifest["stage"] = {
-        "name": stage_name,
-        "files_sha256": {str(path.relative_to(stage_dir)): hashlib.sha256(path.read_bytes()).hexdigest()
-                         for path in sorted(stage_dir.rglob("*")) if path.is_file()},
-    }
-    library_dir = stage_dir.parent / "events"
-    if library_dir.is_dir():
-        manifest["cue_library_sha256"] = {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-                                          for path in sorted(library_dir.glob("*.json"))}
+stage_name = os.environ.get("GH3_SKIN_STAGE", "")
+packages = binary.parent / "GH3Skin/Packages"
+if packages.is_dir():
+    def digest(path):
+        with path.open("rb") as file:
+            return hashlib.file_digest(file, "sha256").hexdigest()
+    manifest["packages_sha256"] = {path.name: digest(path) for path in sorted(packages.iterdir()) if path.is_file()}
+if stage_name:
+    manifest["stage"] = {"name": stage_name}
 Path(str(video) + ".json").write_text(json.dumps(manifest, indent=2) + "\n")

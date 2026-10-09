@@ -37,7 +37,6 @@ internal static class PackageRuntime
             MelonLogger.Warning($"GH3 picker: the choices could not be saved to {ChoicesPath} ({error.Message})");
         }
     }
-    public static bool Disabled => Environment.GetEnvironmentVariable("GH3_SKIN_PACKAGES") == "off";
     private static int _frames;
 
     // MelonLoader's Mods folder, not one below the working folder: a shortcut or a launcher can start the game from another
@@ -46,7 +45,6 @@ internal static class PackageRuntime
 
     public static void Update()
     {
-        if (Disabled) return;
         if (Manager == null)
         {
             var custom = CustomContentPaths();

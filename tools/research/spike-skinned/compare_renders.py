@@ -1,6 +1,6 @@
 """Spike: pixel statistics of the skinned GLB comparison renders.
 
-Run in /tmp/opencode/spike-skinned: uv run --with pillow --with numpy python <repo>/pipeline/spike/compare_renders.py run-glb run-original
+Run in /tmp/opencode/spike-skinned: uv run --with pillow --with numpy python <repo>/tools/research/spike-skinned/compare_renders.py run-glb run-original
 """
 
 import sys

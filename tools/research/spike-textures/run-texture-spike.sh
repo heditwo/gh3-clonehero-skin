@@ -4,7 +4,7 @@
 set -euo pipefail
 export MISE_QUIET=1
 
-project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 output="$(realpath -m "$1")"
 mode="${2:-}"
 game_dir="$HOME/games/clonehero-gh3-spike-textures"

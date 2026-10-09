@@ -70,7 +70,7 @@ internal static class StageSelection
         .Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
 
     // `environment` is GH3_SKIN_STAGE (tests and recordings): a stage ID there wins over everything. `available` are the
-    // stages that can load (installed packages and the older install). `previous` is avoided by a random choice when possible.
+    // stages that can load (installed packages). `previous` is avoided by a random choice when possible.
     public static StageDecision Choose(PlayerChoices choices, string? environment, IReadOnlyList<string> available, StageSuggestion? suggestion,
         Random random, string previous = "")
     {

@@ -1,6 +1,6 @@
 """Spike: write one compiled GH3 band member (GH3BND02 + GH3ANM01 bind pose) as a skinned GLB.
 
-uv run --with pillow --with numpy python -m pipeline.spike.character_glb --role guitarist --output /tmp/opencode/spike-skinned/guitarist.glb
+PYTHONPATH=. uv run --with pillow --with numpy python tools/research/spike-skinned/character_glb.py --role guitarist --output /tmp/opencode/spike-skinned/guitarist.glb
 """
 
 import argparse
@@ -14,7 +14,7 @@ from PIL import Image
 
 from pipeline.stagepack.gltf import REFLECTION, SKINNED_GH3_VERTEX, GlbReader, GlbWriter
 
-LIBRARY = Path(__file__).resolve().parents[2]/"assets"/"libraries"/"gh3-band-v1"
+LIBRARY = Path(__file__).resolve().parents[3]/"assets"/"libraries"/"gh3-band-v1"
 
 
 def read_meshes(path):

@@ -21,8 +21,6 @@ internal sealed class GameplayStage
     private string _render = "";
     private string _effectsDirectory = "";
     private string _waitingFor = "";
-    private System.Diagnostics.Stopwatch? _waitClock;
-    private const double MaxWaitSeconds = 120;
     private readonly List<(Camera Camera, int Mask)> _cameras = new();
     private GameObject? _root;
     private StageAssets? _assets;
@@ -62,30 +60,24 @@ internal sealed class GameplayStage
         PerformanceClipCache.Report = message => MelonLogger.Warning("GH3 clips: " + message);
     }
 
-    private enum SourceState { Ready, Waiting, Missing }
+    private enum SourceState { Ready, Waiting, Missing, Failed }
 
-    // Stages that can load: the installed venue packages and the stage folders of the older install.
-    private List<string> AvailableStages(Packages.PackageManager? manager)
+    // Stages that can load: the installed venue packages.
+    private static List<string> AvailableStages(Packages.PackageManager manager)
     {
-        var ids = manager?.Packages.Where(p => p.Manifest.Kind == Packages.PackageKind.Stage && !p.SongPackage && p.State != Packages.PackageState.Failed)
-            .Select(p => p.Manifest.Id).ToList() ?? new List<string>();
-        var older = Path.Combine(_assetsDirectory, "stages");
-        if (Directory.Exists(older))
-            foreach (var folder in Directory.EnumerateDirectories(older))
-                if (File.Exists(Path.Combine(folder, "pack.json")) && !ids.Contains(Path.GetFileName(folder))) ids.Add(Path.GetFileName(folder));
+        var ids = manager.Packages.Where(p => p.Manifest.Kind == Packages.PackageKind.Stage && !p.SongPackage && p.State != Packages.PackageState.Failed)
+            .Select(p => p.Manifest.Id).ToList();
         ids.Sort(StringComparer.Ordinal);
         return ids;
     }
 
     // The player's choice (in-game picker, GH3_SKIN_STAGE for tests), the song's suggestion, and the installed stages
     // select the stage once for each song (docs/PLAYER-GUIDE.md).
-    private void ChooseStage(Packages.PackageManager? manager)
+    private void ChooseStage(Packages.PackageManager manager, Packages.InstalledPackage? library)
     {
         var choices = Packages.PackageRuntime.Choices;
         var entry = GlobalVariables.instance?.currentSongEntry;
-        var library = manager?.Find(Packages.PackageKind.Library, "gh3-band-v1");
-        var index = library?.State == Packages.PackageState.Ready ? Path.Combine(library.CacheDirectory, "songs", "index.json") :
-            Path.Combine(_assetsDirectory, "stages", "events", "index.json");
+        var index = library?.State == Packages.PackageState.Ready ? Path.Combine(library.CacheDirectory, "songs", "index.json") : "";
         Packages.StageSuggestion? suggestion = null;
         try
         {
@@ -99,7 +91,7 @@ internal sealed class GameplayStage
             StageRandom, _previousRandom);
         if (decision.PackagePath.Length > 0)
         {
-            _songPackage = manager?.AddSongPackage(decision.PackagePath);
+            _songPackage = manager.AddSongPackage(decision.PackagePath);
             if (_songPackage == null)
             {
                 decision = Packages.StageSelection.Choose(choices, Environment.GetEnvironmentVariable("GH3_SKIN_STAGE"), AvailableStages(manager), null, StageRandom, _previousRandom);
@@ -123,61 +115,53 @@ internal sealed class GameplayStage
         {
             var id = Environment.GetEnvironmentVariable("GH3_SKIN_CHARACTER_" + role.ToUpperInvariant()) ?? choices.Character(role);
             if (id == Packages.PlayerChoices.DefaultCharacter || id.Length == 0) continue;
-            var character = manager?.Find(Packages.PackageKind.Character, id);
+            var character = manager.Find(Packages.PackageKind.Character, id);
             if (character == null || character.State == Packages.PackageState.Failed)
                 MelonLogger.Warning($"GH3 band {role}: character {id} is not installed or did not import; the venue default plays");
             else _characterPackages[role] = character;
         }
     }
 
-    // Packages win when present (their cache folders); the files of the older install (assets/stages, assets/libraries)
-    // stay a fallback while it exists. The shader bundles come from the mod installation (Mods/GH3Skin/render).
+    // The stage and the library come from their package cache folders. The shader bundles come from the mod installation
+    // (Mods/GH3Skin/render), because they depend on the graphics API and the Unity version.
     private SourceState ResolveSources()
     {
         var manager = Packages.PackageRuntime.Manager;
-        if (manager != null || !Packages.PackageRuntime.Disabled)
+        if (manager == null || !manager.Scanned) return Wait("the package scan");
+        static bool Busy(Packages.InstalledPackage? package) => package?.State is Packages.PackageState.Pending or Packages.PackageState.Importing;
+        if (_decision == null)
         {
-            if (manager == null || !manager.Scanned) return Wait("the package scan");
-            if (_decision == null) ChooseStage(manager);
-            if (_stageId.Length == 0) return SourceState.Missing;
-            var stage = _songPackage ?? manager.Find(Packages.PackageKind.Stage, _stageId);
-            if (stage != null)
+            // The library has the song index for the stage suggestion of GH3 career songs.
+            var songIndex = manager.Find(Packages.PackageKind.Library, "gh3-band-v1");
+            if (Busy(songIndex))
             {
-                var requirement = stage.Manifest.Requires.FirstOrDefault(r => r.Id.StartsWith("gh3-band-", StringComparison.Ordinal));
-                var library = manager.Find(Packages.PackageKind.Library, requirement.Id ?? "gh3-band-v1");
-                static bool Busy(Packages.InstalledPackage? package) => package?.State is Packages.PackageState.Pending or Packages.PackageState.Importing;
-                var importing = Busy(stage) || Busy(library) || _characterPackages.Values.Any(Busy);
-                if (importing && (_waitClock?.Elapsed.TotalSeconds ?? 0) < MaxWaitSeconds)
-                {
-                    manager.Prioritize(stage);
-                    foreach (var character in _characterPackages.Values) manager.Prioritize(character);
-                    return Wait($"the import of {string.Join(", ", new[] { stage }.Concat(_characterPackages.Values).Where(Busy).Select(p => p.Manifest.Id))}");
-                }
-                if (importing)
-                    MelonLogger.Warning($"GH3 stage waited {MaxWaitSeconds} s for the import of {_stageId} (importer: {manager.Activity}); the older install is used if it exists.");
-                else if (stage.State == Packages.PackageState.Ready && library?.State == Packages.PackageState.Ready)
-                {
-                    _directory = stage.CacheDirectory;
-                    _library = library.CacheDirectory;
-                    _events = Path.Combine(library.CacheDirectory, "songs");
-                    _effectsDirectory = Path.Combine(library.CacheDirectory, "render");
-                    _render = RenderDirectory(Path.Combine(_assetsDirectory, "libraries", library.Manifest.Id, "render"));
-                    MelonLogger.Msg($"GH3 stage source: package {stage.Label}, library {library.Label}");
-                    return SourceState.Ready;
-                }
-                else MelonLogger.Warning($"GH3 stage package {_stageId} did not import ({stage.Error}{library?.Error}); the older install is used if it exists.");
+                manager.Prioritize(songIndex!);
+                return Wait("the import of gh3-band-v1");
             }
+            ChooseStage(manager, songIndex);
         }
-        else if (_decision == null) ChooseStage(null);
         if (_stageId.Length == 0) return SourceState.Missing;
-        _directory = Path.Combine(_assetsDirectory, "stages", _stageId);
-        if (!File.Exists(Path.Combine(_directory, "pack.json"))) return SourceState.Missing;
-        var library2 = Path.Combine(_assetsDirectory, "libraries", StagePack.Load(_directory).Library);
-        _library = library2;
-        _events = Path.Combine(_assetsDirectory, "stages", "events");
-        _effectsDirectory = Path.Combine(library2, "render");
-        _render = RenderDirectory(_effectsDirectory);
-        MelonLogger.Msg($"GH3 stage source: assets/stages/{_stageId} (older install)");
+        var stage = _songPackage ?? manager.Find(Packages.PackageKind.Stage, _stageId);
+        if (stage == null) return SourceState.Missing;
+        var requirement = stage.Manifest.Requires.FirstOrDefault(r => r.Id.StartsWith("gh3-band-", StringComparison.Ordinal));
+        var library = manager.Find(Packages.PackageKind.Library, requirement.Id ?? "gh3-band-v1");
+        if (Busy(stage) || Busy(library) || _characterPackages.Values.Any(Busy))
+        {
+            manager.Prioritize(stage);
+            foreach (var character in _characterPackages.Values) manager.Prioritize(character);
+            return Wait($"the import of {string.Join(", ", new[] { stage, library }.Concat(_characterPackages.Values).Where(Busy).Select(p => p!.Manifest.Id))}");
+        }
+        if (stage.State != Packages.PackageState.Ready || library?.State != Packages.PackageState.Ready)
+        {
+            MelonLogger.Warning($"GH3 stage package {_stageId} did not import ({stage.Error}{(library == null ? "library gh3-band-v1 is not installed" : library.Error)})");
+            return SourceState.Failed;
+        }
+        _directory = stage.CacheDirectory;
+        _library = library.CacheDirectory;
+        _events = Path.Combine(library.CacheDirectory, "songs");
+        _effectsDirectory = Path.Combine(library.CacheDirectory, "render");
+        _render = Path.GetFullPath(Path.Combine(_assetsDirectory, "..", "render"));
+        MelonLogger.Msg($"GH3 stage source: package {stage.Label}, library {library.Label}");
         return SourceState.Ready;
     }
 
@@ -202,16 +186,9 @@ internal sealed class GameplayStage
 
     private SourceState Wait(string what)
     {
-        _waitClock ??= System.Diagnostics.Stopwatch.StartNew();
         if (_waitingFor != what) MelonLogger.Msg($"GH3 stage waits for {what}");
         _waitingFor = what;
         return SourceState.Waiting;
-    }
-
-    private string RenderDirectory(string fallback)
-    {
-        var installed = Path.Combine(_assetsDirectory, "..", "render");
-        return File.Exists(Path.Combine(installed, "stage.bundle")) ? Path.GetFullPath(installed) : fallback;
     }
 
     public void Reset()
@@ -271,7 +248,6 @@ internal sealed class GameplayStage
         _root = null;
         _attempted = false;
         _waitingFor = "";
-        _waitClock = null;
         _decision = null;
         _songPackage = null;
         _characterPackages.Clear();
@@ -325,7 +301,6 @@ internal sealed class GameplayStage
                 if (_camera != null && _assets != null)
                     foreach (var mesh in _assets.TransparentMeshes) mesh.Update(_camera);
             });
-            if (_camera != null) _band?.SpikeUpdate(time, _camera);
         }
         catch (Exception error)
         {
@@ -453,9 +428,10 @@ internal sealed class GameplayStage
         var state = ResolveSources();
         if (state == SourceState.Waiting) return;
         _attempted = true;
+        if (state == SourceState.Failed) return;
         if (state == SourceState.Missing)
         {
-            if (_stageId.Length > 0) MelonLogger.Warning($"Stage {_stageId} is missing: no package and no older install. Run install.sh.");
+            if (_stageId.Length > 0) MelonLogger.Warning($"Stage {_stageId} is missing: no installed package. Run the installer again.");
             return;
         }
         var loadClock = System.Diagnostics.Stopwatch.StartNew();

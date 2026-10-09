@@ -1,4 +1,3 @@
-using System.IO.Compression;
 using System.Runtime.InteropServices;
 
 namespace Gh3Skin;
@@ -84,11 +83,7 @@ internal sealed class StageAudio : IDisposable
     {
         if (_clips.TryGetValue(key, out var cached)) return cached;
         var sample = _bank.Sample(key)!;
-        // The package cache holds raw PCM (`.pcm`); the older install holds it with gzip.
-        var raw = Path.Combine(_directory, key.ToString("x8") + ".pcm");
-        using var file = File.OpenRead(File.Exists(raw) ? raw : raw + ".gz");
-        using var compressed = File.Exists(raw) ? (Stream)file : new GZipStream(file, CompressionMode.Decompress);
-        using var reader = new BinaryReader(compressed);
+        using var reader = new BinaryReader(File.OpenRead(Path.Combine(_directory, key.ToString("x8") + ".pcm")));
         var size = checked(sample.Frames * sample.Channels * 2);
         var pcm = reader.ReadBytes(size);
         if (pcm.Length != size || reader.BaseStream.ReadByte() != -1) throw new InvalidDataException("Invalid stage sound sample length");

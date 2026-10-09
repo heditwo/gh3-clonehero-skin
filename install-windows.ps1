@@ -98,7 +98,7 @@ if ($generated -and (Test-Path -LiteralPath $loaderConfig)) {
 
 $mods = Join-Path $GameDir 'Mods'
 $skin = Join-Path $mods 'GH3Skin'
-# The release Mods folder is complete (install.sh --release writes it from its skin_folders list), so remove the old
+# The release Mods folder is complete (scripts/build-release.sh writes it with install.sh --release), so remove the old
 # skin files first: earlier versions had other asset folders, flat files, counter-tuning.json, and the older install
 # (assets\stages, assets\libraries) that the packages replace. Player choices and the cache are in UserData and stay.
 foreach ($old in @('assets', 'Packages', 'render', 'counter-tuning.json')) {

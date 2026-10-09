@@ -24,13 +24,10 @@ fi
 mkdir -p "$output"
 cp "$project/src/bin/Release/net6.0/Gh3Skin.dll" "$game/Mods/Gh3Skin.dll"
 rm -f "$game/Mods/BehaviorProbe.dll"
-while IFS= read -r -d '' file; do
-  target="$game/Mods/GH3Skin/assets/${file#"$project/assets/"}"
-  if [[ ! -e "$target" ]]; then
-    mkdir -p "$(dirname "$target")"
-    ln -sfn "$file" "$target"
-  fi
-done < <(find "$project/assets/libraries/gh3-band-v1" "$project/assets/stages/$stage" "$project/assets/stages/events" -type f -print0)
+# The stage and library packages and the shader bundles; the mod imports the packages into UserData/GH3Skin/Cache.
+mkdir -p "$game/Mods/GH3Skin/Packages" "$game/Mods/GH3Skin/render"
+cp --reflink=auto -u "$project/assets/packages/$stage.chstage" "$project/assets/packages/gh3-band-v1.chlib" "$game/Mods/GH3Skin/Packages/"
+cp -u "$project/assets/libraries/gh3-band-v1/render/"{*.bundle,stage-templates.json} "$game/Mods/GH3Skin/render/"
 
 "$xvfb" "$display" -screen 0 "${width}x${height}x24" -nolisten tcp > "$output/xvfb.log" 2>&1 &
 server=$!
@@ -42,7 +39,8 @@ cleanup() {
 trap cleanup EXIT
 sleep 2
 
-sha256sum "$game/Mods/Gh3Skin.dll" "$project/assets/libraries/gh3-band-v1/render/"*.bundle > "$output/build.sha256"
+sha256sum "$game/Mods/Gh3Skin.dll" "$game/Mods/GH3Skin/render/"*.bundle "$game/Mods/GH3Skin/Packages/$stage.chstage" \
+  "$game/Mods/GH3Skin/Packages/gh3-band-v1.chlib" > "$output/build.sha256"
 # MelonLoader downloads debug symbols over HTTPS; its socket threads have crashed the CLR. Set GH3_CAPTURE_NETWORK=1 to allow network access.
 isolate=(unshare -rn)
 [[ -n "${GH3_CAPTURE_NETWORK:-}" ]] && isolate=()

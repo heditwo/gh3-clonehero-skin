@@ -530,8 +530,7 @@ internal sealed class StageAssets : IDisposable
                 surfaceShader != null ? Definition.Materials[materialId.ToString("x8")].ShadingMode : -1;
             var dynamicColors = lighting && shadedMode < 0 && (bones != null || Definition.LightGroups.Length > 0);
             if (dynamicColors || sorted) mesh.MarkDynamic();
-            // The skinned GLB spike compares baked poses, so it keeps band meshes readable.
-            mesh.UploadMeshData(!dynamicColors && !sorted && !(bones != null && SkinnedGlbSpike.Enabled));
+            mesh.UploadMeshData(!dynamicColors && !sorted);
             var item = new GameObject(mesh.name) { layer = layer };
             item.transform.SetParent(root.transform, false);
             var objectId = Definition.ObjectIds.Length == 0 ? "" : Definition.ObjectIds[part];
