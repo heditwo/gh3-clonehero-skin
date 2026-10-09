@@ -22,11 +22,29 @@ These optional variables add checks against real data to the C# tests:
 | `GH3_DIRECTION_ASSETS`, `GH3_CROWD_ASSETS`, `GH3_HAIR_ASSETS`, `GH3_LIGHTING_ASSETS`, `GH3_AUDIO_ASSETS` | Library parts |
 | `GH3_SCRIPT_SOURCE`, `GH3_STAGE_SCRIPT_REPORT` | Decoded GH3 scripts and a report path |
 | `GH3_NATIVE_*_ORACLE` | Reference JSON from the native emulation tools in the local `assets/event-audit/behavior-work/` folder (not in Git) |
+| `GH3_PACKAGE_ASSETS=$PWD/assets` | Imports `assets/packages/gh3-band-v1.chlib` with the mod's importer and compares all 1,240 decoded q48 clips with the `GH3CLP01` clips of `assets/libraries` (bound 0.0075°). Needs about 1 GB in `TMPDIR`; set `TMPDIR` to a disk folder |
 | `GH3_BENCH=<venue>`, `GH3_BENCH_SONG=<chart folder>` | Runs a venue's scripts and particles against a chart outside the game (`tests/ScriptBench.cs`); `GH3_BENCH_ALLOC=1` adds allocation samples |
 
 After a change to the venue export or the shaders, run `python3 tools/audit-materials.py`. All used materials must draw with their GH3 template.
 
 After a change to the shaders, also check Direct3D 11. The Windows build of Clone Hero runs under Wine with DXVK (see `tools/spike-d3d11/run-win.sh` and [the spike report](spike/d3d11.md)). Build the mod against the Windows interop assemblies (`GameRoot` of the Windows copy), and capture the same song times with `-force-d3d11` and `-force-glcore` (`GH3_SKIN_CAPTURE_CLOCK=song`). Compare the frames with the Linux frames. A stage with no program for the graphics API logs `GH3 stage is off: ... has no program for the <API> graphics API` and does not draw; `-force-vulkan` shows this message.
+
+After a change to `src/Packages/` or to the package converter, run the cache comparison in [PIPELINE.md](PIPELINE.md#check-the-result) (`pipeline.package.cachecheck`).
+
+### Package import in the game
+
+The log shows the package steps with the prefix `GH3 packages:`:
+
+| Line | Meaning |
+| --- | --- |
+| `found N usable package(s)` | The scan; one `skipped <path>: <reason>` warning for each bad package |
+| `imported <id> <version> in X s (…)` | Cold cache: the import time, the checked bytes, the textures, and the managed heap of one package |
+| `<id> ready from the cache` or `all packages ready from the cache in X ms` | Warm cache |
+| `GH3 stage source: package …` or `… (older install)` | Where the stage came from |
+| `GH3 stage load time: X ms on the main thread (…)` | The stage load frame: cache texture uploads and the clip prefetch wait |
+| `GH3 clips: clip … was not prefetched` | A clip decoded on the main thread during play (a prefetch gap) |
+
+To test a cold import, delete `UserData/GH3Skin/Cache/` in the test game. To compare with the older install in the same build, set `GH3_SKIN_PACKAGES=off`.
 
 ## Test game
 
@@ -122,7 +140,8 @@ These variables are for checks and captures. Normal play needs none of them.
 
 | Variable | Purpose |
 | --- | --- |
-| `GH3_SKIN_STAGE` | Pack ID, for example `gh3.hell` or `example.studio`. Default `gh3.budokan`. `off` shows the stock background |
+| `GH3_SKIN_STAGE` | Stage ID (package or older pack), for example `gh3.hell` or `example.studio`. Default `gh3.budokan`. `off` shows the stock background |
+| `GH3_SKIN_PACKAGES=off` | Ignores packages; the stage loads from the older install (`assets/stages`, `assets/libraries`) |
 | `GH3_SKIN_CAMERA` | `auto` (default), `fixed`, or a shot group: `wide`, `singer`, `guitarist`, `bassist`, `drummer`, `orbit` |
 | `GH3_SKIN_CAMERA_SHOT` | Forces one shot name, to match a GH3 reference frame |
 | `GH3_SKIN_PREVIEW_SONG` | Chart folder for `run-gh3-skin.sh --preview` and the capture scripts |

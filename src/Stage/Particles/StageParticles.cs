@@ -31,20 +31,20 @@ internal sealed class StageParticles : IDisposable
     public Dictionary<uint, uint> RenderKeys { get; } = new();
     public int RenderedQuads { get; private set; }
 
-    public StageParticles(StageScripts scripts, StageAssets assets, GameObject root, Camera camera, int layer, string shaderPath)
+    public StageParticles(StageScripts scripts, StageAssets assets, GameObject root, Camera camera, int layer, string shaderPath, string effectsDirectory)
     {
         _scripts = scripts;
         _assets = assets;
         _root = root;
         _camera = camera;
         _layer = layer;
-        _techniques = StageParticleTechniques.Load(Path.Combine(Path.GetDirectoryName(shaderPath)!, "particle-materials.json"));
+        _techniques = StageParticleTechniques.Load(Path.Combine(effectsDirectory, "particle-materials.json"));
         _originalDepthMode = camera.depthTextureMode;
         _bundle = AssetBundle.LoadFromFile(shaderPath) ?? throw new InvalidDataException("Stage particle shader bundle did not load");
         try
         {
             _shader = StageShader.Load(_bundle, "the stage particle shader");
-            _tesla = new(assets, root, camera, layer, Path.GetDirectoryName(shaderPath)!);
+            _tesla = new(assets, root, camera, layer, Path.GetDirectoryName(shaderPath)!, effectsDirectory);
             camera.depthTextureMode |= DepthTextureMode.Depth;
         }
         catch { _bundle.Unload(true); throw; }

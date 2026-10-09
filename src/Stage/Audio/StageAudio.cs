@@ -84,8 +84,10 @@ internal sealed class StageAudio : IDisposable
     {
         if (_clips.TryGetValue(key, out var cached)) return cached;
         var sample = _bank.Sample(key)!;
-        using var file = File.OpenRead(Path.Combine(_directory, key.ToString("x8") + ".pcm.gz"));
-        using var compressed = new GZipStream(file, CompressionMode.Decompress);
+        // The package cache holds raw PCM (`.pcm`); the older install holds it with gzip.
+        var raw = Path.Combine(_directory, key.ToString("x8") + ".pcm");
+        using var file = File.OpenRead(File.Exists(raw) ? raw : raw + ".gz");
+        using var compressed = File.Exists(raw) ? (Stream)file : new GZipStream(file, CompressionMode.Decompress);
         using var reader = new BinaryReader(compressed);
         var size = checked(sample.Frames * sample.Channels * 2);
         var pcm = reader.ReadBytes(size);

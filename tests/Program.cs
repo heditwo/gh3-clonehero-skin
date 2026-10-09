@@ -55,6 +55,7 @@ DrumHandLogicTests.Run();
 HandFireLogicTests.Run();
 LightingLogicTests.Run();
 StagePackLogicTests.Run();
+PackageLogicTests.Run();
 Equal(-1, animation.Frame(0, 126), "inactive before threshold");
 animation.Update(0.49f, 10);
 Equal(-1, animation.Frame(10, 126), "inactive below threshold");

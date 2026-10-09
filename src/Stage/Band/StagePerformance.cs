@@ -1,3 +1,6 @@
+using System.Buffers.Binary;
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Numerics;
 using System.Text.Json;
@@ -69,10 +72,8 @@ internal sealed class PerformanceClip
         {
             _bones[i] = reader.ReadInt32();
             _masks[i] = reader.ReadInt32();
-            if (_bones[i] < 0 || _bones[i] >= bones || _masks[i] is < 1 or > 3)
-                throw new InvalidDataException("Invalid performance bone mask");
         }
-        if (_bones.Distinct().Count() != count) throw new InvalidDataException("Duplicate performance bones");
+        CheckTracks(bones);
         _poses = new BandPose[_frames * count];
         for (var i = 0; i < _poses.Length; i++)
         {
@@ -83,6 +84,132 @@ internal sealed class PerformanceClip
             _poses[i] = new(p, Quaternion.Normalize(q));
         }
         if (reader.BaseStream.ReadByte() != -1) throw new InvalidDataException("Extra performance clip data");
+    }
+
+    private void CheckTracks(int bones)
+    {
+        for (var i = 0; i < _bones.Length; i++)
+            if (_bones[i] < 0 || _bones[i] >= bones || _masks[i] is < 1 or > 3)
+                throw new InvalidDataException("Invalid performance bone mask");
+        if (_bones.Distinct().Count() != _bones.Length) throw new InvalidDataException("Duplicate performance bones");
+    }
+
+    // A clip file of the cache: q48 + Brotli (`<clip>.q48.br`, package format v1 section 11) or GH3CLP01 + gzip (`<clip>.bin.gz`).
+    public static PerformanceClip Load(string pathWithoutExtension, int bones)
+    {
+        var q48 = pathWithoutExtension + ".q48.br";
+        if (File.Exists(q48))
+        {
+            using var file = File.OpenRead(q48);
+            using var brotli = new BrotliStream(file, CompressionMode.Decompress);
+            using var data = new MemoryStream();
+            brotli.CopyTo(data);
+            return new PerformanceClip(data.GetBuffer().AsSpan(0, (int)data.Length), bones);
+        }
+        using var stream = File.OpenRead(pathWithoutExtension + ".bin.gz");
+        return new PerformanceClip(stream, bones);
+    }
+
+    // Decoded q48 layout (GH3CLQ01, PACKAGE-FORMAT.md section 11.1). Channels outside the track mask stay zero or identity.
+    public PerformanceClip(ReadOnlySpan<byte> data, int bones)
+    {
+        if (data.Length < 18 || System.Text.Encoding.ASCII.GetString(data[..8]) != "GH3CLQ01" || data[9] != bones)
+            throw new InvalidDataException("Invalid q48 clip header");
+        int bits = data[8];
+        _frames = BinaryPrimitives.ReadUInt16LittleEndian(data[10..]);
+        var count = BinaryPrimitives.ReadUInt16LittleEndian(data[12..]);
+        Duration = BinaryPrimitives.ReadSingleLittleEndian(data[14..]);
+        if (bits is < 2 or > 16 || _frames is < 2 or > 18001 || count < 1 || count > bones || !float.IsFinite(Duration) || Duration is <= 0 or > 600 ||
+            data.Length < 18 + 3 * count)
+            throw new InvalidDataException("Invalid q48 clip size");
+        _bones = new int[count];
+        _masks = new int[count];
+        var flags = new int[count];
+        for (var i = 0; i < count; i++)
+        {
+            _bones[i] = data[18 + 3 * i];
+            _masks[i] = data[19 + 3 * i];
+            flags[i] = data[20 + 3 * i];
+            if ((flags[i] & ~_masks[i]) != 0) throw new InvalidDataException("Invalid q48 track flags");
+        }
+        CheckTracks(bones);
+        var at = 18 + 3 * count;
+        var positions = new Vector3[_frames * count];
+        var rotations = new Quaternion[_frames * count];
+        Array.Fill(rotations, Quaternion.Identity);
+        for (var t = 0; t < count; t++)
+        {
+            if ((_masks[t] & 1) == 0) continue;
+            if ((flags[t] & 1) != 0)
+            {
+                var block = Take(data, ref at, 12);
+                var value = new Vector3(BinaryPrimitives.ReadSingleLittleEndian(block), BinaryPrimitives.ReadSingleLittleEndian(block[4..]), BinaryPrimitives.ReadSingleLittleEndian(block[8..]));
+                for (var f = 0; f < _frames; f++) positions[f * count + t] = value;
+                continue;
+            }
+            var range = Take(data, ref at, 24);
+            for (var c = 0; c < 3; c++)
+            {
+                var low = BinaryPrimitives.ReadSingleLittleEndian(range[(4 * c)..]);
+                var scale = BinaryPrimitives.ReadSingleLittleEndian(range[(12 + 4 * c)..]);
+                var plane = Take(data, ref at, 2 * _frames);
+                var value = 0;
+                for (var f = 0; f < _frames; f++)
+                {
+                    value = (value + BinaryPrimitives.ReadUInt16LittleEndian(plane[(2 * f)..])) & 0xFFFF;
+                    // float64 as the reference decoder (pipeline/package/q48.py), then float32 as GH3CLP01 stores it.
+                    var x = (float)(low + (double)value * scale);
+                    ref var p = ref positions[f * count + t];
+                    if (c == 0) p.X = x; else if (c == 1) p.Y = x; else p.Z = x;
+                }
+            }
+        }
+        var top = (1 << bits) - 1;
+        Span<double> q = stackalloc double[4];
+        for (var t = 0; t < count; t++)
+        {
+            if ((_masks[t] & 2) == 0) continue;
+            if ((flags[t] & 2) != 0)
+            {
+                var block = Take(data, ref at, 16);
+                var value = Quaternion.Normalize(new Quaternion(BinaryPrimitives.ReadSingleLittleEndian(block), BinaryPrimitives.ReadSingleLittleEndian(block[4..]),
+                    BinaryPrimitives.ReadSingleLittleEndian(block[8..]), BinaryPrimitives.ReadSingleLittleEndian(block[12..])));
+                if (!float.IsFinite(value.LengthSquared())) throw new InvalidDataException("Invalid q48 constant rotation");
+                for (var f = 0; f < _frames; f++) rotations[f * count + t] = value;
+                continue;
+            }
+            var index = Take(data, ref at, _frames);
+            var planes = Take(data, ref at, 6 * _frames);
+            int a = 0, b = 0, d = 0;
+            for (var f = 0; f < _frames; f++)
+            {
+                a = (a + BinaryPrimitives.ReadUInt16LittleEndian(planes[(2 * f)..])) & 0xFFFF;
+                b = (b + BinaryPrimitives.ReadUInt16LittleEndian(planes[(2 * (_frames + f))..])) & 0xFFFF;
+                d = (d + BinaryPrimitives.ReadUInt16LittleEndian(planes[(2 * (2 * _frames + f))..])) & 0xFFFF;
+                if (a > top || b > top || d > top || index[f] > 3) throw new InvalidDataException("Invalid q48 rotation value");
+                double x = ((double)a / top * 2 - 1) * Sqrt1_2, y = ((double)b / top * 2 - 1) * Sqrt1_2, z = ((double)d / top * 2 - 1) * Sqrt1_2;
+                var largest = Math.Sqrt(Math.Clamp(1 - (x * x + y * y + z * z), 0, 1));
+                for (int k = 0, slot = 0; k < 4; k++) q[k] = k == index[f] ? largest : slot++ switch { 0 => x, 1 => y, _ => z };
+                var norm = Math.Sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
+                rotations[f * count + t] = new Quaternion((float)(q[0] / norm), (float)(q[1] / norm), (float)(q[2] / norm), (float)(q[3] / norm));
+            }
+        }
+        if (at != data.Length) throw new InvalidDataException("Extra q48 clip data");
+        _poses = new BandPose[_frames * count];
+        for (var i = 0; i < _poses.Length; i++)
+        {
+            if (!float.IsFinite(positions[i].LengthSquared())) throw new InvalidDataException("Invalid q48 position");
+            _poses[i] = new(positions[i], Quaternion.Normalize(rotations[i]));
+        }
+    }
+
+    private const double Sqrt1_2 = 0.70710678118654752440;
+
+    private static ReadOnlySpan<byte> Take(ReadOnlySpan<byte> data, ref int cursor, int size)
+    {
+        if (cursor + size > data.Length) throw new InvalidDataException("Truncated q48 clip");
+        cursor += size;
+        return data.Slice(cursor - size, size);
     }
 
     public void SampleDelta(BandPose[] output, bool[] touched, BandPose[] bind, double time)
@@ -127,7 +254,7 @@ internal sealed class PerformancePlayer
     private readonly BandPose[] _bind;
     private readonly BandPose[] _previous;
     private readonly StageTimeline _timeline;
-    private readonly Dictionary<string, PerformanceClip> _clips = new();
+    private readonly PerformanceClipCache _clips;
     private readonly List<Segment> _segments = new();
     private readonly StageCue[] _commands;
     private readonly StageDrummer? _drummer;
@@ -154,6 +281,7 @@ internal sealed class PerformancePlayer
         _directory = directory;
         _member = member;
         _bind = bind;
+        _clips = new PerformanceClipCache(Path.Combine(directory, role), bind.Length, role);
         _timeline = timeline;
         Pose = new BandPose[bind.Length];
         _previous = new BandPose[bind.Length];
@@ -186,8 +314,10 @@ internal sealed class PerformancePlayer
         var needed = _segments.Select(s => s.Clip)
             .Concat(_member.Layers.Where(pair => !pair.Key.StartsWith("strum/")).SelectMany(pair => pair.Value)).Concat(_armTracks.SelectMany(t => t.Clips))
             .Concat(_timeline.Track("face", _role).Select(c => c.Value)).Where(_member.Clips.ContainsKey).Distinct();
-        foreach (var clip in needed) _ = Clip(clip);
+        _clips.Prefetch(needed);
     }
+
+    public PerformanceClipCache Clips => _clips;
 
     public void Sample(double time, double walkAge = -1, float walkWeight = 1)
     {
@@ -400,20 +530,80 @@ internal sealed class PerformancePlayer
         return new(branches, _bind.Length);
     }
 
-    private PerformanceClip Clip(string name)
-    {
-        if (_clips.TryGetValue(name, out var clip)) return clip;
-        using var file = File.OpenRead(Path.Combine(_directory, _role, name + ".bin.gz"));
-        clip = new PerformanceClip(file, _bind.Length);
-        if (_clips.Count >= 512) _clips.Remove(_clips.Keys.First());
-        _clips.Add(name, clip);
-        return clip;
-    }
+    private PerformanceClip Clip(string name) => _clips.Get(name);
 
     private string[] Group(string name) => _member.Groups.GetValueOrDefault(name, Array.Empty<string>());
     private static StageCue? Last(StageCue[] cues, double time)
     {
         var index = StageTimeline.UpperBound(cues, time, c => c.Time) - 1;
         return index < 0 ? null : cues[index];
+    }
+}
+
+// Decoded clips of one role. Prefetch decodes the clips that a song needs on worker threads before the song starts, so no
+// clip decodes on the main thread during play (PACKAGING-PLAN section 4.2). A clip outside the prefetched set still loads,
+// on the calling thread, and is counted.
+internal sealed class PerformanceClipCache
+{
+    private readonly ConcurrentDictionary<string, PerformanceClip> _clips = new();
+    private readonly string _directory;
+    private readonly int _bones;
+    private readonly string _label;
+    private HashSet<string> _pending = new();
+    private Task? _prefetch;
+    public int Prefetched { get; private set; }
+    public double PrefetchMilliseconds { get; private set; }
+    public static int LateLoads;
+    public static double LateMilliseconds;
+    public static Action<string>? Report { get; set; }
+
+    public PerformanceClipCache(string directory, int bones, string label)
+    {
+        _directory = directory;
+        _bones = bones;
+        _label = label;
+    }
+
+    public void Prefetch(IEnumerable<string> names)
+    {
+        var list = names.Where(name => !_clips.ContainsKey(name)).Distinct().ToArray();
+        _pending = list.ToHashSet();
+        Prefetched = list.Length;
+        _prefetch = Task.Run(() =>
+        {
+            var clock = Stopwatch.StartNew();
+            Parallel.ForEach(list, new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount / 2, 1, 4) },
+                name => _clips.TryAdd(name, PerformanceClip.Load(Path.Combine(_directory, name), _bones)));
+            PrefetchMilliseconds = clock.Elapsed.TotalMilliseconds;
+        });
+    }
+
+    // Waits for the prefetch; returns the time that the caller waited.
+    public double Wait()
+    {
+        if (_prefetch == null) return 0;
+        var clock = Stopwatch.StartNew();
+        // Wait on the handle: Task.Wait can run a task that has not started on the waiting (main) thread.
+        ((IAsyncResult)_prefetch).AsyncWaitHandle.WaitOne();
+        if (_prefetch.Exception is { } error) Report?.Invoke($"clip prefetch of {_label} failed: {error.InnerException?.Message}");
+        _pending.Clear();
+        return clock.Elapsed.TotalMilliseconds;
+    }
+
+    public PerformanceClip Get(string name)
+    {
+        if (_clips.TryGetValue(name, out var clip)) return clip;
+        if (_pending.Contains(name))
+        {
+            Wait();
+            if (_clips.TryGetValue(name, out clip)) return clip;
+        }
+        var clock = Stopwatch.StartNew();
+        clip = PerformanceClip.Load(Path.Combine(_directory, name), _bones);
+        _clips[name] = clip;
+        LateLoads++;
+        LateMilliseconds += clock.Elapsed.TotalMilliseconds;
+        Report?.Invoke($"clip {_label}/{name} was not prefetched; it loaded on the main thread in {clock.Elapsed.TotalMilliseconds:0.0} ms");
+        return clip;
     }
 }

@@ -1,6 +1,6 @@
 # Package format v1
 
-Status: **frozen** (PACKAGING-PLAN step 3, part 1). This document is the reference for venue, character, and library packages. The JSON Schemas are in [`schemas/`](../schemas). The validator is `pipeline/package/validate.py`. The converter is `pipeline/package/build.py` ([section 19](#19-converter)). The C# importer is not written yet (see [section 17](#17-open-questions)).
+Status: **frozen** (PACKAGING-PLAN step 3, part 1). This document is the reference for venue, character, and library packages. The JSON Schemas are in [`schemas/`](../schemas). The validator is `pipeline/package/validate.py`. The converter is `pipeline/package/build.py` ([section 19](#19-converter)). The C# importer is `src/Packages/` ([section 20](#20-c-importer)).
 
 The words "must" and "must not" give rules. The validator reports a rule failure as an error. "Should" gives a recommendation. The validator reports it as a warning.
 
@@ -464,6 +464,16 @@ The importer converts a package one time and writes a per-machine cache.
 - **Cache content is platform-specific.** It can contain the GPU texture formats that this machine supports, compiled meshes (`GH3STG04`, `GH3BND02`), decoded or re-encoded clips, PCM audio, and compiled JSON. No package contains cache files.
 - `cache.json` in each cache folder records the key, the platform, the graphics API, and the texture formats. The loader rebuilds the cache when they differ from the running game (for example a copied user folder or `-force-glcore` on Windows).
 - The importer writes into a temporary folder and renames it when it is complete. A crash does not leave a partial cache.
+- `index.json` in the cache root keeps the SHA-256 of each package with its size and time (zip) or with a signature of its file list (folder). A warm start reads only this index; it does not read the packages again.
+- Cache layout (importer version 1): the runtime folders that the mod loaded before packages. A venue cache is a compiled stage folder (`pack.json`, `stage.json`, `meshes.bin` `GH3STG04`, `cameras.json`, `lighting.json`, `scripts.json`, `actors/`, `fixtures/`). A library cache is a library folder (`band/<role>/` and `crowd/…/` with `GH3BND02` meshes, `GH3ANM01` rigs, and `stage.json`; JSON files; `songs/`; `render/` with the effect files). Differences from the older install:
+
+| Item | Cache file | Older install |
+|---|---|---|
+| Model textures | `textures/<name>.tex`: magic `GH3TEX01`, Unity `TextureFormat` (4 RGBA32, 10 BC1, 12 BC3), width, height, mip count (int32 each), then the full mip chain, largest first, rows bottom first | `textures/<name>.png` |
+| Clips | `<clip>.q48.br`, copied from the package; decoded by the clip prefetch | `<clip>.bin.gz` (`GH3CLP01`) |
+| Sounds | `audio/<sample>.pcm` (raw 16-bit PCM) | `audio/<sample>.pcm.gz` |
+| Song direction | `songs/` in the library cache | `assets/stages/events/` |
+| Shader bundles | Not in the cache: `Mods/GH3Skin/render/` | `libraries/gh3-band-v1/render/` |
 
 ## 15. Validation
 
@@ -527,11 +537,8 @@ The current library does not map file for file. Each part has a conversion step 
 
 ### 17.3 For the C# importer (step 4)
 
-- Brotli works in the game (see [section 18](#18-in-game-check-of-brotli)). `System.IO.Compression.ZipArchive` is in the same .NET runtime. Test Zip64 and DEFLATE reads in the game.
-- The `GlbFile` spike reader needs the node hierarchy, extras, and material parsing (spike result 9.3).
-- Texture encoding to BC1/BC3 on worker threads; RGBA32 until the cache is ready.
-- Cache clean-up: when to delete unused cache folders.
-- Development folders: watch the files and rebuild the cache on change.
+- Done ([section 20](#20-c-importer)): `ZipArchive` reads the packages in the game (DEFLATE entries; the 658 MB library zip). Zip64 was not needed by the current packages and is not tested. The importer has its own GLB reader (`GlbDocument`) with the node hierarchy, extras, and materials. BC1/BC3 encoding runs on worker threads before the stage loads; the stage waits for the import of its package (it does not show RGBA32 first).
+- Open: cache clean-up (when to delete unused cache folders); development folders are hashed at start, but not watched while the game runs.
 
 ## 18. In-game check of Brotli
 
@@ -634,3 +641,67 @@ Library parts:
 | Songs | 160 | 169.0 | 5.9 | 169.0 (`assets/stages/events`) |
 | `scripts.json` | 1 | 12.1 | 1.2 | 12.1 |
 | Other JSON, hand fire, effects, manifest | 9 | 1.7 | 0.4 | 1.0 (with `render/` bundles and `library.json`) |
+
+## 20. C# importer
+
+Step 4 of the plan, core part. The mod finds packages, checks them, converts each one to the cache (section 14), and loads the venue and the library from the cache. Code: `src/Packages/` (Unity-free, except `PackageRuntime.cs`).
+
+```mermaid
+flowchart LR
+    Scan[Scan and check manifests<br/>main thread, about 0.1 s] --> Hit{Cache entry<br/>for this package?}
+    Hit -- yes --> Ready[Ready]
+    Hit -- no --> Worker[Worker thread:<br/>check SHA-256, compile,<br/>encode BC1/BC3]
+    Worker --> Ready
+    Ready --> Stage[GameplayStage loads<br/>from the cache]
+```
+
+### 20.1 Discovery and checks
+
+- Folders: `Custom/Stages` and `Custom/Characters` of each `GlobalVariables.uniqueCustomContentPaths` entry (group subfolders to depth 4), then `Mods/GH3Skin/Packages/`. Zip files and development folders.
+- Each bad package gives one warning line and is skipped: unknown or newer format (`needs a newer mod`), wrong extension for the format, newer `minModVersion`, a missing or unlisted file, a wrong size (at the scan), a wrong SHA-256 (at the import, `the package is damaged`), a missing required package (`requires gh3-band-v1 1.0.0 … which is not installed`), a failed import of the required library.
+- With two packages of one ID, the higher version wins; with equal versions, the first in scan order.
+- Characters (`.chchar`) are found and logged only.
+- `GH3_SKIN_PACKAGES=off` turns packages off (the older install only).
+
+### 20.2 Import
+
+- One package at a time, on one background thread (`GH3 package importer`), the library first, then the selected stage (`GH3_SKIN_STAGE`), then the others. Texture encoding uses up to 4 threads (half the cores). A warm start runs no import thread: the scan and the cache check run on the main thread.
+- Venues: a C# port of `compile_stage` and `compile_actor` (`StageCompiler`, `StageGeometry`). Library: the C# side of `roundtrip.py` (`LibraryImporter`).
+- Textures: PNG decode (all colour types, `tRNS`), box-filter mip chain, then BC1 (opaque) or BC3 (alpha) with a managed encoder written for this project (`BlockCompression`: principal axis, least-squares refinement, exact single colours). A size that is not a multiple of 4, a GPU without DXT1/DXT5 (`SystemInfo.SupportsTextureFormat`), or a first level under 36 dB PSNR (art that GH3 did not store as DXT) gives RGBA32.
+- Not ported: the alpha-mask mesh trimming of `pipeline/gh3/mesh_cutout.py`. It applies only to unshaded materials without a GH3 record; no GH3 venue has one. The importer logs a warning for such a material and keeps the full mesh (the shader discards the same pixels).
+- Clips: copied as q48 + Brotli. Decision by measurement: the decoded clips (GH3CLP01 float32) would be about 1 GB on disk against 121 MB; the q48 decode of a song set takes 30–85 ms on worker threads in the game (below), less than the gzip decode of the older install (348 ms).
+
+### 20.3 Loader
+
+- `GameplayStage` uses the cache folders when the stage package and its library are ready. While they import, the stage waits (up to 120 s, then the older install is used). Without a package, the older install (`assets/stages`, `assets/libraries`) is used.
+- `StageAssets` uploads `.tex` files with `LoadRawTextureData` and `Apply(false, true)` (no decode on the main thread). All uploads are in the stage load frame: 364 textures of gh3.dive take 140–200 ms.
+- Clip prefetch: `PerformancePlayer.Prepare` gives the song's clip set to `PerformanceClipCache`, which decodes it with `Parallel.ForEach` on worker threads. The main thread waits for it in the stage load (16–35 ms measured). A clip outside the set loads on the main thread with a warning (`clip … was not prefetched`), and the stage reset logs the count. The crowd prefetches all its performance clips (102).
+
+### 20.4 Comparison with the Python pipeline
+
+`tools/PackageImport` runs the importer outside the game; `python -m pipeline.package.cachecheck` compares its cache with the Python output (`assets/stages/<id>`, `assets/libraries/gh3-band-v1`, `assets/stages/events`), which `roundtrip.py` showed to be the Python conversion of the same packages. Result on 2026-10-09 (all 12 packages):
+
+| Part | Result |
+|---|---|
+| Venues (10 and `example.studio`) | All equal: `meshes.bin`, `stage.json`, cameras, lighting, scripts, and fixtures byte-equal or JSON-equal. 11 actor meshes have equal values (a few zeros have the other sign, `-0.0`). 28 actor `animation.bin` files are within 3.3e-16 |
+| Library JSON, effect files, particle and hand-fire textures, movies (`GH3VID01`), songs | Byte-equal or JSON-equal |
+| Sounds | 227 of 227 PCM equal |
+| Band and crowd models (22) | `meshes.bin` byte-equal except the guitarist and drummer UV (3.0e-8, as `roundtrip.py`), `animation.bin` and `stage.json` equal |
+| Clips | 1,240 `.q48.br` byte-equal to the package. The C# decoder against the `GH3CLP01` clips of the older install (C# test, `GH3_PACKAGE_ASSETS`): 0.0068° and 0.108 mm maximum |
+| Textures, RGBA32 cache (`--rgba`) | All 1,520 textures pixel-equal to the Python PNG files |
+| Textures, BC1/BC3 cache | 1,120 BC1, 387 BC3, 13 RGBA32 (quality limit). PSNR of the first level: median 61.6–65.4 dB per package, minimum 36.5 dB. On the three worst textures, `etcpak` (the spike's native encoder) gives 28.1, 28.1, and 33.3 dB where this encoder gives 30.5 (now RGBA32), 40.5, and 47.6 dB |
+
+### 20.5 Game measurements (Linux, 2026-10-09)
+
+Game copy `~/games/clonehero-gh3-importer`, gh3.dive, mycurse-native, 1600 × 900. The PC had 13 of 15 GB RAM and 11 GB swap in use by other jobs, so the times vary.
+
+| Measure | Packages (this importer) | `main` 18deb21, older install |
+|---|---|---|
+| Cold cache, import of all 12 packages | 23.5 s total on the background thread: library 4.1–4.3 s, gh3.dive 2.9–3.0 s, gh3.hell 4.9–5.1 s, others 0.2–2.6 s. The stage waits for the library and its own package only (7 s) | — |
+| Scene loaded to stage loaded, warm | 2.09–2.38 s (8 runs, median 2.2 s) | 3.43–3.81 s (9 runs, median 3.5 s) |
+| Stage load on the main thread, warm | 1.8–2.2 s; textures 140–200 ms | not logged (the same build with `GH3_SKIN_PACKAGES=off`: 3.1 s) |
+| Clip decode | 157 band clips in 30–85 ms on workers; 0 main-thread clip loads during play | gzip on the main thread at load |
+| Peak RSS, warm | 1,160–1,210 MB | 1,107–1,171 MB |
+| Peak RSS during the cold import of all packages, with the stage loaded | 1,472 MB (the import thread alone: 495 MB peak working set in `tools/PackageImport`) | — |
+
+Visual result: the dive recording from packages and from `main` agree (aligned videos: mean RGB difference 2.3–2.9 in 8 of 10 samples, up to 7.7 when the frame times differ). Screenshot pairs at the same song times differ as much as two `main` runs differ from each other (21–41 dB in both cases, from timing). `tools/audit-materials.py` on the cache gives the same 921 template materials as on `assets/stages`.

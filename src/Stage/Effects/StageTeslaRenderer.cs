@@ -17,7 +17,7 @@ internal sealed class StageTeslaRenderer : IDisposable
     private readonly Texture2D _texture;
     public int Effects { get; private set; }
 
-    public StageTeslaRenderer(StageAssets assets, GameObject root, Camera camera, int layer, string directory)
+    public StageTeslaRenderer(StageAssets assets, GameObject root, Camera camera, int layer, string directory, string effectsDirectory)
     {
         _assets = assets;
         _root = root;
@@ -28,7 +28,7 @@ internal sealed class StageTeslaRenderer : IDisposable
         {
             _shader = StageShader.Load(_bundle, "the Tesla shader");
             _texture = assets.Own(new Texture2D(2, 2, TextureFormat.RGBA32, false, true));
-            if (!ImageConversion.LoadImage(_texture, File.ReadAllBytes(Path.Combine(directory, "tesla-noise.png")), true))
+            if (!ImageConversion.LoadImage(_texture, File.ReadAllBytes(Path.Combine(effectsDirectory, "tesla-noise.png")), true))
                 throw new InvalidDataException("Tesla noise texture did not load");
             _texture.wrapMode = TextureWrapMode.Repeat;
             _texture.filterMode = FilterMode.Bilinear;

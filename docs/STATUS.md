@@ -9,6 +9,7 @@ Version **0.9.8**. Clone Hero `v1.1.0.6142-final` with MelonLoader 0.7.3, Linux 
 - **Stage.** All ten GH3 venues as stage packs. Four performers with original rigs, instruments, clips, hair physics, fret-hand fingers, drummer IK, and 100-note hand fire. Crowd impostors per row. Original cameras with GH3's shot selection and geometry. Lightshow snapshots, beams, housings, and node flags. GH3 particles, Tesla, movies, outlines, screen color. All 921 used materials draw with their translated GH3 shader templates. Pre-song intro and post-song win sequences.
 - **Direction.** Native song PAK, `stage-events.json` versions 1 and 2, chart and MIDI direction tracks, and the original song library for 159 songs. Shared command dispatch for native and authored commands.
 - **Custom stages.** The public stage-pack format, compiler, and example pack.
+- **Packages.** The mod loads the venues and the library from package format v1 (`Mods/GH3Skin/Packages/`, `Custom/Stages`) through a per-machine cache with BC1/BC3 textures and a worker-thread clip prefetch ([PACKAGE-FORMAT.md section 20](PACKAGE-FORMAT.md#20-c-importer)). The older install stays as a fallback. No stage or character picker yet; `GH3_SKIN_STAGE` selects the stage.
 
 ## Known differences from GH3
 
@@ -27,6 +28,12 @@ Version **0.9.8**. Clone Hero `v1.1.0.6142-final` with MelonLoader 0.7.3, Linux 
 | Lightshow | GH3 changes occur about 0.15 s before the cue times in the recording |
 
 ## Remaining work
+
+### Packages
+
+- Stage and character pickers, character loading, chart cue tracks (PACKAGING-PLAN step 4 part 2).
+- Cache clean-up (unused cache folders stay), development folders are not watched while the game runs, Zip64 packages are not tested, Ogg and MP3 samples in a library are rejected (the importer reads WAV only).
+- Runtime stability: in 32 test starts on 2026-10-09, the branch had three CoreCLR faults (a crash in the type loader during the stage load, a stuck import thread followed by a crash in the JIT at exit, and a crash in the tiered-compilation thread before any package code ran), and one start where `uint.Parse` returned 0 (`Duplicate light housing object 00000000`; the same message is in an earlier spike log without packages). `main` had no fault in 12 starts. The symbolized stacks are in CoreCLR (`Module::GetMDImport`, `MemberLoader::GetMethodDescFromMethodDef`, `MethodTable::GetModule`). The cause is not known; the import thread and the clip prefetch add background managed threads. A start with a stuck import falls back to the older install after 120 s.
 
 ### Commands and scripts
 

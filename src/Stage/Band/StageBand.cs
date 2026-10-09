@@ -101,6 +101,21 @@ internal sealed class StageBand : IDisposable
         if (hair != null) MelonLogger.Msg($"GH3 hair physics: {hair.Members.Values.Sum(m => m.Joints.Length)} original joints");
     }
 
+    // Waits for the clip prefetch of all performers; returns the clip count, the worker time, and the time the caller waited.
+    public (int Clips, double Worker, double Waited) WaitForClips()
+    {
+        int clips = 0;
+        double worker = 0, waited = 0;
+        foreach (var player in _players)
+        {
+            if (player.Performance == null) continue;
+            waited += player.Performance.Clips.Wait();
+            clips += player.Performance.Clips.Prefetched;
+            worker = Math.Max(worker, player.Performance.Clips.PrefetchMilliseconds);
+        }
+        return (clips, worker, waited);
+    }
+
     public void SetTimeline(string directory, StageTimeline timeline, IReadOnlyDictionary<string, StagePlacement>? waypoints = null,
         StagePerformance? performance = null)
     {

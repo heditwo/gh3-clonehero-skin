@@ -277,9 +277,13 @@ internal sealed class StageAssets : IDisposable
             if (name.Length != 8 || !name.All(Uri.IsHexDigit)) throw new InvalidDataException("Invalid stage texture name");
             var cacheKey = name + cacheSuffix;
             if (textures.TryGetValue(cacheKey, out var texture)) return texture;
-            texture = Own(new Texture2D(2, 2, TextureFormat.RGBA32, true, false));
-            if (!texture.LoadImage(new Il2CppStructArray<byte>(File.ReadAllBytes(Path.Combine(directory, "textures", name + ".png"))), true))
-                throw new InvalidDataException("Invalid stage texture");
+            texture = LoadCachedTexture(Path.Combine(directory, "textures", name + ".tex"));
+            if (texture == null)
+            {
+                texture = Own(new Texture2D(2, 2, TextureFormat.RGBA32, true, false));
+                if (!texture.LoadImage(new Il2CppStructArray<byte>(File.ReadAllBytes(Path.Combine(directory, "textures", name + ".png"))), true))
+                    throw new InvalidDataException("Invalid stage texture");
+            }
             texture.wrapMode = wrap;
             texture.filterMode = FilterMode.Trilinear;
             textures.Add(cacheKey, texture);
@@ -566,6 +570,26 @@ internal sealed class StageAssets : IDisposable
             }
         }
         if (reader.BaseStream.Position != reader.BaseStream.Length) throw new InvalidDataException("Extra stage mesh data");
+    }
+
+    public static int TexturesUploaded;
+    public static double TextureMilliseconds;
+
+    // Package cache texture (Packages.TextureCodec): BC1, BC3, or RGBA32 with its full mip chain, uploaded without decoding.
+    private Texture2D? LoadCachedTexture(string path)
+    {
+        if (!File.Exists(path)) return null;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var data = File.ReadAllBytes(path);
+        var (format, width, height, mips) = Packages.TextureCodec.ReadHeader(data);
+        var unityFormat = (TextureFormat)format;
+        if (!SystemInfo.SupportsTextureFormat(unityFormat)) throw new InvalidDataException($"This GPU does not support {unityFormat}; delete the package cache");
+        var texture = Own(new Texture2D(width, height, unityFormat, mips > 1, false));
+        texture.LoadRawTextureData(new Il2CppStructArray<byte>(data[Packages.TextureCodec.HeaderSize..]));
+        texture.Apply(false, true);
+        TexturesUploaded++;
+        TextureMilliseconds += clock.Elapsed.TotalMilliseconds;
+        return texture;
     }
 
     private static float ReadFloat(BinaryReader reader)

@@ -8,9 +8,16 @@ internal sealed class GameplayStage
 {
     private readonly StageNoteHits _noteHits = new();
     private const int Layer = 30;
-    private readonly string _directory;
-    private readonly string _library;
-    private readonly string _events;
+    private readonly string _assetsDirectory;
+    private readonly string _stageId;
+    private string _directory = "";
+    private string _library = "";
+    private string _events = "";
+    private string _render = "";
+    private string _effectsDirectory = "";
+    private string _waitingFor = "";
+    private System.Diagnostics.Stopwatch? _waitClock;
+    private const double MaxWaitSeconds = 120;
     private readonly List<(Camera Camera, int Mask)> _cameras = new();
     private GameObject? _root;
     private StageAssets? _assets;
@@ -46,10 +53,72 @@ internal sealed class GameplayStage
 
     public GameplayStage(string assetsDirectory)
     {
+        _assetsDirectory = assetsDirectory;
         var name = Environment.GetEnvironmentVariable("GH3_SKIN_STAGE") ?? "gh3.budokan";
-        _directory = name == "off" || !StagePack.ValidId(name) ? "" : Path.Combine(assetsDirectory, "stages", name);
-        _library = Path.Combine(assetsDirectory, "libraries");
-        _events = Path.Combine(assetsDirectory, "stages", "events");
+        _stageId = name == "off" || !StagePack.ValidId(name) ? "" : name;
+        PerformanceClipCache.Report = message => MelonLogger.Warning("GH3 clips: " + message);
+    }
+
+    private enum SourceState { Ready, Waiting, Missing }
+
+    // Packages win when present (their cache folders); the files of the older install (assets/stages, assets/libraries)
+    // stay a fallback while it exists. The shader bundles come from the mod installation (Mods/GH3Skin/render).
+    private SourceState ResolveSources()
+    {
+        var manager = Packages.PackageRuntime.Manager;
+        if (manager != null || !Packages.PackageRuntime.Disabled)
+        {
+            if (manager == null || !manager.Scanned) return Wait("the package scan");
+            var stage = manager.Find(Packages.PackageKind.Stage, _stageId);
+            if (stage != null)
+            {
+                var requirement = stage.Manifest.Requires.FirstOrDefault(r => r.Id.StartsWith("gh3-band-", StringComparison.Ordinal));
+                var library = manager.Find(Packages.PackageKind.Library, requirement.Id ?? "gh3-band-v1");
+                var importing = stage.State is Packages.PackageState.Pending or Packages.PackageState.Importing ||
+                    library?.State is Packages.PackageState.Pending or Packages.PackageState.Importing;
+                if (importing && (_waitClock?.Elapsed.TotalSeconds ?? 0) < MaxWaitSeconds)
+                {
+                    manager.Prioritize(_stageId);
+                    return Wait($"the import of {_stageId}");
+                }
+                if (importing)
+                    MelonLogger.Warning($"GH3 stage waited {MaxWaitSeconds} s for the import of {_stageId} (importer: {manager.Activity}); the older install is used if it exists.");
+                else if (stage.State == Packages.PackageState.Ready && library?.State == Packages.PackageState.Ready)
+                {
+                    _directory = stage.CacheDirectory;
+                    _library = library.CacheDirectory;
+                    _events = Path.Combine(library.CacheDirectory, "songs");
+                    _effectsDirectory = Path.Combine(library.CacheDirectory, "render");
+                    _render = RenderDirectory(Path.Combine(_assetsDirectory, "libraries", library.Manifest.Id, "render"));
+                    MelonLogger.Msg($"GH3 stage source: package {stage.Label}, library {library.Label}");
+                    return SourceState.Ready;
+                }
+                else MelonLogger.Warning($"GH3 stage package {_stageId} did not import ({stage.Error}{library?.Error}); the older install is used if it exists.");
+            }
+        }
+        _directory = Path.Combine(_assetsDirectory, "stages", _stageId);
+        if (!File.Exists(Path.Combine(_directory, "pack.json"))) return SourceState.Missing;
+        var library2 = Path.Combine(_assetsDirectory, "libraries", StagePack.Load(_directory).Library);
+        _library = library2;
+        _events = Path.Combine(_assetsDirectory, "stages", "events");
+        _effectsDirectory = Path.Combine(library2, "render");
+        _render = RenderDirectory(_effectsDirectory);
+        MelonLogger.Msg($"GH3 stage source: assets/stages/{_stageId} (older install)");
+        return SourceState.Ready;
+    }
+
+    private SourceState Wait(string what)
+    {
+        _waitClock ??= System.Diagnostics.Stopwatch.StartNew();
+        if (_waitingFor != what) MelonLogger.Msg($"GH3 stage waits for {what}");
+        _waitingFor = what;
+        return SourceState.Waiting;
+    }
+
+    private string RenderDirectory(string fallback)
+    {
+        var installed = Path.Combine(_assetsDirectory, "..", "render");
+        return File.Exists(Path.Combine(installed, "stage.bundle")) ? Path.GetFullPath(installed) : fallback;
     }
 
     public void Reset()
@@ -108,6 +177,12 @@ internal sealed class GameplayStage
         _camera = null;
         _root = null;
         _attempted = false;
+        _waitingFor = "";
+        _waitClock = null;
+        if (PerformanceClipCache.LateLoads > 0)
+            MelonLogger.Warning($"GH3 clips: {PerformanceClipCache.LateLoads} clips loaded on the main thread during play ({PerformanceClipCache.LateMilliseconds:0.0} ms)");
+        PerformanceClipCache.LateLoads = 0;
+        PerformanceClipCache.LateMilliseconds = 0;
     }
 
     public void Update(BasePlayer player, int combo, float rock)
@@ -261,9 +336,9 @@ internal sealed class GameplayStage
         return double.IsFinite(end) ? end : null;
     }
 
-    private Shader? LoadSurfaceShader(string library)
+    private Shader? LoadSurfaceShader(string render)
     {
-        var path = Path.Combine(library, "render", "stage.bundle");
+        var path = Path.Combine(render, "stage.bundle");
         if (!File.Exists(path))
         {
             MelonLogger.Warning("GH3 stage surface shader is missing. Run scripts/regenerate.sh render.");
@@ -271,7 +346,7 @@ internal sealed class GameplayStage
         }
         _surfaceBundle = AssetBundle.LoadFromFile(path) ?? throw new InvalidDataException("Stage surface shader bundle did not load");
         var shader = StageShader.Load(_surfaceBundle, "the stage surface shader");
-        var templates = Path.Combine(library, "render", "stage-templates.json");
+        var templates = Path.Combine(render, "stage-templates.json");
         StageAssets.Templates = File.Exists(templates) ? StageShaderTemplates.Parse(File.ReadAllText(templates)) : null;
         if (StageAssets.Templates == null) MelonLogger.Warning("GH3 material template table is missing. Run scripts/regenerate.sh render.");
         return shader;
@@ -279,21 +354,29 @@ internal sealed class GameplayStage
 
     private void Create(BasePlayer player)
     {
-        _attempted = true;
-        if (_directory.Length == 0) return;
-        if (!File.Exists(Path.Combine(_directory, "pack.json")))
+        if (_stageId.Length == 0)
         {
-            MelonLogger.Warning("Stage pack is missing. Run scripts/regenerate.sh venues and install.sh.");
+            _attempted = true;
             return;
         }
+        var state = ResolveSources();
+        if (state == SourceState.Waiting) return;
+        _attempted = true;
+        if (state == SourceState.Missing)
+        {
+            MelonLogger.Warning($"Stage {_stageId} is missing: no package and no older install. Run install.sh.");
+            return;
+        }
+        var loadClock = System.Diagnostics.Stopwatch.StartNew();
+        var texturesBefore = (StageAssets.TexturesUploaded, StageAssets.TextureMilliseconds);
         try
         {
             var pack = StagePack.Load(_directory);
-            var library = Path.Combine(_library, pack.Library);
+            var library = _library;
             _root = new GameObject("GH3 Stage") { layer = Layer };
             var lighting = StageLightingBank.Load(_directory);
             _assets = new StageAssets();
-            var surfaceShader = LoadSurfaceShader(library);
+            var surfaceShader = LoadSurfaceShader(_render);
             _assets.Load(_directory, _root, Layer, lighting: lighting != null, surfaceShader: surfaceShader);
             _band = new StageBand();
             _band.Load(Path.Combine(library, "band"), _assets, _root, Layer, lighting != null, pack.Band, surfaceShader);
@@ -358,6 +441,9 @@ internal sealed class GameplayStage
                     manager.songLength = WinTime + StageShowFlow.WinLength;
             }
             _band.SetTimeline(Path.Combine(library, "direction"), _timeline, pack.Waypoints, performance);
+            // The main thread waits here while worker threads decode the song's clips, so no other managed work runs
+            // on the main thread at the same time (see docs/ARCHITECTURE.md, packages).
+            var (clips, clipWorker, clipWait) = _band.WaitForClips();
             _actors.SetTimeline(_timeline);
             _audio = StageAudio.Load(Path.Combine(library, "audio"), _timeline, pack.Id, GlobalVariables.instance?.isPracticeEnabled == true);
             var stageLighting = lighting == null ? null : new StageLighting(lighting, _timeline);
@@ -378,20 +464,24 @@ internal sealed class GameplayStage
                     }
                     return (System.Numerics.Vector3.Distance(position, viewPosition), visibility.Test(viewPlanes));
                 };
-                _particles = new(_scripts, _assets, _root, _camera, Layer, Path.Combine(library, "render", "particle.bundle"));
+                _particles = new(_scripts, _assets, _root, _camera, Layer, Path.Combine(_render, "particle.bundle"), _effectsDirectory);
                 _movies = new(_assets, _scripts);
-                var shaders = Path.Combine(library, "render", "screen-color.bundle");
+                var shaders = Path.Combine(_render, "screen-color.bundle");
                 if (File.Exists(shaders)) _screenEffects = new(_scripts, _camera, shaders);
                 else MelonLogger.Warning("GH3 stage screen shaders are missing. Run scripts/regenerate.sh render.");
-                var outlines = Path.Combine(library, "render", "outline.bundle");
+                var outlines = Path.Combine(_render, "outline.bundle");
                 if (File.Exists(outlines)) _outlines = new(_scripts, _camera, _assets, _actors, outlines);
             }
             _crowd.SetTimeline(_timeline);
+            clipWait += _crowd.Clips?.Wait() ?? 0;
             _effects = new StageEffects(_assets, _root, _camera, Layer,
                 stageLighting, _fixtures, pack.Effects) { SourcePyro = _scripts?.State.SourcePyro == true };
             if (surfaceShader != null) _highwayMask = new StageHighwayMask(_assets, _camera, surfaceShader, Layer);
             _handFire = StageHandFire.Load(Path.Combine(library, "hand-fire"), _assets, _root, _camera, Layer, _band);
             MelonLogger.Msg($"GH3 stage loaded: {_assets.Definition.Name}");
+            MelonLogger.Msg($"GH3 stage load time: {loadClock.Elapsed.TotalMilliseconds:0} ms on the main thread " +
+                $"({StageAssets.TexturesUploaded - texturesBefore.Item1} cache textures in {StageAssets.TextureMilliseconds - texturesBefore.Item2:0} ms; " +
+                $"{clips} band clips decoded in {clipWorker:0} ms on worker threads while the main thread waited {clipWait:0} ms; managed heap {GC.GetTotalMemory(false) / 1e6:0} MB)");
             MelonLogger.Msg($"GH3 stage cues: {_timeline.CueCount} from {_timeline.Source}; {_timeline.Effects.Length} effects");
             foreach (var diagnostic in _timeline.Diagnostics) MelonLogger.Msg(diagnostic);
             if (_timeline.NativeSong is { } nativeSong)

@@ -1,7 +1,7 @@
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(Gh3Skin.SkinMod), "GH3 Gameplay Skin", "0.9.8", "hedi")]
+[assembly: MelonInfo(typeof(Gh3Skin.SkinMod), "GH3 Gameplay Skin", Gh3Skin.ModInfo.Version, "hedi")]
 [assembly: MelonGame("srylain Inc.", "Clone Hero")]
 
 namespace Gh3Skin;
@@ -77,6 +77,11 @@ public sealed class SkinMod : MelonMod
             MelonLogger.Msg("GH3 gameplay scene loaded");
             Spike.BrotliSpike.Start();
         }
+    }
+
+    public override void OnUpdate()
+    {
+        if (_stage != null) Packages.PackageRuntime.Update();
     }
 
     public override void OnLateUpdate()

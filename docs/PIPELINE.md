@@ -100,7 +100,7 @@ GH3_WINE=~/games/gh3-test-tools/wine-root/usr/bin/wine GH3_ACCEPT_WINDOWS_SDK_LI
 | One song, for a song folder | `python3 -m pipeline.events DATA/SONGS/mycurse_song.pak.xen --output "<song folder>/stage-events.json"` |
 | A custom stage pack | `python -m pipeline.stagepack.install <source pack folder>` |
 
-After a change, run `install.sh`. The installer copies `assets/*.png`, `*.dds`, the font and ready-animation JSON, `assets/counter-tuning.json`, `assets/stages`, and `assets/libraries` into the game.
+After a change, run `install.sh`. The installer copies `assets/*.png`, `*.dds`, the font and ready-animation JSON, `assets/counter-tuning.json`, `assets/stages`, and `assets/libraries` into the game. It also copies the packages (`assets/packages/*.chstage`, `gh3-band-v1.chlib`, zip form, with their file times) to `Mods/GH3Skin/Packages/` and the shader bundles to `Mods/GH3Skin/render/`. The mod prefers the packages; `assets/stages` and `assets/libraries` stay in the game as a fallback until a later cleanup. A changed package gets a new cache entry in `UserData/GH3Skin/Cache/` at the next start.
 
 ## Check the result
 
@@ -121,6 +121,16 @@ flock /tmp/opencode/gh3-heavy.lock env MISE_QUIET=1 uv run --with pillow --with 
 
 Expected result: every compiled venue file is byte-equal; the library JSON, textures, sounds, movies, and rigs are byte-equal or JSON-equal; 159 V coordinates of the guitarist and drummer meshes differ by at most 3e-8 (glTF stores 1 − v); all 1,240 clips are within the q48 error bound.
 
+The C# importer must give the same cache content as the Python pipeline. Import all packages outside the game, then compare (about 20 s and 0.5 GB for the import; 1.5 GB of disk):
+
+```bash
+dotnet run --project tools/PackageImport -c Release -- assets/packages <cache folder>
+flock /tmp/opencode/gh3-heavy.lock env MISE_QUIET=1 uv run --with numpy --with pillow --with brotli \
+  python -m pipeline.package.cachecheck <cache folder> --json /tmp/opencode/cachecheck.json
+```
+
+Expected result: every package `equal`; textures BC1/BC3 with a minimum first-level PSNR above 36 dB. With `--rgba` (no BC encoding) all textures are pixel-equal (`maxError` 0). Put the cache folder on a disk, not on `/tmp` (a RAM disk here).
+
 The `hud` step makes `beatline*.png` files that are different from the files in Git (also with the code before the cleanup). Do not commit the new files without a visual check.
 
 ## Package layout
@@ -129,7 +139,7 @@ The `hud` step makes `beatline*.png` files that are different from the files in 
 | --- | --- |
 | `pipeline/gh3/` | Readers for GH3 PC data: PAK and QB (`formats`), the `DATA` source and camera banks (`direction`), scenes and textures (`scene`), skeletons and clips (`band_formats`), materials and shader translation (`materials`, `shader`), Havok ragdolls (`havok`), hair cards (`hair_mesh`), alpha cut-outs (`mesh_cutout`), typed scripts (`script_bank`, `venue_scripts`) |
 | `pipeline/stagepack/` | The public stage-pack format: GLB IO (`gltf`), the compiler (`pack`), skinned actors (`actor`), the `install` and `template` commands |
-| `pipeline/package/` | Package format v1 ([PACKAGE-FORMAT.md](PACKAGE-FORMAT.md)): converter (`build`), owner choices of the converter (`decisions`), round-trip check (`roundtrip`), runtime file readers and writers (`runtime`), validator (`validate`), schema evaluator for `schemas/` (`schema`), GLB reader (`glb`), q48 clip codec (`q48`), dry conversion check of the current outputs (`sources`) |
+| `pipeline/package/` | Package format v1 ([PACKAGE-FORMAT.md](PACKAGE-FORMAT.md)): converter (`build`), owner choices of the converter (`decisions`), round-trip check (`roundtrip`), runtime file readers and writers (`runtime`), validator (`validate`), schema evaluator for `schemas/` (`schema`), GLB reader (`glb`), q48 clip codec (`q48`), dry conversion check of the current outputs (`sources`), comparison of the C# importer cache with the Python output (`cachecheck`) |
 | `pipeline/library/` | The shared band library command and its steps |
 | `pipeline/venues/` | The venue exporter, lighting export, and transforms |
 | `pipeline/render/` | Shader bundles and particle material fields |

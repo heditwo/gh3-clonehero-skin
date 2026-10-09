@@ -17,6 +17,22 @@ fi
 if [[ -d "$project_dir/assets/libraries" ]]; then
   cp -a "$project_dir/assets/libraries" "$game_dir/Mods/GH3Skin/assets/"
 fi
+# Packages (docs/PACKAGE-FORMAT.md): the venues and the library as zip packages. The mod imports them into its cache and
+# prefers them to assets/stages and assets/libraries above, which stay as a fallback until a later cleanup.
+shopt -s nullglob
+packages=("$project_dir/assets/packages/"*.chstage "$project_dir/assets/packages/"*.chlib)
+if (( ${#packages[@]} )); then
+  mkdir -p "$game_dir/Mods/GH3Skin/Packages"
+  rm -f "$game_dir/Mods/GH3Skin/Packages/"*.chstage "$game_dir/Mods/GH3Skin/Packages/"*.chlib
+  cp --reflink=auto --preserve=timestamps "${packages[@]}" "$game_dir/Mods/GH3Skin/Packages/"
+fi
+# The shader bundles depend on the graphics API and the Unity version, so the mod installation supplies them, not a package.
+render="$project_dir/assets/libraries/gh3-band-v1/render"
+if [[ -f "$render/stage.bundle" ]]; then
+  mkdir -p "$game_dir/Mods/GH3Skin/render"
+  cp "$render/"*.bundle "$render/stage-templates.json" "$game_dir/Mods/GH3Skin/render/"
+fi
+shopt -u nullglob
 for chart in "$project_dir/charts/"*; do
   destination="$game_dir/PlayerData/Songs/$(basename "$chart")"
   mkdir -p "$destination"

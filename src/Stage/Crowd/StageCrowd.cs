@@ -39,7 +39,7 @@ internal sealed class StageCrowd : IDisposable
     private int Rows = 3;
     private readonly List<StageAssets> _assets = new();
     private readonly List<Player> _players = new();
-    private readonly Dictionary<string, PerformanceClip> _clips = new();
+    private PerformanceClipCache? _clips;
     private StageCrowdState? _state;
     private CrowdDefinition? _definition;
     private StageAssets? _stage;
@@ -193,6 +193,11 @@ internal sealed class StageCrowd : IDisposable
             if (player.Bones.Length != _definition.Bones.Length) throw new InvalidDataException("Crowd skeleton does not match the animation library.");
             player.Performance = new CrowdAnimationPlayer(_definition, player.Role, index, timeline, _state);
         }
+        if (_players.Count > 0)
+        {
+            _clips = new PerformanceClipCache(Path.Combine(_directory, "clips"), _definition.Bones.Length, "crowd");
+            _clips.Prefetch(_definition.PerformanceClips.Keys);
+        }
     }
 
     private static int RoleIndex(string role) =>
@@ -267,13 +272,9 @@ internal sealed class StageCrowd : IDisposable
         }
     }
 
-    private PerformanceClip Clip(string id)
-    {
-        if (_clips.TryGetValue(id, out var clip)) return clip;
-        using var stream = File.OpenRead(Path.Combine(_directory, "clips", id + ".bin.gz"));
-        _clips.Add(id, clip = new PerformanceClip(stream, _definition!.Bones.Length));
-        return clip;
-    }
+    private PerformanceClip Clip(string id) => (_clips ??= new PerformanceClipCache(Path.Combine(_directory, "clips"), _definition!.Bones.Length, "crowd")).Get(id);
+
+    public PerformanceClipCache? Clips => _clips;
 
     private static void Apply(Transform bone, BandPose pose)
     {
@@ -299,7 +300,7 @@ internal sealed class StageCrowd : IDisposable
         foreach (var assets in _assets) assets.Dispose();
         _assets.Clear();
         _players.Clear();
-        _clips.Clear();
+        _clips = null;
         _state = null;
         _definition = null;
         _stage = null;
