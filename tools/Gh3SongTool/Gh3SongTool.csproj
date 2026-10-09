@@ -7,7 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/Native/*.cs" Link="Native/%(Filename)%(Extension)" />
-    <Compile Include="../../src/Stage/StageCue.cs" Link="StageCue.cs" />
-    <Compile Include="../../src/Stage/StageGh3Events.cs" Link="StageGh3Events.cs" />
+    <Compile Include="../../src/Stage/Direction/StageCue.cs" Link="StageCue.cs" />
+    <Compile Include="../../src/Stage/Direction/StageGh3Events.cs" Link="StageGh3Events.cs" />
   </ItemGroup>
 </Project>

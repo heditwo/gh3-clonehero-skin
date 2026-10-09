@@ -126,10 +126,10 @@ internal sealed class StageParticleState
     private void CreateNode(uint id)
     {
         var data = _nodes[id];
-        Create(id, data, data.Field("AttachObject")?.Integer ?? 0, data.Field("Bone")?.Integer ?? 0, 0, null, true);
+        Create(id, data, data.Field("AttachObject")?.Integer ?? 0, data.Field("Bone")?.Integer ?? 0, 0, null);
     }
 
-    private bool Create(uint id, Gh3QbValue source, uint parent, uint bone, uint group, Vector3? position, bool permanent)
+    private bool Create(uint id, Gh3QbValue source, uint parent, uint bone, uint group, Vector3? position)
     {
         if (Exists(id) || _objectExists(id)) return false;
         if (_emitters.Count >= 10000) throw new InvalidDataException("Too many particle emitters");
@@ -424,7 +424,7 @@ internal sealed class StageParticleState
             var id = unchecked(name + parent);
             var positioned = parameters.Field("Pos") != null;
             return new(Create(id, source, positioned ? 0 : parent, parameters.Field("Bone")?.Integer ?? 0,
-                parameters.Field("groupID")?.Integer ?? 0, positioned ? StageParticleDefinition.Vector(parameters, "Pos", Vector3.Zero) : null, parameters.Flag("perm")));
+                parameters.Field("groupID")?.Integer ?? 0, positioned ? StageParticleDefinition.Vector(parameters, "Pos", Vector3.Zero) : null));
         }
         var objectId = target?.Integer ?? context.Object;
         if (Is("SafeKill") && _nodes.ContainsKey(objectId) && !Exists(objectId)) return new(true);
