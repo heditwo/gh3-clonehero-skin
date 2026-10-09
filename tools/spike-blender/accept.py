@@ -1,7 +1,7 @@
 """Run the existing stage-pack actor compiler (pipeline.stagepack.actor.compile_actor) on GLBs; print pass or the error.
 
-With --tolerant, first drop animation scale channels that stay at 1 (Blender always writes them) and the material extras
-that hold glTF texture indices (Blender renumbers textures), to show what else the compiler would reject.
+With --tolerant, first drop the material extras that hold glTF texture indices (Blender renumbers textures; package format
+v1 forbids them), to show what else the compiler would reject. The compiler drops unit scale channels itself.
 """
 
 import json
@@ -25,7 +25,7 @@ def tolerant(path, output):
         for channel in track["channels"]:
             if channel["target"]["path"] == "scale":
                 scale_error = max(scale_error, float(np.abs(glb.accessor(track["samplers"][channel["sampler"]]["output"])-1).max()))
-            else: kept.append(channel)
+            kept.append(channel)
         track["channels"] = kept
     for material in data.get("materials", []):
         for name in ("gh3Shader", "gh3MaskTexture", "gh3LayerTexture"): material.get("extras", {}).pop(name, None)
@@ -43,7 +43,7 @@ for path in arguments[relaxed:]:
     try:
         source = Path(path)
         if relaxed:
-            source = work/"input.glb"; note = f" (dropped scale channels, max |scale-1| {tolerant(path, source):.2g})"
+            source = work/"input.glb"; note = f" (dropped texture-index extras; max |scale-1| {tolerant(path, source):.2g})"
         clips = compile_actor(source, folder, import_materials, write_meshes, split_mesh)
         print(f"{Path(path).name}: pass, {len(clips)} clips{note}")
     except Exception as error:
