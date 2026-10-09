@@ -256,6 +256,12 @@ Fixed from that comparison: back-face culling (GH3 material flag +220 marks two-
 - **Result.** Texture perspective term: GH3 −446,100, skin −446,115 (row·px). Beat-line depth scale: GH3 438.1, skin 438.1. Gem depth scale: GH3 428.2, skin 426.8. Scroll: GH3 1021–1027, skin 1024 rows/s. Frets within 2.5 px. `DepthScale` (442.8) is calibrated so that beat lines and gems both agree; the beat lines and gems in each game sit slightly off the board plane.
 - **Not matched.** In the recordings, GH3 gems reach the frets about 35 ms later relative to the audio than the skin's gems (a video delay, not geometry). Board brightness differs by up to about 10% in some rows (GH3 is warmer in the middle, darker below the frets). Gem sprite size was not compared. The score, rock meter, and other HUD positions were also tuned on FastGH3 captures; examine them against the original recording.
 
+#### Sustain tails at the highway top (fix-susfar)
+
+- **Cause.** Sustain tails appeared later than their gems. Clone Hero spawns the sustain at the same far limit as the gem (z 10.7) with its full length, but `TrackFadeManager` gives the "Sustains (Fade Instance)" material its own `_FadeParams` z and w (0.472, 0.522: y 425–470 at 900 rows). The skin had set only the neck material to GH3's rows (0.427, 0.451: y 384–406). So the tail stayed transparent in the top part of the board where the gems and the board are already visible.
+- **Fix.** `GameplaySpriteRenderer` records each sustain material and sets the same z and w as the board on it every frame. This also corrects the values again when `TrackFadeManager` recalculates (for example at the end of the intro rise). The whammy strip (`SustainBend`) uses the sustain material, so it gets the same fade.
+- **Result.** With trimmed copies of My Curse (from 95 s and 158 s), the tails of the sustains at 101.4 s and 164.1 s start at the highway top together with their gems and fade like the board, as in `gh3-mycurse-raw.mp4`.
+
 MelonLoader's assembly generator contacted `api.melonloader.com` on every launch, and the leftover HTTPS connection crashed the CLR later. The installed game now has `force_offline_generation = true` in `UserData/Loader.cfg`; the original file is backed up as `~/.cache/gh3-install-backup-0.8.115/Loader.cfg.bak`.
 
 

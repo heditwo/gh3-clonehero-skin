@@ -34,6 +34,8 @@ internal sealed class GameplaySpriteRenderer
     private readonly Dictionary<IntPtr, float> _sustainWidths = new();
     private readonly Dictionary<IntPtr, SustainBend> _sustainBends = new();
     private readonly MaterialPropertyBlock _sustainProperties = new();
+    private readonly List<Material> _sustainMaterials = new();
+    private readonly HashSet<IntPtr> _sustainMaterialIds = new();
     private readonly WhammyHistory _whammy = new();
     private bool _whammyReady;
     private GuitarNoteRenderer? _noteRenderer;
@@ -62,6 +64,8 @@ internal sealed class GameplaySpriteRenderer
         _sustainFrames.Clear();
         _sustainWidths.Clear();
         _sustainBends.Clear();
+        _sustainMaterials.Clear();
+        _sustainMaterialIds.Clear();
         _highwayEndZ = 0;
         Array.Clear(_frets, 0, _frets.Length);
         _player = null;
@@ -163,6 +167,7 @@ internal sealed class GameplaySpriteRenderer
             var name = SpriteName(renderer.sprite);
             if (entry.Name is "Sustain(Clone)" or "Sustain Glow")
             {
+                TrackSustainMaterial(renderer);
                 if (entry.Name == "Sustain Glow")
                     renderer.enabled = false;
                 else
@@ -220,11 +225,27 @@ internal sealed class GameplaySpriteRenderer
         }
     }
 
-    // The track shader fades between two viewport heights (_FadeParams z and w, from the top).
+    // The track shader fades between two viewport heights (_FadeParams z and w, from the top). Clone Hero's
+    // TrackFadeManager gives the sustain material its own, lower fade rows and sets them again when it recalculates
+    // (for example after the intro rise). GH3 fades the sustains with the board, so the skin keeps all of them on GH3's rows.
     private void FadeHighwayTop()
     {
         if (_neckRenderer == null) _neckRenderer = _neck?.GetComponent<SpriteRenderer>();
-        var material = _neckRenderer?.sharedMaterial;
+        FadeLikeHighway(_neckRenderer?.sharedMaterial);
+        foreach (var material in _sustainMaterials)
+            FadeLikeHighway(material);
+    }
+
+    private void TrackSustainMaterial(SpriteRenderer renderer)
+    {
+        var material = renderer.sharedMaterial;
+        if (material == null || !_sustainMaterialIds.Add(material.Pointer)) return;
+        _sustainMaterials.Add(material);
+        FadeLikeHighway(material);
+    }
+
+    private static void FadeLikeHighway(Material? material)
+    {
         if (material == null || !material.HasProperty(FadeParams)) return;
         var fade = material.GetVector(FadeParams);
         var start = HighwayView.FadeStartY / HighwayView.ScreenHeight;
