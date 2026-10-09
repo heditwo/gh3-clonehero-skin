@@ -2,11 +2,9 @@
 
 ## Status
 
-The authoring target is Moonscraper's chart workflow with complete GH3 data and behavior. Native archive files are reference inputs and a possible export target; authors do not need to edit or distribute PAK files. See [MOONSCRAPER.md](MOONSCRAPER.md) for the format audit and remaining work.
+This is the reference for authored content: stage packs, song direction, and the planned skin packs. The stage-pack importer, the common loader, and song direction versions 1 and 2 are implemented. All ten GH3 venues use the same loader as a custom pack. Skin-pack import is not implemented; playback uses the shared default skins.
 
-Build **0.8.113** reads standard direction-note tracks from `.chart` and MIDI. It also includes an optional native-PAK reader and a byte-preserving camera edit tool for compatibility checks. See [NATIVE-GH3.md](NATIVE-GH3.md). The formats below describe the existing converted-content implementation, not a complete GH3 authoring contract.
-
-Build **0.8.112** implements the stage-pack importer, common loader, and version 2 song direction. All ten GH3 performance venues use the common loader. See [STAGE-PACKS.md](STAGE-PACKS.md) for installation, authoring tools, supported GLB features, and public scenery extensions. Skin-pack import still requires implementation. Playback uses the shared default skins and supports both song-event versions described in [STAGES.md](STAGES.md).
+The authoring target is Moonscraper's chart workflow with complete GH3 data and behavior. Native GH3 archives are reference inputs and a possible export target. Authors do not need to edit or distribute PAK files. Sections 9 to 12 give the workflow.
 
 The current library uses **four original GH3 skeletons and their animations**. Those profiles are the implemented subset. Full character compatibility must also cover native profile choices, instrument packages, and their animation references. Stages supply the setting and camera shots. Charts select the performance through timed cues.
 
@@ -98,8 +96,8 @@ The manifest is `stage-pack.json`. Example: [stage-pack.json](examples/custom-co
 | `cameras` | Yes | Relative path to the camera bank described below |
 | `lighting` | No | Relative path to a lighting bank; omission selects the shared basic fill-light preset |
 | `effects` | No | Effect name to a list of emitter transforms; default `{}` |
-| `actors` | No | Named animated scenery models; see [STAGE-PACKS.md](STAGE-PACKS.md#animated-scenery); default `{}` |
-| `crowd` | No | Crowd profile, model, and yaw entries; see [crowd and scenery visibility](STAGE-PACKS.md#crowd-and-scenery-visibility); default shared assignments |
+| `actors` | No | Named animated scenery models; see [animated scenery](#animated-scenery); default `{}` |
+| `crowd` | No | Crowd profile, model, and yaw entries; see [crowd and scenery visibility](#crowd-and-scenery-visibility); default shared assignments |
 
 A transform has `position` and `rotation`. Performer placement has unit scale. A performer's root, instrument, and moving props use the same placement transform. The drummer's fixed kit reference uses the drummer placement. The scenery contains any matching static kit geometry.
 
@@ -122,7 +120,7 @@ The authoring camera file has `version: 1`, a `shots` object, and a `groups` obj
 
 Each shot has a `type`, a `control`, and `points`. The type is its GH3 selection category: `stage`, `longshot`, `mid`, `closeup`, `normal`, or `demonik`. It controls repeat avoidance and the applicable hand-camera rules. Supported controls follow the GH3 library: `TwoCam`, `HandCam`, `Orbit`, `OrbitAndMorphTwoCam`, `Pan`, `ThreePos`, `FourPos`, and `SpecialStepMove`. `ThreePos` and `FourPos` have three and four points. The other controls have one or two points; one point defines a stationary base pose. Original entries with no type import as `normal`.
 
-`OrbitContinuous` uses one point and the song clock. It adds the public `angularSpeed` and `heightEase` fields described in [continuous orbit cameras](STAGE-PACKS.md#continuous-orbit-cameras).
+`OrbitContinuous` uses one point and the song clock. It adds the public `angularSpeed` and `heightEase` fields described in [continuous orbit cameras](#continuous-orbit-cameras).
 
 `Keyframes` accepts 2–64 points and an equally sized `times` array in seconds from the cut. Times start at zero and increase. `interpolation` is `smooth` by default, or `linear`. Repeated poses create holds; the last pose remains until the next cut. This format supports scripted intros and timed zooms.
 
@@ -193,7 +191,7 @@ The event fields remain `time`, `type`, `value`, `duration`, `role`, `immediate`
 
 Original numeric `gh3-camera` and `gh3-note` cues remain import-compatible. They resolve through the shared GH3 note mappings into the same channels as named cues. The drum-animation map is distinct from a Clone Hero `PART DRUMS` gameplay chart. Conversion of gameplay drum notes must use an explicit mapping.
 
-Crowd roles are `crowd1` through `crowd8`; they are separate from band roles. Crowd controls require build 0.8.115 and the version 2 crowd library. A `gh3-script` value can retain an entire original command row instead of using these convenience cue types. See [event coverage](GH3-EVENT-COVERAGE.md) for the typed text format and playback limits.
+Crowd roles are `crowd1` through `crowd8`; they are separate from band roles. Crowd controls require the version 2 crowd library. A `gh3-script` value can retain an entire original command row instead of using these convenience cue types. See [GH3 script calls in charts](#gh3-script-calls-in-charts).
 
 The library supplies a catalog of valid stances, actions, styles, and clip IDs for each profile. The initial profiles have different capabilities: for example, the drummer has idle groups rather than guitarist jump groups. A cue must select an action from the target role's catalog. If the current stance has no variation for a valid action, the shared GH3 fallback rules select an idle. The importer reports unresolved original clip references.
 
@@ -255,4 +253,168 @@ All performance and camera playback uses `GameManager.songTime`. Pause holds the
 - **Checked:** every stage and the independently generated Studio stage use the common loader. Renaming the Budokan pack produces identical runtime assets.
 - **Remaining:** exact authoring rig templates, skin import and selection, and replacement-skin checks.
 
-The JSON examples are manifest and cue examples. Their referenced GLB files are author-supplied assets. `create-stage-template.py` creates a complete, installable example stage pack.
+The JSON examples are manifest and cue examples. Their referenced GLB files are author-supplied assets. `python -m pipeline.stagepack.template` creates a complete, installable example stage pack.
+
+## 9. Create and import a stage
+
+Create the example pack, compile it, install it, and play it:
+
+```bash
+MISE_QUIET=1 uv run --with pillow --with numpy --with 'shapely>=2.1' python -m pipeline.stagepack.template
+MISE_QUIET=1 uv run --with pillow --with numpy --with 'shapely>=2.1' \
+  python -m pipeline.stagepack.install assets/stage-packs/example.studio
+MISE_QUIET=1 bash install.sh
+MISE_QUIET=1 GH3_SKIN_STAGE=example.studio bash run-gh3-skin.sh --preview
+```
+
+The example has four performer placements, cameras, a walking destination, a moving light fixture, effect emitters, and a rotating skinned sign. You can edit its GLB files in a glTF tool. The shared band library must be installed.
+
+The GH3 venue exporter writes the same source format and then calls the same compiler. The runtime reads only the compiled `pack.json` and its files. It does not read the source PAK files or select behavior from venue names.
+
+```mermaid
+flowchart LR
+    GH3[GH3 files] --> Venues[pipeline.venues]
+    Venues --> Source[Source pack: stage-pack.json and GLB]
+    Tools[Blender or another glTF tool] --> Source
+    Source --> Install[pipeline.stagepack.install]
+    Install --> Compiled[assets/stages/ID]
+    Compiled --> Loader[GameplayStage]
+    Library[gh3-band-v1] --> Loader
+```
+
+The compiler accepts embedded glTF 2.0 GLB files with triangle meshes, normals, base-color textures, UVs, vertex colors, and `OPAQUE`, `MASK`, or `BLEND` materials. It applies node transforms, handedness, winding, and UV conversion. Bake unsupported extensions and morph targets before import.
+
+Material properties in glTF `extras`:
+
+| Property | Meaning |
+| --- | --- |
+| `gh3Additive: true` | Additive transparent material |
+| `gh3CrowdAtlas: true` | Use the shared animated crowd atlas (eight columns, three rows) |
+| `gh3SortedTransparency: true` | Sort triangles of a skinned actor's transparent material |
+
+Fixture mesh nodes set `extras.gh3FixtureId` to a lighting beam ID. Local +Z is the beam axis. `extras.gh3FixtureFixedPosition: true` keeps the authored housing position while the controller turns it.
+
+### Crowd and scenery visibility
+
+| Node property | Meaning |
+| --- | --- |
+| `gh3VisibilityGroup` | Named group that the runtime controls; `crowd-lighters` receives crowd lighter commands |
+| `gh3InitiallyVisible` | Start state; default `true` |
+
+All meshes of one group must have the same start state. The optional `crowd` array of `stage-pack.json` selects up to eight profiles (`role` `crowd1`–`crowd8`, `model` from the shared crowd library, `yaw` in degrees):
+
+```json
+"crowd": [
+  {"role": "crowd1", "model": "crowd_prison_01", "yaw": 0},
+  {"role": "crowd2", "model": "crowd_prison_02", "yaw": 0}
+]
+```
+
+### Animated scenery
+
+The optional `actors` object maps names to:
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `model` | Yes | Pack-relative GLB with one skin |
+| `transform` | Yes | Position and unit quaternion |
+| `clip` | No | GLB animation; default the first clip |
+| `playback` | No | `loop` (default) or `hold` |
+| `lightGroup` | No | Default `Stage` |
+| `role` | No | Cue target, for example `stage-diver/1` |
+| `initiallyVisible` | No | Default `true` |
+| `actions` | No | Action names mapped to lists of clip names |
+| `object`, `script`, `created` | No | Script object name, startup script, initial creation state |
+| `scale` | No | Default `[1, 1, 1]` |
+| `animationEvents` | No | Typed animation-event table (`time`, `scr`, `params` rows) |
+
+The compiler checks inverse bind matrices, the joint hierarchy, unit joint scale, weights, and channels. It accepts translation and rotation tracks (`LINEAR` or `STEP`), sampled at 60 Hz; at most 256 clips of 120 s each.
+
+### Scripted scenery
+
+The pack field `scripts` points to a typed script bank (`version: 1`, `definitions`, `startup`). GLB nodes can set `gh3Object`, `gh3ObjectPivot`, `gh3ObjectRotation`, `gh3ObjectCreated`, and `gh3ObjectScript`. All meshes with one object ID share its placement. Object commands use these pivots for movement, rotation, attachments, scaling, and note-hit pulses.
+
+### Continuous orbit cameras
+
+`OrbitContinuous` uses one camera point with an `anchor` and `lookAt`. `angularSpeed` is degrees per second about the vertical axis. `heightEase` is `[start, end, rate]`: the height offset is `end + (start - end) * exp(-rate * songTime)`. `Keyframes` keeps timed holds, moves, and lens changes; `times` are seconds from the cut, and `interpolation` is `smooth` or `linear`.
+
+### Lighting details
+
+Light intensity can be negative. Equal near and far distances give a sharp attenuation edge. Each snapshot lists every light and beam; `inherit: true` keeps the earlier state.
+
+## 10. Song direction in charts
+
+### Direction tracks
+
+`.chart` sections and MIDI tracks named `CAMERAS`, `LIGHTSHOW`, `ANIMS`, `DRUMS`, and `CROWD` hold GH3 direction notes with their original note numbers and lengths. Legacy names `ANIM`, `PERFORMANCE`, and `GH3 …` are also accepted. Playable `PART DRUMS` notes are separate from `DRUMS` animation notes. MIDI velocity is kept but does not change animation yet.
+
+```text
+[CAMERAS]
+{
+  192 = N 89 384
+}
+```
+
+At 120 BPM and resolution 192, this is camera note 89 at 0.5 s for 1 s: the drummer camera group.
+
+### Text events
+
+In `[Events]` (or MIDI `EVENTS`, `VENUE`, `GH3 VENUE`, `LIGHTSHOW`):
+
+| Text | Result |
+| --- | --- |
+| `stage pyro`, `stage sparks`, `stage fireworks`, `stage smoke` | Effects |
+| `stage flash`, `stage blackout`, `stage strobe` | Light states |
+| `stage lights NAME` | Color (`red`, `green`, `blue`, `yellow`, `orange`, `purple`, `magenta`, `cyan`, `white`) or mood (`intro`, `verse`, `chorus`, `solo`, `flare`, `blackout`, `strobe`) |
+| `[bonusfx]`, `[bonusfx_optional]` | Pyro |
+| `[lighting (NAME)]` | Color or mood |
+| `[stage camera GROUP]` | Camera group |
+| `stage stance ROLE STANCE`, `stage perform ROLE ACTION`, `stage walk ROLE WAYPOINT` | Band actions |
+| `stage clip ROLE ID`, `stage arms ROLE MODE`, `stage strum-style ROLE STYLE`, `stage strum ROLE MASK`, `stage fret NOTE`, `stage drum NOTE` | Band animation |
+
+GH3 lightshow note numbers are in [PARITY-NOTES.md](PARITY-NOTES.md#lighting-and-node-flags).
+
+### GH3 script calls in charts
+
+A text event can hold `gh3 ` followed by the JSON of `Gh3ScriptEvent.Encode`: a version, the source track, and the typed source row. Checksums can be `0x12345678` or a name. The chart time controls playback; the row's original `time` stays as metadata. Such events can be on custom track names. Native and authored calls use the same dispatcher.
+
+### Song event file
+
+`stage-events.json` beside the chart can replace channels (version 2) or the whole direction (version 1). See [section 6](#6-song-direction-version-2). To start from the original direction of one song:
+
+```bash
+MISE_QUIET=1 python3 -m pipeline.events "$HOME/games/gh3-test-tools/game/DATA/SONGS/mycurse_song.pak.xen" \
+  --output "/path/to/song/stage-events.json"
+```
+
+The command does not replace an existing file. `offsetSeconds` shifts all cues of the file; a positive value runs them later.
+
+## 11. Native song PAK
+
+Put exactly one `<song>_song.pak.xen` in the song folder, beside the playable chart and audio. It supplies direction, Expert guitar and bass gestures, and fretbar timing, and it has priority over the other sources. The audio and chart must use the native song's time origin.
+
+`tools/Gh3SongTool` inspects a song PAK and changes one camera note. Only that four-byte field changes; all other bytes stay:
+
+```bash
+MISE_QUIET=1 dotnet run --project tools/Gh3SongTool -c Release -- inspect /path/to/mycurse_song.pak.xen
+MISE_QUIET=1 dotnet run --project tools/Gh3SongTool -c Release -- \
+  camera /path/to/mycurse_song.pak.xen 1 84 89 /path/to/edited/mycurse_song.pak.xen
+```
+
+The camera arguments are the zero-based row, the expected old note, and the new note. Split PAK/PAB song archives and console files are not supported. There is no general QB writer.
+
+## 12. Moonscraper
+
+The editor fork is <https://github.com/heditwo/gh3-chart-editor>, based on Moonscraper 1.5.13 (upstream `7b4a7eab62e286b2a7bc2b21d2c22d4f65ff44fd`). It adds preservation fixes and an event browser with search, filters, presets, raw arguments, and undo. The accepted workflow is: save `.msce`, export `notes.mid`, play with the mod.
+
+The stock Moonscraper 1.5.13 importer changes data on tracks that it does not know (measured with `tools/MoonscraperAudit`):
+
+| Check | Stock result |
+| --- | --- |
+| MIDI camera note at 10 s, 5 s long | Moves to 15 s (the note-off time); moves again after each round trip |
+| MIDI drum note 12 ticks long | Length 0 |
+| MIDI velocity | Written as 100 |
+| Same-time text events | Sorted by text |
+| Local text with spaces exported to `.chart` | Spaces become underscores; `.msce` keeps them |
+
+A complete editor must keep track identity, note number, start, length, velocity, script identity, typed parameters, unnamed flags, same-time order, unresolved checksums, and unknown fields through unrelated edits.

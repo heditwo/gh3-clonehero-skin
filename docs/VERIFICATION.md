@@ -1,75 +1,121 @@
-# Runtime fix checks — 2026-10-04 to 2026-10-05
+# Verification and recording
 
-The later [strike-line correction](STRIKE-LINES.md) replaces the raised stock beat lines. This report describes the earlier runtime-fix build and its DLL hash.
+## Automated checks
 
-Review files are in `/tmp/opencode/gh3-fix-review.OrgUnB/`. The folder contains the original source archive and installed DLL, before/after videos, loader logs, the temporary runtime probe, and image comparisons.
+```bash
+MISE_QUIET=1 scripts/test.sh
+```
 
-The final DLL is installed in the isolated game copy. Its SHA-256 is `8af0b7c9c6aef36dae178f2973cab499c0559c08b463c9820cea496d16d1347e`. It matches the Release build. The temporary probe was removed.
+The script runs the C# logic tests (`tests/SkinLogic.Tests.csproj`, .NET 10 SDK), the Python pipeline tests (`tests/test_*.py`), and a syntax check of the shell scripts. Also build the mod with zero warnings:
 
-## Lossless HUD comparison
+```bash
+MISE_QUIET=1 dotnet build src/Gh3Skin.csproj -c Release --nologo
+```
 
-The original and final DLLs captured `GH3 Counter Entrance Match` at 9.4 seconds after scene load. Both used visual charge `0.75`, a charge threshold of 20 notes, and rock `0.8`. The counter was settled at 25 notes. These PNG captures have no video encoding loss.
+These optional variables add checks against real data to the C# tests:
 
-| Resolution | Score and counter | Rock meter and bulbs |
-| --- | --- | --- |
-| 1600 × 900 | 0 changed pixels | 0 changed pixels |
-| 2560 × 1440 | 0 changed pixels | 0 changed pixels |
+| Variable | Check |
+| --- | --- |
+| `GH3_PACK_ASSETS=$PWD/assets` | Loads all compiled packs and the library: cameras, lighting, scripts, actors, particles, flag-driven nodes |
+| `GH3_NATIVE_DATA=<GH3 DATA>` | Reads all native song PAKs; exact My Curse camera-edit round trip |
+| `GH3_EXPORTED_EVENTS=<events folder>` | Compares exported song direction with native playback |
+| `GH3_DIRECTION_ASSETS`, `GH3_CROWD_ASSETS`, `GH3_HAIR_ASSETS`, `GH3_LIGHTING_ASSETS`, `GH3_AUDIO_ASSETS` | Library parts |
+| `GH3_SCRIPT_SOURCE`, `GH3_STAGE_SCRIPT_REPORT` | Decoded GH3 scripts and a report path |
+| `GH3_NATIVE_*_ORACLE` | Reference JSON from the native emulation tools in the local `assets/event-audit/behavior-work/` folder (not in Git) |
+| `GH3_BENCH=<venue>`, `GH3_BENCH_SONG=<chart folder>` | Runs a venue's scripts and particles against a chart outside the game (`tests/ScriptBench.cs`); `GH3_BENCH_ALLOC=1` adds allocation samples |
 
-The measured rectangles at 900p were `(260, 580)–(488, 820)` and `(1080, 540)–(1350, 810)`. The 1440p rectangles used the same coordinates scaled by 1.6. This establishes pixel identity for these HUD regions in the sampled state.
+After a change to the venue export or the shaders, run `python3 tools/audit-materials.py`. All used materials must draw with their GH3 template.
 
-Complete before/after frames are saved as [900p](../preview-before-after-900p.png) and [1440p](../preview-before-after-1440p.png) images in the project root. The review folder has `lossless-report.json` and `check-lossless.py`.
+## Test game
 
-## Before/after images
+Use an isolated Clone Hero copy, not the copy that you play with. Set `GH3_CLONE_HERO_DIR` for `install.sh`, `run-gh3-skin.sh`, and the capture scripts. The default is `~/games/clonehero-gh3-melon`.
 
-The same 112-note chart and display overrides were recorded before and after the runtime changes at 1600 × 900 and 2560 × 1440. The gem matrix was recorded at 1600 × 900 with normal game state. `compare-captures.py` aligned the independent video clocks and wrote complete frame pairs and amplified difference images.
+Settings in the test copy that prevent crashes:
 
-| Run | Samples | Mean full-frame RGB error, out of 255 | Largest sampled error |
-| --- | ---: | ---: | ---: |
-| Final 900p, long chart | 9 | 0.556 | 1.052 |
-| Final 1440p, long chart | 9 | 1.115 | 1.627 |
-| 900p, gem matrix | 10 | 0.332 | 0.564 |
+- `UserData/Loader.cfg`: `force_offline_generation = true`. Without it, MelonLoader contacts `api.melonloader.com` at each start, and the open HTTPS connection can crash the CLR later.
+- The mod stops MelonLoader's bHaptics client at start (`GH3_SKIN_KEEP_BHAPTICS=1` keeps it).
+- Without an ALSA sequencer seat (headless runs), use `tools/rtmidi-stub.c` as the game's `libRtMidi.so`.
 
-These are encoded-video measurements. Black background pixels reduce the full-frame mean. The JSON reports also contain separate score/counter, rock/bulb, highway, banner, and visible-pixel measurements.
+The loader log always has one `Unable to create a snapshot of process` error and an `Il2CppInterop` warning. They are not caused by the mod. Any other exception is a fault.
 
-The inspected pairs retain HUD placement, digit proportions, gem size, fret art, and the ready-animation source frames. Note motion, flames, beat-line visibility, and some reel frames differ between independently timed runs. The video comparisons do not establish whole-frame pixel identity or identical beat-line visibility in every frame.
+## Screenshots
 
-- `final-comparison-1600x900/`: ready-banner entrance, settled banner, counter, and normal gameplay.
-- `final-comparison-2560x1440/`: the same checks at native 1440p resolution.
-- `comparison-gems/`: original versus updated gem-matrix video.
-- `matrix/run.7kEAiW/`: nine fresh stock-gem and nine fresh GH3-gem screenshots. All 18 frames survived capture.
-- Repository `preview-gem-matrix.png`: regular notes, forced and natural HOPOs, taps, open notes, open HOPOs, open taps, and chords.
+```bash
+MISE_QUIET=1 scripts/capture-preview.sh
+```
 
-## Capture startup failures
+The script starts a temporary Xwayland display, plays a chart with the command-line bot, and saves frames. It needs Hyprland, Xwayland, `xrandr`, `jq`, `ripgrep`, ImageMagick, and Python.
 
-One 1920 × 1200 attempt stopped before its screenshot. Core PID `3973034` shows a fault inside `libbass.so` during `BASS_StreamCreateFile`, followed by Unity's signal handler. Other threads were inspected. There was no OOM kill in the journal for that time. The exact trigger is not established; the native library has no useful symbols for the faulting instruction. The extracted core was deleted after inspection. The source chart and earlier captures were intact.
+## Video
 
-This failed attempt is excluded from visual results. The saved trace is `crash-backtrace.txt` in the review folder.
+```bash
+MISE_QUIET=1 GH3_SKIN_STAGE=gh3.dive GH3_SKIN_PREVIEW_SONG=/path/to/mycurse \
+  GH3_SKIN_VIDEO_SECONDS=40 GH3_SKIN_VIDEO_TRIM=40 GH3_SKIN_VIDEO=/tmp/opencode/dive.mp4 \
+  scripts/record-preview.sh
+```
 
-A later lossless capture with the original DLL lost its temporary Xwayland server. Core PID `4022913` resolves to `xwl_glamor_gbm_dispose_syncpts` during pixmap cleanup. The server log shows a reset after the readiness client disconnected. Capture and recording scripts now use `-noreset` to keep this temporary display alive between clients. Three lossless captures and a video then completed with this option. The saved trace is `xwayland-backtrace.txt`; the extracted core was deleted.
+The script records the compositor output in the game window's area with `gpu-screen-recorder`. X11 capture gave incomplete frames. Keep the window visible until the recording ends. The output has a `.log` (the loader log) and a `.json` manifest (DLL and chart hashes, settings, video size). A chart with the title **My Curse** and artist **Killswitch Engage** gets the original GH3 direction from the song library.
 
-## Runtime checks
+Record only one video at a time. Two game instances at the same time can freeze a 16 GB machine. When other agents can record, use a lock:
 
-- Release build and install: passed, with zero warnings and errors.
-- Logic checks: passed. They cover active multiplier art, ready/active/recharge transitions, version rejection, finite capture values, note classification, camera-area placement, and animation asset dimensions.
-- Capture contract tests: passed. Supplied times and output folders survive capture; old frames cause a failure.
-- Shell syntax, Python syntax, and `git diff --check`: passed.
-- Three consecutive gameplay scene loads: one GH3 HUD in every sampled gameplay state. Each scene rebuilt its cache of 500 pooled note objects and 723 effect/render objects.
-- Instrumented native Star Power runs: phrase awards increased engine charge to 25% and 50%; the banner appeared; native activation produced the correct 6× and 8× textures while the banner stayed hidden. Charge then drained to zero, the multiplier returned to 4×, and later phrase awards triggered the banner again. The temporary probe allowed the bot's native award routine to run. This was not an unmodified human-input test. See `power-six.jsonl`, `power-cycle.jsonl`, and the [active-state image](../preview-star-power-active.png).
-- Final 4:3, 16:10, and ultrawide screenshots: rails follow the game camera area and meet the fret row. The 1920 × 1200 repeat completed. These are single-player layout samples, not complete mode coverage.
+```bash
+flock /tmp/opencode/gh3-record.lock scripts/record-preview.sh
+```
 
-## Time and memory
+`scripts/capture-stage.sh <stage> <output> [song] [times] [seconds]` captures timed frames on Xvfb without a desktop session. It uses software rendering and the local research audio wrapper in `assets/event-audit/`. Use it for frame captures, not for video.
 
-The same temporary probe timed `SkinMod.OnLateUpdate` for the original and final DLLs on the same chart at 900p. The first three batches after warm-up each contained 600 calls:
+## Compare two builds
 
-| Measurement | Original | Final |
-| --- | ---: | ---: |
-| Batch median update time | 1.37–1.40 ms | 0.40–0.59 ms |
-| Mean managed allocation per call | about 25.3 KiB | about 0.6 KiB |
-| Readable HUD/animation textures | 312 | 0 |
-| Readable HUD/animation RGBA data | 124.4 MiB | 0 |
+Record the same chart, venue, and settings with both builds. Then:
 
-The final build loads four extra active-multiplier textures. HUD/animation GPU RGBA data remains about 124.7 MiB. These figures describe texture data and the mod's update routine, not total process memory or whole-game frame time. Game and recording load varied during the test.
+```bash
+MISE_QUIET=1 uv run --with pillow --with numpy python tools/compare-captures.py before.mp4 after.mp4 comparison \
+  --times 6,10,14,18,22,26,30,34,37
+```
 
-## Coverage limits
+The tool aligns the two videos and writes full side-by-side frames, amplified differences, and per-region metrics. Bot timing and the video encoder add differences of about 2–5 RGB levels (out of 255) between two runs of the same build. Look at the images as well as the metrics. `tools/compare-sheet.py` builds labeled contact sheets from frame folders.
 
-Human-controller Star Power earning, a left-handed profile, multiplayer fallback, and a live practice seek were not exercised. Portrait remains unsupported. The native audio-startup fault is recorded above; its exact cause remains unresolved.
+## Compare with the original GH3
+
+1. Run the original GH3 under Wine with `tools/gh3-reference/start-gh3.sh <display> [trace-regex]`, drive the menus with `keys.py`, and stop it with `stop-gh3.sh`. Work files go to `~/.cache/gh3ref`. Check each menu step with its screenshot. Record with `ffmpeg -f x11grab`. The GH3 bot plays when `bot_play` is 1 in the two `player*_status` defaults of `DATA/PAK/qb.pab.xen`; keep a copy of the original file.
+2. `tools/Gh3SongTool chart <song>_song.pak.xen <notes.chart>` writes a Clone Hero chart with GH3's notes and Star Power phrases.
+3. Align the videos on the music, or on camera cuts against the exported `gh3-camera` event times.
+4. GH3 selects shots at random. Set `GH3_SKIN_CAMERA_SHOT=<shot name>` to force the matching shot in the mod.
+
+## Runtime variables
+
+These variables are for checks and captures. Normal play needs none of them.
+
+| Variable | Purpose |
+| --- | --- |
+| `GH3_SKIN_STAGE` | Pack ID, for example `gh3.hell` or `example.studio`. Default `gh3.budokan`. `off` shows the stock background |
+| `GH3_SKIN_CAMERA` | `auto` (default), `fixed`, or a shot group: `wide`, `singer`, `guitarist`, `bassist`, `drummer`, `orbit` |
+| `GH3_SKIN_CAMERA_SHOT` | Forces one shot name, to match a GH3 reference frame |
+| `GH3_SKIN_PREVIEW_SONG` | Chart folder for `run-gh3-skin.sh --preview` and the capture scripts |
+| `GH3_SKIN_PREVIEW_WIDTH`, `GH3_SKIN_PREVIEW_HEIGHT` | Window size; default 1600 × 900 |
+| `GH3_SKIN_CAPTURE_AFTER`, `GH3_SKIN_CAPTURE_TIMES` | Screenshot times |
+| `GH3_SKIN_CAPTURE_CLOCK=song` | Screenshot times use the song clock, not the scene clock |
+| `GH3_SKIN_CAPTURE_DIR`, `GH3_SKIN_SCREENSHOT` | Screenshot output |
+| `GH3_SKIN_VIDEO`, `GH3_SKIN_VIDEO_SECONDS`, `GH3_SKIN_VIDEO_TRIM`, `GH3_SKIN_VIDEO_FPS` | Video output, length, and rate |
+| `GH3_SKIN_VIDEO_X`, `GH3_SKIN_VIDEO_Y` | Window position; keep the whole window on the screen |
+| `GH3_SKIN_VIDEO_AUDIO` | `game` records the game's audio, or give a `gpu-screen-recorder` audio source |
+| `GH3_SKIN_PREVIEW_POWER`, `GH3_SKIN_PREVIEW_ROCK` | Display-only charge and rock values for screenshots |
+| `GH3_SKIN_FORCE_POWER`, `GH3_SKIN_FORCE_ROCK` | Display-only charge and rock values, 0 to 1 |
+| `GH3_SKIN_FORCE_POWER_AT_COMBO` | Applies the forced charge from this streak |
+| `GH3_SKIN_FORCE_COMBO`, `GH3_SKIN_FORCE_COMBO_BREAK` | Adds to the shown streak; breaks it at a value. Tests counters of five or more digits |
+| `GH3_SKIN_FORCE_STAR_POWER_ACTIVE=1` | Display-only active Star Power (cyan gems, hit colors) |
+| `GH3_SKIN_FORCE_WHAMMY=<Hz>` | Sends a cosine whammy to Clone Hero's whammy input. Tests the sustain bend |
+| `GH3_SKIN_KEEP_STOCK_GEMS=1`, `GH3_SKIN_KEEP_STOCK_FLAMES=1` | Keeps Clone Hero's gems or hit effects, for comparisons |
+| `GH3_SKIN_DEBUG_VIEW="x,y,z,tx,ty,tz,fov[;...]"` | Fixes the stage camera and hides the highway; `GH3_SKIN_DEBUG_VIEW_SECONDS` cycles the views |
+| `GH3_SKIN_DEBUG_SHOW=<id,...>` | Keeps these GH3 objects created |
+| `GH3_SKIN_PROFILE=1` | Logs milliseconds, managed kilobytes, and gen-0 collections per subsystem each second; `tools/summarize-profile.py` reads the logs |
+| `GH3_SKIN_KEEP_BHAPTICS=1` | Keeps MelonLoader's bHaptics client |
+
+Forced values change only the display. The command-line bot does not earn Star Power. Do not use forced values to check meter behavior: they cannot show charge, activation, drain, or needle motion. Tests of earned Star Power need an instrumented build that allows the bot's native award routine, and the report must say so.
+
+## Rules for results
+
+- A report names the DLL (SHA-256) and the assets that it used.
+- Keep failed runs. A passing report followed by a crash is a failed run. Exit 0 without a report is also a failed run.
+- A small mean error is not pixel identity. Encoded video cannot prove pixel identity.
+- Before you use a stock or old-build capture as a reference, look at it. Matching hashes did not catch a bad capture in the past.
