@@ -1,9 +1,12 @@
-"""Compare two venue packages (for example a package and its Blender round trip): files, JSON, and stage.glb.
+"""Compare two venue or character packages (for example a package and its Blender round trip): files, JSON, and the
+model GLB (stage.glb, character.glb).
 
-stage.glb is compared by meaning, not by bytes: nodes by name (world transform and extras), materials by name
+The GLB is compared by meaning, not by bytes: nodes by name (world transform and extras), materials by name
 (glTF fields with their defaults, extras with texture references resolved to image bytes), and mesh primitives by
-node and material name (triangles in a canonical order, every vertex attribute). Relative imports only, so a
-Blender test can use it from the repository.
+node and material name (triangles in a canonical order, every vertex attribute). Skin weights compare by joint name
+(the joint order is free), and inverse bind matrices by joint name. A node that only one GLB has is ignored when it
+has the identity transform and no mesh (Blender adds the armature node above the root joint). Relative imports
+only, so a Blender test can use it from the repository.
 
 Usage: python -m pipeline.package.compare A B [--json REPORT]
 """
@@ -23,8 +26,9 @@ from .validate import Report, Source
 
 # Tolerances: node transforms from docs/PACKAGING-PLAN.md section 9.6; vertex data from the float32 and 8-bit storage.
 # NORMAL (degrees): Blender stores custom normals in its own encoding (measured up to 0.8 degrees on the GH3 venues).
+# SKIN: the weight of each joint (by name) at each corner; inverseBind: PACKAGING-PLAN 9.6.
 TOLERANCE = {"position": 1e-4, "rotation": 0.01, "scale": 1e-4, "POSITION": 1e-4, "NORMAL": 1.0, "TEXCOORD": 1e-5,
-             "COLOR": 2.5 / 255, "_GH3": 1e-5, "json": 1e-5}
+             "COLOR": 2.5 / 255, "_GH3": 1e-5, "json": 1e-5, "SKIN": 1e-3, "inverseBind": 1e-4}
 ADDON_JSON = ("placements.json", "cameras.json", "lighting.json")
 MATERIAL_DEFAULTS = {"alphaMode": "OPAQUE", "doubleSided": False, "baseColorFactor": [1, 1, 1, 1], "metallicFactor": 1, "roughnessFactor": 1,
                      "emissiveFactor": [0, 0, 0]}
@@ -138,14 +142,26 @@ def material_view(material, images):
     return view
 
 
-def triangles(glb, primitives):
+def triangles(glb, primitives, skin=None):
     """(attribute name to per-corner array (T, 3, k)) of triangle-list primitives (Blender exports one primitive for
-    each material, so the primitives of one material in one mesh are compared together)."""
+    each material, so the primitives of one material in one mesh are compared together). skin: (joint names of the
+    GLB skin, column of each joint name); JOINTS_0 and WEIGHTS_0 then become SKIN, the weight of each joint name."""
     parts = []
     for primitive in primitives:
         indices = glb.accessor(primitive["indices"]).reshape(-1) if "indices" in primitive else np.arange(glb.accessor(primitive["attributes"]["POSITION"]).shape[0])
         corners = indices.reshape(-1, 3)
-        parts.append({name: glb.accessor(index).astype(np.float64)[corners] for name, index in primitive["attributes"].items()})
+        attributes = dict(primitive["attributes"])
+        part = {}
+        if skin is not None and "JOINTS_0" in attributes and "WEIGHTS_0" in attributes:
+            names, columns = skin
+            joints = glb.accessor(attributes.pop("JOINTS_0")).astype(np.int64)
+            weights = glb.accessor(attributes.pop("WEIGHTS_0")).astype(np.float64)
+            dense = np.zeros((len(joints), len(columns)))
+            mapped = np.array([columns[name] for name in names])[joints]
+            np.add.at(dense, (np.repeat(np.arange(len(joints)), joints.shape[1]), mapped.reshape(-1)), weights.reshape(-1))
+            part["SKIN"] = dense[corners]
+        part.update({name: glb.accessor(index).astype(np.float64)[corners] for name, index in attributes.items()})
+        parts.append(part)
     names = set.intersection(*(set(part) for part in parts))
     return {name: np.concatenate([part[name] for part in parts]) for name in names}
 
@@ -193,8 +209,8 @@ def attribute_error(name, a, b, visible=None):
     return float(np.abs(a - b).max(initial=0))
 
 
-def compare_primitive(glb_a, prim_a, glb_b, prim_b):
-    a, b = triangles(glb_a, prim_a), triangles(glb_b, prim_b)
+def compare_primitive(glb_a, prim_a, glb_b, prim_b, skins=(None, None)):
+    a, b = triangles(glb_a, prim_a, skins[0]), triangles(glb_b, prim_b, skins[1])
     result = {"triangles": [len(a["POSITION"]), len(b["POSITION"])], "attributes": {}, "onlyA": sorted(set(a) - set(b)), "onlyB": {}}
     for name in sorted(set(b) - set(a)):
         result["onlyB"][name] = "all zero" if not np.any(b[name]) else "data"
@@ -215,13 +231,38 @@ def node_names(glb):
     return {node.get("name"): index for index, node in enumerate(glb.list("nodes"))}
 
 
+def skin_names(glb):
+    skins = glb.list("skins")
+    return [glb.list("nodes")[j].get("name", "") for j in skins[0]["joints"]] if skins else None
+
+
+def inverse_binds(glb):
+    skin = glb.list("skins")[0]
+    matrices = glb.accessor(skin["inverseBindMatrices"]).reshape(-1, 4, 4).transpose(0, 2, 1)
+    return dict(zip(skin_names(glb), matrices))
+
+
 def compare_glb(glb_a, source_a, glb_b, source_b):
     images_a, images_b = Images(glb_a, source_a), Images(glb_b, source_b)
     report = {"nodes": {}, "materials": {}, "primitives": {}, "max": {}, "failures": []}
     nodes_a, nodes_b = node_names(glb_a), node_names(glb_b)
-    report["nodes"] = {"countA": len(nodes_a), "countB": len(nodes_b), "onlyA": sorted(set(nodes_a) - set(nodes_b), key=str),
-                       "onlyB": sorted(set(nodes_b) - set(nodes_a), key=str), "extrasDifferent": []}
     parents_a, parents_b, cache_a, cache_b = glb_a.parents(), glb_b.parents(), {}, {}
+
+    def identity_only(glb, nodes, parents, cache, names):
+        return sorted((n for n in names if "mesh" not in glb.list("nodes")[nodes[n]] and np.abs(glb.world(nodes[n], parents, cache) - np.eye(4)).max() <= TOLERANCE["position"]), key=str)
+
+    only_a, only_b = set(nodes_a) - set(nodes_b), set(nodes_b) - set(nodes_a)
+    ignored = identity_only(glb_a, nodes_a, parents_a, cache_a, only_a) + identity_only(glb_b, nodes_b, parents_b, cache_b, only_b)
+    report["nodes"] = {"countA": len(nodes_a), "countB": len(nodes_b), "onlyA": sorted(only_a - set(ignored), key=str),
+                       "onlyB": sorted(only_b - set(ignored), key=str), "identityOnly": ignored, "extrasDifferent": []}
+    joints_a, joints_b = skin_names(glb_a), skin_names(glb_b)
+    skins = (None, None)
+    if joints_a is not None and joints_b is not None:
+        columns = {name: index for index, name in enumerate(sorted(set(joints_a) | set(joints_b)))}
+        skins = ((joints_a, columns), (joints_b, columns))
+        if set(joints_a) != set(joints_b): report["failures"].append(f"skin joints differ: {sorted(set(joints_a) ^ set(joints_b))[:5]}")
+        binds_a, binds_b = inverse_binds(glb_a), inverse_binds(glb_b)
+        report["max"]["inverseBind"] = max((float(np.abs(binds_a[n] - binds_b[n]).max()) for n in set(binds_a) & set(binds_b)), default=0.0)
     worst = {"position": 0.0, "rotation": 0.0, "scale": 0.0}
     node_differences = []
     for name in sorted(set(nodes_a) & set(nodes_b), key=str):
@@ -244,7 +285,7 @@ def compare_glb(glb_a, source_a, glb_b, source_b):
         for p in glb_b.list("meshes")[node_b["mesh"]]["primitives"]: prims_b.setdefault(material_names(glb_b, p), []).append(p)
         if set(prims_a) != set(prims_b): report["failures"].append(f"node {name}: primitive materials {sorted(prims_a, key=str)} / {sorted(prims_b, key=str)}")
         for material in set(prims_a) & set(prims_b):
-            report["primitives"][f"{name}/{material}"] = compare_primitive(glb_a, prims_a[material], glb_b, prims_b[material])
+            report["primitives"][f"{name}/{material}"] = compare_primitive(glb_a, prims_a[material], glb_b, prims_b[material], skins)
     report["nodeTransform"] = worst
     report["nodes"]["extrasGroups"] = summarize(node_differences, TOLERANCE["json"])
     for key, limit in (("position", TOLERANCE["position"]), ("rotation", TOLERANCE["rotation"]), ("scale", TOLERANCE["scale"])):
@@ -307,7 +348,7 @@ def compare_packages(path_a, path_b):
         else:
             result["binary"][name] = "equal" if data_a == data_b else "different"
     result["stage"] = compare_glb(Glb(a.read(model_a)), a, Glb(b.read(model_b)), b)
-    failures = [f"stage.glb: {f}" for f in result["stage"]["failures"]]
+    failures = [f"{model_a}: {f}" for f in result["stage"]["failures"]]
     failures += [f"{name}: {r['differences']} differences" for name, r in result["json"].items() if not r["equal"]]
     failures += [f"{name}: bytes differ" for name, value in result["binary"].items() if value != "equal"]
     if not result["manifest"]["equal"]: failures.append("manifest.json differs")

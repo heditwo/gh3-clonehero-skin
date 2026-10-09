@@ -11,6 +11,7 @@
 | material.chstage | stage.glb material extras gh3* and glTF material fields |
 | object.chstage.actor (actor root empty) | actors.json row and its model GLB |
 | scene.chstage.kept_files | Package files that the add-on keeps (scripts.json as a text block, other files packed in the .blend file) |
+| scene.chstage.character | character.json of a character package (.chchar) and the character tools (rig, helpers, clip preview) |
 
 The 'kept' text properties hold the source rows of an opened package (see sidecars.Keeper).
 """
@@ -32,6 +33,14 @@ from . import sidecars
 
 ROLES = [(r, r.title(), "") for r in sidecars.ROLES]
 CROWD_ROLES = [(f"crowd{i}", f"Crowd {i}", "") for i in range(1, 9)]
+
+
+PROFILE_ITEMS = [
+    ("gh3-guitarist-axel-v1", "Guitarist (Axel)", "GH3 guitarist rig, band role guitarist"),
+    ("gh3-bassist-v1", "Bassist", "GH3 bassist rig, band role bassist"),
+    ("gh3-singer-male-v1", "Singer (male)", "GH3 singer rig, band role singer"),
+    ("gh3-drummer-v1", "Drummer", "GH3 drummer rig, band role drummer"),
+]
 
 
 def items(values, descriptions=None):
@@ -397,6 +406,52 @@ class CHSTAGE_PG_script_row(PropertyGroup):
     editable: BoolProperty()
 
 
+_HAIR_ITEMS = []
+
+
+def hair_chain_items(self, context):
+    import json
+    chains = json.loads(self.hair_chains) if self.hair_chains else []
+    _HAIR_ITEMS[:] = [("ALL", "All hair bones", "Each vertex goes to the nearest hair bone of all chains")] + [
+        (str(i), f"Chain {i + 1} ({len(chain)} bones)", ", ".join(chain)) for i, chain in enumerate(chains)]
+    return _HAIR_ITEMS
+
+
+def preview_selected_clip(self, context):
+    from . import character_tools
+    character_tools.preview_clip_index(self.id_data)
+
+
+class CHSTAGE_PG_material_ref(PropertyGroup):
+    material: PointerProperty(name="Material", type=bpy.types.Material)
+
+
+class CHSTAGE_PG_clip(PropertyGroup):
+    clip: StringProperty(name="Clip ID")
+    label: StringProperty(name="Clip")
+    duration: FloatProperty(name="Duration")
+    frames: IntProperty(name="Frames")
+
+
+class CHSTAGE_PG_character(PropertyGroup):
+    """character.json of a character package and the state of the character tools."""
+    enabled: BoolProperty(description="This scene is a character (.chchar), not a stage")
+    profile: EnumProperty(name="Profile", items=PROFILE_ITEMS, description="Fixed GH3 rig profile. It also selects the band role")
+    rig: PointerProperty(name="Rig", type=bpy.types.Object, description="The armature of the profile rig. Export writes it and its skinned meshes")
+    reference: PointerProperty(name="Reference body", type=bpy.types.Object, description="The GH3 body of the profile (helper, never exported)")
+    attachment: PointerProperty(name="Attachment", type=bpy.types.Object, description="The instrument, microphone, or drum kit of the profile (helper, never exported)")
+    library: StringProperty(name="Library", subtype="FILE_PATH", description="The library package of the rig and the clips")
+    hair_materials: CollectionProperty(type=CHSTAGE_PG_material_ref, description="Materials with sorted hair transparency (character.json hairMaterials)")
+    hair_materials_index: IntProperty()
+    hair_chains: StringProperty(description="Hair chains of the profile (JSON list of joint name lists)")
+    hair_chain: EnumProperty(name="Hair bones", items=hair_chain_items)
+    hair_reference: StringProperty(description="Material names of the hair cards of the reference body (JSON list)")
+    instrument: StringProperty(name="Instrument", description="Library model ID of the instrument (character.json attachments). Empty: the profile default")
+    clips: CollectionProperty(type=CHSTAGE_PG_clip)
+    clips_index: IntProperty(default=-1, update=preview_selected_clip)
+    clip: StringProperty(name="Previewed clip")
+
+
 class CHSTAGE_PG_scene(PropertyGroup):
     package: PointerProperty(type=CHSTAGE_PG_package)
     crowd: CollectionProperty(type=CHSTAGE_PG_crowd)
@@ -437,6 +492,7 @@ class CHSTAGE_PG_scene(PropertyGroup):
     light_group_overlay: BoolProperty(name="Color by light group", update=light_group_overlay,
                                       description="Color the scenery by light group (Solid shading, object color)")
     beam_overlay: BoolProperty(name="Show beams", default=True, description="Draw the beams of the previewed snapshot and the fixture axes")
+    character: PointerProperty(type=CHSTAGE_PG_character)
 
 
 class CHSTAGE_AP_preferences(AddonPreferences):
@@ -445,13 +501,16 @@ class CHSTAGE_AP_preferences(AddonPreferences):
     custom_stages: StringProperty(name="Custom/Stages folder", subtype="DIR_PATH",
                                   description="The Custom/Stages folder of Clone Hero. Export can copy the package into it")
     library: StringProperty(name="GH3 library (.chlib)", subtype="FILE_PATH",
-                            description="gh3-band-v1.chlib (or its folder). Open loads the band rigs from it to show camera bone anchors. "
-                                        "Empty: look next to the opened package")
+                            description="gh3-band-v1.chlib (or its folder). Open loads the band rigs from it to show camera bone anchors; "
+                                        "the character tools load the profile rigs and clips from it. Empty: look next to the opened package")
     import_all_clips: BoolProperty(name="Open: import all actor clips", default=False,
                                    description="Off: Open imports the clips that actors.json uses; the actor panel loads the others")
+    custom_characters: StringProperty(name="Custom/Characters folder", subtype="DIR_PATH",
+                                      description="The Custom/Characters folder of Clone Hero. Export .chchar can copy the package into it")
 
     def draw(self, context):
         self.layout.prop(self, "custom_stages")
+        self.layout.prop(self, "custom_characters")
         self.layout.prop(self, "library")
         self.layout.prop(self, "import_all_clips")
 
@@ -460,7 +519,8 @@ CLASSES = (
     CHSTAGE_PG_name, CHSTAGE_PG_image_ref, CHSTAGE_PG_kept_file, CHSTAGE_PG_number, CHSTAGE_PG_author, CHSTAGE_PG_requirement, CHSTAGE_PG_package,
     CHSTAGE_PG_point, CHSTAGE_PG_object_ref, CHSTAGE_PG_shot, CHSTAGE_PG_light, CHSTAGE_PG_actor_action, CHSTAGE_PG_actor, CHSTAGE_PG_object,
     CHSTAGE_PG_material, CHSTAGE_PG_snapshot_light, CHSTAGE_PG_beam, CHSTAGE_PG_snapshot, CHSTAGE_PG_mood, CHSTAGE_PG_color,
-    CHSTAGE_PG_camera_note, CHSTAGE_PG_crowd, CHSTAGE_PG_issue, CHSTAGE_PG_script_row, CHSTAGE_PG_scene, CHSTAGE_AP_preferences,
+    CHSTAGE_PG_camera_note, CHSTAGE_PG_crowd, CHSTAGE_PG_issue, CHSTAGE_PG_script_row, CHSTAGE_PG_material_ref, CHSTAGE_PG_clip,
+    CHSTAGE_PG_character, CHSTAGE_PG_scene, CHSTAGE_AP_preferences,
 )
 
 

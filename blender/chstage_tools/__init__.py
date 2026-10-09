@@ -1,6 +1,7 @@
-"""CH Stage Tools: make venue packages (.chstage, docs/PACKAGE-FORMAT.md) in Blender. See docs/BLENDER-ADDON.md."""
+"""CH Stage Tools: make venue packages (.chstage) and character packages (.chchar, docs/PACKAGE-FORMAT.md) in Blender.
+See docs/BLENDER-ADDON.md."""
 
-from . import collect, lighting_tools, operators, package_open, panels, properties
+from . import character_ui, collect, lighting_tools, operators, package_open, panels, properties
 
 
 class glTF2ExportUserExtension(collect.ExportExtras):
@@ -13,14 +14,17 @@ class glTF2ImportUserExtension(package_open.ImportHooks):
 
 def menu_new_stage(self, context):
     self.layout.operator("chstage.new_stage", icon="FILE_NEW")
+    self.layout.operator("chstage.new_character", icon="ARMATURE_DATA")
 
 
 def menu_import(self, context):
     self.layout.operator("chstage.open_package", text="CH Stage Package (.chstage)")
+    self.layout.operator("chstage.open_character", text="CH Character Package (.chchar)")
 
 
 def menu_export(self, context):
     self.layout.operator("chstage.export_package", text="CH Stage Package (.chstage)")
+    self.layout.operator("chstage.export_character", text="CH Character Package (.chchar)")
 
 
 def register():
@@ -28,6 +32,7 @@ def register():
     properties.register()
     operators.register()
     panels.register()
+    character_ui.register()
     lighting_tools.register()
     bpy.types.TOPBAR_MT_file_new.append(menu_new_stage)
     bpy.types.TOPBAR_MT_file_import.append(menu_import)
@@ -40,6 +45,7 @@ def unregister():
     bpy.types.TOPBAR_MT_file_import.remove(menu_import)
     bpy.types.TOPBAR_MT_file_new.remove(menu_new_stage)
     lighting_tools.unregister()
+    character_ui.unregister()
     panels.unregister()
     operators.unregister()
     properties.unregister()

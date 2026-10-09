@@ -53,10 +53,19 @@ def edit_list(layout, owner, holder, name, path, rows=3):
             for field in names: column.prop(item, field)
 
 
+def stage_scene(context):
+    """Venue panels show in stage scenes only; a character scene has the CH Character tab."""
+    return context.scene is not None and not context.scene.chstage.character.enabled
+
+
 class SidebarPanel:
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = CATEGORY
+
+    @classmethod
+    def poll(cls, context):
+        return stage_scene(context)
 
 
 class CHSTAGE_PT_stage(SidebarPanel, Panel):
@@ -71,20 +80,25 @@ class CHSTAGE_PT_stage(SidebarPanel, Panel):
         row = layout.row(align=True)
         row.operator("chstage.validate", icon="CHECKMARK")
         row.operator("chstage.export_package", icon="EXPORT")
-        props = context.scene.chstage
-        if props.export_path: layout.label(text=f"Last export: {props.export_path}", icon="PACKAGE")
-        if props.validated:
-            errors = sum(1 for i in props.issues if i.severity == "ERROR")
-            layout.label(text=f"{errors} errors, {len(props.issues) - errors} warnings" if props.issues else "No issues",
-                         icon="ERROR" if errors else "CHECKMARK")
-            if props.issues:
-                layout.template_list("CHSTAGE_UL_issues", "", props, "issues", props, "issues_index", rows=4)
-                if 0 <= props.issues_index < len(props.issues):
-                    issue = props.issues[props.issues_index]
-                    box = layout.box()
-                    width = max(20, int(context.region.width / (7 * context.preferences.view.ui_scale)))
-                    for line in textwrap.wrap(issue.message, width): box.label(text=line)
-                    if issue.object_name: box.operator("chstage.select_issue", text=f"Select {issue.object_name}", icon="RESTRICT_SELECT_OFF").index = props.issues_index
+        draw_issues(layout, context)
+
+
+def draw_issues(layout, context):
+    """The last export and the issue list of Validate and Export (stage and character scenes)."""
+    props = context.scene.chstage
+    if props.export_path: layout.label(text=f"Last export: {props.export_path}", icon="PACKAGE")
+    if props.validated:
+        errors = sum(1 for i in props.issues if i.severity == "ERROR")
+        layout.label(text=f"{errors} errors, {len(props.issues) - errors} warnings" if props.issues else "No issues",
+                     icon="ERROR" if errors else "CHECKMARK")
+        if props.issues:
+            layout.template_list("CHSTAGE_UL_issues", "", props, "issues", props, "issues_index", rows=4)
+            if 0 <= props.issues_index < len(props.issues):
+                issue = props.issues[props.issues_index]
+                box = layout.box()
+                width = max(20, int(context.region.width / (7 * context.preferences.view.ui_scale)))
+                for line in textwrap.wrap(issue.message, width): box.label(text=line)
+                if issue.object_name: box.operator("chstage.select_issue", text=f"Select {issue.object_name}", icon="RESTRICT_SELECT_OFF").index = props.issues_index
 
 
 class CHSTAGE_PT_manifest(SidebarPanel, Panel):
@@ -93,20 +107,22 @@ class CHSTAGE_PT_manifest(SidebarPanel, Panel):
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw(self, context):
-        layout = self.layout
-        package = context.scene.chstage.package
-        for name in ("package_id", "version", "name", "description", "license", "homepage", "min_mod_version"):
-            layout.prop(package, name)
-        layout.prop(package, "preview_mode")
-        if package.preview_mode == "IMAGE": layout.template_ID(package, "preview_image", open="image.open")
-        row = layout.row(align=True)
-        for name in ("redistribute", "modify", "commercial"): row.prop(package, name, toggle=True)
-        layout.label(text="Authors")
-        edit_list(layout, "SCENE", package, "authors", "chstage.package.authors", rows=2)
-        layout.label(text="Credits")
-        edit_list(layout, "SCENE", package, "credits", "chstage.package.credits", rows=2)
-        layout.label(text="Required packages")
-        edit_list(layout, "SCENE", package, "requires", "chstage.package.requires", rows=1)
+        draw_package_info(self.layout, context.scene.chstage.package)
+
+
+def draw_package_info(layout, package):
+    for name in ("package_id", "version", "name", "description", "license", "homepage", "min_mod_version"):
+        layout.prop(package, name)
+    layout.prop(package, "preview_mode")
+    if package.preview_mode == "IMAGE": layout.template_ID(package, "preview_image", open="image.open")
+    row = layout.row(align=True)
+    for name in ("redistribute", "modify", "commercial"): row.prop(package, name, toggle=True)
+    layout.label(text="Authors")
+    edit_list(layout, "SCENE", package, "authors", "chstage.package.authors", rows=2)
+    layout.label(text="Credits")
+    edit_list(layout, "SCENE", package, "credits", "chstage.package.credits", rows=2)
+    layout.label(text="Required packages")
+    edit_list(layout, "SCENE", package, "requires", "chstage.package.requires", rows=1)
 
 
 class CHSTAGE_PT_object(SidebarPanel, Panel):
@@ -114,7 +130,7 @@ class CHSTAGE_PT_object(SidebarPanel, Panel):
 
     @classmethod
     def poll(cls, context):
-        return context.object is not None
+        return context.object is not None and stage_scene(context)
 
     def draw(self, context):
         layout = self.layout
@@ -169,7 +185,7 @@ class CHSTAGE_PT_shot(SidebarPanel, Panel):
     @classmethod
     def poll(cls, context):
         obj = context.object
-        return obj is not None and (obj.type == "CAMERA" or (obj.type == "EMPTY" and obj.chstage.marker == "NONE"))
+        return obj is not None and (obj.type == "CAMERA" or (obj.type == "EMPTY" and obj.chstage.marker == "NONE")) and stage_scene(context)
 
     def draw(self, context):
         layout = self.layout
@@ -211,7 +227,7 @@ class CHSTAGE_PT_light(SidebarPanel, Panel):
 
     @classmethod
     def poll(cls, context):
-        return context.object is not None and context.object.type == "LIGHT"
+        return context.object is not None and context.object.type == "LIGHT" and stage_scene(context)
 
     def draw(self, context):
         layout = self.layout
@@ -285,7 +301,7 @@ class CHSTAGE_PT_actor(SidebarPanel, Panel):
 
     @classmethod
     def poll(cls, context):
-        return actor_tools.actor_root(context.object) is not None
+        return actor_tools.actor_root(context.object) is not None and stage_scene(context)
 
     def draw(self, context):
         layout = self.layout
@@ -371,7 +387,7 @@ class CHSTAGE_PT_scripts(SidebarPanel, Panel):
 
     @classmethod
     def poll(cls, context):
-        return scripts_ui.script_item(context.scene) is not None
+        return stage_scene(context) and scripts_ui.script_item(context.scene) is not None
 
     def draw(self, context):
         layout = self.layout
@@ -515,7 +531,7 @@ class CHSTAGE_PT_kept_files(SidebarPanel, Panel):
 
     @classmethod
     def poll(cls, context):
-        return len(context.scene.chstage.kept_files) > 0
+        return len(context.scene.chstage.kept_files) > 0 and stage_scene(context)
 
     def draw(self, context):
         props = context.scene.chstage

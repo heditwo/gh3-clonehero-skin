@@ -1,6 +1,6 @@
 # Blender add-on: CH Stage Tools
 
-Status: **venue tool set** (PACKAGING-PLAN step 5, parts 1 to 3). The add-on makes a venue from a template or opens a venue package, edits all venue data that [package format v1](PACKAGE-FORMAT.md) defines, validates it, and exports a `.chstage` package. Actors (animated scenery) are Blender armatures with their clips. The add-on has a script bank browser, a shot browser with GH3 proxy rigs for camera bone anchors, a live lighting preview with beams, and lists of visibility groups, light groups, and node flags. The ten GH3 venues open and export again without a loss (section 2.6).
+Status: **venue tool set and character tools** (PACKAGING-PLAN step 5, parts 1 to 4). The add-on makes a venue from a template or opens a venue package, edits all venue data that [package format v1](PACKAGE-FORMAT.md) defines, validates it, and exports a `.chstage` package. Actors (animated scenery) are Blender armatures with their clips. The add-on has a script bank browser, a shot browser with GH3 proxy rigs for camera bone anchors, a live lighting preview with beams, and lists of visibility groups, light groups, and node flags. The ten GH3 venues open and export again without a loss (section 2.6). The character tools (section 1.15) make characters on the fixed GH3 rigs and export `.chchar` packages; the four GH3 band members open and export again within the tolerances (section 2.11).
 
 ## 1. For creators
 
@@ -145,9 +145,54 @@ Export gives the same bytes for the same scene and Blender version (fixed zip ti
 
 ### 1.14 Not available yet
 
-- Characters (`.chchar`) in Blender.
 - Material preview node trees (GH3 shading in the viewport).
 - GH3 script code: the script bank browser shows and sets values only.
+- Characters on other rigs (retargeting, VRM). A character must use a fixed GH3 rig (PACKAGING-PLAN decision 2).
+
+### 1.15 Make a character (.chchar)
+
+A character is a skinned mesh on one fixed GH3 rig. The rig, its bind pose, and the clips come from the GH3 library (`gh3-band-v1.chlib`). The game plays the library clips on your mesh. You do not make a skeleton or animations.
+
+Before you start: set **Edit > Preferences > Add-ons > CH Stage Tools > GH3 library (.chlib)** to `gh3-band-v1.chlib`. Optional: set **Custom/Characters folder**.
+
+The character tools are in the 3D view sidebar, tab **CH Character**.
+
+| Profile | Band role | Attachment (helper) | Hair chains |
+| --- | --- | --- | --- |
+| `gh3-guitarist-axel-v1` | guitarist | guitar | 5 (9 bones) |
+| `gh3-bassist-v1` | bassist | bass | 12 (15 bones) |
+| `gh3-singer-male-v1` | singer | microphone and stand | 7 (15 bones) |
+| `gh3-drummer-v1` | drummer | drum kit and sticks | 9 (15 bones) |
+
+Steps:
+
+1. Click **File > New > New Character from GH3 Rig** (or **New** in the tab). Select the profile. **Start from the GH3 body** makes the GH3 body the character mesh (use it to edit a GH3 member). The add-on makes a new scene with:
+   - The rig (an armature, for example `guitarist-rig`). Do not move, rotate, scale, or edit the rig: Validate compares each bone with the profile (position 0.1 mm, rotation 0.01°, scale 1e-4).
+   - **Helpers** that export never writes: the GH3 body as a wireframe reference, and the attachment preview (guitar, bass, microphone, or drum kit). The game adds the attachment from the library; do not model it. The eye buttons in **Weights and Hair** show and hide the helpers.
+   - A preview camera that looks at the face (the performer looks toward Blender −Y).
+2. Model your character over the GH3 reference body, or import a mesh (for example from FBX or OBJ) and move it onto the reference body. Use more than one mesh object if you like. Use usual Blender materials; images must be PNG.
+3. Select your meshes and click **Transfer Weights from the GH3 Body**. For each vertex, the add-on takes the nearest point on the GH3 body surface and interpolates the weights of its triangle (Blender Data Transfer mode "Nearest Face Interpolated"). Then it keeps the 4 largest weights and makes their sum 1. It also applies the object transform, makes the rig the parent, and adds an Armature modifier. **Skip the GH3 hair cards** (on by default) does not take weights from the GH3 hair.
+4. Change weights with Weight Paint if necessary. Then click **Limit and Normalize** (4 influences at most, sum 1).
+5. **Hair.** Select the hair cards (Edit Mode: select the vertices; Object Mode: the whole mesh). Select a chain in **Hair bones of the profile** (or **All hair bones**) and click **Assign to Hair Bones**: each vertex gets full weight on the nearest hair bone. Make the hair material active and click **+** under **Hair materials**: the material gets sorted transparency (character.json `hairMaterials`).
+6. **Clip preview.** In **Clip Preview**, click a clip. The add-on converts the library clip (q48) to an action of the rig at 30 fps, sets the scene rate to 30 and the frame range to the clip, and adds the arm and leg IK and the twist bones of the game (hands on the guitar or the drum sticks). Click **Play**. **Bind Pose** removes the preview. The clip names are the GH3 action groups (for example `stance_a/jump/good/fast`) or the GH3 clip name. The preview has no note-driven strum, fret, or face animation. Export never writes the preview actions.
+7. Set the package information (ID, name, version, authors, license) in **Character Package > Package Information**. **Instrument** (empty: the profile default) is the character.json attachment.
+8. Click **Validate**. The list shows the errors and warnings of the add-on checks and of the package validator of the mod (with the library: the bind pose check). Click the arrow of an issue to select its object.
+9. Click **Export .chchar**. Options: **Development folder**, **Copy to Custom/Characters**, **Preview** (Render: a 512 × 288 image from the scene camera). The add-on writes the package only when there is no error. Put the file into `Custom/Characters` (the game does not load characters yet: PACKAGING-PLAN step 4 part 2).
+
+**Open .chchar** (**File > Import > CH Character Package (.chchar)**) makes a new scene from a package: the rig and the meshes of `character.glb`, the material settings, the hair materials, the package information, and (with the library) the helpers and the clip list.
+
+Rules to know:
+
+| Check (Validate) | Fix |
+| --- | --- |
+| The rig has another transform than the origin | Clear the rig transform (Object > Clear) |
+| A rig bone is missing, or a bone is not in the profile | Start again from **New**; do not add or delete bones |
+| A mesh has its own transform | Click **Transfer Weights**, or apply the transform (Object > Apply > All Transforms) |
+| A mesh has no Armature modifier for the rig | Click **Transfer Weights** |
+| Vertices without weight, more than 4 influences, weight sum not 1 | **Transfer Weights**, Weight Paint, then **Limit and Normalize** |
+| An image is not PNG | Save the image as PNG |
+| A hair material is not on a character mesh | Remove it from **Hair materials** |
+| Joint positions or rotations differ from the profile (validator) | The rig changed: start again from **New** |
 
 ## 2. For developers
 
@@ -174,14 +219,20 @@ Export gives the same bytes for the same scene and Blender version (fixed zip ti
 | `blender/chstage_tools/gltf_io.py` | Safe glTF import and export settings, and the Blender 4.2 import fix |
 | `blender/chstage_tools/template.py` | The template scene, snapshot capture and apply |
 | `blender/chstage_tools/operators.py`, `panels.py` | Operators and panels |
-| `blender/build.py` | Copies `pipeline/package` (validator, container, decisions) and `schemas/` into `chstage_tools/vendor/package_format/` and writes the zip |
+| `blender/chstage_tools/character_tools.py` | Characters: new character scene, helpers from the library, weight transfer, limit and normalize, hair bones, clip preview (q48 to actions) |
+| `blender/chstage_tools/character_package.py` | Export .chchar, Validate, Open .chchar: add-on checks, GLB export of the rig and its meshes, character.json, manifest, zip, validator with the library |
+| `blender/chstage_tools/character_ui.py` | Operators and panels of the tab CH Character |
+| `blender/chstage_tools/brotli_decode.py`, `brotli_dictionary.bin` | Brotli decoder in pure Python (RFC 7932) for the library clips; the official Blender builds have no `brotli` module. The add-on uses the module when Blender has it |
+| `pipeline/package/character.py` | Shared with the add-on (bundled): profile rigs, split of a library band model into body and attachment, hair chains, clip poses with the game IK (`GuitarRig`, a port of `src/Stage/Band/StageGuitarArms.cs`), weight limits, character.json, and `python -m pipeline.package.character` (library band members as `.chchar`) |
+| `blender/build.py` | Copies `pipeline/package` (validator, container, decisions, character) and `schemas/` into `chstage_tools/vendor/package_format/` and writes the zip |
 | `blender/test.sh`, `blender/tests/blender_test.py`, `tools_test.py` | Headless test in Blender: template, validate, export, open, round trip of the template and of one GH3 venue, and the venue tools (packed files, actors, script bank, lighting preview, shot browser, proxy rigs, groups) |
 | `blender/tests/actor_export.py`, `actor_compare.py` | Export every actor model of venue packages from Blender, and compare the actor GLBs with the source and compile them (section 2.6) |
 | `blender/roundtrip.sh`, `blender/tests/roundtrip.py`, `roundtrip_summary.py` | Round trip of all venue packages, one Blender process each, with a Markdown summary |
 | `blender/tests/screenshots.py`, `screenshots_package.py`, `screenshots_tools.py` | Panel screenshots; Open and Export screenshots; venue tool screenshots (need a window) |
 | `pipeline/package/container.py` | JSON bytes, hashes, and the reproducible zip writer that the converter and the add-on share |
 | `pipeline/package/compare.py` | Compares two packages by meaning (`python -m pipeline.package.compare A B`) |
-| `tests/test_blender_addon.py`, `tests/test_blender_addon_tools.py` | Tests without Blender (part of `scripts/test.sh`) |
+| `blender/tests/character_test.py`, `screenshots_character.py` | Headless character test (section 2.11); character panel screenshots (need a window) |
+| `tests/test_blender_addon.py`, `tests/test_blender_addon_tools.py`, `tests/test_blender_addon_characters.py` | Tests without Blender (part of `scripts/test.sh`) |
 
 The add-on and the converter use one validator and one zip writer. `pipeline/package` uses relative imports and has no other repository dependency, so `build.py` copies it without changes. The copy is not in git.
 
@@ -203,6 +254,7 @@ The layout follows the package files, so that export and Open map one to one.
 | `scene.chstage.kept_files` | Other package files (`scripts.json`, other files): text blocks or packed data (`blobs.py`) |
 | `scene.chstage.anchor_frames` | The bone frames of the proxy rigs (JSON, runtime coordinates, relative to the performer roots) for the camera bone anchors |
 | `scene.chstage.script_rows` | Rows of the script bank browser (made from the `scripts.json` text block) |
+| `scene.chstage.character` | A character scene (`enabled`): `profile`, `hair_materials`, `instrument` (character.json); `rig`, `reference`, `attachment`, `library`, hair chains, clip list (tool state). Helpers have the custom property `chstage_helper` and the marker `PROXY` |
 | `kept`, `order`, `source_name` (objects, materials, list items) | Source rows, package order, and package names of an opened package (section 2.5) |
 
 The glTF export hooks (`glTF2ExportUserExtension` in `__init__.py`) write the `gh3*` extras, the glTF material fields, and the package names during an add-on export only. They remove the add-on property groups from the extras of every glTF export. The glTF import hooks (`glTF2ImportUserExtension`) map glTF node, material, and image indices to the Blender data during Open only.
@@ -335,6 +387,8 @@ python3 blender/build.py                      # writes blender/dist/chstage_tool
 flock /tmp/opencode/gh3-heavy.lock bash blender/test.sh ~/.cache/chstage-test blender-clean ~/.cache/blender/blender-4.2-clean
 ```
 
+With `assets/packages/gh3-band-v1.chlib` present (or `CHSTAGE_TEST_LIBRARY`), `blender/test.sh` also runs the character test (`blender/tests/character_test.py`, section 2.11) in a second Blender process. Result on 2026-10-09: 60 of 60 venue checks and 33 of 33 character checks pass on Blender 5.2.1 and on Blender 4.2.23.
+
 `blender/test.sh` installs the zip into a temporary Blender user folder (`BLENDER_USER_RESOURCES`), so it does not change the Blender setup of the user. It also opens, exports, and compares `assets/packages/gh3.credits.chstage` when it exists (`CHSTAGE_TEST_VENUE` selects another package; an empty value turns it off), and then tests the venue tools (`tools_test.py`; `CHSTAGE_TEST_SKIP=actors,scripts,lighting,cameras,groups` skips parts). Set `CHSTAGE_TEST_RIG` to a GH3 rig GLB (for example a spike file from `tools/spike-blender/band_glb.py`) to also test the import fix. Result on 2026-10-09: 60 of 60 checks pass on Blender 5.2.1 and on Blender 4.2.23:
 
 - Part 2 (30 checks): template, validate, export with folder and Custom/Stages copy, preview render, lightmap on `TEXCOORD_1`, bone anchor, reproducible export, open, template round trip with and without the Keeper, an edit after open, `gh3.credits` round trip.
@@ -390,3 +444,56 @@ Evidence: `/tmp/opencode/addon/rt42/` (`results.jsonl`, `summary-4.2.md`, `accep
 - **First key at 0 s.** PACKAGE-FORMAT 6.7 does not say where an actor clip starts. The add-on export moves the first key of each clip to 0 s (all source clips start at 0 s). A clip that must start later needs a format rule.
 - **Bone anchor frames.** The rig proxy uses the first key of the first clip in `band/<role>/model.glb`. The game uses the clip that plays, so a bone-anchored camera can be some centimeters away from its preview. A per-shot preview clip is not in the format.
 - The repository has no license file; the add-on manifest says GPL-3.0-or-later (Blender requirement).
+- **Instrument attachment.** character.json `attachments.instrument` names "a library model ID", but the library has no separate instrument models: `band/<role>/model.glb` has the body and the instrument in one mesh. The add-on separates them by the joints (section 2.11). The character importer (step 4) must do the same, or the library needs separate instrument models.
+- **Hand IK in the preview.** The clip preview uses a port of the game IK (`StageGuitarRig`), not compared with the game frame by frame. The fret hand reaches its target only where the game elbow limit (cosine 0.97) permits it.
+- **Hair physics.** The game moves the hair bones with `band/hair.json` physics. Clips do not animate them, so the preview shows hair cards in the bind pose relative to the head.
+
+### 2.11 Characters
+
+```mermaid
+flowchart LR
+    Library[gh3-band-v1.chlib] --> Split[Split band model: body, hair, attachment]
+    Split --> Rig[Rig and helpers]
+    Mesh[Creator mesh] --> Transfer[Transfer weights, hair bones]
+    Rig --> Transfer
+    Transfer --> Glb[character.glb: rig and meshes]
+    Glb --> Zip[character.json, manifest, zip]
+    Zip --> Validator[Validator with the library]
+    Validator -->|no errors| Target[.chchar, folder, Custom/Characters]
+```
+
+- **Split of a band model** (`character.split_model`). A primitive is an **attachment** when most of its vertices have their largest weight outside the body joints (the subtree of the parent of `bone_pelvis`; the other subtrees of the root are the instrument, microphone stand, drum kit, and IK helpers). A primitive is **hair** when 30 % of its vertices have weight on the hair joints of `band/hair.json`. Result: guitarist 3 attachment primitives, bassist 2, singer 2, drummer 1 (kit and sticks); one hair primitive each, equal to the materials with `gh3SortedTransparency`. `keep_primitives` removes the other primitives and the materials, textures, images, accessors, and buffer views that nothing uses.
+- **Export** writes the rig and the meshes skinned to it with the safe glTF settings, no animations, `export_apply` (the Armature modifier stays a skin), and the material extras of the material panel. The glTF exporter gives the evaluated copy of a skinned mesh's material to the export hook; the hook uses its original (without this, the material settings were lost). After the export: animations removed, material names restored, the images of `#<name>` texture references embedded. Blender adds the node `Armature` (identity) above the root joint; the format permits it.
+- **Clip preview.** A clip decodes with `brotli` or `brotli_decode`, then `q48.decode`. `character.clip_local_poses` starts from the bind pose, sets the channels in the track mask, applies `GuitarRig` for the guitarist, bassist, and drummer, and converts to glTF. For each bone, the pose matrix in armature space is `A · world · A⁻¹ · C`, with `A` the glTF-to-Blender axes and `C = (A · rest · A⁻¹)⁻¹ · bone.matrix_local` (the constant turn of the bone axes that the importer makes). The pose bone basis comes from the parent chain; keys are written with `keyframe_points.foreach_set` (`fcurve_ensure_for_datablock` on Blender 4.4 and later, `fcurves.new` on 4.2). Actions have the custom property `chstage_clip_preview`; a new preview removes the old one.
+- **Compare.** `pipeline.package.compare` compares character packages too: skin weights by joint name (`SKIN`, tolerance 1e-3), inverse bind matrices by joint name (1e-4), and identity nodes without a mesh that only one GLB has are ignored.
+
+**Round trip of the GH3 band members.** `python -m pipeline.package.character --library assets/packages/gh3-band-v1.chlib --output DIR` writes each band member as `gh3.<role>.chchar` (the body and hair of the band model, no attachment, no clips; valid with the library, 0 errors, 0 warnings). The test opens each package (**Open .chchar**), exports it without edits, and compares. Result on Blender 5.2.1 and 4.2.23 (maximum of both):
+
+| Member | Joint world position (mm) | Joint world rotation (°) | Inverse bind | POSITION (m) | NORMAL (°) | SKIN | COLOR_0 | Validator | Second export | Open / export (s) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |
+| guitarist | 0.0007 | 0.00032 | 8.1e-6 | 5e-7 | 0.64 | 0 | 0 | 0 errors, 0 warnings | same bytes | 0.47 / 0.42 |
+| bassist | 0.0010 | 0.00016 | 2.6e-6 | 6e-7 | 0.22 | 2.9e-5 | 1.05/255 | 0 errors, 0 warnings | same bytes | 0.29 / 0.18 |
+| singer | 0.0007 | 0.00014 | 3.2e-6 | 1e-6 | 0.18 | 4.5e-5 | 0 | 0 errors, 0 warnings | same bytes | 0.41 / 0.25 |
+| drummer | 0.0007 | 0.00054 | 9.9e-6 | 4e-7 | 0.45 | 1.7e-5 | 0 | 0 errors, 0 warnings | same bytes | 0.33 / 0.16 |
+
+The limits are 0.1 mm, 0.01°, and 1e-4 (PACKAGING-PLAN 9.6). TEXCOORD and all `_GH3_*` streams differ by 0. Materials and extras are equal.
+
+**Test character** (not GH3 data). The test makes a body from Blender primitives (cones and spheres at the guitarist bone positions, 1,366 vertices, a generated PNG texture) and 6 hair cards. Transfer Weights gives weights on 56 rig bones (at most 4 for each vertex, sum 1); Assign to Hair Bones puts the cards on 4 hair bones; the hair material goes into `hairMaterials`. Validate: 0 errors. Export: valid with the library (0 errors, 0 warnings), 414 KB, the same bytes on a second export, and the same package after Open and export. The renders use EEVEE in background mode, with the guitar helper shown:
+
+| Image | Clip |
+| --- | --- |
+| `renders/test-character-idle.png` | `gh3_guit_axel_a_fst_idle1`, frame 67 |
+| `renders/test-character-jump.png` | `stance_a/jump/good/fast` (`0a9c2b20`), frame 38 |
+| `renders/gh3-body-idle.png` | The GH3 body (reference helper) in the same frame as the first image |
+
+**Clip preview accuracy** (`gh3_guit_axel_a_fst_idle1`, 136 frames, every 7th frame, all 125 bones): the Blender pose against the poses that `clip_local_poses` gives: 0.001 mm and 0.00003°. The spine and head bones against the glTF importer animation of the same clip in `band/guitarist/model.glb`: 0.063 mm and 0.012° (q48 error along the chain; the arms and legs are not compared, because the model clip has the older pipeline arm solve). Conversion of the clip: 0.06–0.10 s (5.2.1 with the `brotli` module, 4.2.23 with `brotli_decode`). Without the IK, the arms stay in the clip pose (`raw-clip-without-ik-vs-library-clip.png`).
+
+Rotation errors use the chord form; `acos` of a float32 trace gives up to 0.05° of noise for equal rotations.
+
+Evidence: `/tmp/opencode/addon-chars/evidence/` (`<blender>/character-summary.json`, `characters.log`, `renders/`, `screenshots/` with `panel-character.png`, `panel-character-issues.png`, `panel-character-weights.png`, `panel-character-clips.png`; nested Xwayland display). Command:
+
+```sh
+TMPDIR=~/.cache/addon-chars/tmp flock /tmp/opencode/gh3-heavy.lock bash blender/test.sh ~/.cache/addon-chars/full blender-clean ~/.cache/blender/blender-4.2-clean
+```
+
+Python tests without Blender (`tests/test_blender_addon_characters.py`): the Brotli decoder against the `brotli` module (texts at 4 qualities, 2 modes, 3 windows; every 60th library clip; a damaged stream), weight limits, quaternions, character.json, the model split of the four roles, the four members as valid and reproducible packages, the hair chains, the clip list, bind pose of channels that a clip does not animate, the game IK (the strum hand on its target in all frames), the comparison with another joint order, and the bundle.

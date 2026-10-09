@@ -121,6 +121,12 @@ flock /tmp/opencode/gh3-heavy.lock env MISE_QUIET=1 uv run --with pillow --with 
 
 Expected result: every compiled venue file is byte-equal; the library JSON, textures, sounds, movies, and rigs are byte-equal or JSON-equal; 159 V coordinates of the guitarist and drummer meshes differ by at most 3e-8 (glTF stores 1 − v); all 1,240 clips are within the q48 error bound.
 
+The four library band members can be written as character packages (`gh3.<role>.chchar`, the round-trip reference of the Blender character tools, [BLENDER-ADDON.md section 2.11](BLENDER-ADDON.md#211-characters)):
+
+```bash
+MISE_QUIET=1 uv run --with numpy --with brotli python -m pipeline.package.character --library assets/packages/gh3-band-v1.chlib --output /tmp/opencode/characters
+```
+
 The C# importer must give the same cache content as the Python pipeline. Import all packages outside the game, then compare (about 20 s and 0.5 GB for the import; 1.5 GB of disk):
 
 ```bash

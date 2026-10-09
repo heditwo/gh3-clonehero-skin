@@ -96,16 +96,29 @@ def import_stage(scene, data, issues):
 
 def open_scenery(scene, source, entry, issues):
     gltf, binary, nodes, mats, images = import_stage(scene, source.read(entry["model"]), issues)
-    for index, image in enumerate(gltf.get("images", [])):
-        if index not in images:
-            images[index] = packed_image(image.get("name") or f"image-{index}", glb_tools.image_bytes(gltf, binary, index))
-    by_name = {image.get("name"): images[index] for index, image in enumerate(gltf.get("images", [])) if image.get("name")}
+    open_nodes(gltf, nodes)
+    open_materials(gltf, binary, mats, images, source, issues)
+    for mesh in {obj.data for obj in nodes.values() if obj.type == "MESH"}: remove_gh3_properties(mesh)
+
+
+def open_nodes(gltf, nodes):
+    """Set the add-on settings of the imported objects from the gh3* node extras."""
     for index, obj in nodes.items():
+        if index is None: continue
         node = gltf["nodes"][index]
         set_properties(obj.chstage, sidecars.open_node(node.get("extras", {})))
         obj.chstage.kept = sidecars.kept_text(node={k: v for k, v in node.get("extras", {}).items() if k.startswith("gh3")})
         obj.chstage.source_name = node.get("name", "")
         remove_gh3_properties(obj)
+
+
+def open_materials(gltf, binary, mats, images, source, issues):
+    """Set the add-on settings of the imported materials (panel fields, kept GH3 data, texture references, lightmap).
+    Images that no material socket uses are packed from the GLB (the importer does not import them)."""
+    for index, image in enumerate(gltf.get("images", [])):
+        if index not in images:
+            images[index] = packed_image(image.get("name") or f"image-{index}", glb_tools.image_bytes(gltf, binary, index))
+    by_name = {image.get("name"): images[index] for index, image in enumerate(gltf.get("images", [])) if image.get("name")}
     textures = gltf.get("textures", [])
     for index, variants in mats.items():
         material = gltf["materials"][index]
@@ -136,7 +149,6 @@ def open_scenery(scene, source, entry, issues):
             blender_material.chstage.source_name = material.get("name", "")
             remove_gh3_properties(blender_material)
         if len(variants) > 1: issues.warn(f"material '{material.get('name')}': Blender made {len(variants)} materials from it")
-    for mesh in {obj.data for obj in nodes.values() if obj.type == "MESH"}: remove_gh3_properties(mesh)
 
 
 def set_matrix(obj, value):
@@ -287,6 +299,30 @@ def record_kept(scene):
     keeper.store()
 
 
+def open_package_info(scene, manifest, source, skip):
+    """Set the package information of the scene from manifest.json. The preview image is packed (skip gets its path)."""
+    package = scene.chstage.package
+    description = sidecars.open_manifest(manifest)
+    package.package_id, package.version, package.name = description["id"], description["version"], description["name"]
+    package.description, package.license, package.homepage = description["description"], description["license"], description["homepage"]
+    package.min_mod_version = description["minModVersion"]
+    for key in ("redistribute", "modify", "commercial"): setattr(package, key, bool(description["permissions"].get(key, False)))
+    for author in description["authors"]:
+        item = package.authors.add()
+        item.name, item.role, item.url = author["name"], author["role"], author["url"]
+    for line in description["credits"]: package.credits.add().name = line
+    for requirement in description["requires"]:
+        item = package.requires.add()
+        item.package_id, item.version = requirement.get("id", ""), requirement.get("version", "")
+    preview = manifest.get("preview")
+    if preview in source.set:
+        package.preview_mode = "IMAGE"
+        package.preview_image = packed_image(f"{description['id']}-preview", source.read(preview))
+        skip.add(preview)
+    else:
+        package.preview_mode = "NONE"
+
+
 def open_package(path, library=None, all_clips=False):
     """Make a new scene from a .chstage zip or development folder. Returns (scene, issues).
     library: a GH3 library package for the proxy rigs (None: look next to the package; "": no rigs)."""
@@ -308,27 +344,8 @@ def open_package(path, library=None, all_clips=False):
     scene.render.resolution_x, scene.render.resolution_y = 1920, 1080
     scene.render.fps, scene.render.fps_base = 60, 1.0
     scene.chstage.source_package = str(path.resolve())
-    package = scene.chstage.package
-    description = sidecars.open_manifest(manifest)
-    package.package_id, package.version, package.name = description["id"], description["version"], description["name"]
-    package.description, package.license, package.homepage = description["description"], description["license"], description["homepage"]
-    package.min_mod_version = description["minModVersion"]
-    for key in ("redistribute", "modify", "commercial"): setattr(package, key, bool(description["permissions"].get(key, False)))
-    for author in description["authors"]:
-        item = package.authors.add()
-        item.name, item.role, item.url = author["name"], author["role"], author["url"]
-    for line in description["credits"]: package.credits.add().name = line
-    for requirement in description["requires"]:
-        item = package.requires.add()
-        item.package_id, item.version = requirement.get("id", ""), requirement.get("version", "")
     skip = {entry[key] for key in ADDON_FILES if key in entry}
-    preview = manifest.get("preview")
-    if preview in source.set:
-        package.preview_mode = "IMAGE"
-        package.preview_image = packed_image(f"{description['id']}-preview", source.read(preview))
-        skip.add(preview)
-    else:
-        package.preview_mode = "NONE"
+    open_package_info(scene, manifest, source, skip)
 
     open_scenery(scene, source, entry, issues)
     placements = json.loads(source.read(entry["placements"]))

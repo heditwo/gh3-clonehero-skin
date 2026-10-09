@@ -252,6 +252,8 @@ class ExportExtras:
     def gather_material_hook(self, gltf2_material, blender_material, export_settings):
         extras = {k: v for k, v in (gltf2_material.extras or {}).items() if k != "chstage"}
         gltf2_material.extras = extras or None
+        # Skinned meshes give the evaluated copy of the material, without the add-on settings.
+        blender_material = getattr(blender_material, "original", blender_material)
         if not _EXPORT["active"] or blender_material is None or not hasattr(blender_material, "chstage"): return
         row = _EXPORT["keeper"](material_row(blender_material), blender_material.chstage, "material")
         gltf2_material.name = package_name(blender_material)

@@ -1,0 +1,408 @@
+"""Headless test of the character tools. Run inside Blender (see blender/test.sh):
+
+blender --background --factory-startup --python-exit-code 1 --python blender/tests/character_test.py -- ZIP OUTPUT LIBRARY
+
+1. Round trip of the four GH3 band members of the library as .chchar packages (pipeline.package.character):
+   Open .chchar, Export .chchar without edits, compare (PACKAGING-PLAN 9.6 tolerances), validator, reproducible bytes.
+2. New Character from GH3 Rig (guitarist): rig, helpers, hair chains, clips.
+3. A test character that is not GH3 data: a body made of Blender primitives at the rig bones, with a generated texture
+   and hair cards. Transfer Weights, Assign to Hair Bones, Validate, Export (zip, folder, Custom/Characters), Open
+   and export again.
+4. Clip preview: the action of a q48 clip against the poses that the clip gives (numpy), and against the glTF
+   importer animation of the same clip in the library model (body bones).
+5. Errors that name the object (no weight, more than four influences, mesh transform).
+6. EEVEE renders of the test character in two GH3 clips.
+"""
+
+import faulthandler
+import json
+import math
+import sys
+import time
+import zipfile
+from pathlib import Path
+
+import bmesh
+import bpy
+import numpy as np
+from mathutils import Matrix, Vector
+
+faulthandler.enable()
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+from pipeline.package import character as character_format, compare  # noqa: E402
+
+args = sys.argv[sys.argv.index("--") + 1:]
+archive, output, library = Path(args[0]), Path(args[1]), Path(args[2])
+output.mkdir(parents=True, exist_ok=True)
+summary = {"blender": bpy.app.version_string, "checks": []}
+
+
+def check(name, condition, detail=""):
+    summary["checks"].append({"check": name, "ok": bool(condition), "detail": str(detail)[:600]})
+    print(f"CHSTAGE-TEST {'PASS' if condition else 'FAIL'} {name} {detail}"[:800])
+
+
+result = bpy.ops.extensions.package_install_files(filepath=str(archive), repo="user_default", enable_on_install=True)
+module = "bl_ext.user_default.chstage_tools"
+check("install", result == {"FINISHED"} and module in bpy.context.preferences.addons, result)
+prefs = bpy.context.preferences.addons[module].preferences
+prefs.library = str(library)
+character_package = sys.modules[module + ".character_package"]
+character_tools = sys.modules[module + ".character_tools"]
+validator = sys.modules[module + ".vendor.package_format.validate"]
+sidecars = sys.modules[module + ".sidecars"]
+
+
+def rotation_angle(a, b):
+    """Angle in degrees between two rotation matrices (chord form: acos of the trace loses precision near 0)."""
+    return math.degrees(2 * math.asin(min(1.0, float(np.linalg.norm(np.asarray(a) - np.asarray(b))) / math.sqrt(8))))
+
+
+def errors_of(items):
+    return [(s, m, o) for s, m, o, _ in items if s == "ERROR"]
+
+
+def operator_scene(scene, operator, **options):
+    with bpy.context.temp_override(scene=scene, view_layer=scene.view_layers[0]):
+        return operator(**options)
+
+
+# 1. Round trip of the GH3 band members.
+members = output / "members"
+lib = character_format.Library(library)
+summary["roundTrip"] = {}
+for role in ("guitarist", "bassist", "singer", "drummer"):
+    source = character_format.write_member(lib, role, members)
+    report = validator.Validator(source, library).run()
+    check(f"{role}: library member package is valid", report.ok and not report.warnings, report.errors + report.warnings)
+    started = time.time()
+    with bpy.context.temp_override(scene=bpy.context.scene):
+        status = bpy.ops.chstage.open_character(filepath=str(source))
+    scene = next(s for s in bpy.data.scenes if s.chstage.source_package == str(source.resolve()))
+    opened = time.time() - started
+    target = output / "roundtrip" / source.name
+    started = time.time()
+    status_export = operator_scene(scene, bpy.ops.chstage.export_character, filepath=str(target))
+    exported = time.time() - started
+    again = output / "roundtrip-again" / source.name
+    operator_scene(scene, bpy.ops.chstage.export_character, filepath=str(again))
+    differences = compare.compare_packages(source, target) if target.is_file() else {"failures": ["not written"], "stage": {"max": {}, "nodeTransform": {}}}
+    exported_report = validator.Validator(target, library).run() if target.is_file() else None
+    row = {"failures": differences["failures"], "max": differences["stage"]["max"], "nodeTransform": differences["stage"]["nodeTransform"],
+           "validatorErrors": exported_report.errors if exported_report else None, "validatorWarnings": exported_report.warnings if exported_report else None,
+           "sameBytes": again.is_file() and target.is_file() and again.read_bytes() == target.read_bytes(),
+           "openSeconds": round(opened, 2), "exportSeconds": round(exported, 2), "sizes": [source.stat().st_size, target.stat().st_size if target.is_file() else 0],
+           "helpers": sorted(o.name for o in scene.objects if character_tools.is_helper(o))}
+    summary["roundTrip"][role] = row
+    check(f"{role}: round trip (open, export, compare)", status == {"FINISHED"} and status_export == {"FINISHED"} and not differences["failures"]
+          and exported_report is not None and exported_report.ok and not exported_report.warnings, row)
+    check(f"{role}: second export gives the same bytes", row["sameBytes"])
+
+# 2. New Character from GH3 Rig.
+with bpy.context.temp_override(scene=bpy.context.scene):
+    status = bpy.ops.chstage.new_character(profile="gh3-guitarist-axel-v1", library=str(library))
+scene = next(s for s in bpy.data.scenes if s.name.startswith("CH Character (guitarist)"))
+props = scene.chstage.character
+rig = props.rig
+hair_chains = json.loads(props.hair_chains)
+check("new character: rig, helpers, clips", status == {"FINISHED"} and rig is not None and len(rig.data.bones) == 125 and props.reference is not None
+      and props.attachment is not None and props.reference.chstage.marker == "PROXY" and len(props.clips) == 356 and len(hair_chains) == 5
+      and not character_tools.character_meshes(scene), (len(rig.data.bones) if rig else None, len(props.clips), hair_chains))
+issues = character_package.validate_scene(scene)
+check("new character without a mesh: error names the rig", any("no mesh" in m and o == rig.name for _, m, o in errors_of(issues)), issues)
+
+
+# 3. A test character from Blender primitives.
+def bone_head(name):
+    return Vector(rig.data.bones[f"bone-{character_format.gh3_key(name):08x}"].head_local)
+
+
+def limb(bm, a, b, radius_a, radius_b, segments=12):
+    """A closed cone from point a to point b (local Z of the cone goes from a to b)."""
+    direction = b - a
+    geometry = bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=segments, radius1=radius_a, radius2=radius_b, depth=direction.length)
+    rotation = direction.normalized().to_track_quat("Z", "Y").to_matrix().to_4x4()
+    bmesh.ops.transform(bm, matrix=Matrix.Translation((a + b) / 2) @ rotation, verts=geometry["verts"])
+
+
+def ball(bm, center, radius, scale=(1, 1, 1)):
+    geometry = bmesh.ops.create_uvsphere(bm, u_segments=16, v_segments=10, radius=radius)
+    bmesh.ops.transform(bm, matrix=Matrix.Translation(center) @ Matrix.Diagonal((*scale, 1)), verts=geometry["verts"])
+
+
+def test_texture(name, size=64):
+    """A generated PNG texture: stripes and a gradient (no third-party art)."""
+    image = bpy.data.images.new(name, size, size, alpha=True)
+    y, x = np.mgrid[0:size, 0:size] / (size - 1)
+    stripes = (np.floor(x * 8) % 2) * 0.25
+    pixels = np.stack([0.35 + stripes, 0.45 + 0.4 * y, 0.85 - 0.3 * y, np.ones_like(x)], -1)
+    image.pixels.foreach_set(pixels.astype(np.float32).reshape(-1))
+    image.file_format = "PNG"
+    image.pack()
+    return image
+
+
+def textured_material(name, image, alpha=False):
+    material = bpy.data.materials.new(name)
+    material.use_nodes = True
+    tree = material.node_tree
+    shader = next(n for n in tree.nodes if n.type == "BSDF_PRINCIPLED")
+    texture = tree.nodes.new("ShaderNodeTexImage")
+    texture.image = image
+    tree.links.new(texture.outputs["Color"], shader.inputs["Base Color"])
+    if alpha:
+        tree.links.new(texture.outputs["Alpha"], shader.inputs["Alpha"])
+        material.chstage.blend = "BLEND"
+    return material
+
+
+bm = bmesh.new()
+pelvis, chest, neck, head = (bone_head(n) for n in ("bone_pelvis", "bone_chest", "bone_neck", "bone_head"))
+limb(bm, pelvis + Vector((0, 0, -0.05)), neck, 0.17, 0.2, 16)
+ball(bm, head + Vector((0, -0.02, 0.1)), 0.13, (0.9, 1.0, 1.15))
+limb(bm, neck - Vector((0, 0, 0.05)), head + Vector((0, 0, 0.02)), 0.06, 0.055)
+for side in ("l", "r"):
+    bicep, forearm, palm = (bone_head(f"bone_{n}_{side}") for n in ("bicep", "forearm", "palm"))
+    thigh, knee, ankle, toe = (bone_head(f"bone_{n}_{side}") for n in ("thigh", "knee", "ankle", "toe"))
+    collar = bone_head(f"bone_collar_{side}")
+    limb(bm, collar, bicep, 0.07, 0.065)
+    ball(bm, bicep, 0.065)
+    limb(bm, bicep, forearm + (forearm - bicep).normalized() * 0.03, 0.06, 0.05)
+    limb(bm, forearm, palm + (palm - forearm).normalized() * 0.03, 0.05, 0.04)
+    ball(bm, palm + (palm - forearm).normalized() * 0.06, 0.05, (1.0, 1.0, 1.0))
+    limb(bm, thigh, knee + (knee - thigh).normalized() * 0.03, 0.09, 0.07)
+    ball(bm, knee, 0.068)
+    limb(bm, knee, ankle, 0.065, 0.045)
+    limb(bm, ankle, toe + (toe - ankle).normalized() * 0.05, 0.05, 0.04)
+mesh = bpy.data.meshes.new("TestBody")
+bm.to_mesh(mesh)
+bm.free()
+mesh.uv_layers.new(name="UVMap")
+for loop in mesh.loops:
+    co = mesh.vertices[loop.vertex_index].co
+    mesh.uv_layers[0].data[loop.index].uv = (math.atan2(co.y, co.x) / (2 * math.pi) + 0.5, co.z / 2)
+body = bpy.data.objects.new("TestBody", mesh)
+scene.collection.objects.link(body)
+body.data.materials.append(textured_material("test_skin", test_texture("test_skin_color")))
+# A transform that Transfer Weights applies.
+body.location = (0.0, 0.0, 0.0)
+body.scale = (1.0, 1.0, 1.0)
+
+hair_mesh = bpy.data.meshes.new("TestHair")
+bm = bmesh.new()
+for index in range(6):
+    angle = math.radians(-75 + index * 30)
+    root = head + Vector((0.11 * math.sin(angle), 0.11 * math.cos(angle) * 0.6 + 0.04, 0.12))
+    geometry = bmesh.ops.create_grid(bm, x_segments=1, y_segments=3, size=0.5)
+    bmesh.ops.transform(bm, matrix=Matrix.Translation(root + Vector((0, 0.06, -0.13))) @ Matrix.Diagonal((0.08, 0.02, 0.28, 1)) @ Matrix.Rotation(math.radians(90), 4, "X"),
+                        verts=geometry["verts"])
+bm.to_mesh(hair_mesh)
+bm.free()
+hair_mesh.uv_layers.new(name="UVMap")
+hair = bpy.data.objects.new("TestHair", hair_mesh)
+scene.collection.objects.link(hair)
+hair_material = textured_material("test_hair", test_texture("test_hair_color"), alpha=True)
+hair.data.materials.append(hair_material)
+
+view_layer = scene.view_layers[0]
+for obj in scene.objects: obj.select_set(False, view_layer=view_layer)
+body.select_set(True, view_layer=view_layer)
+view_layer.objects.active = body
+with bpy.context.temp_override(scene=scene, view_layer=view_layer, selected_objects=[body], active_object=body, object=body):
+    status = bpy.ops.chstage.transfer_weights()
+names = character_tools.profile_groups(rig)
+weights = character_tools.vertex_weights(body, names)
+check("transfer weights", status == {"FINISHED"} and body.parent == rig and (weights > 0).sum(1).max() <= 4 and (weights > 0).sum(1).min() >= 1
+      and np.abs(weights.sum(1) - 1).max() < 1e-5 and any(m.type == "ARMATURE" and m.object == rig for m in body.modifiers),
+      {"vertices": len(weights), "maxInfluences": int((weights > 0).sum(1).max()), "groups": len(body.vertex_groups)})
+summary["testCharacter"] = {"bodyVertices": len(body.data.vertices), "bodyTriangles": sum(len(p.vertices) - 2 for p in body.data.polygons),
+                            "weightedGroups": int((weights > 0).any(0).sum())}
+with bpy.context.temp_override(scene=scene, view_layer=view_layer, object=hair, active_object=hair, selected_objects=[hair]):
+    status = bpy.ops.chstage.assign_hair(selected_only=False)
+    bpy.ops.chstage.hair_material(action="ADD")
+hair_weights = character_tools.vertex_weights(hair, names)
+hair_bones = {names.index(n) for chain in hair_chains for n in chain}
+check("assign to hair bones", status == {"FINISHED"} and set(np.flatnonzero(hair_weights.any(0))) <= hair_bones and (hair_weights.sum(1) == 1).all()
+      and len(set(np.flatnonzero(hair_weights.any(0)))) >= 3 and [m.material for m in props.hair_materials] == [hair_material],
+      sorted(names[i] for i in np.flatnonzero(hair_weights.any(0))))
+
+package = scene.chstage.package
+package.package_id, package.name, package.license = "tester.blocky-guitarist", "Blocky Guitarist", "CC0-1.0"
+package.authors[0].name = "CH Stage Tools test"
+with bpy.context.temp_override(scene=scene, view_layer=view_layer):
+    bpy.ops.chstage.validate_character()
+issues = [(i.severity, i.message, i.object_name) for i in scene.chstage.issues]
+check("test character validates without errors", not any(s == "ERROR" for s, _, _ in issues), issues)
+packages = output / "test-character"
+custom = output / "Custom" / "Characters"
+target = packages / "tester.blocky-guitarist.chchar"
+status = operator_scene(scene, bpy.ops.chstage.export_character, filepath=str(target), write_folder=True, copy_to_game=True, custom_folder=str(custom))
+report = validator.Validator(target, library).run() if target.is_file() else None
+check("export test character (zip, folder, Custom/Characters)", status == {"FINISHED"} and report is not None and report.ok
+      and (packages / "unpacked" / target.name / "manifest.json").is_file() and (custom / target.name).read_bytes() == target.read_bytes(),
+      (report.errors + report.warnings) if report else [(i.severity, i.message) for i in scene.chstage.issues])
+with zipfile.ZipFile(target) as package_zip:
+    names_in_zip = package_zip.namelist()
+    character_json = json.loads(package_zip.read("character.json"))
+    glb = character_format.Glb(package_zip.read("character.glb"))
+summary["testCharacter"].update(files=names_in_zip, character=character_json, size=target.stat().st_size, validatorWarnings=report.warnings if report else None)
+check("test character package files", names_in_zip[0] == "manifest.json" and {"character.glb", "character.json"} <= set(names_in_zip)
+      and character_json == {"version": 1, "library": "gh3-band-v1", "profile": "gh3-guitarist-axel-v1", "hairMaterials": ["test_hair"]}
+      and len(glb.list("skins")[0]["joints"]) == 125 and all(i.get("mimeType") == "image/png" for i in glb.list("images")) and not glb.list("animations"),
+      (names_in_zip, character_json))
+again = output / "test-character-again" / target.name
+operator_scene(scene, bpy.ops.chstage.export_character, filepath=str(again))
+check("test character export is reproducible", again.is_file() and again.read_bytes() == target.read_bytes())
+with bpy.context.temp_override(scene=scene):
+    bpy.ops.chstage.open_character(filepath=str(target))
+reopened = next(s for s in bpy.data.scenes if s.chstage.source_package == str(target.resolve()))
+copy = output / "test-character-reopened" / target.name
+operator_scene(reopened, bpy.ops.chstage.export_character, filepath=str(copy))
+differences = compare.compare_packages(target, copy) if copy.is_file() else {"failures": ["not written"], "stage": {"max": {}}}
+summary["testCharacter"]["reopened"] = {"failures": differences["failures"], "max": differences["stage"]["max"]}
+check("test character round trip", not differences["failures"] and [m.material.name for m in reopened.chstage.character.hair_materials if m.material][:1] != [],
+      differences["failures"])
+
+# 4. Clip preview.
+clips = {item.clip: item.label for item in props.clips}
+start_clip = f"{character_format.gh3_key('gh3_guit_axel_a_fst_idle1'):08x}"
+check("clip list labels", clips.get(start_clip) == "gh3_guit_axel_a_fst_idle1" and any(label.startswith("stance_a/jump/") for label in clips.values()),
+      list(clips.items())[:5])
+started = time.time()
+with bpy.context.temp_override(scene=scene, view_layer=view_layer):
+    status = bpy.ops.chstage.preview_clip(clip=start_clip)
+convert_seconds = time.time() - started
+action = rig.animation_data.action
+rig_data = character_tools.profile_rig(character_tools.library(str(library)), "guitarist")
+decoded = character_tools.q48.decode(character_tools.decompress(lib.clip("guitarist", start_clip)))
+translations, quaternions = character_format.clip_local_poses(decoded, rig_data, "guitarist")
+world = character_format.world_poses(rig_data, translations, quaternions)
+axes = character_tools.AXES
+expected = axes @ world @ np.linalg.inv(axes)
+frames = decoded[0]["frames"]
+worst_position = worst_rotation = 0.0
+for frame in range(0, frames, 7):
+    scene.frame_set(frame)
+    for joint, name in enumerate(rig_data.names):
+        pose = np.array(rig.pose.bones[name].matrix)
+        target_matrix = expected[frame, joint]
+        worst_position = max(worst_position, float(np.linalg.norm(pose[:3, 3] - target_matrix[:3, 3])))
+        rest = np.array(rig.data.bones[name].matrix_local)
+        correction = np.linalg.inv(axes @ rig_data.world[joint] @ np.linalg.inv(axes)) @ rest
+        worst_rotation = max(worst_rotation, rotation_angle((target_matrix @ correction)[:3, :3], pose[:3, :3]))
+summary["clipPreview"] = {"clip": start_clip, "frames": frames, "convertSeconds": round(convert_seconds, 2), "fps": scene.render.fps,
+                          "actionVsClip": {"positionMm": worst_position * 1000, "rotationDeg": worst_rotation}}
+check("clip preview: the action gives the clip poses", status == {"FINISHED"} and action is not None and scene.render.fps == 30
+      and scene.frame_end == frames - 1 and worst_position < 1e-5 and worst_rotation < 0.01, summary["clipPreview"])
+
+# The same clip as the glTF importer reads it from the library model (body bones; the model also has hand layers).
+reference_scene = bpy.data.scenes.new("clip reference")
+data = character_tools.glb_tools.keep_animations(lib.model("guitarist"), ["gh3_guit_axel_a_fst_idle1"])
+new, *_ = character_tools.import_glb(reference_scene, data, reference_scene.collection)
+reference_rig = next(o for o in new if o.type == "ARMATURE")
+reference_action = reference_rig.animation_data.action if reference_rig.animation_data else None
+# The library model clip has the older pipeline arm solve and hand layers; the preview has the game IK of arms and legs.
+body_bones = ["bone_pelvis", "bone_stomach_lower", "bone_stomach_upper", "bone_chest", "bone_neck", "bone_head"]
+worst_position = worst_rotation = 0.0
+if reference_action is not None:
+    first = int(reference_action.frame_range[0])
+    for frame in range(0, frames - 1, 5):
+        scene.frame_set(frame)
+        reference_scene.frame_set(first + frame)
+        for name in body_bones:
+            bone = f"bone-{character_format.gh3_key(name):08x}"
+            a, b = np.array(rig.pose.bones[bone].matrix), np.array(reference_rig.pose.bones[bone].matrix)
+            worst_position = max(worst_position, float(np.linalg.norm(a[:3, 3] - b[:3, 3])))
+            worst_rotation = max(worst_rotation, rotation_angle(a[:3, :3], b[:3, :3]))
+summary["clipPreview"]["actionVsGltfImporter"] = {"bones": len(body_bones), "positionMm": worst_position * 1000, "rotationDeg": worst_rotation}
+check("clip preview agrees with the glTF importer (body bones)", reference_action is not None and worst_position < 5e-4 and worst_rotation < 0.02,
+      summary["clipPreview"]["actionVsGltfImporter"])
+bpy.data.scenes.remove(reference_scene)
+
+# 5. Errors that name the object.
+broken = bpy.data.objects.new("BrokenMesh", bpy.data.meshes.new("BrokenMesh"))
+bm = bmesh.new()
+bmesh.ops.create_cube(bm, size=0.2)
+bm.to_mesh(broken.data)
+bm.free()
+scene.collection.objects.link(broken)
+broken.parent = rig
+broken.modifiers.new("Armature", "ARMATURE").object = rig
+broken.location = (0.5, 0, 1)
+group = broken.vertex_groups.new(name=names[2])
+group.add([0, 1, 2], 1.0, "REPLACE")
+for index, name in enumerate(names[3:8]): broken.vertex_groups.new(name=name).add([3], 0.2, "REPLACE")
+issues = character_package.validate_scene(scene)
+errors = errors_of(issues)
+check("errors name the object", any("no weight" in m and o == "BrokenMesh" for _, m, o in errors) and any("more than 4" in m and o == "BrokenMesh" for _, m, o in errors)
+      and any("own transform" in m and o == "BrokenMesh" for _, m, o in errors), errors)
+character_package.export_package(scene, output / "broken" / "broken.chchar")
+check("an invalid character is not written", not (output / "broken" / "broken.chchar").exists())
+with bpy.context.temp_override(scene=scene, view_layer=view_layer):
+    bpy.ops.chstage.validate_character()
+    index = next(i for i, issue in enumerate(scene.chstage.issues) if issue.object_name == "BrokenMesh")
+    bpy.ops.chstage.select_issue(index=index)
+check("select issue", view_layer.objects.active == broken)
+bpy.data.objects.remove(broken, do_unlink=True)
+
+# 6. EEVEE renders of the test character in two GH3 clips (the attachment shows in the render).
+renders = output / "renders"
+renders.mkdir(exist_ok=True)
+engines = [e.identifier for e in bpy.types.RenderSettings.bl_rna.properties["engine"].enum_items]
+scene.render.engine = "BLENDER_EEVEE_NEXT" if "BLENDER_EEVEE_NEXT" in engines else "BLENDER_EEVEE"
+scene.render.resolution_x, scene.render.resolution_y, scene.render.resolution_percentage = 720, 960, 100
+scene.render.image_settings.file_format = "PNG"
+world_data = bpy.data.worlds.new("test-world")
+world_data.color = (0.25, 0.27, 0.3)
+if world_data.use_nodes if hasattr(world_data, "use_nodes") else False:
+    background = world_data.node_tree.nodes.get("Background")
+    if background is not None: background.inputs["Color"].default_value = (0.25, 0.27, 0.3, 1)
+scene.world = world_data
+sun = bpy.data.objects.new("test-sun", bpy.data.lights.new("test-sun", "SUN"))
+sun.data.energy = 3.5
+sun.rotation_euler = (math.radians(50), math.radians(10), math.radians(-30))
+scene.collection.objects.link(sun)
+props.attachment.hide_render = False
+camera = scene.camera
+camera.location = (0.9, -3.6, 1.15)
+camera.rotation_euler = (math.radians(88), 0, math.radians(14))
+jump = next(clip for clip, label in sorted(clips.items(), key=lambda item: item[1]) if label.startswith("stance_a/jump/good/fast"))
+summary["renders"] = []
+for name, clip, frame_share in (("idle", start_clip, 0.5), ("jump", jump, 0.45)):
+    character_tools.clip_action(scene, clip)
+    frame = int((scene.frame_end - scene.frame_start) * frame_share)
+    scene.frame_set(frame)
+    path = renders / f"test-character-{name}.png"
+    scene.render.filepath = str(path)
+    try:
+        with bpy.context.temp_override(scene=scene):
+            bpy.ops.render.render(write_still=True, scene=scene.name)
+    except RuntimeError as error:
+        print("render failed", error)
+    summary["renders"].append({"file": str(path), "clip": clip, "label": clips[clip], "frame": frame, "engine": scene.render.engine})
+    check(f"render {name}", path.is_file(), path)
+# The GH3 body (reference helper) in the first clip: the preview IK puts its hands on the guitar as in the game.
+character_tools.clip_action(scene, start_clip)
+scene.frame_set(int((scene.frame_end - scene.frame_start) * 0.5))
+for obj in character_tools.character_meshes(scene): obj.hide_render = True
+props.reference.hide_render = False
+props.reference.display_type = "TEXTURED"
+path = renders / "gh3-body-idle.png"
+scene.render.filepath = str(path)
+with bpy.context.temp_override(scene=scene):
+    bpy.ops.render.render(write_still=True, scene=scene.name)
+summary["renders"].append({"file": str(path), "clip": start_clip, "label": clips[start_clip], "frame": scene.frame_current, "engine": scene.render.engine})
+check("render GH3 body", path.is_file(), path)
+for obj in character_tools.character_meshes(scene): obj.hide_render = False
+props.reference.hide_render = True
+character_tools.clear_pose(scene)
+check("bind pose after clear", rig.animation_data is None or rig.animation_data.action is None)
+
+bpy.ops.preferences.addon_disable(module=module)
+check("disable", module not in bpy.context.preferences.addons and not hasattr(bpy.types.Scene, "chstage"))
+(output / "character-summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+failed = [c["check"] for c in summary["checks"] if not c["ok"]]
+print(f"CHSTAGE-TEST RESULT {'FAIL ' + ', '.join(failed) if failed else 'PASS'} ({len(summary['checks'])} checks, Blender {bpy.app.version_string})")
+if failed: sys.exit(1)

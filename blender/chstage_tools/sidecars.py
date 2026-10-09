@@ -200,8 +200,8 @@ def stage_entry(has_lighting, extra=()):
     return {key: entry[key] for key in sorted(entry, key=lambda k: ENTRY_ORDER.index(k) if k in ENTRY_ORDER else len(ENTRY_ORDER))}
 
 
-def build_manifest(package, entry, preview=None):
-    manifest = {"format": FORMAT, "id": package["id"], "version": package["version"], "name": package["name"]}
+def build_manifest(package, entry, preview=None, format=FORMAT):
+    manifest = {"format": format, "id": package["id"], "version": package["version"], "name": package["name"]}
     if package.get("description"): manifest["description"] = package["description"]
     manifest["authors"] = [{k: v for k, v in author.items() if v} for author in package["authors"]]
     manifest["license"] = package["license"]
