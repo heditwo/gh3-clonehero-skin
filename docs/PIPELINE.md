@@ -8,13 +8,14 @@ The Python package `pipeline/` makes all generated assets from the owner's GH3 P
 | --- | --- | --- |
 | GH3 PC `DATA` folder | `~/games/gh3-test-tools/game/DATA` | All GH3 steps (`GH3_DATA` in `scripts/regenerate.sh`) |
 | Isolated Clone Hero copy | `~/games/clonehero-gh3-melon` | Shader bundles: they use the Unity `2022.3.62f2` format of this copy (`GH3_CLONE_HERO_DIR`) |
+| Windows Clone Hero copy (same version, the official `CloneHero-Win-x64.zip` unpacked) | `~/games/clonehero-win/game` | Shader bundles: the Direct3D 11 program format (`Clone Hero_Data/Resources/unity_builtin_extra`, `GH3_CLONE_HERO_WINDOWS_DIR`) |
 | Extracted GH3 HUD art | `~/games/gh3-skin-assets` (`global-gfx-png/`, `hud-png/`, `hud-runtime-dds/`) | HUD textures, Star Power highway |
 | BetterGH3 package | `~/games/BetterGH3-FULLPACKAGE_v1.0.2.zip` | Tap gems |
 | FastGH3 package | `~/games/gh3-test-tools/FastGH3_1.1.zip` | Cyan Star Power phrase gems |
 | GH3 reference recording | `gh3-long-star-power-1600x900.mp4` (`GH3_REFERENCE_VIDEO`) | Ready banner, active Star Power highway |
 | Rail reference frames | `pipeline/hud/references/gh3-fast-*.png` (in Git) | Highway rail overlays |
 
-You also need `uv`, Python 3.12, the .NET 10 SDK (for `tools/Gh3SongTool`, which the library, venue, and event steps build), and FFmpeg (for the Video Shoot movies and the reference recording).
+You also need `uv`, Python 3.12, the .NET 10 SDK (for `tools/Gh3SongTool`, which the library, venue, and event steps build), FFmpeg (for the Video Shoot movies and the reference recording), and Wine (for the `render` step, see [Shader tools](#shader-tools)).
 
 ## Regenerate everything
 
@@ -53,7 +54,7 @@ flowchart LR
 | `library` | `python -m pipeline.library --data DATA` | `assets/libraries/gh3-band-v1/`: band, direction clips, hair, hand fire, crowd, stage audio, global scripts, Video Shoot movies, Tesla noise, `catalog.json`, `library.json` |
 | `venues` | `python -m pipeline.venues --data DATA` | `assets/stage-packs/gh3.*` (editable source packs) and `assets/stages/gh3.*` (compiled packs), `assets/stages/index.json` |
 | `events` | `python3 -m pipeline.events DATA --library --output assets/stages/events` | Original song direction for all songs, `index.json`, `export-report.json` |
-| `render` | `python -m pipeline.render.shaders --game GAME` and `python -m pipeline.render.particle_materials` | `render/*.bundle`, `render/stage-templates.json`, `render/particle-materials.json` in the library |
+| `render` | `python -m pipeline.render.shaders --game GAME --windows-game WINDOWS_GAME` and `python -m pipeline.render.particle_materials` | `render/*.bundle`, `render/stage-templates.json`, `render/particle-materials.json` in the library |
 | `hud` | `python -m pipeline.hud.textures`, `pipeline.hud.hit_effects`, `pipeline.hud.fonts` | Gem, sustain, highway, HUD, hit-effect, and font files in `assets/` |
 | `hud-video` | `python -m pipeline.hud.star_power --video V`, `pipeline.hud.ready_animation --video V` | `active-highway-*.png`, `ready-*.png`, `ready-animation.json` in `assets/` |
 | `template` | `python -m pipeline.stagepack.template`, then `python -m pipeline.stagepack.install assets/stage-packs/example.studio` | The `example.studio` custom stage |
@@ -66,6 +67,28 @@ Each command uses `uv run --with ...` for its Python packages. See `scripts/rege
 The `venues` step compiles each pack against the library catalog. Thus run `library` first.
 
 The `packages` step reads the source packs, the library folder, and the song direction. Thus run it last. It does not change the files that the mod reads today. The clip encoder (q48 + Brotli 11) keeps a cache in `assets/packages/.clip-cache/`, so a second run takes less time. Use `--jobs N` to set the number of encoder processes (default 2, about 0.1 GB each).
+
+## Shader tools
+
+The `render` step makes an OpenGL Core program and a Direct3D 11 program for each shader (see [ARCHITECTURE.md](ARCHITECTURE.md#shader-programs-for-each-graphics-api)). `pipeline/render/toolchain.py` gets the Direct3D 11 tools. They need no system package and no root access:
+
+| Tool | Source | Use |
+| --- | --- | --- |
+| glslang 16.6.0 | Khronos GitHub release `glslang-16.6.0-linux-x86_64-release.tar.gz` | GLSL to SPIR-V |
+| SPIRV-Cross 2021-01-15 | Khronos GitHub release `spirv-cross-gcc-trusty-64bit-9acb9ec31f.tar.gz` (the last release with Linux binaries) | SPIR-V to HLSL |
+| FXC and `d3dcompiler_47.dll` (Microsoft) | NuGet package `Microsoft.Windows.SDK.CPP` 10.0.26100.7705: `c/bin/10.0.26100.0/x64/fxc.exe` and `c/Redist/D3D/x64/d3dcompiler_47.dll`. Only these two files download (HTTP range requests, about 2 MB) | HLSL to DXBC, under Wine |
+| Wine | `wine` on `PATH`, or `GH3_WINE=/path/to/wine` | Runs FXC on Linux |
+
+- The first run downloads the files to `~/.cache/gh3-skin/shader-tools` (`GH3_SHADER_TOOLS` sets another folder). Each file has a fixed SHA-256 value.
+- The Windows SDK package requires acceptance of its license (`https://aka.ms/WinSDKLicenseURL`). Read it, then set `GH3_ACCEPT_WINDOWS_SDK_LICENSE=1` for the first run. Without it, the step stops with a message.
+- `GH3_GLSLANG` and `GH3_SPIRV_CROSS` select other binaries.
+- The tools use their own Wine prefix in the cache folder. The step does not use a GPU. It takes about 45 s for the five bundles; the stage shader is the largest part.
+- The output is deterministic: two runs give the same bundle bytes.
+
+```bash
+GH3_WINE=~/games/gh3-test-tools/wine-root/usr/bin/wine GH3_ACCEPT_WINDOWS_SDK_LICENSE=1 \
+  GH3_CLONE_HERO_WINDOWS_DIR=~/games/clonehero-win/game flock /tmp/opencode/gh3-heavy.lock scripts/regenerate.sh render
+```
 
 ## Partial updates
 

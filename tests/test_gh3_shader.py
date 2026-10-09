@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from pipeline.gh3 import shader as gh3_shader
+from pipeline.render import d3d11
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -74,11 +75,13 @@ class LibraryTests(unittest.TestCase):
         vertex, fragment, _, _ = gh3_shader.uber([c for c, n in names.items() if n in VENUE_TEMPLATES])
         source = source.replace("// GH3_TEMPLATE_VERTEX", vertex).replace("// GH3_TEMPLATE_FRAGMENT", fragment)
         with tempfile.TemporaryDirectory() as folder:
-            for stage, define in (("vert", "VERTEX"), ("frag", "FRAGMENT")):
-                body = source.split(f"#ifdef {define}\n", 1)[1].split("#endif\n#ifdef", 1)[0].rsplit("#endif", 1)[0]
-                path = Path(folder)/f"stage.{stage}"; path.write_text(body)
-                result = subprocess.run(["glslangValidator", str(path)], capture_output=True, text=True)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for stage, body in zip(("vert", "frag"), d3d11.split(source)):
+                # OpenGL Core as Unity compiles it, and the Direct3D 11 variant as glslang reads it for SPIR-V.
+                for name, text, options in (("gl", body, []), ("d3d11", d3d11.prepare(body, stage == "vert")[0], ["-G", "--aml"])):
+                    path = Path(folder)/f"stage-{name}.{stage}"; path.write_text(text)
+                    result = subprocess.run(["glslangValidator", *options, "-o", str(path) + ".spv", str(path)] if options else ["glslangValidator", str(path)],
+                                            capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

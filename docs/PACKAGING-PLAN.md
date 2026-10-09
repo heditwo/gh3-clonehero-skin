@@ -209,7 +209,8 @@ The spike ran on 2026-10-09. Each item has a report in [docs/spike/](spike/) wit
 - `Shader.isSupported` returns true on D3D11, so the mod does not detect the failure.
 - The stage shader compiles from GLSL to DXBC on Linux (glslang, SPIRV-Cross, Wine `d3dcompiler_47`) in under 2 s. A D3D11 bundle was not built. Estimate: 3–5 days.
 - Other Windows blockers (fixed): Il2CppInterop method names are different in the Windows build; `CloneHeroBindings` now binds methods by their obfuscated metadata name, which is the same on both platforms. `StageAudioBackend` finds BASS in `Clone Hero_Data/Plugins/x86_64`.
-- **Open decision (owner):** Windows in v1 or later; Microsoft `d3dcompiler_47.dll` or Wine's.
+- **Owner decision:** all platforms. macOS is later (see [spike/macos.md](spike/macos.md)).
+- Done after the spike: all five bundles have Direct3D 11 programs made with Microsoft FXC and `d3dcompiler_47.dll` from the Windows SDK NuGet package (see [PIPELINE.md](PIPELINE.md#shader-tools)). One bundle file serves OpenGL Core and Direct3D 11.
 
 ### 9.6 Blender round trip ([report](spike/blender.md))
 

@@ -56,7 +56,7 @@ internal sealed partial class GameplaySpriteRenderer
         }
     }
 
-    // The track shader fades between two viewport heights (_FadeParams z and w, from the top). Clone Hero's
+    // The track shader fades between two viewport heights (_FadeParams z and w, from the top in OpenGL). Clone Hero's
     // TrackFadeManager gives the sustain material its own, lower fade rows and sets them again when it recalculates
     // (for example after the intro rise). GH3 fades the sustains with the board, so the skin keeps all of them on GH3's rows.
     private void FadeHighwayTop()
@@ -73,6 +73,12 @@ internal sealed partial class GameplaySpriteRenderer
         var fade = material.GetVector(FadeParams);
         var start = HighwayView.FadeStartY / HighwayView.ScreenHeight;
         var end = (HighwayView.FadeStartY + HighwayView.FadeLength) / HighwayView.ScreenHeight;
+        // Where the viewport starts at the top (Direct3D 11), TrackFadeManager writes 1 - v for its own rows; the shader expects the same.
+        if (SystemInfo.graphicsUVStartsAtTop)
+        {
+            start = 1 - start;
+            end = 1 - end;
+        }
         if (fade.z == start && fade.w == end) return;
         fade.z = start;
         fade.w = end;

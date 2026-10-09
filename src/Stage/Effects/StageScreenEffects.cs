@@ -21,9 +21,7 @@ internal sealed class StageScreenEffects : IDisposable
         _bundle = AssetBundle.LoadFromFile(path) ?? throw new InvalidDataException("Stage screen shader bundle did not load");
         try
         {
-            _shader = _bundle.mainAsset?.Cast<Shader>() ?? throw new InvalidDataException("Stage screen shader is missing");
-            _shader.hideFlags |= HideFlags.DontUnloadUnusedAsset;
-            if (!_shader.isSupported) throw new InvalidDataException("Stage screen shader is not supported by this graphics API");
+            _shader = StageShader.Load(_bundle, "the stage screen shader");
             _camera.AddCommandBuffer(CameraEvent.AfterEverything, _commands);
         }
         catch

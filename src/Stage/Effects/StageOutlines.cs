@@ -22,9 +22,7 @@ internal sealed class StageOutlines : IDisposable
         _bundle = AssetBundle.LoadFromFile(path) ?? throw new InvalidDataException("Stage outline shader bundle did not load");
         try
         {
-            _shader = _bundle.mainAsset?.Cast<Shader>() ?? throw new InvalidDataException("Stage outline shader is missing");
-            _shader.hideFlags |= HideFlags.DontUnloadUnusedAsset;
-            if (!_shader.isSupported) throw new InvalidDataException("Stage outline shader is not supported by this graphics API");
+            _shader = StageShader.Load(_bundle, "the stage outline shader");
             _mask = new Material(_shader) { hideFlags = HideFlags.HideAndDontSave };
             foreach (var (id, root) in assets.Objects.Select(pair => (Convert.ToUInt32(pair.Key, 16), pair.Value)).Concat(actors.Objects.Select(pair => (pair.Key, pair.Value))))
                 foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))

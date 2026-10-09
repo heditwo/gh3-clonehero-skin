@@ -9,6 +9,7 @@ export MISE_QUIET=1
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 data="${GH3_DATA:-$HOME/games/gh3-test-tools/game/DATA}"
 game="${GH3_CLONE_HERO_DIR:-$HOME/games/clonehero-gh3-melon}"
+windows_game="${GH3_CLONE_HERO_WINDOWS_DIR:-$HOME/games/clonehero-win/game}"
 cd "$project_dir"
 
 clean=false
@@ -42,7 +43,8 @@ for step in "${steps[@]}"; do
     events) run python3 -m pipeline.events "$data" --library --output assets/stages/events ;;
     render)
       # The stage shader holds the GH3 templates that the compiled venues and the library use, so it follows them.
-      run uv run --with UnityPy --with lz4 --with numpy python -m pipeline.render.shaders --game "$game"
+      # The Direct3D 11 programs need Wine and the Windows SDK compiler (see docs/PIPELINE.md, "Shader tools").
+      run uv run --with UnityPy --with lz4 --with numpy python -m pipeline.render.shaders --game "$game" --windows-game "$windows_game"
       run "${stage_python[@]}" -m pipeline.render.particle_materials --source "$data/FXFILES/MaterialLibrary.bin.xen"
       ;;
     hud)

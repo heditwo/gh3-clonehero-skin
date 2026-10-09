@@ -16,12 +16,23 @@ in vec2 in_TEXCOORD0;
 in vec2 in_TEXCOORD1;
 in vec2 in_TEXCOORD2;
 in vec2 in_TEXCOORD3;
+// Direct3D 11 shader model 4.0 has 16 vertex outputs. The surface model and the GH3 templates never run in the same draw,
+// so on Direct3D 11 the surface values use the template registers.
+#ifdef GH3_D3D11
+#define surfaceColor gh3_T0
+#define surfaceUv gh3_T1.xy
+#define surfaceLightmapUv gh3_T1.zw
+#define surfaceLayerUv gh3_T2.xy
+#define surfaceMaskUv gh3_T2.zw
+#define surfaceNormal gh3_T3.xyz
+#else
 out vec4 surfaceColor;
 out vec2 surfaceUv;
 out vec2 surfaceLightmapUv;
 out vec2 surfaceLayerUv;
 out vec2 surfaceMaskUv;
 out vec3 surfaceNormal;
+#endif
 // GH3_TEMPLATE_VERTEX
 void stage_main()
 {
@@ -72,12 +83,21 @@ uniform sampler2D _Gh3LayerTex;
 uniform sampler2D _Gh3MaskTex;
 uniform vec4 _Gh3LayerColor;
 uniform vec4 _Gh3Layers;
+#ifdef GH3_D3D11
+#define surfaceColor gh3_T0
+#define surfaceUv gh3_T1.xy
+#define surfaceLightmapUv gh3_T1.zw
+#define surfaceLayerUv gh3_T2.xy
+#define surfaceMaskUv gh3_T2.zw
+#define surfaceNormal gh3_T3.xyz
+#else
 in vec4 surfaceColor;
 in vec2 surfaceUv;
 in vec2 surfaceLightmapUv;
 in vec2 surfaceLayerUv;
 in vec2 surfaceMaskUv;
 in vec3 surfaceNormal;
+#endif
 layout(location = 0) out vec4 SV_Target0;
 // Each lit surface owns one row: ambient, key direction, key color, then four SH coefficients.
 vec4 Light(int column)

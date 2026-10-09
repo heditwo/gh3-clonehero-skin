@@ -270,11 +270,7 @@ internal sealed class GameplayStage
             return null;
         }
         _surfaceBundle = AssetBundle.LoadFromFile(path) ?? throw new InvalidDataException("Stage surface shader bundle did not load");
-        var shader = _surfaceBundle.mainAsset?.Cast<Shader>() ?? throw new InvalidDataException("Stage surface shader is missing");
-        shader.hideFlags |= HideFlags.DontUnloadUnusedAsset;
-        if (Environment.GetEnvironmentVariable("GH3_SKIN_SPIKE") == "d3d11")
-            MelonLogger.Msg($"[spike-d3d11] device={SystemInfo.graphicsDeviceType} version={SystemInfo.graphicsDeviceVersion} shader={shader.name} isSupported={shader.isSupported} passes={shader.passCount}");
-        if (!shader.isSupported) throw new InvalidDataException("Stage surface shader is not supported by this graphics API");
+        var shader = StageShader.Load(_surfaceBundle, "the stage surface shader");
         var templates = Path.Combine(library, "render", "stage-templates.json");
         StageAssets.Templates = File.Exists(templates) ? StageShaderTemplates.Parse(File.ReadAllText(templates)) : null;
         if (StageAssets.Templates == null) MelonLogger.Warning("GH3 material template table is missing. Run scripts/regenerate.sh render.");
@@ -400,6 +396,12 @@ internal sealed class GameplayStage
             foreach (var diagnostic in _timeline.Diagnostics) MelonLogger.Msg(diagnostic);
             if (_timeline.NativeSong is { } nativeSong)
                 MelonLogger.Msg($"GH3 native cameras (first 8): {string.Join(", ", nativeSong.Notes("cameras").Take(8).Select(note => $"{note.Time}:{note.Note}:{note.Length}"))}");
+        }
+        catch (StageShaderUnsupportedException error)
+        {
+            Reset();
+            _attempted = true;
+            MelonLogger.Error(error.Message);
         }
         catch (Exception error)
         {

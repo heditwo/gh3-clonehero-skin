@@ -5,6 +5,9 @@ uniform vec4 hlslcc_mtx4x4unity_ObjectToWorld[4];
 uniform vec4 hlslcc_mtx4x4unity_MatrixVP[4];
 uniform vec4 _Gh3SoftEdge;
 uniform vec4 _Gh3CameraForward;
+#ifdef GH3_D3D11
+uniform vec4 _ProjectionParams;
+#endif
 in vec4 in_POSITION0;
 in vec3 in_NORMAL0;
 in vec4 in_TANGENT0;
@@ -28,6 +31,11 @@ void main()
     vec4 offsetPosition = viewProjection * vec4(world.xyz + _Gh3CameraForward.xyz * (_Gh3SoftEdge.y * in_TEXCOORD1.x), 1.0);
     vec3 screen = gl_Position.xyz / gl_Position.w * 0.5 + 0.5;
     particleDepth = vec4(screen.xy, abs((offsetPosition.z / offsetPosition.w * 0.5 + 0.5) - screen.z), screen.z);
+#ifdef GH3_D3D11
+    // Direct3D 11: the depth range is 0 to 1 (reversed Z), and Unity flips the projection for render textures (_ProjectionParams.x = -1).
+    screen = vec3(screen.x, gl_Position.y / gl_Position.w * _ProjectionParams.x * 0.5 + 0.5, gl_Position.z / gl_Position.w);
+    particleDepth = vec4(screen.xy, abs(offsetPosition.z / offsetPosition.w - screen.z), screen.z);
+#endif
     particleColor = in_COLOR0;
     particleUv = in_TEXCOORD0;
     particleNormal = mat3(model) * in_NORMAL0;

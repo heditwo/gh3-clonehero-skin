@@ -43,9 +43,7 @@ internal sealed class StageParticles : IDisposable
         _bundle = AssetBundle.LoadFromFile(shaderPath) ?? throw new InvalidDataException("Stage particle shader bundle did not load");
         try
         {
-            _shader = _bundle.mainAsset?.Cast<Shader>() ?? throw new InvalidDataException("Stage particle shader is missing");
-            _shader.hideFlags |= HideFlags.DontUnloadUnusedAsset;
-            if (!_shader.isSupported) throw new InvalidDataException("Stage particle shader is not supported by this graphics API");
+            _shader = StageShader.Load(_bundle, "the stage particle shader");
             _tesla = new(assets, root, camera, layer, Path.GetDirectoryName(shaderPath)!);
             camera.depthTextureMode |= DepthTextureMode.Depth;
         }

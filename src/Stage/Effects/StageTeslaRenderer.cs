@@ -26,9 +26,7 @@ internal sealed class StageTeslaRenderer : IDisposable
         _bundle = AssetBundle.LoadFromFile(Path.Combine(directory, "tesla.bundle")) ?? throw new InvalidDataException("Tesla shader bundle did not load");
         try
         {
-            _shader = _bundle.mainAsset?.Cast<Shader>() ?? throw new InvalidDataException("Tesla shader is missing");
-            _shader.hideFlags |= HideFlags.DontUnloadUnusedAsset;
-            if (!_shader.isSupported) throw new InvalidDataException("Tesla shader is not supported by this graphics API");
+            _shader = StageShader.Load(_bundle, "the Tesla shader");
             _texture = assets.Own(new Texture2D(2, 2, TextureFormat.RGBA32, false, true));
             if (!ImageConversion.LoadImage(_texture, File.ReadAllBytes(Path.Combine(directory, "tesla-noise.png")), true))
                 throw new InvalidDataException("Tesla noise texture did not load");

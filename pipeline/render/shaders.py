@@ -1,4 +1,4 @@
-"""Build stage OpenGL shaders with the installed Clone Hero serialization format."""
+"""Build the stage shader bundles (OpenGL Core and Direct3D 11 programs) with the installed Clone Hero serialization format."""
 
 import argparse
 import struct
@@ -13,7 +13,8 @@ from UnityPy.files import ObjectReader
 from UnityPy.helpers.Tpk import get_typetree_node
 
 from pipeline.gh3 import shader as gh3_shader
-from pipeline.paths import GAME, LIBRARY, ROOT
+from pipeline.paths import GAME, LIBRARY, ROOT, WINDOWS_GAME
+from pipeline.render import d3d11
 from pipeline.stagepack.pack import load_json, write_json
 
 
@@ -45,17 +46,42 @@ def stage_templates(code, output):
     return code, table
 
 
-def convert(game, output, kind='screen-color'):
-    environment = UnityPy.load(str(game/'clonehero_Data/Resources/unity_builtin_extra'))
-    asset = environment.assets[0]
+def blit_shader(path):
+    asset = UnityPy.load(str(path)).assets[0]
     if asset.unity_version != '2022.3.62f2':
         raise ValueError('Stage shader export requires Clone Hero Unity 2022.3.62f2')
-    shader = next(obj for obj in asset.objects.values() if obj.type.name == 'Shader' and obj.read_typetree()['m_ParsedForm']['m_Name'] == 'Hidden/BlitCopy')
+    return asset, next(obj for obj in asset.objects.values() if obj.type.name == 'Shader' and obj.read_typetree()['m_ParsedForm']['m_Name'] == 'Hidden/BlitCopy')
+
+
+def platform_blob(tree, platform):
+    index = tree['platforms'].index(platform)
+    offset = tree['offsets'][index][0]
+    length = tree['compressedLengths'][index][0]
+    return lz4.block.decompress(bytes(tree['compressedBlob'])[offset:offset+length], tree['decompressedLengths'][index][0])
+
+
+def d3d11_templates(windows_game):
+    """Return the Direct3D 11 vertex and pixel program headers and the pass data hash of the Windows Clone Hero blit shader."""
+    _, shader = blit_shader(windows_game/'Clone Hero_Data/Resources/unity_builtin_extra')
     tree = shader.read_typetree()
-    platform = tree['platforms'].index(15)
-    offset = tree['offsets'][platform][0]
-    length = tree['compressedLengths'][platform][0]
-    raw = lz4.block.decompress(bytes(tree['compressedBlob'])[offset:offset+length], tree['decompressedLengths'][platform][0])
+    raw = platform_blob(tree, 4)
+    entries = [raw[offset:offset+size] for offset, size, _ in (struct.unpack_from('<3I', raw, 4 + 12 * i) for i in range(struct.unpack_from('<I', raw)[0]))]
+    if len(entries) != 4 or [struct.unpack_from('<2I', entry) for entry in entries] != [(202012090, 4), (202012090, 15), (202012090, 2), (202012090, 17)]:
+        raise ValueError('The Windows blit shader has an unknown Direct3D 11 program layout')
+    for entry, counts, channels in ((entries[1], (0, 3, 0), (17, 2, 0, 0, 4, 5)), (entries[3], (1, 1, 1), (0, 0))):
+        length, = struct.unpack_from('<I', entry, 28)
+        code = entry[32:32+length]
+        if code[:4] != bytes((2, *counts)) or code[4:38] != bytes(34) or code[38:42] != b'DXBC' or struct.unpack_from(f'<{len(channels)}I', entry, (32+length+3)&~3) != channels:
+            raise ValueError('The Windows blit shader has an unknown Direct3D 11 program format')
+    shader_pass = tree['m_ParsedForm']['m_SubShaders'][0]['m_Passes'][0]
+    return (entries[1][:32], entries[3][:32]), shader_pass['m_EditorDataHash'][shader_pass['m_Platforms'].index(4)]
+
+
+def convert(game, output, kind='screen-color', windows_game=WINDOWS_GAME):
+    (vertex_template, pixel_template), d3d11_hash = d3d11_templates(windows_game)
+    asset, shader = blit_shader(game/'clonehero_Data/Resources/unity_builtin_extra')
+    tree = shader.read_typetree()
+    raw = platform_blob(tree, 15)
     count, = struct.unpack_from('<I', raw)
     if count != 2:
         raise ValueError('The installed blit shader has an unknown program layout')
@@ -104,7 +130,11 @@ def convert(game, output, kind='screen-color'):
     parameters = parameters[:0x24] + struct.pack('<2I', 16 * len(names), len(names) + 2) + variables + parameters[0x50:]
     raw = struct.pack('<I', 2) + struct.pack('<3I', 28, len(parameters), 0) + struct.pack('<3I', 28+len(parameters), len(program), 0) + parameters + program
     blob = lz4.block.compress(raw, store_size=False)
-    tree.update(platforms=[15], offsets=[[0]], compressedLengths=[[len(blob)]], decompressedLengths=[[len(raw)]], compressedBlob=blob, stageCounts=[1])
+    # The same GLSL, through SPIR-V and HLSL, gives the Direct3D 11 programs (Windows default graphics API).
+    direct3d = d3d11.compile_program(code.decode(), (vertex_template, pixel_template), shader_name)
+    direct3d_blob = lz4.block.compress(direct3d, store_size=False)
+    tree.update(platforms=[15, 4], offsets=[[0], [len(blob)]], compressedLengths=[[len(blob)], [len(direct3d_blob)]],
+                decompressedLengths=[[len(raw)], [len(direct3d)]], compressedBlob=blob + direct3d_blob, stageCounts=[1, 2])
     form = tree['m_ParsedForm']
     form['m_Name'] = 'GH3/' + shader_name
     properties = form['m_PropInfo']['m_Props']
@@ -133,14 +163,22 @@ def convert(game, output, kind='screen-color'):
             properties.append(prop)
     for sub in form['m_SubShaders']:
         for shader_pass in sub['m_Passes']:
-            shader_pass['m_Platforms'] = [15]
-            shader_pass['m_EditorDataHash'] = shader_pass['m_EditorDataHash'][:1]
-            for name in ('progVertex', 'progFragment'):
-                prog = shader_pass[name]
-                for i, programs in enumerate(prog['m_PlayerSubPrograms']):
-                    indices = [n for n, program in enumerate(programs) if program['m_GpuProgramType'] == 6]
-                    prog['m_PlayerSubPrograms'][i] = [programs[n] for n in indices]
-                    prog['m_ParameterBlobIndices'][i] = [prog['m_ParameterBlobIndices'][i][n] for n in indices]
+            # The mod checks this name: Unity's error shader, used when no program fits the graphics API, has unnamed passes.
+            shader_pass['m_Name'] = shader_pass['m_State']['m_Name'] = 'GH3'
+            shader_pass['m_Platforms'] = [15, 4]
+            shader_pass['m_EditorDataHash'] = shader_pass['m_EditorDataHash'][:1] + [d3d11_hash]
+            vertex, fragment = shader_pass['progVertex'], shader_pass['progFragment']
+            fragment['m_PlayerSubPrograms'] = [[] for _ in vertex['m_PlayerSubPrograms']]
+            fragment['m_ParameterBlobIndices'] = [[] for _ in vertex['m_PlayerSubPrograms']]
+            for i, programs in enumerate(vertex['m_PlayerSubPrograms']):
+                indices = [n for n, program in enumerate(programs) if program['m_GpuProgramType'] == 6]
+                vertex['m_PlayerSubPrograms'][i] = [programs[n] for n in indices]
+                vertex['m_ParameterBlobIndices'][i] = [vertex['m_ParameterBlobIndices'][i][n] for n in indices]
+                # Direct3D 11 blob entries: 0 vertex parameters, 1 vertex program (type 15), 2 pixel parameters, 3 pixel program (type 17).
+                for prog, program_type, blob_index in ((vertex, 15, 1), (fragment, 17, 3)):
+                    for program in vertex['m_PlayerSubPrograms'][i][:1]:
+                        prog['m_PlayerSubPrograms'][i].append(dict(deepcopy(program), m_BlobIndex=blob_index, m_GpuProgramType=program_type))
+                        prog['m_ParameterBlobIndices'][i].append(blob_index - 1)
         if outline:
             original = sub['m_Passes'][0]
             sub['m_Passes'] = []
@@ -222,14 +260,15 @@ def convert(game, output, kind='screen-color'):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog="python -m pipeline.render.shaders", description=__doc__)
     parser.add_argument('--game', type=Path, default=GAME)
+    parser.add_argument('--windows-game', type=Path, default=WINDOWS_GAME, help='Windows Clone Hero folder (Direct3D 11 program template)')
     parser.add_argument('--output', type=Path, default=LIBRARY/'render/screen-color.bundle')
     parser.add_argument('--outline-output', type=Path, default=LIBRARY/'render/outline.bundle')
     parser.add_argument('--particle-output', type=Path, default=LIBRARY/'render/particle.bundle')
     parser.add_argument('--tesla-output', type=Path, default=LIBRARY/'render/tesla.bundle')
     parser.add_argument('--stage-output', type=Path, default=LIBRARY/'render/stage.bundle')
     args = parser.parse_args()
-    convert(args.game, args.output)
-    convert(args.game, args.outline_output, 'outline')
-    convert(args.game, args.particle_output, 'particle')
-    convert(args.game, args.tesla_output, 'tesla')
-    convert(args.game, args.stage_output, 'stage')
+    convert(args.game, args.output, windows_game=args.windows_game)
+    convert(args.game, args.outline_output, 'outline', windows_game=args.windows_game)
+    convert(args.game, args.particle_output, 'particle', windows_game=args.windows_game)
+    convert(args.game, args.tesla_output, 'tesla', windows_game=args.windows_game)
+    convert(args.game, args.stage_output, 'stage', windows_game=args.windows_game)

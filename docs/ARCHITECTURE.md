@@ -35,7 +35,7 @@ flowchart LR
 | `src/Hud/` | `GameplayHud` builds the HUD tree. Components: `HighwayHud`, `ReadyBannerHud`, `RockMeterHud` (`RockGaugeHud`, `StarPowerBulbsHud`), `ScorePanelHud` (`AmpHud`, `LampColumnHud`, `ComboHud`, `ComboDigitHud`), `MessageHud`, `HitEffectsHud`, `YouRockHud`. Pure state and animation classes (`HudState`, `RockMeterState`, `ComboReelAnimation`, `StarPowerBulbAnimation`, `StarPowerHighwayAnimation`, `IntroHudAnimation`, `YouRockAnimation`, `ReadyAnimationTrigger`, `HudTuning`, `HudViewport`) have no Unity calls; the logic tests use them |
 | `src/Native/` | GH3 data and script engine: `Gh3Pak`, `Gh3Qb`, `Gh3QbText` (typed QB values), `Gh3Checksum`, `Gh3Song` (native song PAK), `Gh3ScriptCode` and `Gh3ScriptRuntime` (QB bytecode interpreter), `Gh3CommandDispatch`, `Gh3PcCommands`, `Gh3ComponentWait`, `Gh3Random` (GH3's RNG), `Gh3ScriptEvent` |
 | `src/Stage/` | `GameplayStage` (stage camera, scene resources, per-frame update order), `StagePack` (compiled pack loader), `Shaders/` (GLSL sources for the bundles) |
-| `src/Stage/Rendering/` | `StageAssets` (meshes, materials, translated GH3 templates, fallback surface model), `StageGh3Material` (template table and GH3 render state), `StageMaterialState`, `StageRenderControlState`, `StageTextureAnimation`, `StageUvWibble`, `StageTransparency`, `StageTriangleOrder`, `StageHighwayMask` |
+| `src/Stage/Rendering/` | `StageAssets` (meshes, materials, translated GH3 templates, fallback surface model), `StageShader` (loads a bundle shader and stops the stage with an error when the graphics API has no program), `StageGh3Material` (template table and GH3 render state), `StageMaterialState`, `StageRenderControlState`, `StageTextureAnimation`, `StageUvWibble`, `StageTransparency`, `StageTriangleOrder`, `StageHighwayMask` |
 | `src/Stage/Direction/` | Song direction: `StageTimeline` (cue evaluation on the song clock), `StageCue`, `StageChartReader` (chart and MIDI tracks), `StageNativeSong`, `StageSongDirection` (version 2 channels), `StageGh3Events`, `StageShowFlow` (intro and win sequences), `StageCameraPath` (GH3 camera cuts), `StageNoteHits` |
 | `src/Stage/Band/` | `StageBand`, `StagePerformance`, `BandAnimation`, `StageGuitarArms` (DegenerateBlend tracks, Havok-style IK), `StageDrummer`, `StageHair`, `StageHandFire` |
 | `src/Stage/Crowd/` | `StageCrowd` (one impostor render texture per row), `StageCrowdState`, `StageCrowdPerformance` |
@@ -58,6 +58,7 @@ Clone Hero is an Il2Cpp build. Many Unity methods are stripped or slow through t
 - Do not use the public ranged `Mesh` overloads (`SetVertices(array, start, length)`, `SetIndices(...)`, `SetVertexBufferData`). They fail with "Method unstripping failed". Use `Mesh.SetArrayForChannelImpl`, `SetIndicesImpl`, and `InternalSetBoneWeights`.
 - Also stripped: `Mesh.SetTriangles`, the `Color` indexer, `Vector4.Magnitude`, `BoneWeight1`, and Unity's `AudioSource`. Use `mesh.triangles`, named color fields, and the BASS backend.
 - Use `AssetBundle.mainAsset` and `CommandBuffer.Internal_DrawMesh(..., null)`.
+- `Shader.isSupported` is true also when Unity replaces a shader with its error shader (no program for the graphics API). `StageShader` checks the pass name `GH3` instead (`Material.GetPassName`). `Shader.FindPassTagValue` is stripped.
 - Keep loaded shaders and textures with `HideFlags.DontUnloadUnusedAsset`. Stage cleanup runs in `OnApplicationQuit` and `OnDeinitializeMelon`.
 
 ### Clone Hero bindings
@@ -101,12 +102,21 @@ Native, converted, and authored commands share `Gh3CommandDispatch`. Authored GH
 | `library.json`, `catalog.json` | Library file hashes; per-role bones, groups, layers, and clips |
 | `direction/<role>/*.bin.gz` | Sampled animation clips at 30 fps |
 | `movies/*.gh3video` | `GH3VID01` frame bank: width, height, frame count, rate, offsets, PNG frames |
-| `render/*.bundle` | Unity AssetBundles with one OpenGL shader each (stage, particle, Tesla, outline, screen color) |
+| `render/*.bundle` | Unity AssetBundles with one shader each (stage, particle, Tesla, outline, screen color). Each shader has an OpenGL Core program and a Direct3D 11 program; Unity selects the program for the active graphics API. The passes have the name `GH3` |
 | `render/stage-templates.json` | Index and engine-register use of each translated GH3 template in `stage.bundle`. Install it with the bundle |
 
 ### Stage materials
 
 Each GH3 material keeps its original template checksum, constant banks, samplers, and render state. `pipeline/gh3/shader.py` translates the D3D9 `vs_3_0` and `ps_3_0` bytecode of every used template from `MaterialLibrary.bin.xen` to GLSL. `pipeline.render.shaders` inserts one function per template into `Stage.glsl` and builds `stage.bundle`. At runtime `StageAssets` selects the template with `_Gh3Template.x` and applies GH3's material bind (`StageGh3RenderState`). A material without a translated template uses the stage surface model in `Stage.glsl` (unlit, ambient, or lit with lightmap, layer, and mask). Custom packs without GH3 records use this model.
+
+### Shader programs for each graphics API
+
+There is no Unity editor and no HLSL source. `pipeline.render.shaders` copies `Hidden/BlitCopy` from the installed Clone Hero and replaces its programs:
+
+- **OpenGL Core** (Linux, Windows with `-force-glcore`): the GLSL text from `src/Stage/Shaders/` and a parameter blob, in the Linux `Hidden/BlitCopy` format.
+- **Direct3D 11** (the Windows default): `pipeline/render/d3d11.py` translates the same GLSL. glslang makes SPIR-V, SPIRV-Cross makes HLSL, and Microsoft FXC makes shader model 4.0 DXBC. The program header comes from the Windows `Hidden/BlitCopy`. The parameter blob (constant buffers, variable offsets, texture and sampler slots) comes from the DXBC reflection. Unity's built-in matrices go to Unity's own constant buffers (`UnityPerDraw`, `UnityPerFrame`, `UnityPerCamera`) with Unity's sizes and offsets. The vertex inputs get Unity's bind channels (vertex 0, normal 1, tangent 2, color 3, texture coordinate *n* to channel 4 + *n*).
+
+The GLSL sources have `#ifdef GH3_D3D11` blocks only where Direct3D 11 needs other code: the stage shader puts the surface values into the template output registers (shader model 4.0 has 16 vertex outputs), and the particle soft edge uses the Direct3D depth range (0 to 1, reversed Z) and `_ProjectionParams.x` for the flipped projection of render textures. The OpenGL program text is the same as before, except for these inactive blocks.
 
 ## Tests and tools
 
