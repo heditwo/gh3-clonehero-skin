@@ -6,7 +6,7 @@ The mod uses art and data from your own GH3 PC copy. The repository does not con
 
 ## Requirements
 
-- Linux Clone Hero **v1.1.0.6142-final** with **MelonLoader 0.7.3**. Other game versions are rejected. Use a separate copy of the game for the mod.
+- Linux or Windows (64-bit) Clone Hero **v1.1.0.6142-final** with **MelonLoader 0.7.3**. Other game versions are rejected. Use a separate copy of the game for the mod.
 - .NET 6 runtime and a .NET SDK that builds `net6.0`. The tests and the GH3 song tool need the .NET 10 SDK.
 - For the 3D stages: your GH3 PC files, `uv`, Python 3.12, and FFmpeg. See [docs/PIPELINE.md](docs/PIPELINE.md).
 
@@ -18,6 +18,8 @@ MISE_QUIET=1 bash install.sh
 ```
 
 `install.sh` builds the mod and copies it, the prepared assets, the venues, and the test charts into the game. Set `GH3_CLONE_HERO_DIR` if the game is not at `~/games/clonehero-gh3-melon`. Without the generated stage assets, the skin works with the stock background.
+
+For Windows, `install.sh --release <folder>` writes a release folder with `install-windows.bat`. On Windows, the player runs that file. It installs MelonLoader 0.7.3 and the mod. See [PLAYER-GUIDE.md section 6](docs/PLAYER-GUIDE.md#6-install-on-windows).
 
 ## Play
 

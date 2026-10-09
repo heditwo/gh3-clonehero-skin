@@ -23,8 +23,8 @@ public sealed class SkinMod : MelonMod
     public override void OnEarlyInitializeMelon()
     {
         // MelonLoader installs its Il2Cpp hooks after this call, so the guard is in place for them.
-        var guard = HookPageGuard.Install();
-        if (guard != null) MelonLogger.Msg($"Linux hook page guard: {guard}");
+        var guard = HookPageGuard.Install() ?? $"off (Linux only; this is {System.Runtime.InteropServices.RuntimeInformation.OSDescription})";
+        MelonLogger.Msg($"Linux hook page guard: {guard}");
         // MelonLoader retries a bHaptics WebSocket on a timer; disposing those sockets has crashed the CLR in this game.
         if (Environment.GetEnvironmentVariable("GH3_SKIN_KEEP_BHAPTICS") == "1") return;
         try
@@ -55,7 +55,7 @@ public sealed class SkinMod : MelonMod
             MelonLogger.Warning($"GH3 skin cannot bind to Clone Hero {Application.version} on {Application.platform}: {bindingError}. The skin is off.");
             return;
         }
-        var assetsDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Mods", "GH3Skin", "assets");
+        var assetsDirectory = Path.Combine(Packages.PackageRuntime.ModDirectory, "assets");
         _options = SkinOptions.FromEnvironment();
         _comboOverride = new ComboOverride(_options.ForceCombo, _options.ForceComboBreak);
         var tuning = HudTuning.Load(SkinAssetPaths.HudTuning(assetsDirectory));

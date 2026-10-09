@@ -100,31 +100,33 @@ One `Gh3Skin.dll` works on Linux and Windows Clone Hero `v1.1.0.6142-final` (see
 
 ### Install on Windows
 
-1. Install Clone Hero 1.1.0.6142 for Windows (`CloneHero-Win-x64.zip`).
-2. Extract MelonLoader 0.7.3 x64 (`MelonLoader.x64.zip`) into the game folder, next to `Clone Hero.exe`. The folder then has `version.dll` and `MelonLoader\`.
-3. Start the game once and close it. MelonLoader generates `MelonLoader\Il2CppAssemblies\` (the first start needs the network). Then set `force_offline_generation = true` in `UserData\Loader.cfg` (see [Test game](#test-game)).
-4. Copy the files to the same places as on Linux:
-   - `Gh3Skin.dll` to `<game>\Mods\Gh3Skin.dll`.
-   - The skin folders of `assets` (`gems\`, `sustains\`, `highway\`, `hud\`, `fonts\`, `hit-effects\`) and `stages\`, `libraries\` to `<game>\Mods\GH3Skin\assets\`, with the same layout. Remove the files of an earlier install first: the files directly in `Mods\GH3Skin\assets\` and `Mods\GH3Skin\counter-tuning.json`.
-5. Start Clone Hero with the launch option `-force-glcore`. Without it, Clone Hero uses Direct3D 11, and the stage is pink because the shader bundles have OpenGL programs only ([spike](spike/d3d11.md)).
+Players use `install-windows.bat` (it starts `install-windows.ps1`) from a release folder; see [PLAYER-GUIDE.md section 6](PLAYER-GUIDE.md#6-install-on-windows). Make the release folder on Linux:
 
-From Linux, `GH3_CLONE_HERO_DIR=<windows game folder> bash install.sh` does step 4. It builds against the Windows interop assemblies of that folder; the result works on Linux too.
+```bash
+MISE_QUIET=1 GH3_CLONE_HERO_DIR=<windows game folder> bash install.sh --release <release folder>
+```
 
-The loader log is `<game>\MelonLoader\Latest.log`. A good start logs `Loaded … GH3 skin gameplay sprites` and, in a song, `Stage audio uses BASS from …\Clone Hero_Data\Plugins\x86_64\bass.dll`. On another version or platform, the log shows `GH3 skin requires Clone Hero …` or `GH3 skin cannot bind to Clone Hero …` and the skin stays off.
+The release has `Mods/Gh3Skin.dll`, `Mods/GH3Skin/assets/<skin folders>` (the `skin_folders` list of `install.sh`, the only list), `Mods/GH3Skin/Packages/` (the venue and library packages), `Mods/GH3Skin/render/` (the shader bundles), and the two install scripts. It has no older install (`assets/stages`, `assets/libraries`) and no test charts. `install-windows.ps1` removes `Mods\GH3Skin\assets`, `Packages`, `render`, and `counter-tuning.json` of an earlier install, then copies the release `Mods` folder. It installs MelonLoader 0.7.3 x64 (download or `-MelonLoaderZip <file>`, SHA-256 checked) and sets `force_offline_generation = true` after the first start (the first start needs the network for the assembly generator). The script also runs with PowerShell 7 on Linux (`pwsh -File install-windows.ps1 -GameDir <folder>`), which is how it was tested; PowerShell 7.4 for Windows does not start under this Wine.
+
+`GH3_CLONE_HERO_DIR=<windows game folder> bash install.sh` installs into a Windows game folder directly (with the older install and the test charts, as on Linux). `--packages-only` removes and does not copy the older install. Both build against the interop assemblies of that folder; one DLL works on Linux and Windows.
+
+The loader log is `<game>\MelonLoader\Latest.log`. A good start logs `Linux hook page guard: off (Linux only; this is Microsoft Windows …)`, `Loaded … GH3 skin gameplay sprites`, `GH3 packages: scanning …; textures BC1/BC3; WindowsPlayer Direct3D11`, and, in a song, `Stage audio uses BASS from …\Clone Hero_Data\Plugins\x86_64\bass.dll`. On another version or platform, the log shows `GH3 skin requires Clone Hero …` or `GH3 skin cannot bind to Clone Hero …` and the skin stays off.
 
 ### Test under Wine
 
-The test setup is in `~/games/clonehero-win-spike/` (game, Wine prefix, DXVK 3.1.1, `env.sh`, `run-win.sh`; Wine 11.17 from `~/games/gh3-test-tools/wine-root`). Make a reflink copy for each agent and change `here=` in `run-win.sh` and `WINEPREFIX` in `env.sh`. Run under the record lock:
+The template is `~/games/clonehero-win-spike/` (game, Wine prefix, DXVK 3.1.1, `env.sh`; Wine 11.17 from `~/games/gh3-test-tools/wine-root`). Make a reflink copy for each agent and change `WINEPREFIX` in its `env.sh`. `tools/spike-d3d11/run-win.sh` reads the copy from `GH3_WINDOWS_TEST_DIR`. Each run stops the Wine server of the prefix at the end; also stop leftover `Clone Hero.exe` processes, because they keep the record lock. Run under the record lock:
 
 ```bash
-flock /tmp/opencode/gh3-record.lock env GH3_SKIN_STAGE=gh3.dive GH3_SKIN_TRACE=1 \
-  GH3_SKIN_CAPTURE_CLOCK=song GH3_SKIN_CAPTURE_TIMES=2,10,20,30,45,60 'GH3_SKIN_CAPTURE_DIR=Z:\tmp\opencode\win\frames' \
-  bash ~/games/clonehero-win-<name>/run-win.sh 240 /tmp/opencode/win/run.log \
+flock /tmp/opencode/gh3-record.lock env GH3_WINDOWS_TEST_DIR=$HOME/games/clonehero-win-<name> GH3_SKIN_STAGE=gh3.dive GH3_SKIN_TRACE=1 \
+  GH3_SKIN_CAPTURE_CLOCK=song GH3_SKIN_CAPTURE_TIMES=2,10,20,30,45,60 'GH3_SKIN_CAPTURE_DIR=Z:\home\<user>\win\frames' \
+  bash tools/spike-d3d11/run-win.sh 240 ~/win/run.log \
   --song 'Z:\home\hedi\.cache\gh3ref\charts\mycurse-native' --player Guitar,Expert \
-  -screen-fullscreen 0 -screen-width 1600 -screen-height 900 -force-glcore
+  -screen-fullscreen 0 -screen-width 1600 -screen-height 900
 ```
 
-Windows paths in variables need the `Z:` drive. Run the same chart on Linux with `scripts/capture-preview.sh` and the same `GH3_SKIN_TRACE` and capture variables. Then compare the `[trace]` lines of the two loader logs at the same song times.
+Without a launch option the game uses Direct3D 11 (DXVK); `-force-glcore` selects OpenGL. Windows paths in variables need the `Z:` drive. Put the frames on a disk folder: `/tmp` here is a RAM disk with a quota, and a full `/tmp` also stops Xwayland (`Could not write pid to lock file`). Settings that the test copy needs: `analytics_opt = 3` in `PlayerData\settings.ini` (else the analytics consent dialog stays on top of the menus), and fonts with the name Arial in the prefix (`C:\windows\Fonts\arial.ttf`, for example Liberation Sans with the font name changed). Without Arial, Unity's IMGUI shows no text in the picker. The zip release of the game runs in portable mode: `Custom` and `Songs` are in `<game>\PlayerData`.
+
+Run the same chart on Linux with `scripts/capture-preview.sh` and the same `GH3_SKIN_TRACE` and capture variables. Then compare the frames (same song times) and the `[trace]` lines of the two loader logs.
 
 ## Compare two builds
 

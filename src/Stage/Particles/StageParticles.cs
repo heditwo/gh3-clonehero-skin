@@ -291,7 +291,8 @@ internal sealed class StageParticles : IDisposable
 
     public void Dispose()
     {
-        _camera.depthTextureMode = _originalDepthMode;
+        // At the song end the Gameplay scene, with its camera, is already gone (Linux aborts and Windows throws without this check).
+        if (_camera != null) _camera.depthTextureMode = _originalDepthMode;
         _tesla.Dispose();
         _bundle.Unload(true);
     }

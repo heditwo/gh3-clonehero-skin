@@ -78,7 +78,7 @@ Three check boxes at the bottom of the picker control the camera and light direc
 
 ## 5. Add stages and characters
 
-1. Find your Clone Hero `Custom` folder. This is the folder that has `Highways` and `Image Backgrounds` (on Linux, usually `~/.clonehero/Custom`; in portable mode, `PlayerData/Custom` in the game folder).
+1. Find your Clone Hero `Custom` folder. This is the folder that has `Highways` and `Image Backgrounds`. On Linux, it is usually `~/.clonehero/Custom`. On Windows, it is `Documents\Clone Hero\Custom` after a typical installation. In portable mode (and when you extract the Windows zip file), it is `PlayerData\Custom` in the game folder.
 2. Put stage files (`.chstage`) in `Custom/Stages/`.
 3. Put character files (`.chchar`) in `Custom/Characters/`.
 4. Start the game. The mod imports new files one time and keeps the result in `UserData/GH3Skin/Cache/` in the game folder. A large stage can take some seconds.
@@ -87,7 +87,38 @@ You can use group folders, for example `Custom/Stages/My Stages/`, to a depth of
 
 When you remove a package, the mod deletes its cache folder at the next start.
 
-## 6. Problems
+## 6. Install on Windows
+
+You need Windows Clone Hero `v1.1.0.6142-final` (64-bit) and the release folder of the mod. The release folder has `install-windows.bat`, `install-windows.ps1`, and `Mods\`.
+
+1. Close Clone Hero.
+2. Double-click `install-windows.bat` in the release folder. When the script asks, type the Clone Hero folder (the folder that has `Clone Hero.exe`). You can also drag the Clone Hero folder onto `install-windows.bat`.
+3. The script:
+   - Makes sure that the game is `v1.1.0.6142-final`.
+   - Downloads MelonLoader 0.7.3 (64-bit) from GitHub, checks its SHA-256 value, and extracts it into the game folder. If MelonLoader 0.7.3 is already installed, the script keeps it.
+   - Removes the files of an earlier mod version (`Mods\GH3Skin\assets`, `Packages`, `render`, and `counter-tuning.json`). It keeps your choices and the cache in `UserData\GH3Skin`.
+   - Copies `Mods\Gh3Skin.dll` and `Mods\GH3Skin\` into the game folder.
+4. Start Clone Hero one time. This first start takes some minutes and needs the internet: MelonLoader prepares its files. Then the mod imports the stages (about 25 seconds). The game shows the menus while the mod imports.
+5. Close the game, and do step 2 again. Now the script sets `force_offline_generation = true` in `UserData\Loader.cfg`. This stops a MelonLoader network check at each start, which can make the game crash.
+6. Start Clone Hero. The mod uses Direct3D 11, the Windows default. You do not need a launch option.
+
+Without the script, do these steps by hand: extract `MelonLoader.x64.zip` (version 0.7.3) into the game folder, start the game one time, close it, set `force_offline_generation = true`, remove the old files of step 3, and copy the `Mods` folder of the release into the game folder.
+
+On Windows, the mod keeps its files here:
+
+| Item | Folder |
+| --- | --- |
+| Mod, stages, and shaders | `<game>\Mods\Gh3Skin.dll`, `<game>\Mods\GH3Skin\` |
+| Cache of the imported packages (about 1.4 GB) | `<game>\UserData\GH3Skin\Cache\` |
+| Your choices in the picker | `<game>\UserData\GH3Skin\choices.json` |
+| Your stages and characters | `Custom\Stages\` and `Custom\Characters\` (see [section 5](#5-add-stages-and-characters)) |
+| Log | `<game>\MelonLoader\Latest.log` |
+
+To remove the cache, close the game and delete `UserData\GH3Skin\Cache\`. The mod makes it again at the next start.
+
+Do not install the game in `C:\Program Files` with the zip file. Windows prevents writes to that folder, and the game and the mod must write files. Use a folder such as `C:\Games\Clone Hero`.
+
+## 7. Problems
 
 | Problem | Do this |
 | --- | --- |
@@ -96,4 +127,6 @@ When you remove a package, the mod deletes its cache folder at the next start.
 | The wrong stage plays | Look in the log for `GH3 stage choice: <stage> (<reason>)` |
 | A band member has no instrument or the wrong instrument | Look in the log for `GH3 band <member>: character <id> ... with ...` |
 | The direction options do not apply | Look in the log for `GH3 direction: Rock Band VENUE tracks on/off, generated direction on/off, reduce flashing on/off`. The test variables `GH3_SKIN_VENUE_TRACK`, `GH3_SKIN_GENERATED_DIRECTION`, and `GH3_SKIN_REDUCE_FLASHING` override the picker |
+| Windows: the script does not start ("running scripts is disabled") | Use `install-windows.bat`, not the `.ps1` file. The `.bat` file starts PowerShell with permission for this script only |
+| Windows: the log has no `GH3 Gameplay Skin` line | MelonLoader is not installed or is another version. Do [section 6](#6-install-on-windows) again |
 | You want the defaults again | Close the game and delete `UserData/GH3Skin/choices.json` in the game folder |

@@ -40,7 +40,9 @@ internal static class PackageRuntime
     public static bool Disabled => Environment.GetEnvironmentVariable("GH3_SKIN_PACKAGES") == "off";
     private static int _frames;
 
-    public static string ModDirectory => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Mods", "GH3Skin");
+    // MelonLoader's Mods folder, not one below the working folder: a shortcut or a launcher can start the game from another
+    // folder (on Windows the base directory then follows it), and on macOS Mods is next to the app bundle.
+    public static string ModDirectory => Path.Combine(MelonEnvironment.ModsDirectory, "GH3Skin");
 
     public static void Update()
     {
