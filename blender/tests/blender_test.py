@@ -4,9 +4,11 @@ blender --background --factory-startup --python-exit-code 1 --python blender/tes
 
 It installs and enables the extension zip, makes a stage from the template, sets properties, runs Validate, exports
 the package, opens it again, and exports it again. With VENUE (a .chstage package, for example a GH3 venue), it also
-opens, exports, and compares that package. OUTPUT receives the packages and a summary JSON file.
+opens, exports, and compares that package, and tests the venue tools (tools_test.py). OUTPUT receives the packages
+and a summary JSON file.
 """
 
+import faulthandler
 import hashlib
 import json
 import struct
@@ -15,6 +17,8 @@ import zipfile
 from pathlib import Path
 
 import bpy
+
+faulthandler.enable()
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -249,6 +253,9 @@ if venue is not None and venue.is_file():
     summary["venue"] = {"package": str(venue), "failures": differences["failures"], "max": differences["stage"]["max"]}
     check(f"{venue.name} round trip", status == {"FINISHED"} and not differences["failures"] and validator.validate(copy).ok,
           differences["failures"] or [(i.severity, i.message) for i in opened.chstage.issues][:5])
+    sys.path.insert(0, str(Path(__file__).parent))
+    import tools_test  # noqa: E402
+    tools_test.run(check, module, scene, opened, copy, output, summary)
 
 bpy.ops.preferences.addon_disable(module=module)
 check("disable", module not in bpy.context.preferences.addons and not hasattr(bpy.types.Scene, "chstage"))

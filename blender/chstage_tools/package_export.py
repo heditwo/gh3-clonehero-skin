@@ -9,7 +9,7 @@ from pathlib import Path
 
 import bpy
 
-from . import collect, glb_tools, materials, sidecars
+from . import actor_tools, blobs, collect, glb_tools, materials, sidecars
 from .vendor.package_format import container
 from .vendor.package_format.validate import Report, Source, Validator
 
@@ -122,8 +122,11 @@ def preview_bytes(scene, issues, render=True):
 
 
 def kept_file_bytes(item, issues, sources):
-    """Bytes of a kept package file: its text block, or the file in its source package (SHA-256 checked)."""
+    """Bytes of a kept package file: its text block, its packed bytes, or (a .blend file of add-on 0.1) the file in its
+    source package (SHA-256 checked)."""
     if item.text is not None: return item.text.as_string().encode("utf-8")
+    packed = blobs.load(item.blob)
+    if packed is not None: return packed
     path = bpy.path.abspath(item.source)
     if path not in sources:
         report = Report()
@@ -139,8 +142,9 @@ def kept_file_bytes(item, issues, sources):
     return data
 
 
-def build_files(scene, folder, issues, keeper=None, render_preview_image=True):
-    """Write all package files into folder. Returns (manifest, names for issue mapping)."""
+def build_files(scene, folder, issues, keeper=None, render_preview_image=True, actor_models=None):
+    """Write all package files into folder. Returns (manifest, names for issue mapping).
+    actor_models: None (the setting of each actor), "PACKED", or "BLENDER" (tests)."""
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
     keeper = keeper or sidecars.Keeper()
@@ -149,7 +153,21 @@ def build_files(scene, folder, issues, keeper=None, render_preview_image=True):
     if not objects: issues.error("the stage has no scenery meshes")
     paths = {"stage.glb", *files, *finish_glb(folder/"stage.glb", folder, issues, blender_materials)}
     for name, value in files.items(): (folder/name).write_bytes(container.json_bytes(value))
-    entry = {}
+    entry = {"actors": "actors.json"} if "actors.json" in files else {}
+    models = {}
+    for root in actor_tools.actor_roots(scene):
+        path = actor_tools.model_path(root)
+        data = actor_tools.model_bytes(scene, root, issues, actor_models)
+        if data is None: continue
+        if path in models:
+            if models[path] != data: issues.error(f"actors '{root.name}' and others use the model file {path} with different models", root.name)
+            continue
+        if path in paths: issues.error(f"actor '{root.name}': the model file {path} has the path of another package file", root.name); continue
+        models[path] = data
+        target = folder/path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    paths.update(models)
     sources = {}
     for item in scene.chstage.kept_files:
         if item.path in paths:
@@ -195,7 +213,7 @@ def package_file_name(scene):
     return f"{safe_name(scene.chstage.package.package_id or 'stage')}.chstage"
 
 
-def export_package(scene, target, folder=None, custom_folder=None, keeper=None):
+def export_package(scene, target, folder=None, custom_folder=None, keeper=None, actor_models=None):
     """Write the package zip to target (and the development folder and a copy into the Custom/Stages folder) when it is
     valid. Returns (issues, written paths). An invalid package is not written; the issues tell why."""
     issues = sidecars.Issues()
@@ -203,7 +221,7 @@ def export_package(scene, target, folder=None, custom_folder=None, keeper=None):
     written = []
     with tempfile.TemporaryDirectory(prefix="chstage-export-") as temporary:
         staging = Path(temporary)/target.name
-        _, names = build_files(scene, staging, issues, keeper)
+        _, names = build_files(scene, staging, issues, keeper, actor_models=actor_models)
         archive = Path(temporary)/"zip"/target.name
         archive.parent.mkdir()
         container.write_zip(staging, archive)

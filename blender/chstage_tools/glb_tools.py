@@ -199,3 +199,175 @@ def strip_png_text(data):
 
 def png_chunk(kind, payload):
     return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+
+
+# Actor GLBs (PACKAGE-FORMAT 6.7 and 8.2).
+UNIT_SCALE = 1e-4
+
+
+def animation_names(data):
+    gltf, _ = read_glb(data)
+    return [a.get("name", "") for a in gltf.get("animations", [])]
+
+
+def keep_animations(data, names):
+    """GLB bytes with only the named animations, in the order of names. The binary chunk does not change."""
+    gltf, binary = read_glb(data)
+    by_name = {a.get("name", ""): a for a in gltf.get("animations", [])}
+    kept = [by_name[name] for name in names if name in by_name]
+    if len(kept) == len(gltf.get("animations", [])) and [a.get("name", "") for a in gltf.get("animations", [])] == list(names): return data
+    if kept: gltf["animations"] = kept
+    else: gltf.pop("animations", None)
+    return write_glb(gltf, binary)
+
+
+def rename_animations(data, names):
+    """GLB bytes with the animations renamed (old name to new name)."""
+    gltf, binary = read_glb(data)
+    changed = False
+    for animation in gltf.get("animations", []):
+        new = names.get(animation.get("name"))
+        if new and new != animation.get("name"):
+            animation["name"] = new
+            changed = True
+    return write_glb(gltf, binary) if changed else data
+
+
+def float_rows(gltf, binary, index):
+    import numpy as np
+    accessor = gltf["accessors"][index]
+    rows = accessor_rows(gltf, binary, index)
+    if accessor["componentType"] != 5126: raise ValueError("animation data is not float32")
+    return rows.view("<f4").reshape(accessor["count"], COMPONENT_COUNT[accessor["type"]]).astype(np.float64)
+
+
+def drop_unit_scale_channels(data):
+    """Remove the scale channels whose keys are all within 1e-4 of 1 (Blender writes one for each joint; the importer
+    drops them, PACKAGE-FORMAT 6.7). Returns (GLB bytes, dropped count, messages for other scale channels)."""
+    import numpy as np
+    gltf, binary = read_glb(data)
+    dropped, problems = 0, []
+    nodes = gltf.get("nodes", [])
+    for animation in gltf.get("animations", []):
+        channels = []
+        for channel in animation["channels"]:
+            if channel["target"].get("path") == "scale":
+                values = float_rows(gltf, binary, animation["samplers"][channel["sampler"]]["output"])
+                error = float(np.abs(values - 1).max(initial=0))
+                if error <= UNIT_SCALE:
+                    dropped += 1
+                    continue
+                node = channel["target"].get("node")
+                problems.append(f"clip '{animation.get('name', '')}' scales the joint '{nodes[node].get('name', node) if node is not None else '?'}' "
+                                f"(|scale - 1| = {error:.3g}); animate only translation and rotation")
+            channels.append(channel)
+        used = sorted({c["sampler"] for c in channels})
+        renumber = {old: new for new, old in enumerate(used)}
+        animation["samplers"] = [animation["samplers"][old] for old in used]
+        for channel in channels: channel["sampler"] = renumber[channel["sampler"]]
+        animation["channels"] = channels
+    return (write_glb(gltf, binary) if dropped else data), dropped, problems
+
+
+def _append(gltf, binary, payload, accessor=None):
+    """Add bytes to a bytearray binary chunk as a new buffer view (and an accessor copy). Returns the accessor or view index."""
+    binary += b"\0" * (-len(binary) % 4)
+    gltf.setdefault("bufferViews", []).append({"buffer": 0, "byteOffset": len(binary), "byteLength": len(payload)})
+    binary += payload
+    view = len(gltf["bufferViews"]) - 1
+    if accessor is None: return view
+    copy = {key: value for key, value in accessor.items() if key not in ("byteOffset", "sparse")}
+    copy["bufferView"] = view
+    gltf.setdefault("accessors", []).append(copy)
+    return len(gltf["accessors"]) - 1
+
+
+def merge_animations(data, source, names):
+    """Add the named animations of the source GLB to a GLB. Channels find their target node by node name.
+    Returns (GLB bytes, messages for channels whose node is missing)."""
+    gltf, binary = read_glb(data)
+    binary = bytearray(binary)
+    source_gltf, source_binary = read_glb(source)
+    target_nodes = {node.get("name"): index for index, node in enumerate(gltf.get("nodes", [])) if node.get("name")}
+    source_nodes = source_gltf.get("nodes", [])
+    existing = {a.get("name", "") for a in gltf.get("animations", [])}
+    problems = []
+    for animation in source_gltf.get("animations", []):
+        name = animation.get("name", "")
+        if name not in names or name in existing: continue
+        copies, samplers, channels = {}, [], []
+        for channel in animation["channels"]:
+            node_name = source_nodes[channel["target"]["node"]].get("name")
+            if node_name not in target_nodes:
+                problems.append(f"clip '{name}': the model has no joint '{node_name}'")
+                continue
+            sampler = animation["samplers"][channel["sampler"]]
+            new = {**sampler}
+            for key in ("input", "output"):
+                index = sampler[key]
+                if index not in copies:
+                    copies[index] = _append(gltf, binary, accessor_rows(source_gltf, source_binary, index).tobytes(), source_gltf["accessors"][index])
+                new[key] = copies[index]
+            samplers.append(new)
+            channels.append({"sampler": len(samplers) - 1, "target": {"node": target_nodes[node_name], "path": channel["target"]["path"]}})
+        if channels: gltf.setdefault("animations", []).append({"name": name, "channels": channels, "samplers": samplers})
+    if gltf.get("buffers"): gltf["buffers"][0]["byteLength"] = len(binary)
+    return write_glb(gltf, bytes(binary)), problems
+
+
+def image_bytes_by_name(data):
+    """{image name: PNG bytes} of the named images of a GLB."""
+    gltf, binary = read_glb(data)
+    return {image["name"]: bytes(image_bytes(gltf, binary, index)) for index, image in enumerate(gltf.get("images", []))
+            if image.get("name") and "bufferView" in image}
+
+
+def restore_names(data, materials=(), nodes=()):
+    """Give exported images, materials, and nodes their package names again. Blender renames 'name' to 'name.001' when
+    the name is in use in the .blend file; texture references '#name' then have no image. materials, nodes: the names
+    of the package GLB."""
+    import re
+    gltf, binary = read_glb(data)
+    changed = False
+    for kind, wanted in (("images", texture_reference_names(gltf)), ("materials", set(materials)), ("nodes", set(nodes))):
+        names = {item.get("name") for item in gltf.get(kind, [])}
+        for item in gltf.get(kind, []):
+            base = re.sub(r"(\.\d{3,})+$", "", item.get("name", ""))
+            if base != item.get("name") and base in wanted and base not in names:
+                item["name"] = base
+                names.add(base)
+                changed = True
+    return write_glb(gltf, binary) if changed else data
+
+
+def add_images(data, images):
+    """Embed PNG images with the given names (texture references '#<name>' to images that a material socket does not use).
+    Each image also gets a glTF texture: the pipeline compiler finds '#<name>' through the textures."""
+    if not images: return data
+    gltf, binary = read_glb(data)
+    binary = bytearray(binary)
+    present = {image.get("name") for image in gltf.get("images", [])}
+    for name, payload in sorted(images.items()):
+        if name in present: continue
+        view = _append(gltf, binary, payload)
+        gltf.setdefault("images", []).append({"name": name, "mimeType": "image/png", "bufferView": view})
+        gltf.setdefault("textures", []).append({"source": len(gltf["images"]) - 1})
+    if not gltf.get("buffers"): gltf["buffers"] = [{}]
+    gltf["buffers"][0]["byteLength"] = len(binary)
+    return write_glb(gltf, bytes(binary))
+
+
+def texture_reference_names(gltf):
+    """Image names of the '#<name>' texture references in the material extras of a glTF document."""
+    names = set()
+
+    def visit(value):
+        if isinstance(value, str) and value.startswith("#"): names.add(value[1:])
+        elif isinstance(value, list):
+            for item in value: visit(item)
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                if key in ("gh3MaskTexture", "gh3LayerTexture", "gh3Shader", "textures"): visit(item)
+
+    for material in gltf.get("materials", []): visit(material.get("extras", {}))
+    return names

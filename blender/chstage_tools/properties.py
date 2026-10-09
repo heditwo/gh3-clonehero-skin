@@ -9,7 +9,8 @@
 | object.chstage.light, scene.chstage.snapshots, moods, colors | lighting.json |
 | object.chstage (node flags) | stage.glb node extras gh3* |
 | material.chstage | stage.glb material extras gh3* and glTF material fields |
-| scene.chstage.kept_files | Package files that the add-on keeps without a change (scripts.json, actors.json, actor GLBs) |
+| object.chstage.actor (actor root empty) | actors.json row and its model GLB |
+| scene.chstage.kept_files | Package files that the add-on keeps (scripts.json as a text block, other files packed in the .blend file) |
 
 The 'kept' text properties hold the source rows of an opened package (see sidecars.Keeper).
 """
@@ -37,6 +38,35 @@ def items(values, descriptions=None):
     return [(v, v, (descriptions or {}).get(v, "")) for v in values]
 
 
+def live_lighting(self, context):
+    from . import lighting_tools
+    lighting_tools.refresh(self.id_data)
+
+
+def preview_selected_shot(self, context):
+    from . import camera_tools
+    camera_tools.preview_index(context, self.id_data)
+
+
+def rebuild_scripts(self, context):
+    from . import scripts_ui
+    scripts_ui.rebuild(self.id_data)
+
+
+def light_group_overlay(self, context):
+    from . import groups
+    groups.overlay(self.id_data, context)
+
+
+_MOOD_ITEMS = []
+
+
+def scene_moods(self, context):
+    # Blender needs Python to keep the strings of dynamic enum items alive.
+    _MOOD_ITEMS[:] = [("NONE", "Snapshot", "Preview the active snapshot")] + [(n, n, f"Preview the mood '{n}'") for n in dict.fromkeys(m.mood for m in self.moods)]
+    return _MOOD_ITEMS
+
+
 class CHSTAGE_PG_name(PropertyGroup):
     name: StringProperty(name="Name")
 
@@ -48,13 +78,14 @@ class CHSTAGE_PG_image_ref(PropertyGroup):
 
 
 class CHSTAGE_PG_kept_file(PropertyGroup):
-    """A package file that the add-on does not edit (for example scripts.json, actors.json, actor GLBs). Export writes it again.
+    """A package file that the add-on does not make (for example scripts.json). Export writes it again.
 
-    JSON files are Blender text blocks (saved in the .blend file). Other files stay in the source package: export reads
-    them from there and checks the SHA-256."""
+    JSON files are Blender text blocks. Other files are packed into the .blend file (blobs.py). Files of .blend files
+    from add-on 0.1 can be references to the source package: export reads them from there and checks the SHA-256."""
     path: StringProperty(name="Package path")
     entry: StringProperty(name="Entry", description="manifest.json entry key of this file, or empty")
     text: PointerProperty(name="Text", type=bpy.types.Text)
+    blob: PointerProperty(name="Packed data", type=bpy.types.Text, description="Text block that holds the packed file bytes")
     source: StringProperty(name="Source package", subtype="FILE_PATH")
     sha256: StringProperty(name="SHA-256")
     size: IntProperty(name="Size")
@@ -170,12 +201,49 @@ class CHSTAGE_PG_light(PropertyGroup):
     field: FloatProperty(name="Field", min=0, max=180, default=45)
 
 
+class CHSTAGE_PG_actor_action(PropertyGroup):
+    name: StringProperty(name="Action", description="Cue action name, for example 'jump'")
+    clips: StringProperty(name="Clips", description="Clip names of the action, separated by commas")
+
+
+class CHSTAGE_PG_actor(PropertyGroup):
+    """One actors.json row. The actor root is an empty: its world transform and scale are the actor transform and scale.
+    The armature and the meshes of the actor model are its children."""
+    actor_name: StringProperty(name="Actor name", description="Key in actors.json. Empty: the object name")
+    model_path: StringProperty(name="Model file", description="Package path of the actor GLB. Empty: <actor name>.glb")
+    blob: PointerProperty(name="Packed model", type=bpy.types.Text, description="The GLB of the opened package, packed into the .blend file")
+    clip: StringProperty(name="Clip", description="Start clip. Empty: the first clip of the GLB")
+    playback: EnumProperty(name="Playback", items=[("DEFAULT", "Default (loop)", "No playback key"), ("loop", "Loop", ""), ("hold", "Hold", "")], default="DEFAULT")
+    light_group: StringProperty(name="Light group", description="Empty: Stage")
+    role: StringProperty(name="Cue role", description="Cue target, for example stage-diver/1")
+    use_initially_visible: BoolProperty(name="Set start visibility")
+    initially_visible: BoolProperty(name="Initially visible", default=True)
+    script_object: StringProperty(name="Script object")
+    script: StringProperty(name="Startup script")
+    use_created: BoolProperty(name="Set created state")
+    created: BoolProperty(name="Created", default=True)
+    animation_events: StringProperty(name="Animation events", description="Typed animation-event table in the script bank")
+    write_scale: BoolProperty(name="Write scale", description="Write the scale also when it is 1 (as the opened package)")
+    actions: CollectionProperty(type=CHSTAGE_PG_actor_action)
+    actions_index: IntProperty()
+    fps: IntProperty(name="Clip rate", default=60, min=1, max=240, description="Frames per second of the clips (scene rate for import and export)")
+    model_mode: EnumProperty(name="Model export", items=[
+        ("AUTO", "Automatic", "Write the packed GLB while the Blender model did not change, else export the Blender model"),
+        ("PACKED", "Packed GLB", "Always write the packed GLB of the opened package"),
+        ("BLENDER", "Blender model", "Always export the Blender model"),
+    ], default="AUTO")
+    clips_json: StringProperty(description="Clip names of the packed GLB (JSON list)")
+    loaded_json: StringProperty(description="Clip names that Blender has (JSON list)")
+    fingerprint: StringProperty(description="Hash of the Blender model just after open or import")
+
+
 class CHSTAGE_PG_object(PropertyGroup):
     marker: EnumProperty(name="Marker", items=[
         ("NONE", "None", "Scenery or other object"),
         ("BAND", "Band placement", "Performer root (placements.json band)"),
         ("WAYPOINT", "Waypoint", "Walking destination (placements.json waypoints)"),
         ("EFFECT", "Effect emitter", "Pyro, sparks, fireworks, or smoke (placements.json effects)"),
+        ("ACTOR", "Actor", "Animated scenery root (actors.json); its children are the actor model"),
         ("PROXY", "Proxy body", "Preview only; never exported"),
     ], default="NONE")
     band_role: EnumProperty(name="Role", items=ROLES, default="guitarist")
@@ -206,6 +274,7 @@ class CHSTAGE_PG_object(PropertyGroup):
     shot: PointerProperty(type=CHSTAGE_PG_shot)
     point: PointerProperty(type=CHSTAGE_PG_point)
     light: PointerProperty(type=CHSTAGE_PG_light)
+    actor: PointerProperty(type=CHSTAGE_PG_actor)
 
 
 class CHSTAGE_PG_material(PropertyGroup):
@@ -246,12 +315,12 @@ class CHSTAGE_PG_material(PropertyGroup):
 
 
 class CHSTAGE_PG_snapshot_light(PropertyGroup):
-    light: PointerProperty(name="Light", type=bpy.types.Object)
-    color: FloatVectorProperty(name="Color", subtype="COLOR", size=3, default=(1, 1, 1), min=0, soft_max=1)
-    intensity: FloatProperty(name="Intensity", default=1, min=-100, max=100)
-    near: FloatProperty(name="Near", default=0, min=0, max=100000)
-    far: FloatProperty(name="Far", default=200, min=0, max=100001)
-    inherit: BoolProperty(name="Inherit")
+    light: PointerProperty(name="Light", type=bpy.types.Object, update=live_lighting)
+    color: FloatVectorProperty(name="Color", subtype="COLOR", size=3, default=(1, 1, 1), min=0, soft_max=1, update=live_lighting)
+    intensity: FloatProperty(name="Intensity", default=1, min=-100, max=100, update=live_lighting)
+    near: FloatProperty(name="Near", default=0, min=0, max=100000, update=live_lighting)
+    far: FloatProperty(name="Far", default=200, min=0, max=100001, update=live_lighting)
+    inherit: BoolProperty(name="Inherit", update=live_lighting)
     use_specular: BoolProperty(name="Specular")
     specular: FloatProperty(name="Specular", default=1)
 
@@ -259,13 +328,13 @@ class CHSTAGE_PG_snapshot_light(PropertyGroup):
 class CHSTAGE_PG_beam(PropertyGroup):
     fixture_id: StringProperty(name="Beam ID")
     target: PointerProperty(name="Beam object", type=bpy.types.Object, description="Capture takes the position and the direction (local -Z) from it")
-    position: FloatVectorProperty(name="Position", size=3, subtype="TRANSLATION")
-    rotation: FloatVectorProperty(name="Rotation", size=4, subtype="QUATERNION", default=(1, 0, 0, 0))
-    color: FloatVectorProperty(name="Color", subtype="COLOR", size=3, default=(1, 1, 1), min=0, soft_max=1)
-    density: FloatProperty(name="Density", default=0.5, min=0, max=100000)
-    start_radius: FloatProperty(name="Start radius", default=0.1, min=0, max=100000)
-    end_radius: FloatProperty(name="End radius", default=1, min=0, max=100000)
-    range: FloatProperty(name="Range", default=5, min=0, max=100000)
+    position: FloatVectorProperty(name="Position", size=3, subtype="TRANSLATION", update=live_lighting)
+    rotation: FloatVectorProperty(name="Rotation", size=4, subtype="QUATERNION", default=(1, 0, 0, 0), update=live_lighting)
+    color: FloatVectorProperty(name="Color", subtype="COLOR", size=3, default=(1, 1, 1), min=0, soft_max=1, update=live_lighting)
+    density: FloatProperty(name="Density", default=0.5, min=0, max=100000, update=live_lighting)
+    start_radius: FloatProperty(name="Start radius", default=0.1, min=0, max=100000, update=live_lighting)
+    end_radius: FloatProperty(name="End radius", default=1, min=0, max=100000, update=live_lighting)
+    range: FloatProperty(name="Range", default=5, min=0, max=100000, update=live_lighting)
     inherit: BoolProperty(name="Inherit")
 
 
@@ -315,6 +384,19 @@ class CHSTAGE_PG_issue(PropertyGroup):
     material_name: StringProperty()
 
 
+class CHSTAGE_PG_script_row(PropertyGroup):
+    """One row of the script browser: an object (node array entry), an event (a script that starts), or a value."""
+    kind: StringProperty()
+    label: StringProperty(name="Name")
+    node_id: StringProperty(name="Object")
+    script: StringProperty(name="Script")
+    info: StringProperty(name="Details")
+    objects: StringProperty(name="Blender objects")
+    path: StringProperty()
+    value_type: IntProperty()
+    editable: BoolProperty()
+
+
 class CHSTAGE_PG_scene(PropertyGroup):
     package: PointerProperty(type=CHSTAGE_PG_package)
     crowd: CollectionProperty(type=CHSTAGE_PG_crowd)
@@ -335,6 +417,26 @@ class CHSTAGE_PG_scene(PropertyGroup):
     kept_files_index: IntProperty()
     source_package: StringProperty(name="Opened package", subtype="FILE_PATH")
     export_path: StringProperty(name="Last export", subtype="FILE_PATH")
+    script_rows: CollectionProperty(type=CHSTAGE_PG_script_row)
+    script_rows_index: IntProperty()
+    script_view: EnumProperty(name="View", items=[("OBJECTS", "Objects", "Node array entries of the script bank"),
+                                                  ("EVENTS", "Events", "Scripts that start, and their objects"),
+                                                  ("VALUES", "Values", "Simple typed definitions and bank settings")], default="OBJECTS",
+                              update=rebuild_scripts)
+    script_value: StringProperty(name="Value", description="New value of the active row (Set writes it into scripts.json)")
+    anchor_frames: StringProperty(description="Bone frames of the proxy rigs relative to the performer roots (JSON, runtime coordinates)")
+    rig_library: StringProperty(name="Rig library", subtype="FILE_PATH", description="The library package of the proxy rigs")
+    shots_index: IntProperty(update=preview_selected_shot)
+    shot_group: StringProperty(name="Group", description="Show only the shots of this camera group. Empty: all")
+    shot_type: EnumProperty(name="Type", items=[("ALL", "All types", "")] + items(sidecars.SHOT_TYPES), default="ALL")
+    lighting_preview: BoolProperty(name="Live lighting preview", description="Show the active snapshot or mood with the Blender lights (Material Preview, EEVEE)",
+                                   update=live_lighting)
+    preview_mood: EnumProperty(name="Preview", items=scene_moods, update=live_lighting)
+    preview_step: IntProperty(name="Snapshot of the mood", min=0, update=live_lighting, description="Snapshot number in the mood list")
+    preview_world: PointerProperty(type=bpy.types.World, description="The scene world before the lighting preview")
+    light_group_overlay: BoolProperty(name="Color by light group", update=light_group_overlay,
+                                      description="Color the scenery by light group (Solid shading, object color)")
+    beam_overlay: BoolProperty(name="Show beams", default=True, description="Draw the beams of the previewed snapshot and the fixture axes")
 
 
 class CHSTAGE_AP_preferences(AddonPreferences):
@@ -342,16 +444,23 @@ class CHSTAGE_AP_preferences(AddonPreferences):
 
     custom_stages: StringProperty(name="Custom/Stages folder", subtype="DIR_PATH",
                                   description="The Custom/Stages folder of Clone Hero. Export can copy the package into it")
+    library: StringProperty(name="GH3 library (.chlib)", subtype="FILE_PATH",
+                            description="gh3-band-v1.chlib (or its folder). Open loads the band rigs from it to show camera bone anchors. "
+                                        "Empty: look next to the opened package")
+    import_all_clips: BoolProperty(name="Open: import all actor clips", default=False,
+                                   description="Off: Open imports the clips that actors.json uses; the actor panel loads the others")
 
     def draw(self, context):
         self.layout.prop(self, "custom_stages")
+        self.layout.prop(self, "library")
+        self.layout.prop(self, "import_all_clips")
 
 
 CLASSES = (
     CHSTAGE_PG_name, CHSTAGE_PG_image_ref, CHSTAGE_PG_kept_file, CHSTAGE_PG_number, CHSTAGE_PG_author, CHSTAGE_PG_requirement, CHSTAGE_PG_package,
-    CHSTAGE_PG_point, CHSTAGE_PG_object_ref, CHSTAGE_PG_shot, CHSTAGE_PG_light, CHSTAGE_PG_object, CHSTAGE_PG_material,
-    CHSTAGE_PG_snapshot_light, CHSTAGE_PG_beam, CHSTAGE_PG_snapshot, CHSTAGE_PG_mood, CHSTAGE_PG_color,
-    CHSTAGE_PG_camera_note, CHSTAGE_PG_crowd, CHSTAGE_PG_issue, CHSTAGE_PG_scene, CHSTAGE_AP_preferences,
+    CHSTAGE_PG_point, CHSTAGE_PG_object_ref, CHSTAGE_PG_shot, CHSTAGE_PG_light, CHSTAGE_PG_actor_action, CHSTAGE_PG_actor, CHSTAGE_PG_object,
+    CHSTAGE_PG_material, CHSTAGE_PG_snapshot_light, CHSTAGE_PG_beam, CHSTAGE_PG_snapshot, CHSTAGE_PG_mood, CHSTAGE_PG_color,
+    CHSTAGE_PG_camera_note, CHSTAGE_PG_crowd, CHSTAGE_PG_issue, CHSTAGE_PG_script_row, CHSTAGE_PG_scene, CHSTAGE_AP_preferences,
 )
 
 

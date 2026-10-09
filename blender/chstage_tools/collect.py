@@ -6,7 +6,7 @@ import re
 
 import bpy
 
-from . import gltf_io, materials, sidecars
+from . import actor_tools, gltf_io, materials, sidecars
 
 
 def matrix(obj):
@@ -15,6 +15,20 @@ def matrix(obj):
 
 def is_marker(obj):
     return obj.chstage.marker != "NONE"
+
+
+def in_actor_or_proxy(obj):
+    """True for the objects of an actor model and of a proxy rig (children of an actor root or a proxy)."""
+    parent = obj.parent
+    while parent is not None:
+        if parent.chstage.marker in ("ACTOR", "PROXY"): return True
+        parent = parent.parent
+    return False
+
+
+def anchor_frames(scene):
+    """Bone frames of the proxy rigs (rig.anchor_frames for each role), or {} without a rig."""
+    return json.loads(scene.chstage.anchor_frames) if scene.chstage.anchor_frames else {}
 
 
 def scene_objects(scene):
@@ -163,13 +177,19 @@ def sidecar_files(scene, issues, keeper=None):
     files = {
         "placements.json": sidecars.build_placements(marker_list, [{"role": c.role, "model": c.model, "yaw": c.yaw, "owner": c}
                                                                    for c in scene.chstage.crowd], issues, keeper, kept.get("placementKeys", ())),
-        "cameras.json": sidecars.build_cameras(shot_list, camera_notes(scene), marker_list, issues, keeper, scene.chstage),
+        "cameras.json": sidecars.build_cameras(shot_list, camera_notes(scene), marker_list, issues, keeper, scene.chstage, anchor_frames(scene)),
     }
     if lighting is not None: files["lighting.json"] = lighting
+    actor_list = actor_tools.descriptions(scene)
+    actors = sidecars.build_actors(actor_list, issues, keeper)
+    if actors is None and kept.get("actorsFile"): actors = {"version": 1, "actors": {}}
+    if actors is not None: files["actors.json"] = actors
     names = {
         "placements.json": {m["name"] if m["kind"] == "WAYPOINT" else m["role"]: m["object"] for m in marker_list},
         "cameras.json": {s["name"]: s["object"] for s in shot_list},
         "lighting.json": {light["id"]: light["source"] for light in light_list},
+        "actors.json": {a["name"]: a["object"] for a in actor_list},
+        "models": {a["model"]: a["object"] for a in actor_list},
     }
     return files, names
 
@@ -178,7 +198,7 @@ def exported_objects(scene):
     """Scenery for stage.glb: meshes and script-object empties; never markers, proxies, cameras, or lights."""
     result = []
     for obj in scene_objects(scene):
-        if is_marker(obj) or obj.hide_render: continue
+        if is_marker(obj) or obj.hide_render or in_actor_or_proxy(obj): continue
         if obj.type in ("MESH", "CURVE", "SURFACE", "META", "FONT") or (obj.type == "EMPTY" and obj.chstage.script_object):
             result.append(obj)
     return result
@@ -261,11 +281,12 @@ def export_stage_glb(scene, path, keeper=None, issues=None):
     view_layer = bpy.context.view_layer if bpy.context.scene == scene else scene.view_layers[0]
     selected = [obj for obj in scene.objects if obj.select_get(view_layer=view_layer)]
     try:
-        for obj in scene.objects: obj.select_set(obj in objects, view_layer=view_layer)
-        _EXPORT.update(active=True, keeper=keeper or sidecars.Keeper(), materials={})
-        with bpy.context.temp_override(scene=scene, view_layer=view_layer), materials.vertex_alpha_for_export(exported_materials(objects)):
-            gltf_io.export_glb(path, fps=scene.render.fps, use_selection=True, export_cameras=False, export_lights=False,
-                               export_apply=True, export_vertex_color="ACTIVE")
+        with actor_tools.shown(objects, view_layer):
+            for obj in scene.objects: obj.select_set(obj in objects, view_layer=view_layer)
+            _EXPORT.update(active=True, keeper=keeper or sidecars.Keeper(), materials={})
+            with bpy.context.temp_override(scene=scene, view_layer=view_layer), materials.vertex_alpha_for_export(exported_materials(objects)):
+                gltf_io.export_glb(path, fps=scene.render.fps, use_selection=True, export_cameras=False, export_lights=False,
+                                   export_apply=True, export_vertex_color="ACTIVE")
     finally:
         _EXPORT.update(active=False, keeper=None)
         for obj in scene.objects: obj.select_set(obj in selected, view_layer=view_layer)
@@ -276,6 +297,7 @@ def export_stage_glb(scene, path, keeper=None, issues=None):
 def resolve(message, names, scene):
     """(object name, material name) that a validator message refers to, or (None, None)."""
     file, _, text = message.partition(": ")
+    if file in names.get("models", {}): return names["models"][file], None
     if file == "stage.glb":
         node = re.search(r"node \d+ \(([^)]*)\)", text)
         if node and node.group(1) in scene.objects: return node.group(1), None

@@ -4,6 +4,8 @@ import textwrap
 import bpy
 from bpy.types import Panel, UIList
 
+from . import actor_tools, camera_tools, groups, lighting_tools, scripts_ui, sidecars
+
 CATEGORY = "CH Stage"
 HIDDEN_FIELDS = {"rna_type", "kept", "kept_extras", "source_name"}
 
@@ -117,6 +119,9 @@ class CHSTAGE_PT_object(SidebarPanel, Panel):
     def draw(self, context):
         layout = self.layout
         obj = context.object; props = obj.chstage
+        if actor_tools.actor_root(obj) not in (None, obj):
+            layout.label(text=f"Part of the actor '{actor_tools.actor_root(obj).name}' (see Actor)", icon="ARMATURE_DATA")
+            return
         layout.prop(props, "marker")
         if props.marker == "BAND": layout.prop(props, "band_role")
         elif props.marker == "WAYPOINT": layout.prop(props, "waypoint_name")
@@ -142,11 +147,14 @@ class CHSTAGE_PT_object(SidebarPanel, Panel):
             box.prop(props, "object_script")
 
 
-def draw_point(layout, point, empty=False):
+def draw_point(layout, point, empty=False, scene=None):
     row = layout.row(align=True); row.prop(point, "anchor_role"); row.prop(point, "anchor_part", text="")
     if point.anchor_part == "bone" and point.anchor_role != "world": layout.prop(point, "anchor_bone")
     if point.anchor_role not in ("world", "none") and point.anchor_part != "root":
-        layout.label(text="Blender shows the point relative to the performer root", icon="INFO")
+        frames = json.loads(scene.chstage.anchor_frames) if scene is not None and scene.chstage.anchor_frames else {}
+        joint = sidecars.joint_name(point.anchor_part, point.anchor_bone) if point.anchor_part != "bone" or point.anchor_bone else ""
+        if joint in frames.get(point.anchor_role, {}): layout.label(text="Blender shows the point relative to the rig bone", icon="ARMATURE_DATA")
+        else: layout.label(text="Blender shows the point relative to the performer root", icon="INFO")
     row = layout.row(align=True); row.prop(point, "look_at_role")
     if point.look_at_role not in ("none", "world"): row.prop(point, "look_at_part", text="")
     if point.look_at_part == "bone" and point.look_at_role not in ("none", "world"): layout.prop(point, "look_at_bone")
@@ -168,20 +176,20 @@ class CHSTAGE_PT_shot(SidebarPanel, Panel):
         obj = context.object
         if obj.type == "EMPTY":
             layout.label(text="Settings when this empty is a shot point:")
-            draw_point(layout, obj.chstage.point, empty=True)
+            draw_point(layout, obj.chstage.point, empty=True, scene=context.scene)
             return
         shot = obj.chstage.shot
         layout.prop(shot, "enabled")
         if not shot.enabled:
             layout.label(text="Settings when this camera is a shot point:")
-            draw_point(layout, obj.chstage.point)
+            draw_point(layout, obj.chstage.point, scene=context.scene)
             return
         layout.prop(shot, "shot_name")
         layout.prop(shot, "type"); layout.prop(shot, "control"); layout.prop(shot, "tag")
         layout.label(text="Groups (wide, guitarist, bassist, singer, drummer, orbit, ...)")
         edit_list(layout, "OBJECT", shot, "groups", "chstage.shot.groups", rows=2)
         box = layout.box(); box.label(text="First point: this camera")
-        draw_point(box, obj.chstage.point)
+        draw_point(box, obj.chstage.point, scene=context.scene)
         layout.label(text="More points")
         edit_list(layout, "OBJECT", shot, "more_points", "chstage.shot.more_points", rows=1)
         layout.operator("chstage.add_shot_point", icon="EMPTY_SINGLE_ARROW")
@@ -223,6 +231,15 @@ class CHSTAGE_PT_lighting(SidebarPanel, Panel):
     def draw(self, context):
         layout = self.layout
         props = context.scene.chstage
+        box = layout.box()
+        box.prop(props, "lighting_preview", icon="LIGHT_SUN")
+        row = box.row(align=True)
+        row.active = props.lighting_preview
+        row.prop(props, "preview_mood", text="")
+        if props.preview_mood not in ("", "NONE"): row.operator("chstage.preview_step", text="", icon="FRAME_NEXT")
+        snapshot = lighting_tools.preview_snapshot(context.scene)
+        if props.lighting_preview and snapshot is not None: box.label(text=f"Showing the snapshot '{snapshot.name}'", icon="RENDER_STILL")
+        box.prop(props, "beam_overlay")
         layout.label(text="Snapshots")
         row = layout.row()
         row.template_list("UI_UL_list", "snapshots", props, "snapshots", props, "snapshots_index", rows=3)
@@ -263,12 +280,230 @@ class CHSTAGE_PT_crowd_cameras(SidebarPanel, Panel):
         edit_list(layout, "SCENE", props, "camera_notes", "chstage.camera_notes", rows=2)
 
 
+class CHSTAGE_PT_actor(SidebarPanel, Panel):
+    bl_label = "Actor"
+
+    @classmethod
+    def poll(cls, context):
+        return actor_tools.actor_root(context.object) is not None
+
+    def draw(self, context):
+        layout = self.layout
+        root = actor_tools.actor_root(context.object)
+        props = root.chstage.actor
+        layout.label(text=f"Actor root: {root.name}", icon="ARMATURE_DATA")
+        layout.prop(props, "actor_name")
+        layout.prop(props, "model_path")
+        changed = actor_tools.has_model(root) and props.blob is not None and actor_tools.model_changed(root)
+        if props.blob is None: status, icon = "Export writes the Blender model", "EXPORT"
+        elif props.model_mode == "PACKED" or not changed: status, icon = "Export writes the packed GLB of the package", "PACKAGE"
+        else: status, icon = "The model changed: export writes the Blender model", "MODIFIER"
+        if props.model_mode == "BLENDER": status, icon = "Export writes the Blender model", "EXPORT"
+        layout.label(text=status, icon=icon)
+        layout.prop(props, "model_mode")
+        col = layout.column(align=True)
+        col.prop(props, "clip")
+        col.prop(props, "playback")
+        col.prop(props, "fps")
+        clips = json.loads(props.clips_json or "[]") or actor_tools.clip_names(root)
+        loaded = set(actor_tools.clip_names(root))
+        box = layout.box()
+        box.label(text=f"Clips: {len(loaded)} of {len(clips) or len(loaded)} in Blender")
+        flow = box.grid_flow(columns=2, align=True)
+        for name in clips:
+            row = flow.row(align=True)
+            row.enabled = name in loaded
+            row.operator("chstage.actor_play_clip", text=name, icon="PLAY" if name == props.clip else "ACTION").clip = name
+        if props.blob is not None and len(loaded) < len(clips):
+            box.operator("chstage.actor_clips", icon="IMPORT").all_clips = True
+        col = layout.column()
+        col.prop(props, "light_group")
+        col.prop(props, "role")
+        row = col.row(); row.prop(props, "use_initially_visible", text=""); sub = row.row(); sub.active = props.use_initially_visible; sub.prop(props, "initially_visible")
+        row = col.row(); row.prop(props, "use_created", text=""); sub = row.row(); sub.active = props.use_created; sub.prop(props, "created")
+        col.prop(props, "script_object")
+        col.prop(props, "script")
+        col.prop(props, "animation_events")
+        col.prop(props, "write_scale")
+        layout.label(text="Placement and scale: the transform of the actor root", icon="INFO")
+        layout.label(text="Cue actions")
+        if root == context.object:
+            edit_list(layout, "OBJECT", props, "actions", "chstage.actor.actions", rows=1)
+        else:
+            for action in props.actions: layout.label(text=f"{action.name}: {action.clips}")
+
+
+class CHSTAGE_PT_actors(SidebarPanel, Panel):
+    bl_label = "Actors"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        layout = self.layout
+        roots = actor_tools.actor_roots(context.scene)
+        if not roots: layout.label(text="No actors. Select an armature and click Make Actor")
+        for root in roots:
+            props = root.chstage.actor
+            row = layout.row(align=True)
+            row.operator("chstage.select_actor", text=actor_tools.actor_name(root), icon="ARMATURE_DATA", emboss=False).name = root.name
+            row.label(text=props.clip or "first clip")
+            if props.blob is None: row.label(text="", icon="EXPORT")
+        layout.operator("chstage.make_actor", icon="ADD")
+
+
+class CHSTAGE_UL_scripts(UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_property, index=0, flt_flag=0):
+        row = layout.row(align=True)
+        row.label(text=item.label, icon={"OBJECT": "OBJECT_DATA", "EVENT": "SCRIPT", "SETTING": "PREFERENCES"}.get(item.kind, "DOT"))
+        if item.kind == "EVENT" and item.node_id: row.label(text=item.node_id)
+        row.label(text=item.info)
+        if item.objects: row.operator("chstage.script_jump", text="", icon="RESTRICT_SELECT_OFF", emboss=False).index = index
+
+    def filter_items(self, context, data, propname):
+        rows = getattr(data, propname)
+        text = self.filter_name.lower()
+        flags = [self.bitflag_filter_item if not text or text in f"{r.label} {r.info} {r.node_id} {r.objects}".lower() else 0 for r in rows]
+        return flags, []
+
+
+class CHSTAGE_PT_scripts(SidebarPanel, Panel):
+    bl_label = "Script Bank"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    @classmethod
+    def poll(cls, context):
+        return scripts_ui.script_item(context.scene) is not None
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        props = scene.chstage
+        row = layout.row(align=True)
+        row.prop(props, "script_view", expand=True)
+        row.operator("chstage.scripts_reload", text="", icon="FILE_REFRESH")
+        layout.template_list("CHSTAGE_UL_scripts", "", props, "script_rows", props, "script_rows_index", rows=6)
+        layout.label(text="Read-only view of the GH3 scripts; simple values can change", icon="INFO")
+        if not 0 <= props.script_rows_index < len(props.script_rows): return
+        item = props.script_rows[props.script_rows_index]
+        box = layout.box()
+        if item.kind == "OBJECT":
+            box.label(text=f"Object {item.label}")
+            if item.info: box.label(text=item.info)
+            if item.objects:
+                box.label(text=f"Blender: {item.objects}", icon="OBJECT_DATA")
+                box.operator("chstage.script_jump", icon="RESTRICT_SELECT_OFF").index = props.script_rows_index
+            for path, label, kind, value, editable in scripts_ui.node_rows(scene, item.node_id):
+                row = box.row(align=True)
+                row.label(text=label)
+                row.label(text=value)
+                if editable:
+                    op = row.operator("chstage.script_set", text="", icon="GREASEPENCIL")
+                    op.path, op.value = path, value
+        elif item.kind == "EVENT":
+            box.label(text=f"Event: {item.label}")
+            box.label(text=f"Script: {item.info}")
+            if item.node_id: box.label(text=f"Object: {item.node_id}")
+            if item.objects: box.operator("chstage.script_jump", icon="RESTRICT_SELECT_OFF").index = props.script_rows_index
+        else:
+            box.label(text=f"{item.label}: {item.info}")
+            if item.editable:
+                op = box.operator("chstage.script_set", icon="GREASEPENCIL")
+                op.path, op.value = item.path, item.info
+
+
+class CHSTAGE_UL_shots(UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_property, index=0, flt_flag=0):
+        shot = item.chstage.shot
+        row = layout.row(align=True)
+        row.label(text=shot.shot_name or item.name, icon="VIEW_CAMERA" if context.scene.camera == item else "CAMERA_DATA")
+        row.label(text=shot.type)
+        row.label(text=", ".join(g.name for g in shot.groups))
+
+    def filter_items(self, context, data, propname):
+        objects = getattr(data, propname)
+        scene = context.scene
+        text = self.filter_name.lower()
+        flags = [self.bitflag_filter_item if camera_tools.shot_visible(obj, scene) and (not text or text in (obj.chstage.shot.shot_name or obj.name).lower())
+                 else 0 for obj in objects]
+        order = sorted(range(len(objects)), key=lambda i: (objects[i].chstage.order, objects[i].name))
+        return flags, [order.index(i) for i in range(len(objects))]
+
+
+class CHSTAGE_PT_shots(SidebarPanel, Panel):
+    bl_label = "Camera Shots"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        props = scene.chstage
+        row = layout.row(align=True)
+        row.operator_menu_enum("chstage.shot_group", "group", text=props.shot_group or "All groups", icon="FILTER")
+        row.prop(props, "shot_type", text="")
+        layout.template_list("CHSTAGE_UL_shots", "", scene, "objects", props, "shots_index", rows=6)
+        index = props.shots_index
+        if 0 <= index < len(scene.objects) and scene.objects[index].type == "CAMERA" and scene.objects[index].chstage.shot.enabled:
+            obj = scene.objects[index]
+            row = layout.row(align=True)
+            row.operator("chstage.preview_shot", text="Preview", icon="VIEW_CAMERA").name = obj.name
+            for number, ref in enumerate(obj.chstage.shot.more_points, start=2):
+                if ref.target is not None: row.operator("chstage.preview_point", text=f"Point {number}").name = ref.target.name
+        box = layout.box()
+        box.label(text="Camera bone anchors")
+        total, exact = camera_tools.anchor_point_count(scene)
+        if props.anchor_frames:
+            box.label(text=f"Rig proxies: {exact} of {total} bone-anchored points on rig bones", icon="ARMATURE_DATA")
+            box.label(text=bpy.path.basename(props.rig_library) or props.rig_library)
+            box.operator("chstage.rigs", text="Remove Rig Proxies", icon="X").action = "UNLOAD"
+        else:
+            if total: box.label(text=f"{total} bone-anchored points use the performer root", icon="ERROR")
+            box.operator("chstage.rigs", text="Load GH3 Rig Proxies", icon="ARMATURE_DATA").action = "LOAD"
+
+
+class CHSTAGE_PT_groups(SidebarPanel, Panel):
+    bl_label = "Groups and Flags"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def group_row(self, layout, view_layer, kind, name, objects, label, extra=""):
+        row = layout.row(align=True)
+        hidden = groups.is_hidden(view_layer, objects)
+        op = row.operator("chstage.group", text="", icon="HIDE_ON" if hidden else "HIDE_OFF", emboss=False)
+        op.kind, op.name, op.action = kind, name, "TOGGLE"
+        row.label(text=f"{label} ({len(objects)}){extra}")
+        op = row.operator("chstage.group", text="", icon="RESTRICT_SELECT_OFF", emboss=False)
+        op.kind, op.name, op.action = kind, name, "SELECT"
+        op = row.operator("chstage.group", text="", icon="SOLO_ON", emboss=False)
+        op.kind, op.name, op.action = kind, name, "ISOLATE"
+        return row
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        view_layer = context.view_layer
+        row = layout.row(align=True)
+        row.operator("chstage.start_state", text="Start State", icon="PLAY").action = "START"
+        row.operator("chstage.start_state", text="Show All", icon="HIDE_OFF").action = "ALL"
+        layout.label(text="Visibility groups")
+        visibility = groups.visibility_groups(scene)
+        if not visibility: layout.label(text="None", icon="DOT")
+        for name, (objects, start) in visibility.items():
+            state = {True: ", visible at start", False: ", hidden at start", None: ", mixed start state"}[start]
+            self.group_row(layout, view_layer, "VISIBILITY", name, objects, name, state)
+        layout.label(text="Node flags")
+        for flag, label, _ in groups.FLAGS:
+            objects = groups.flag_members(scene, flag)
+            if objects: self.group_row(layout, view_layer, "FLAG", flag, objects, label)
+        layout.label(text="Light groups")
+        layout.prop(scene.chstage, "light_group_overlay")
+        for name, objects in groups.light_groups(scene).items():
+            self.group_row(layout, view_layer, "LIGHT", name, objects, name)
+
+
 class CHSTAGE_UL_kept_files(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_property, index=0, flt_flag=0):
         from .package_open import source_status
         status = source_status(item)
         row = layout.row(align=True)
-        row.label(text=item.path, icon="TEXT" if item.text else "FILE")
+        row.label(text=item.path, icon="TEXT" if item.text else "PACKAGE" if item.blob else "FILE")
         if item.entry: row.label(text=item.entry)
         if status not in ("text", "ok"): row.label(text=status, icon="ERROR")
 
@@ -330,8 +565,10 @@ class CHSTAGE_PT_material(Panel):
             for name in ("flipbook_columns", "flipbook_rows", "flipbook_fps", "flipbook_offset"): layout.prop(props, name)
 
 
-CLASSES = (CHSTAGE_UL_rows, CHSTAGE_UL_issues, CHSTAGE_UL_kept_files, CHSTAGE_PT_stage, CHSTAGE_PT_manifest, CHSTAGE_PT_kept_files, CHSTAGE_PT_object, CHSTAGE_PT_shot,
-           CHSTAGE_PT_light, CHSTAGE_PT_lighting, CHSTAGE_PT_crowd_cameras, CHSTAGE_PT_material)
+CLASSES = (CHSTAGE_UL_rows, CHSTAGE_UL_issues, CHSTAGE_UL_kept_files, CHSTAGE_UL_scripts, CHSTAGE_UL_shots,
+           CHSTAGE_PT_stage, CHSTAGE_PT_manifest, CHSTAGE_PT_kept_files, CHSTAGE_PT_object, CHSTAGE_PT_actor, CHSTAGE_PT_shot,
+           CHSTAGE_PT_light, CHSTAGE_PT_lighting, CHSTAGE_PT_shots, CHSTAGE_PT_actors, CHSTAGE_PT_scripts, CHSTAGE_PT_groups,
+           CHSTAGE_PT_crowd_cameras, CHSTAGE_PT_material)
 
 
 def register():

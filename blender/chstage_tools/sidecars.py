@@ -8,6 +8,8 @@ docs/PACKAGE-FORMAT.md section 5). A Blender vector (x, y, z) is (x, z, y) at ru
 
 import json
 import math
+import re
+import zlib
 
 import numpy as np
 
@@ -25,6 +27,9 @@ BLENDER_LIGHT_TYPES = {"POINT": "Point", "SUN": "Dir", "SPOT": "Spot", "AREA": "
 RUNTIME_LIGHT_TYPES = {"Ambient": "POINT", "Dir": "SUN", "Point": "POINT", "Spot": "SPOT"}
 ENTRY_ORDER = ("model", "placements", "cameras", "lighting", "scripts", "actors")
 FILES = {"model": "stage.glb", "placements": "placements.json", "cameras": "cameras.json", "lighting": "lighting.json"}
+# Anchor parts and their GH3 bones (pipeline/stagepack/pack.py anchor()).
+PART_BONES = {"head": "bone_head", "hand_left": "Bone_Palm_L", "hand_right": "Bone_Palm_R"}
+PLAYBACK = ("loop", "hold")
 OPTIONAL_PLACEMENTS = ("waypoints", "effects", "crowd")
 # Material extras that the material panel edits. The add-on keeps the other gh3* keys (for example the GH3 shader
 # record) without a change.
@@ -280,9 +285,42 @@ def band_frames(markers):
     return {m["role"]: runtime_frame(m["matrix"]) for m in markers if m["kind"] == "BAND"}
 
 
-def build_cameras(shots, notes, markers, issues, keeper=None, groups_owner=None):
-    """Bone anchors (head, hands, bone): the point is relative to the bone in the game. Blender has no animated
-    performer, so the Blender camera shows the point relative to the performer root (the same rule as open_cameras)."""
+def qb_key(name):
+    """GH3 checksum of a name (pipeline.gh3.formats.key)."""
+    return ~zlib.crc32(name.lower().encode()) & 0xFFFFFFFF
+
+
+def checksum_text(value):
+    """'0x' and 8 hex digits for a name or a checksum text."""
+    if re.fullmatch(r"0x[0-9a-fA-F]{8}", value): return value.lower()
+    if re.fullmatch(r"[0-9a-f]{8}", value): return "0x" + value
+    return f"0x{qb_key(value):08x}"
+
+
+def joint_name(part, bone=""):
+    """GLB joint name ('bone-<checksum>') of an anchor part: head, hand_left, hand_right, or bone with a bone name."""
+    if part == "bone": return "bone-" + (bone if re.fullmatch(r"[0-9a-f]{8}", bone) else f"{qb_key(bone):08x}")
+    return f"bone-{qb_key(PART_BONES[part]):08x}"
+
+
+def anchor_frame(anchor, band, anchors=None):
+    """(origin, rotation, exact) of the runtime frame of a camera anchor, or None when its role has no band placement.
+
+    anchors: role to {joint name: [position (3), rotation (9)]}, the bone frames of the proxy rig relative to the
+    performer root (rig.anchor_frames). A bone anchor without a rig frame uses the performer root (exact False)."""
+    role, _, part = anchor.partition(".")
+    if role not in band: return None
+    origin, frame = band[role]
+    if part in ("", "root"): return origin, frame, True
+    stored = (anchors or {}).get(role, {}).get(joint_name("bone", part[5:]) if part.startswith("bone.") else joint_name(part))
+    if stored is None: return origin, frame, False
+    values = np.asarray(stored, dtype=float)
+    return origin + frame @ values[:3], frame @ values[3:12].reshape(3, 3), True
+
+
+def build_cameras(shots, notes, markers, issues, keeper=None, groups_owner=None, anchors=None):
+    """A point is relative to its anchor. A bone anchor (head, hands, bone) uses the bone of the proxy rig (anchors);
+    without a rig, Blender shows the point relative to the performer root (the same rule as open_cameras)."""
     keeper = keeper or Keeper("compute")
     band = band_frames(markers)
     result = {"version": 1, "shots": {}, "groups": {}}
@@ -296,15 +334,16 @@ def build_cameras(shots, notes, markers, issues, keeper=None, groups_owner=None)
             anchor = point["anchor"]
             if anchor != "world":
                 role, _, part = anchor.partition(".")
-                if role not in band:
+                frame = anchor_frame(anchor, band, anchors)
+                if frame is None:
                     issues.error(f"shot '{name}': anchor {anchor} needs a band placement for {role}", point["object"])
                 else:
-                    origin, frame = band[role]
-                    position = frame.T @ (position - origin); rotation = frame.T @ rotation
-                    if part != "root":
+                    origin, axes, exact = frame
+                    position = axes.T @ (position - origin); rotation = axes.T @ rotation
+                    if not exact:
                         bone = f"bone {part[5:]}" if part.startswith("bone.") else f"{part} bone"
-                        issues.warn(f"shot '{name}': the game places the camera relative to the {bone}; "
-                                    "Blender shows it relative to the performer root", point["object"])
+                        issues.warn(f"shot '{name}': the game places the camera relative to the {bone}; Blender shows it relative "
+                                    "to the performer root (no GH3 library: set it in the add-on preferences)", point["object"])
             row = {"anchor": anchor, "position": clean(position)}
             if point.get("useRotation", True): row["rotation"] = clean(quaternion(rotation))
             elif not point.get("lookAt"): issues.error(f"shot '{name}': a point without rotation needs a look-at target", point["object"])
@@ -336,7 +375,29 @@ def build_cameras(shots, notes, markers, issues, keeper=None, groups_owner=None)
     return result
 
 
-def open_cameras(cameras, placements):
+def look_target(anchor, band, anchors=None):
+    """Runtime position that a point without rotation looks at: the rig bone, or 1.5 m above the performer root."""
+    frame = anchor_frame(anchor, band, anchors) if anchor not in (None, "", "none", "world") else None
+    if frame is None: return np.zeros(3)
+    origin, _, exact = frame
+    root = not anchor.partition(".")[2] or anchor.endswith(".root")
+    return origin if exact and not root else band[anchor.partition(".")[0]][0] + [0, LOOK_HEIGHT, 0]
+
+
+def point_matrix(point, band, anchors=None):
+    """Blender world matrix of a cameras.json point (runtime offset relative to its anchor)."""
+    position = np.asarray(point["position"], dtype=float)
+    rotation = quaternion_matrix(point["rotation"]) if "rotation" in point else None
+    frame = anchor_frame(point["anchor"], band, anchors) if point["anchor"] != "world" else None
+    if frame is not None:
+        origin, axes, _ = frame
+        position = origin + axes @ position
+        if rotation is not None: rotation = axes @ rotation
+    if rotation is None: rotation = look_rotation(position, look_target(point.get("lookAt"), band, anchors))
+    return frame_matrix(position, rotation, looks=True)
+
+
+def open_cameras(cameras, placements, anchors=None):
     """(shots, notes): Blender shot descriptions (point matrices, anchors, settings) with their source rows."""
     markers, _, _ = open_placements(placements)
     band = band_frames(markers)
@@ -349,16 +410,7 @@ def open_cameras(cameras, placements):
         for point in shot["points"]:
             role, part, bone = parse_anchor(point["anchor"])
             look_role, look_part, look_bone = parse_anchor(point.get("lookAt"))
-            position = np.asarray(point["position"], dtype=float)
-            rotation = quaternion_matrix(point["rotation"]) if "rotation" in point else None
-            if role in band:
-                origin, frame = band[role]
-                position = origin + frame @ position
-                if rotation is not None: rotation = frame @ rotation
-            if rotation is None:
-                target = band[look_role][0] + [0, LOOK_HEIGHT, 0] if look_role in band else np.zeros(3)
-                rotation = look_rotation(position, target)
-            points.append({"matrix": frame_matrix(position, rotation, looks=True), "fov": point["horizontalFov"],
+            points.append({"matrix": point_matrix(point, band, anchors), "fov": point["horizontalFov"],
                            "anchorRole": role, "anchorPart": part, "anchorBone": bone,
                            "lookAtRole": look_role, "lookAtPart": look_part, "lookAtBone": look_bone,
                            "screenOffset": point.get("screenOffset"), "useRotation": "rotation" in point})
@@ -372,6 +424,77 @@ def open_cameras(cameras, placements):
     notes = [{"note": int(number), "group": selector.get("group", ""), "tag": selector.get("tag", ""), "type": selector.get("type", ""),
               "enable": selector.get("enable"), "source": selector} for number, selector in cameras.get("notes", {}).items()]
     return shots, notes
+
+
+def point_offset(point, band, anchors=None):
+    """Runtime (position, rotation) of a Blender point description relative to its anchor (for re-anchoring)."""
+    position, rotation = runtime_frame(point["matrix"], looks=True)
+    frame = anchor_frame(point["anchor"], band, anchors) if point["anchor"] != "world" else None
+    if frame is None: return position, rotation
+    origin, axes, _ = frame
+    return axes.T @ (position - origin), axes.T @ rotation
+
+
+def offset_matrix(anchor, position, rotation, band, anchors=None):
+    """Blender world matrix of a runtime offset from an anchor (the inverse of point_offset)."""
+    frame = anchor_frame(anchor, band, anchors) if anchor != "world" else None
+    if frame is not None:
+        origin, axes, _ = frame
+        position, rotation = origin + axes @ position, axes @ rotation
+    return frame_matrix(position, rotation, looks=True)
+
+
+# Actors (animated scenery, actors.json).
+def scaled_matrix(position, rotation, scale):
+    """Blender world matrix of a runtime transform and a runtime scale (local axes)."""
+    m = blender_matrix(position, rotation)
+    m[:3, :3] = m[:3, :3] @ np.diag(SWAP @ np.asarray(scale, dtype=float))
+    return m
+
+
+def runtime_scale(matrix):
+    """Runtime scale (local axes) of a Blender world matrix."""
+    m = np.asarray(matrix, dtype=float)[:3, :3]
+    return SWAP @ np.linalg.norm(m, axis=0)
+
+
+def build_actors(actors, issues, keeper=None):
+    """actors.json of actor descriptions (object, name, model, matrix, and the optional fields), or None without actors."""
+    if not actors: return None
+    keeper = keeper or Keeper("compute")
+    result = {"version": 1, "actors": {}}
+    for actor in actors:
+        name = actor["name"]
+        if name in result["actors"]: issues.error(f"two actors have the name '{name}'", actor["object"]); continue
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", name): issues.error(f"actor name '{name}': use 1-128 letters, digits, '_', '.', or '-'", actor["object"])
+        row = {"model": actor["model"]}
+        for key, field in (("clip", "clip"), ("lightGroup", "lightGroup"), ("playback", "playback"), ("object", "scriptObject"), ("script", "script")):
+            if actor.get(field): row[key] = actor[field]
+        for key in ("created", "initiallyVisible"):
+            if actor.get(key) is not None: row[key] = bool(actor[key])
+        scale = clean(runtime_scale(actor["matrix"]))
+        if any(abs(v - 1) > 1e-6 for v in scale) or actor.get("writeScale"): row["scale"] = scale
+        if any(v <= 0 for v in scale): issues.error(f"actor '{name}': the scale must be positive", actor["object"])
+        if actor.get("animationEvents"): row["animationEvents"] = actor["animationEvents"]
+        row["transform"] = transform(actor["matrix"])
+        if actor.get("role"): row["role"] = actor["role"]
+        if actor.get("actions"): row["actions"] = {k: list(v) for k, v in actor["actions"].items()}
+        result["actors"][name] = keeper(row, actor.get("owner"), "actor")
+    return result
+
+
+def open_actors(actors):
+    """Blender actor descriptions of actors.json, with their source rows."""
+    result = []
+    for order, (name, row) in enumerate(actors.get("actors", {}).items()):
+        frame = row["transform"]
+        result.append({"name": name, "order": order, "model": row["model"], "clip": row.get("clip", ""), "playback": row.get("playback", ""),
+                       "lightGroup": row.get("lightGroup", ""), "role": row.get("role", ""), "scriptObject": row.get("object", ""),
+                       "script": row.get("script", ""), "animationEvents": row.get("animationEvents", ""),
+                       "created": row.get("created"), "initiallyVisible": row.get("initiallyVisible"), "writeScale": "scale" in row,
+                       "actions": {k: list(v) for k, v in row.get("actions", {}).items()},
+                       "matrix": scaled_matrix(frame["position"], frame["rotation"], row.get("scale", [1, 1, 1])), "source": row})
+    return result
 
 
 # Lighting.
@@ -420,6 +543,26 @@ def build_lighting(lights, snapshots, moods, colors, issues, keeper=None):
         if name not in result["moods"]: issues.error(f"lighting needs the mood '{name}'")
     for color in colors: result["colors"][color["name"]] = keeper(clean(color["color"]), color.get("owner"), "color")
     return result
+
+
+# Lighting preview (lighting_tools.py): Blender light power for a GH3 light.
+PREVIEW_SUN_STRENGTH = 3.0
+PREVIEW_MIN_RADIUS = 0.5
+# A point light that is at full intensity up to this distance (GH3 fill lights: near 80 m) lights the stage evenly.
+PREVIEW_FILL_NEAR = 20.0
+
+
+def preview_light(kind, intensity, near, far):
+    """(Blender light power, ambient intensity) that show a GH3 light: W for a point or spot light, W/m2 for a sun.
+
+    GH3 attenuation is linear from near to far; Blender uses the inverse square law. The power gives the GH3 intensity
+    at the middle of the near-far range (a preview, not a match). Ambient lights and fill lights (near >= 20 m) add to
+    the ambient color of the preview world. Blender has no negative lights: they get 0."""
+    if intensity <= 0: return 0.0, 0.0
+    if kind == "Ambient" or (kind in ("Point", "Spot") and near >= PREVIEW_FILL_NEAR): return 0.0, float(intensity)
+    if kind == "Dir": return intensity * PREVIEW_SUN_STRENGTH, 0.0
+    radius = max(PREVIEW_MIN_RADIUS, 0.5 * (near + far))
+    return intensity * 4 * math.pi ** 2 * radius ** 2, 0.0
 
 
 def open_lighting(lighting):

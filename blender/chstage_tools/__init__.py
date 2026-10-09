@@ -1,6 +1,6 @@
 """CH Stage Tools: make venue packages (.chstage, docs/PACKAGE-FORMAT.md) in Blender. See docs/BLENDER-ADDON.md."""
 
-from . import collect, operators, package_open, panels, properties
+from . import collect, lighting_tools, operators, package_open, panels, properties
 
 
 class glTF2ExportUserExtension(collect.ExportExtras):
@@ -28,6 +28,7 @@ def register():
     properties.register()
     operators.register()
     panels.register()
+    lighting_tools.register()
     bpy.types.TOPBAR_MT_file_new.append(menu_new_stage)
     bpy.types.TOPBAR_MT_file_import.append(menu_import)
     bpy.types.TOPBAR_MT_file_export.append(menu_export)
@@ -38,6 +39,7 @@ def unregister():
     bpy.types.TOPBAR_MT_file_export.remove(menu_export)
     bpy.types.TOPBAR_MT_file_import.remove(menu_import)
     bpy.types.TOPBAR_MT_file_new.remove(menu_new_stage)
+    lighting_tools.unregister()
     panels.unregister()
     operators.unregister()
     properties.unregister()

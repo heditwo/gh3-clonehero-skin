@@ -10,10 +10,10 @@ from pathlib import Path
 import bpy
 from mathutils import Matrix
 
-from . import collect, glb_tools, gltf_io, sidecars, template
+from . import actor_tools, blobs, camera_tools, collect, glb_tools, gltf_io, sidecars, template
 from .vendor.package_format.validate import Report, Source, Validator
 
-ADDON_FILES = ("model", "placements", "cameras", "lighting")
+ADDON_FILES = ("model", "placements", "cameras", "lighting", "actors")
 JSON_SUFFIX = ".json"
 
 # glTF import hooks (glTF2ImportUserExtension in __init__.py): map glTF indices to the Blender data that the importer makes.
@@ -181,7 +181,7 @@ def camera_object(collection, name, point):
 
 
 def open_cameras(scene, cameras, placements):
-    shots, notes = sidecars.open_cameras(cameras, placements)
+    shots, notes = sidecars.open_cameras(cameras, placements, collect.anchor_frames(scene))
     collection = child_collection(scene, "Camera Shots")
     for shot in shots:
         camera = camera_object(collection, shot["name"], shot["points"][0])
@@ -260,7 +260,7 @@ def open_lighting(scene, lighting):
 
 
 def open_kept_files(scene, source, manifest, path, skip):
-    """Keep the package files that the add-on does not make: JSON files as text blocks, other files by reference."""
+    """Keep the package files that the add-on does not make: JSON files as text blocks, other files packed."""
     entry_of = {value: key for key, value in manifest.get("entry", {}).items()}
     for name in sorted(manifest.get("files", {}) or source.names):
         if name in skip or name == "manifest.json": continue
@@ -273,7 +273,7 @@ def open_kept_files(scene, source, manifest, path, skip):
             text.from_string(data.decode("utf-8"))
             item.text = text
         else:
-            item.source = str(Path(path).resolve())
+            item.blob = blobs.store(f"{manifest.get('id', 'stage')}/{name}", data)
 
 
 def record_kept(scene):
@@ -287,8 +287,9 @@ def record_kept(scene):
     keeper.store()
 
 
-def open_package(path):
-    """Make a new scene from a .chstage zip or development folder. Returns (scene, issues)."""
+def open_package(path, library=None, all_clips=False):
+    """Make a new scene from a .chstage zip or development folder. Returns (scene, issues).
+    library: a GH3 library package for the proxy rigs (None: look next to the package; "": no rigs)."""
     path = Path(path)
     if path.name == "manifest.json": path = path.parent
     issues = sidecars.Issues()
@@ -332,20 +333,37 @@ def open_package(path):
     open_scenery(scene, source, entry, issues)
     placements = json.loads(source.read(entry["placements"]))
     keys = open_markers(scene, placements)
+    library = camera_tools.find_library(path) if library is None else library
+    if library:
+        try:
+            camera_tools.load_rigs(scene, library)
+        except (OSError, ValueError, KeyError) as error:
+            issues.warn(f"the GH3 library {library} has no band rigs ({error}); camera bone anchors use the performer roots")
     groups = open_cameras(scene, json.loads(source.read(entry["cameras"])), placements)
     if entry.get("lighting") in source.set: open_lighting(scene, json.loads(source.read(entry["lighting"])))
+    roots = []
+    if entry.get("actors") in source.set:
+        actors = json.loads(source.read(entry["actors"]))
+        roots = actor_tools.open_actors(scene, actors, source.read, child_collection(scene, "Actors"), all_clips)
+        skip.update(actor["model"] for actor in actors.get("actors", {}).values())
     for material in bpy.data.materials:
         for item in material.chstage.kept_images:
             if item.name in source.set: skip.add(item.name)
     open_kept_files(scene, source, manifest, path, skip)
-    scene.chstage.kept = json.dumps({"groups": {"source": groups}, "placementKeys": keys}, separators=(",", ":"))
+    scene.chstage.kept = json.dumps({"groups": {"source": groups}, "placementKeys": keys, "actorsFile": entry.get("actors") in source.set},
+                                    separators=(",", ":"))
     record_kept(scene)
+    actor_tools.record_fingerprints(roots)
+    actor_tools.frame_scene(scene, roots)
+    from . import scripts_ui
+    scripts_ui.rebuild(scene)
     return scene, issues.items
 
 
 def source_status(item):
-    """'text', 'ok', or why the kept file cannot be written."""
+    """'text', 'packed', 'ok', or why the kept file cannot be written."""
     if item.text is not None: return "text"
+    if item.blob is not None: return "packed"
     path = bpy.path.abspath(item.source)
     if not os.path.exists(path): return "source package missing"
     return "ok"

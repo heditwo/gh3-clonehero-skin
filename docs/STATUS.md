@@ -64,7 +64,7 @@ Version **0.9.8**. Clone Hero `v1.1.0.6142-final` with MelonLoader 0.7.3, Linux 
 - Windows: the five shader bundles have Direct3D 11 programs, and the Windows build draws the stage with Direct3D 11 and OpenGL Core (measured under Wine and DXVK only, not on Windows hardware). The Windows bindings and the BASS path are separate work.
 - One complete ten-venue run on one build with exit 0 for all venues.
 - See [PACKAGING-PLAN.md](PACKAGING-PLAN.md) for the release package plan. Package format v1 is frozen ([PACKAGE-FORMAT.md](PACKAGE-FORMAT.md)). The `packages` step of `scripts/regenerate.sh` writes the ten venues and the library as packages (`assets/packages/`); the mod does not read them yet. The C# importer is next.
-- The Blender add-on (CH Stage Tools, Blender 4.2 or later) makes, opens, validates, and exports venue packages (`.chstage`). The ten GH3 venues open and export again within the round-trip tolerances on Blender 4.2.23 and 5.2.1. Actors and script banks are kept as package files, not edited ([BLENDER-ADDON.md](BLENDER-ADDON.md)).
+- The Blender add-on (CH Stage Tools, Blender 4.2 or later) makes, opens, validates, and exports venue packages (`.chstage`). The ten GH3 venues open and export again within the round-trip tolerances on Blender 4.2.23 and 5.2.1. It edits actors (armatures with clips), browses the script bank, previews shots (with GH3 proxy rigs for bone anchors) and lighting, and lists visibility and light groups ([BLENDER-ADDON.md](BLENDER-ADDON.md)).
 
 ## Stability
 
