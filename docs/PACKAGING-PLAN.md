@@ -22,7 +22,7 @@ Prepare the mod for a public release to the Clone Hero community:
 | 5 | Release | Clean up the repository, then the owner posts it with a showcase video and a Discord link. No mod manager, gallery site, or index is needed for the first release. |
 | 6 | Chosen pitch | **Pitch A, growing into Pitch C** (section 5). Not Unity AssetBundles. |
 | 7 | Platforms | Linux and Windows for the first release. macOS later, with a community tester ([spike/macos.md](spike/macos.md)). |
-| 8 | Licenses | GH3-derived packages: `LicenseRef-GH3-Derived` (redistribution allowed, no changes, no sale). Blender add-on: GPL-3.0-or-later. The owner accepts the Windows SDK license for the shader build (`GH3_ACCEPT_WINDOWS_SDK_LICENSE=1`). |
+| 8 | Licenses | Repository: MIT ([LICENSE](../LICENSE); use is free, the copyright notice must stay). GH3-derived packages: `LicenseRef-GH3-Derived` (redistribution and changes allowed, no sale); the shipped packages stay exactly as GH3 has them, as the base for creators. Blender add-on: GPL-3.0-or-later. BetterGH3 and FastGH3 are credited ([CREDITS.md](../CREDITS.md)). The owner accepts the Windows SDK license for the shader build (`GH3_ACCEPT_WINDOWS_SDK_LICENSE=1`). |
 | 9 | Package sizes | GLB and PNG files are stored without compression in the zips. Library audio stays WAV. Movies stay PNG frames. Library extension `.chlib`. |
 | 10 | Direction | Charts without direction get generated cues by default (an option turns them off). The Rock Band `VENUE` mapping choices in [CUSTOM-CONTENT.md](CUSTOM-CONTENT.md#rock-band-venue-track) are accepted. |
 | 11 | Upstream | No upstream report of the MelonLoader Dobby hook-page bug. |
@@ -255,8 +255,6 @@ Steps 1 to 6 do not publish anything. These items remain:
 
 | Item | Kind |
 | --- | --- |
-| A license for the repository (except the add-on, which is GPL-3.0-or-later). The release script adds a `LICENSE` or `COPYING` file to the zips when it exists | Owner decision |
-| Decision 4: ask the BetterGH3 and FastGH3 authors, or draw replacement tap and cyan gems. Today the gems are credited only | Owner decision |
 | The public URL of the schema `$id` values (now `https://schemas.gh3skin.invalid/v1/…`, [PACKAGE-FORMAT.md](PACKAGE-FORMAT.md#171-for-the-orchestrator-or-the-owner) O6) | Owner decision |
 | Where to publish the zips, the showcase video, and the Discord post (decision 5) | Owner decision |
 | Windows on real hardware: the typical installation (`Documents\Clone Hero`), `install-windows.bat` with Windows PowerShell 5.1, paths longer than 260 characters, real drivers | Test on real hardware |

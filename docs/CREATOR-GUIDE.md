@@ -149,7 +149,7 @@ Rules:
 
 The `.blend` file holds all package data. Export does not need the source package after Open. Unchanged rows (shots, lights, materials, actors) export exactly as in the source. The script bank (`scripts.json`) shows the GH3 objects and values; you can change simple values, not the script code. See [BLENDER-ADDON.md sections 1.4 to 1.10](BLENDER-ADDON.md#14-start-from-a-package-for-example-a-gh3-venue).
 
-The GH3 venues have the license `LicenseRef-GH3-Derived` with the permission `modify: false`. Keep a changed GH3 venue for your own use.
+The GH3 venues have the license `LicenseRef-GH3-Derived` with the permissions `redistribute: true`, `modify: true`, and `commercial: false`. You can change a GH3 venue and share it under a new ID. Do not sell it.
 
 ## 5. Make a character on a GH3 rig
 

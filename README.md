@@ -51,7 +51,10 @@ Run all tests with `MISE_QUIET=1 scripts/test.sh`. `scripts/build-release.sh` ma
 | [PACKAGING-PLAN.md](docs/PACKAGING-PLAN.md) | Record of the package plan, the decisions, and the spike results; what remains before a release |
 | [ORCHESTRATOR-HANDOFF.md](docs/ORCHESTRATOR-HANDOFF.md) | How the work on this project is organized (agents, machine limits, environment) |
 
-## Credits
+## License and credits
+
+The code, tools, and documentation are MIT ([LICENSE](LICENSE)). The Blender add-on is GPL-3.0-or-later. The GH3 content and the BetterGH3 and FastGH3 art are not covered by these licenses.
+
 
 The tap gems come from BetterGH3, and the cyan Star Power phrase gems and the highway rails come from FastGH3. [CREDITS.md](CREDITS.md) lists all third-party work and tools.
 

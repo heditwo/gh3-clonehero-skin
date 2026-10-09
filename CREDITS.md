@@ -60,4 +60,4 @@ The example stage and character in `examples/` are made by this project with Ble
 ## Licenses of this repository
 
 - The CH Stage Tools add-on (`blender/chstage_tools/`) is GPL-3.0-or-later (`blender/chstage_tools/LICENSE`), as its manifest says. Blender add-ons that use the `bpy` API must have a GPL-compatible license.
-- The owner has not selected a license for the other parts of the repository yet.
+- The other parts of the repository are MIT ([LICENSE](LICENSE)): use them as you want, and keep the copyright notice. MIT does not cover the GH3 content and the content made from it, or the BetterGH3 and FastGH3 art.

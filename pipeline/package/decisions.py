@@ -19,7 +19,7 @@ def zip_method(path):
 
 # O2: license and permissions of the GH3-derived packages (the ten venues and the library).
 GH3_LICENSE = "LicenseRef-GH3-Derived"
-GH3_PERMISSIONS = {"redistribute": True, "modify": False, "commercial": False}
+GH3_PERMISSIONS = {"redistribute": True, "modify": True, "commercial": False}
 GH3_VENUE_AUTHORS = [{"name": "Neversoft", "role": "original venue"}]
 GH3_LIBRARY_AUTHORS = [{"name": "Neversoft", "role": "original band, crowd, animations, and audio"}]
 GH3_CHARACTER_AUTHORS = [{"name": "Neversoft", "role": "original band member"}]

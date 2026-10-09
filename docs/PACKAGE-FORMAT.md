@@ -99,7 +99,7 @@ Example (venue):
   "name": "Mitch's Moose Lounge",
   "authors": [{"name": "Neversoft", "role": "original venue"}],
   "license": "LicenseRef-GH3-Derived",
-  "permissions": {"redistribute": true, "modify": false, "commercial": false},
+  "permissions": {"redistribute": true, "modify": true, "commercial": false},
   "requires": [{"id": "gh3-band-v1", "version": "1.0.0"}],
   "entry": {"model": "stage.glb", "placements": "placements.json", "cameras": "cameras.json",
             "lighting": "lighting.json", "scripts": "scripts.json", "actors": "actors.json"},
@@ -522,12 +522,12 @@ The current library does not map file for file. Each part has a conversion step 
 
 ### 17.1 For the orchestrator or the owner
 
-The owner decided O1 to O5 as the converter defaults (PACKAGING-PLAN decisions 8 and 9): GLB and PNG stored, `LicenseRef-GH3-Derived` (redistribute yes, modify and commercial no), `.chlib`, WAV audio, and PNG movie frames. O6 is open (PACKAGING-PLAN section 10).
+The owner decided O1 to O5 as the converter defaults (PACKAGING-PLAN decisions 8 and 9): GLB and PNG stored, `LicenseRef-GH3-Derived` (redistribute and modify yes, commercial no), `.chlib`, WAV audio, and PNG movie frames. O6 is open (PACKAGING-PLAN section 10).
 
 | # | Question | Data |
 |---|---|---|
 | O1 | Permit DEFLATE for `.glb`? The plan says STORE (the converter default, `pipeline/package/decisions.py`). | All source-pack GLBs: 550 MB stored, 299 MB with DEFLATE level 6. The PNG images are 196 MB of this; the mesh data compresses to about one third. The validator only warns, so the change is one line |
-| O2 | License text for the GH3-derived packages (`LicenseRef-GH3-Derived`?) and the `permissions` values. The converter uses `LicenseRef-GH3-Derived`, redistribute yes, modify and commercial no. `example.studio` uses `CC0-1.0`. | Decision 1 accepts the IP risk |
+| O2 | License text for the GH3-derived packages (`LicenseRef-GH3-Derived`?) and the `permissions` values. The converter uses `LicenseRef-GH3-Derived`, redistribute and modify yes, commercial no. `example.studio` uses `CC0-1.0`. | Decision 1 accepts the IP risk |
 | O3 | Library file extension `.chlib`. The plan names `.chstage` and `.chchar` only. The converter uses `.chlib`. | — |
 | O4 | Audio in the library: the original MP3 data (smaller, as GH3 shipped it) or WAV of the current PCM (identical samples)? The converter writes WAV of the current PCM. | Current PCM gzip: 104 MB. WAV: 132.4 MB, 107.7 MB with DEFLATE 9 in the zip. MP3 size not measured. MP3 decoders can differ by a few samples at the start, which moves loop points |
 | O5 | Movies stay PNG frames (357 MB today) or change to a video codec (smaller, but needs a decoder or Unity `VideoPlayer`)? The converter keeps the PNG frames. | Movies are 357 MB of the 658 MB library zip |
