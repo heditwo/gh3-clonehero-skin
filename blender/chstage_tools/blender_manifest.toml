@@ -10,7 +10,7 @@ tags = ["Import-Export", "Scene"]
 
 blender_version_min = "4.2.0"
 
-# Blender add-ons that use the bpy API must be GPL-compatible. The repository has no license file yet (open question).
+# Blender add-ons that use the bpy API must be GPL-compatible. The license text is in LICENSE.
 license = ["SPDX:GPL-3.0-or-later"]
 
 [permissions]

@@ -199,6 +199,8 @@ class BuildTests(unittest.TestCase):
             with zipfile.ZipFile(archive) as bundle:
                 names = set(bundle.namelist())
                 self.assertIn("blender_manifest.toml", names)
+                # The manifest declares GPL-3.0-or-later; the license text goes with the extension.
+                self.assertTrue(bundle.read("LICENSE").decode().lstrip().startswith("GNU GENERAL PUBLIC LICENSE"))
                 self.assertFalse(any("__pycache__" in n for n in names))
                 for name in build.VALIDATOR_FILES:
                     self.assertEqual(bundle.read(f"vendor/package_format/{name}"), (ROOT / "pipeline" / "package" / name).read_bytes())

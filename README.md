@@ -1,88 +1,56 @@
 # GH3 gameplay skin for Clone Hero
 
-This mod makes Clone Hero look and play like Guitar Hero III. It replaces the highway, gems, sustains, hit effects, and HUD with the GH3 art and animation. It shows the original GH3 venues behind the highway, with the band, crowd, cameras, lights, and effects that the original songs direct.
+This mod makes Clone Hero look and play like Guitar Hero III. It replaces the highway, the gems, the sustains, the hit effects, and the HUD with the GH3 art and animation. Behind the highway, it shows the GH3 venues with the band, the crowd, the cameras, the lights, and the effects. Songs from GH3 get their original direction, and other charts get direction from their GH or Rock Band venue tracks or from their sections. Players add stages and characters as single files, and creators make them in Blender.
 
-The mod uses art and data from your own GH3 PC copy. The repository does not contain GH3 game files.
+![Mitch's Moose Lounge behind the GH3 highway](docs/images/gameplay-dive.png)
 
-## Requirements
-
-- Linux or Windows (64-bit) Clone Hero **v1.1.0.6142-final** with **MelonLoader 0.7.3**. Other game versions are rejected. Use a separate copy of the game for the mod.
-- .NET 6 runtime and a .NET SDK that builds `net6.0`. The tests and the GH3 song tool need the .NET 10 SDK.
-- For the 3D stages: your GH3 PC files, `uv`, Python 3.12, and FFmpeg. See [docs/PIPELINE.md](docs/PIPELINE.md).
-
-## Install
-
-```bash
-MISE_QUIET=1 scripts/regenerate.sh --clean     # once, and after a pipeline change
-MISE_QUIET=1 bash install.sh
-```
-
-`install.sh` builds the mod and copies it, the prepared assets, the stage and band packages, the shader bundles, and the test charts into the game. Set `GH3_CLONE_HERO_DIR` if the game is not at `~/games/clonehero-gh3-melon`. Without the generated packages, the skin works with the stock background.
-
-`scripts/build-release.sh` makes the release zips for Linux and Windows (with `install-linux.sh` or `install-windows.bat`) and the Blender add-on zip. Players install from these zips; see [PLAYER-GUIDE.md section 6](docs/PLAYER-GUIDE.md#6-install-the-mod) and [VERIFICATION.md](docs/VERIFICATION.md#release-build).
-
-## Play
-
-```bash
-MISE_QUIET=1 bash run-gh3-skin.sh
-```
-
-In the menus, push **F6** to select the venue (a venue, **Random**, or **Song's choice**) and the band members. See [docs/PLAYER-GUIDE.md](docs/PLAYER-GUIDE.md). For tests, `GH3_SKIN_STAGE` selects a venue with its pack ID and overrides the picker:
-
-```bash
-MISE_QUIET=1 GH3_SKIN_STAGE=gh3.hell bash run-gh3-skin.sh
-```
-
-| Pack ID | Venue |
+| The F6 picker | A stage and a character made with the Blender add-on |
 | --- | --- |
-| `gh3.party` | Backyard Bash |
-| `gh3.dive` | Mitch's Moose Lounge |
-| `gh3.video` | Video Shoot |
-| `gh3.artdeco` | Ye Olde Royal Odeon |
-| `gh3.prison` | Shanker's Island |
-| `gh3.wikker` | Desert Rock Tour |
-| `gh3.budokan` | Kaiju Megadome (default when the song selects no stage) |
-| `gh3.hell` | Lou's Inferno |
-| `gh3.soundcheck` | Soundcheck |
-| `gh3.credits` | Credits |
+| ![The stage and band picker](docs/images/picker.png) | ![The example club and the example guitarist](docs/images/creator/game-example.png) |
 
-`off` shows Clone Hero's stock background. `run-gh3-skin.sh --preview` plays a test chart with the bot (`GH3_SKIN_PREVIEW_SONG` selects the chart folder).
+Status: release readiness. Nothing is published yet.
 
-Songs from GH3 get their original direction (cameras, lights, band, pyro) when the chart's title and artist match. You can also add direction to your own charts. See [docs/CUSTOM-CONTENT.md](docs/CUSTOM-CONTENT.md).
+## For players
 
-## Limits
+- Clone Hero **v1.1.0.6142-final** (64-bit) with MelonLoader 0.7.3. The install script installs MelonLoader.
+- Install from the release zip for your system: **Linux** ([PLAYER-GUIDE.md, On Linux](docs/PLAYER-GUIDE.md#on-linux)) or **Windows** ([PLAYER-GUIDE.md, On Windows](docs/PLAYER-GUIDE.md#on-windows)).
+- **macOS**: not supported yet ([spike/macos.md](docs/spike/macos.md)).
+- In the menus, push **F6** to select the stage and the band ([PLAYER-GUIDE.md](docs/PLAYER-GUIDE.md)).
+- Add stages to `Custom/Stages` and characters to `Custom/Characters` ([PLAYER-GUIDE.md section 5](docs/PLAYER-GUIDE.md#5-add-stages-and-characters)).
 
-- One five-fret guitar player. Other layouts use the stock display.
-- 16:9 and other landscape screens. Portrait is not supported.
-- Clone Hero's fret buttons and strings stay.
+Build and install from the repository (it needs your GH3 PC files and the tools of [PIPELINE.md](docs/PIPELINE.md)):
 
-See [docs/STATUS.md](docs/STATUS.md) for the known differences from GH3.
+```bash
+MISE_QUIET=1 scripts/regenerate.sh --clean
+MISE_QUIET=1 GH3_CLONE_HERO_DIR=<game folder> bash install.sh
+MISE_QUIET=1 GH3_CLONE_HERO_DIR=<game folder> bash run-gh3-skin.sh
+```
 
-## Documentation
+`scripts/build-release.sh` makes the release zips for Linux and Windows and the Blender add-on zip ([VERIFICATION.md](docs/VERIFICATION.md#release-build)).
+
+Limits: one five-fret guitar player; landscape screens only. See [STATUS.md](docs/STATUS.md).
+
+## For creators
+
+- [CREATOR-GUIDE.md](docs/CREATOR-GUIDE.md): make a stage and a character with the CH Stage Tools add-on for Blender, edit a GH3 venue, and add direction to charts.
+- [examples/](examples/): an example stage and character (`.blend` and package, CC0-1.0).
+- References: [BLENDER-ADDON.md](docs/BLENDER-ADDON.md), [PACKAGE-FORMAT.md](docs/PACKAGE-FORMAT.md), [CUSTOM-CONTENT.md](docs/CUSTOM-CONTENT.md).
+
+## For developers
 
 | Document | Contents |
 | --- | --- |
-| [PLAYER-GUIDE.md](docs/PLAYER-GUIDE.md) | Select the stage and the band in the game; add stages and characters |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Runtime modules, pipeline, asset formats, data flow |
-| [PIPELINE.md](docs/PIPELINE.md) | Regenerate the assets from GH3 data |
-| [VERIFICATION.md](docs/VERIFICATION.md) | Tests, recordings, comparisons, runtime variables |
-| [STATUS.md](docs/STATUS.md) | Current status and known gaps |
+| [PIPELINE.md](docs/PIPELINE.md) | Make the assets and packages from the GH3 files |
+| [VERIFICATION.md](docs/VERIFICATION.md) | Tests, screenshots, recordings, runtime variables |
+| [STATUS.md](docs/STATUS.md) | Current status and known differences from GH3 |
 | [PARITY-NOTES.md](docs/PARITY-NOTES.md) | GH3 facts: addresses, constants, scripts, formulas |
-| [CUSTOM-CONTENT.md](docs/CUSTOM-CONTENT.md) | Stage packs, song direction, native song files, Moonscraper |
-| [PACKAGING-PLAN.md](docs/PACKAGING-PLAN.md) | Release package plan |
+| [PACKAGING-PLAN.md](docs/PACKAGING-PLAN.md) | Package plan and decisions |
 
-## Development
+Run all tests with `MISE_QUIET=1 scripts/test.sh`.
 
-```bash
-MISE_QUIET=1 scripts/test.sh
-```
+## Credits
 
-| Path | Contents |
-| --- | --- |
-| `src/` | The mod (C#) |
-| `pipeline/` | Asset pipeline (Python, `python -m pipeline.<step>`) |
-| `scripts/` | `regenerate.sh`, `test.sh`, capture and recording scripts |
-| `tests/` | C# logic tests and Python pipeline tests |
-| `tools/` | GH3 song tool, audits, comparison and reference tools |
-| `assets/` | Prepared HUD and gem textures (in Git) and generated stage assets (not in Git), one folder for each type ([assets/README.md](assets/README.md)) |
-| `charts/` | Test charts |
+The tap gems come from BetterGH3, and the cyan Star Power phrase gems and the highway rails come from FastGH3. [CREDITS.md](CREDITS.md) lists all third-party work and tools.
+
+This is a non-commercial fan project. It is not affiliated with Activision, Neversoft, RedOctane, Harmonix, or the Clone Hero developers. The GH3 content comes from the owner's copy of the game. The repository has the prepared HUD and gem textures (`assets/`), but not the GH3 game files; the pipeline makes the venues, the band, and the other stage content from the GH3 files.
