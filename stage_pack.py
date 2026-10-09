@@ -202,7 +202,7 @@ def split_mesh(material, packed, faces):
 def write_meshes(folder, meshes, materials, groups=None, skinned=False):
     folder.mkdir(parents=True, exist_ok=True)
     with (folder/"meshes.bin").open("wb") as stream:
-        stream.write((b"GH3BND01" if skinned else b"GH3STG03") + struct.pack("<I", len(meshes)))
+        stream.write((b"GH3BND01" if skinned else b"GH3STG04") + struct.pack("<I", len(meshes)))
         for material, count, vertices, faces in meshes:
             stream.write(struct.pack("<III", int(material, 16), count, len(faces)*3)); stream.write(vertices)
             stream.write(np.asarray(faces, dtype="<u4").tobytes())
@@ -210,6 +210,34 @@ def write_meshes(folder, meshes, materials, groups=None, skinned=False):
               "fieldOfView": 55, "materials": materials, "lightGroups": groups or []}
     write_json(folder/"stage.json", result)
     return result
+
+
+def gh3_shader_material(glb, data, texture_dir, images):
+    """Validate a GH3 template material: its template checksum, constant banks, sampler textures, and render state."""
+    fields(data, {"template", "vertexConstants", "pixelConstants", "textures", "addressing", "flags", "blend", "alphaRef", "drawOrder"},
+           {"template", "vertexConstants", "pixelConstants", "textures", "addressing", "flags", "blend", "alphaRef", "drawOrder"})
+    if not isinstance(data["template"], str) or not re.fullmatch(r"[0-9a-f]{8}", data["template"]): raise ValueError("Invalid GH3 template")
+    banks = {}
+    for bank, limit in (("vertexConstants", 64), ("pixelConstants", 64)):
+        rows = data[bank]
+        if not isinstance(rows, list) or len(rows) > limit: raise ValueError("Invalid GH3 constant bank")
+        banks[bank] = [[float(number(v, -1e9, 1e9)) for v in vector(row, 4)] for row in rows]
+    textures = data["textures"]; addressing = data["addressing"]
+    if not isinstance(textures, list) or len(textures) > 16 or not isinstance(addressing, list) or len(addressing) != len(textures):
+        raise ValueError("Invalid GH3 sampler list")
+    names = []
+    for index in textures:
+        if type(index) != int or not -1 <= index < len(glb.data.get("textures", [])): raise ValueError("Invalid GH3 sampler texture")
+        if index < 0: names.append(""); continue
+        image = f"{key('texture-'+str(index)):08x}"
+        if image not in images:
+            images[image] = glb.image(index); images[image].save(texture_dir/(image+".png"))
+        names.append(image)
+    if any(type(v) != int or not 0 <= v <= 255 for v in addressing): raise ValueError("Invalid GH3 sampler addressing")
+    for field, maximum in (("flags", 0xFFFFFFFF), ("blend", 12), ("alphaRef", 255)):
+        if type(data[field]) != int or not 0 <= data[field] <= maximum: raise ValueError(f"Invalid GH3 render state: {field}")
+    return {"template": data["template"], **banks, "textures": names, "addressing": addressing, "flags": data["flags"],
+            "blend": data["blend"], "alphaRef": data["alphaRef"], "drawOrder": float(number(data["drawOrder"], -1e6, 1e6))}
 
 
 def import_materials(glb, folder):
@@ -271,6 +299,10 @@ def import_materials(glb, folder):
             materials[name]["layerColor"] = [float(number(v, 0, 1000)) for v in vector(extras.get("gh3LayerColor"), 4)]
         if "gh3UvWibble" in extras:
             materials[name]["uvWibble"] = [float(number(v, -1000, 1000)) for v in vector(extras["gh3UvWibble"], 11)]
+        if "gh3Shader" in extras:
+            materials[name]["gh3"] = gh3_shader_material(glb, extras["gh3Shader"], texture_dir, images)
+            # Vertex colours of template materials exclude the base colour; the fallback surface model applies it instead.
+            materials[name]["color"] = [float(number(v, 0, 1)) for v in vector(pbr.get("baseColorFactor", [1, 1, 1, 1]), 4)]
         if materials[name]["crowd"]: materials[name].update(blend=3, cutoff=0.3)
         if extras.get("gh3Billboard"): materials[name]["billboard"] = True
         role = extras.get("gh3CrowdRole", "")
@@ -376,7 +408,7 @@ def compile_stage(source, destination):
                 for part in split_mesh(material, packed, faces):
                     mat = materials[material]
                     # The stage surface shader discards below the cutoff; only the unshaded particle-shader fallback needs trimmed geometry.
-                    if mat["cutoff"] and mat["texture"] and not mat["crowd"] and not mat["shading"]:
+                    if mat["cutoff"] and mat["texture"] and not mat["crowd"] and not mat["shading"] and not mat.get("gh3"):
                         pair = mat["texture"], mat["cutoff"]
                         if pair not in masks: masks[pair] = alpha_region(images[pair[0]], pair[1])
                         part = trim_mesh(part, images[pair[0]], pair[1], masks[pair])

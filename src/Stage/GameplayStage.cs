@@ -139,6 +139,8 @@ internal sealed class GameplayStage
                 else _camera.transform.LookAt(_root.transform.position + new Vector3(pose.Target.X, pose.Target.Y, pose.Target.Z));
                 _camera.fieldOfView = pose.FieldOfView;
             }
+            if (_camera != null && _assets != null) ApplyDebugView(_camera, _assets);
+            if (_camera != null) SetTemplateGlobals(_camera, time);
             if (_camera != null) _crowd?.Face(_camera);
             if (_camera != null) _assets?.FaceBillboards(_camera);
             if (_camera != null && _assets != null && _assets.CharacterMaterials.Count > 0)
@@ -165,6 +167,49 @@ internal sealed class GameplayStage
             _attempted = true;
             MelonLogger.Warning($"GH3 stage stopped: {error.Message}");
         }
+    }
+
+    private static readonly int TimeId = Shader.PropertyToID("_Gh3Time");
+    private static readonly int ViewRightId = Shader.PropertyToID("_Gh3ViewRight");
+    private static readonly int ViewUpId = Shader.PropertyToID("_Gh3ViewUp");
+    private static readonly int ViewForwardId = Shader.PropertyToID("_Gh3ViewForward");
+    private static readonly int ViewEyeId = Shader.PropertyToID("_Gh3ViewEye");
+
+    // Engine constants of the translated GH3 templates: c155.x time, c120-c122 camera axes, c123 eye (world space).
+    // GH3's shader clock never runs negative; atlas templates with clamped samplers rely on that, so it starts with the intro.
+    private static void SetTemplateGlobals(Camera camera, double time)
+    {
+        static Vector4 V(Vector3 v, float w) => new() { x = v.x, y = v.y, z = v.z, w = w };
+        var view = camera.transform;
+        Shader.SetGlobalVector(TimeId, new Vector4 { x = (float)Math.Max(0, time + StageShowFlow.IntroLength) });
+        Shader.SetGlobalVector(ViewRightId, V(view.right, 0));
+        Shader.SetGlobalVector(ViewUpId, V(view.up, 0));
+        Shader.SetGlobalVector(ViewForwardId, V(view.forward, 0));
+        Shader.SetGlobalVector(ViewEyeId, V(view.position, 1));
+    }
+
+    // Capture aid: GH3_SKIN_DEBUG_VIEW="x,y,z,targetX,targetY,targetZ,fov[;...]" fixes the stage camera (cycling through the
+    // views every GH3_SKIN_DEBUG_VIEW_SECONDS of song time) and hides the highway; GH3_SKIN_DEBUG_SHOW="id,id" keeps those GH3 objects created.
+    private static readonly float[][] DebugViews = (Environment.GetEnvironmentVariable("GH3_SKIN_DEBUG_VIEW") ?? "")
+        .Split(';', StringSplitOptions.RemoveEmptyEntries)
+        .Select(view => view.Split(',').Select(value => float.Parse(value, System.Globalization.CultureInfo.InvariantCulture)).ToArray()).ToArray();
+    private static readonly float DebugViewSeconds = float.TryParse(Environment.GetEnvironmentVariable("GH3_SKIN_DEBUG_VIEW_SECONDS"),
+        System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var seconds) ? seconds : 4;
+    private static readonly string[] DebugShow = (Environment.GetEnvironmentVariable("GH3_SKIN_DEBUG_SHOW") ?? "")
+        .Split(',', StringSplitOptions.RemoveEmptyEntries);
+
+    private void ApplyDebugView(Camera camera, StageAssets assets)
+    {
+        foreach (var id in DebugShow)
+            if (assets.Objects.TryGetValue(id, out var item)) item.gameObject.SetActive(true);
+        if (DebugViews.Length == 0) return;
+        var index = (int)Math.Floor(Math.Max(0, _lastTime + StageShowFlow.IntroLength) / DebugViewSeconds) % DebugViews.Length;
+        if (DebugViews[index] is not { Length: 7 } view) return;
+        camera.transform.localPosition = new Vector3(view[0], view[1], view[2]);
+        camera.transform.LookAt(_root!.transform.position + new Vector3(view[3], view[4], view[5]));
+        camera.fieldOfView = view[6];
+        foreach (var (other, _) in _cameras) other.cullingMask = 0;
+        if (_playerCamera != null) _playerCamera.cullingMask = 0;
     }
 
     // Clone Hero holds the song clock at -1 s while the song loads. GH3's intro transition starts 8 s before the song,
@@ -233,6 +278,9 @@ internal sealed class GameplayStage
         var shader = _surfaceBundle.mainAsset?.Cast<Shader>() ?? throw new InvalidDataException("Stage surface shader is missing");
         shader.hideFlags |= HideFlags.DontUnloadUnusedAsset;
         if (!shader.isSupported) throw new InvalidDataException("Stage surface shader is not supported by this graphics API");
+        var templates = Path.Combine(library, "render", "stage-templates.json");
+        StageAssets.Templates = File.Exists(templates) ? StageShaderTemplates.Parse(File.ReadAllText(templates)) : null;
+        if (StageAssets.Templates == null) MelonLogger.Warning("GH3 material template table is missing. Run prepare-stage-shaders.py.");
         return shader;
     }
 

@@ -24,7 +24,8 @@ out vec2 surfaceMaskUv;
 out vec3 surfaceNormal;
 out vec3 surfaceWorld;
 out vec4 surfaceTangent;
-void main()
+// GH3_TEMPLATE_VERTEX
+void stage_main()
 {
     mat4 model = mat4(hlslcc_mtx4x4unity_ObjectToWorld[0], hlslcc_mtx4x4unity_ObjectToWorld[1], hlslcc_mtx4x4unity_ObjectToWorld[2], hlslcc_mtx4x4unity_ObjectToWorld[3]);
     mat4 viewProjection = mat4(hlslcc_mtx4x4unity_MatrixVP[0], hlslcc_mtx4x4unity_MatrixVP[1], hlslcc_mtx4x4unity_MatrixVP[2], hlslcc_mtx4x4unity_MatrixVP[3]);
@@ -52,6 +53,12 @@ void main()
     surfaceMaskUv = in_TEXCOORD3;
     surfaceNormal = mat3(model) * in_NORMAL0;
     surfaceTangent = vec4(mat3(model) * in_TANGENT0.xyz, in_TANGENT0.w);
+}
+// _Gh3Template.x selects a translated GH3 material template; zero keeps the stage surface model above.
+void main()
+{
+    if (_Gh3Template.x > 0.5) gh3_vertex_main();
+    else stage_main();
 }
 #endif
 #ifdef FRAGMENT
@@ -155,7 +162,8 @@ vec4 Character(vec4 albedo)
     }
     return vec4(mix(rim, base, edge) * light + specular, albedo.a);
 }
-void main()
+// GH3_TEMPLATE_FRAGMENT
+void stage_main()
 {
     vec4 albedo = texture(_MainTex, surfaceUv) * _Color;
     if (_Gh3Surface.x > 2.5)
@@ -187,5 +195,10 @@ void main()
     else if (_Gh3Surface.x > 0.5) color.rgb *= Light(0).xyz;
     color.rgb *= _Gh3Surface.w;
     SV_Target0 = color;
+}
+void main()
+{
+    if (_Gh3Template.x > 0.5) SV_Target0 = gh3_fragment_main();
+    else stage_main();
 }
 #endif

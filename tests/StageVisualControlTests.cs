@@ -101,6 +101,21 @@ internal static class StageVisualControlTests
             Check(animation.Transform(0) == new Vector4(1, .5f, 0, 0) && animation.Transform(.5) == new Vector4(1, .5f, 0, .5f), "The original Budokan atlas must follow its shader constants.");
             Check(animation.Transform(10, 0) == animation.Transform(0), "Poor performance must stop the Budokan atlas at its source offset.");
             Check(animation.Transform(.25, 2) != animation.Transform(.25, 4), "Medium and good performance must use their source atlas rates.");
+            // GH3.exe material bind: mode 0 opaque, 1 additive (SRCALPHA, ONE), 3 alpha blend; flags bit 6 disables the alpha test,
+            // bit 5 disables depth writes, bit 3 disables culling.
+            var opaque = StageGh3RenderState.From(0x40, 0, 0, 0);
+            Check(opaque is { SrcBlend: 1, DstBlend: 0, BlendOp: 0, ZWrite: true, AlphaTest: false, Cull: 2, Blended: false, Queue: 2000 }, "GH3 opaque materials draw without blending or alpha test.");
+            var additive = StageGh3RenderState.From(0x08, 1, 1, 30);
+            Check(additive is { SrcBlend: 5, DstBlend: 1, BlendOp: 0, ZWrite: true, AlphaTest: true, AlphaRef: 1, Cull: 0, Blended: true, Queue: 3030 },
+                "GH3 additive materials add source alpha × colour, keep the alpha test, and sort by their draw order.");
+            var blended = StageGh3RenderState.From(0x20, 3, 20, 10);
+            Check(blended is { SrcBlend: 5, DstBlend: 10, ZWrite: false, AlphaTest: true, AlphaRef: 20, Queue: 3010 }, "GH3 blend mode 3 is source-alpha blending.");
+            Check(StageGh3RenderState.From(0, 4, 0, 0) is { SrcBlend: 0, DstBlend: 5, BlendOp: 0 } && StageGh3RenderState.From(0, 12, 0, 0) is { SrcBlend: 1, DstBlend: 1, BlendOp: 2 },
+                "GH3 modulate and subtractive modes keep their D3D factors and operation.");
+            Check(StageGh3RenderState.Address(3) == (true, true) && StageGh3RenderState.Address(0) == (false, false), "GH3 sampler address bits clamp U and V.");
+            var templates = StageShaderTemplates.Parse("""{"version":1,"templates":{"9893d156":{"index":3,"name":"AnimatedTexture","shading":"unlit"}},"untranslated":{"12345678":"x: Dynamic branches"}}""");
+            Check(templates.TryGet("9893d156", out var template) && template.Index == 3 && !templates.TryGet("12345678", out _) && templates.Untranslated.Count == 1,
+                "The stage template table lists translated and untranslated GH3 templates.");
             var turn = new StageUvWibble(new[] { 0f, 0, 0, 0, 0, 0, 0, 0, .25f, .5f, .5f });
             var turned = turn.Transform(2);
             Check(MathF.Abs(turned.X - MathF.Cos(.5f)) < 1e-6f && MathF.Abs(turned.Y - MathF.Sin(.5f)) < 1e-6f && turned.Z == 0 && turned.W == 0 && turn.PivotU == .5f,

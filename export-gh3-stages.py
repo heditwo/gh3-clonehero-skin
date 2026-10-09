@@ -20,6 +20,7 @@ from gh3_script_bank import definitions, references, dependencies
 from prepare_stage_support import angles_matrix
 from stage_gltf import GlbWriter, matrix_quaternion, quaternion_matrix
 from stage_pack import load_json, write_json
+import gh3_shader
 
 
 def module(name):
@@ -58,6 +59,46 @@ def texture_dictionary(blob):
     return result
 
 
+def cube_map(blob):
+    """GH3 environment maps are DDS cube maps (DDSCAPS2_CUBEMAP)."""
+    return blob[:4] == b"DDS " and len(blob) >= 128 and struct.unpack_from("<I", blob, 112)[0] & 0x200 != 0
+
+
+def cube_to_equirect(blob):
+    """Resample an uncompressed DDS cube map to the latitude-longitude image that gh3_shader's gh3_cube() reads."""
+    height, width = struct.unpack_from("<2I", blob, 12)
+    flags, _, bits, *masks = struct.unpack_from("<7I", blob, 80)
+    mips = max(1, struct.unpack_from("<I", blob, 28)[0])
+    if width != height or bits != 32 or not flags & 0x40 or struct.unpack_from("<I", blob, 112)[0] & 0xFE00 != 0xFE00:
+        raise ValueError("Unsupported GH3 cube map layout")
+    pixels = np.frombuffer(blob, "<u4", offset=128)
+    face_words = sum((width >> level) ** 2 for level in range(mips))
+    def channel(mask, values):
+        shift = (mask & -mask).bit_length() - 1
+        return ((values & mask) >> shift).astype(np.uint8)
+    faces = []
+    for face in range(6):
+        level0 = pixels[face*face_words:face*face_words + width*width].reshape(width, width)
+        faces.append(np.stack([channel(mask, level0) for mask in masks], axis=-1))
+    out_height = 2 * width; out_width = 4 * width
+    v, u = np.meshgrid((np.arange(out_height) + 0.5) / out_height, (np.arange(out_width) + 0.5) / out_width, indexing="ij")
+    phi = (u - 0.5) * 2 * np.pi; theta = v * np.pi
+    x, y, z = np.sin(theta) * np.sin(phi), np.cos(theta), np.sin(theta) * np.cos(phi)
+    ax, ay, az = np.abs(x), np.abs(y), np.abs(z)
+    # D3D face selection and (sc, tc) per face: +X, -X, +Y, -Y, +Z, -Z.
+    face = np.where((ax >= ay) & (ax >= az), np.where(x > 0, 0, 1), np.where(ay >= az, np.where(y > 0, 2, 3), np.where(z > 0, 4, 5)))
+    major = np.choose(face, [ax, ax, ay, ay, az, az])
+    sc = np.choose(face, [-z, z, x, x, x, -x]) / major
+    tc = np.choose(face, [-y, -y, z, -z, -y, -y]) / major
+    column = np.clip(((sc + 1) / 2 * width).astype(int), 0, width - 1)
+    row = np.clip(((tc + 1) / 2 * width).astype(int), 0, width - 1)
+    image = np.zeros((out_height, out_width, 4), np.uint8)
+    for index in range(6):
+        selected = face == index
+        image[selected] = faces[index][row[selected], column[selected]]
+    return Image.fromarray(image, "RGBA")
+
+
 def decode_textures(materials, texture_blobs):
     images = {}
     for name, material in materials.items():
@@ -72,9 +113,15 @@ def decode_textures(materials, texture_blobs):
         if material.get("mask") not in texture_blobs: material.pop("mask", None)
         if material.get("layer", {}).get("texture") not in texture_blobs: material.pop("layer", None)
         if material["template"] == FLARE_TEMPLATE: material.update(billboard=True, doubleSided=True)
-        for name in (texture, material.get("lightmap"), material.get("mask"), material.get("layer", {}).get("texture")):
+        gh3 = material.get("gh3", {})
+        for slot, name in enumerate(gh3.get("textures", [])):
+            # The equirectangular image wraps in U and clamps in V, whatever the cube sampler's own address mode is.
+            if name in texture_blobs and cube_map(texture_blobs[name]): gh3["addressing"][slot] = 2
+        for name in (texture, material.get("lightmap"), material.get("mask"), material.get("layer", {}).get("texture"),
+                     *(name for name in gh3.get("textures", []) if name in texture_blobs)):
             if name and name not in images:
-                images[name] = Image.open(BytesIO(texture_blobs[name])).convert("RGBA")
+                blob = texture_blobs[name]
+                images[name] = cube_to_equirect(blob) if cube_map(blob) else Image.open(BytesIO(blob)).convert("RGBA")
     return images
 
 
@@ -92,18 +139,21 @@ def flag_scenery(entries, primary, gfx):
                 if sectors[index] != (source or node[key("Name")]): continue
                 if source:
                     # A clone node places its source sector's local geometry at the node's position, angles, and scale.
-                    vertices = bytearray(vertices); stride = len(vertices) // count
-                    scale = node.get(key("Scale"), (1, 1, 1)); angles = node.get(key("Angles"), (0, 0, 0)); origin = node[key("Pos")]
-                    for vertex in range(count):
-                        x, y, z, nx, ny, nz = struct.unpack_from("<6f", vertices, vertex*stride)
-                        position = stage.rotate((x*scale[0], y*scale[1], -z*scale[2]), angles)
-                        normal = stage.rotate((nx, ny, -nz), angles)
-                        struct.pack_into("<6f", vertices, vertex*stride, position[0]+origin[0], position[1]+origin[1], -(position[2]+origin[2]),
-                                         normal[0], normal[1], -normal[2])
-                    vertices = bytes(vertices)
+                    vertices = stage.place_vertices(vertices, count, node.get(key("Angles"), (0, 0, 0)), node[key("Pos")], node.get(key("Scale"), (1, 1, 1)))
                 materials[material] = scene_materials[material]
                 parts.append(((material, count, vertices, faces), f"{node.get(key('LightGroup'), key('None')):08x}", node))
     return materials, parts
+
+
+def report_templates(zone, materials):
+    """Warn about every scenery material that the stage shader cannot draw with its own GH3 template."""
+    for name, material in sorted(materials.items()):
+        if material.get("crowd"): continue
+        template = material.get("gh3", {}).get("template", material["template"])
+        try:
+            gh3_shader.translate(template)
+        except (gh3_shader.Unsupported, KeyError) as error:
+            print(f"WARNING: {zone} material {name} (template {template}) falls back to the approximate surface model: {error}")
 
 
 def label_group(value):
@@ -381,8 +431,10 @@ def export(source, scripts, global_entries, zone, directory, global_references=N
             if reference in {key("GP_"+zone[2:]+"_"+suffix) for suffix in suffixes}:
                 effects.setdefault(effect, []).append({"position": vector(node[key("Pos")]), "rotation": matrix_quaternion(angles_matrix(node.get(key("Angles"), [0,0,0])))})
     writer.save(directory/"stage.glb")
+    report_templates(zone, materials)
     graph = (global_references if global_references is not None else references(scripts.values())) | references(qbs)
     actors = export_actors(source, scripts, global_entries, entries, nodes, directory, zone, graph, script_values)
+    if actors: print(f"NOTE: {zone}: {len(actors)} skinned actors keep the approximate surface and character models (no GH3 template path for skinned meshes)")
     manifest = {"version": 1, "kind": "stage", "id": "gh3."+zone[2:], "name": VENUES[zone], "library": "gh3-band-v1",
                 "model": "stage.glb", "band": band, "waypoints": waypoints, "cameras": "cameras.json", "lighting": "lighting.json", "effects": effects, "actors": actors,
                 "scripts": "scripts.json"}

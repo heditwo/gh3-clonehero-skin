@@ -102,6 +102,48 @@ def crowd_uvs(vertices, count, faces, seed, stride):
         struct.pack_into("<2f", vertices, vertex*stride+24, (tile % 8+u)/8, 1-(tile//8+1-v)/3)
 
 
+# Extended static vertex: the GH3 vertex streams that the original vertex shaders read, unchanged: UV sets 0–3,
+# texcoord4/texcoord5 (the 0x03000000 and 0x0C000000 UV streams), binormal 0, position 1 (billboard pivot), and binormal 1.
+# Positions and directions use the stage mesh convention (z negated); UVs keep D3D's top-down V.
+GH3_STREAMS = struct.Struct("<12f3f3f3f")
+STATIC_STRIDE = 60 + GH3_STREAMS.size
+
+
+def material_record(data, offset, samples):
+    """The GH3 material data that selects and drives its template: constant banks, samplers, and render state."""
+    def bank(at):
+        count, start = values(data, offset + at, "II")
+        return [list(values(data, offset + start + i*16, "4f")) for i in range(count)]
+    return {"template": f"{word(data, offset + 160):08x}", "vertexConstants": bank(168), "pixelConstants": bank(176),
+            "textures": [f"{sample:08x}" for sample in samples],
+            # Per-sampler address bits (+234): bit 0 clamps U, bit 1 clamps V.
+            "addressing": list(data[offset + 234:offset + 234 + len(samples)]),
+            # Render state, as GH3's material bind applies it: flags (+204), blend mode (+216), alpha reference (+232).
+            "flags": word(data, offset + 204), "blend": word(data, offset + 216), "alphaRef": data[offset + 232],
+            "drawOrder": values(data, offset + 212, "f")[0]}
+
+
+def place_vertices(vertices, count, angles=(0, 0, 0), origin=(0, 0, 0), scale=(1, 1, 1)):
+    """Rotate, scale, and move stage-convention vertices (z negated), including the GH3 position-1 and binormal streams."""
+    vertices = bytearray(vertices); stride = len(vertices) // count
+    def point(x, y, z):
+        p = rotate((x*scale[0], y*scale[1], -z*scale[2]), angles)
+        return p[0] + origin[0], p[1] + origin[1], -(p[2] + origin[2])
+    def direction(x, y, z):
+        d = rotate((x, y, -z), angles)
+        return d[0], d[1], -d[2]
+    for vertex in range(count):
+        at = vertex*stride
+        x, y, z, nx, ny, nz = struct.unpack_from("<6f", vertices, at)
+        struct.pack_into("<6f", vertices, at, *point(x, y, z), *direction(nx, ny, nz))
+        if stride == STATIC_STRIDE:
+            streams = at + 60 + 48
+            b = struct.unpack_from("<3f", vertices, streams); p = struct.unpack_from("<3f", vertices, streams + 12)
+            b1 = struct.unpack_from("<3f", vertices, streams + 24)
+            struct.pack_into("<9f", vertices, streams, *direction(*b), *point(*p), *direction(*b1))
+    return bytes(vertices)
+
+
 def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, crowd_cards=True, include_nodes=()):
     count = values(data, 34, "H")[0]
     end = 32 + word(data, 36)
@@ -117,6 +159,7 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
             "blend": word(data, offset + 216),
             "cutoff": data[offset + 232] / 255,
             "doubleSided": word(data, offset + 220) != 0,
+            "gh3": material_record(data, offset, samples),
         }
         template = gh3_materials.templates().get(materials[name]["template"])
         if template is not None:
@@ -228,16 +271,24 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
             start = vertices_at + vertex * stride
             if weighted:
                 position, normal = weighted_vertices[vertex]
+                pivot, binormal, binormal1 = position, (0, 0, 0), (0, 0, 0)
                 cursor = start
             else:
                 position = values(data, start, "3f")
+                pivot = values(data, start + 12, "3f") if flags & 0x1000 else position
                 cursor = start + 12 + (12 if flags & 0x1000 else 0)
                 normal = values(data, cursor, "3f")
+                binormal = values(data, cursor + 12, "3f") if tangent_count else (0, 0, 0)
+                binormal1 = values(data, cursor + 24, "3f") if tangent_count > 1 else (0, 0, 0)
                 cursor += 12 + tangent_count * 12 + (4 if flags & 0x100 else 0)
             if node is not None and node.get(key("Class")) == key("LevelObject"):
                 angles = node.get(key("Angles"), (0, 0, 0))
                 position = tuple(a + b for a, b in zip(rotate(position, angles), node[key("Pos")]))
                 normal = rotate(normal, angles)
+                if not weighted:
+                    pivot = tuple(a + b for a, b in zip(rotate(pivot, angles), node[key("Pos")]))
+                    binormal = rotate(binormal, angles)
+                    binormal1 = rotate(binormal1, angles)
             color = (255, 255, 255, 255)
             if flags & 0x10:
                 a, r, g, b = values(data, cursor, "4B")
@@ -259,6 +310,9 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
             extra = cursor + uv_count * 8
             lightmap = values(data, extra, "2f") if flags & 0x0F000000 else (0, 0)
             expected = extra + (8 if flags & 0x0C000000 else 0) + (8 if flags & 0x03000000 else 0)
+            streams = [sets.get(n, (0, 0)) for n in range(4)] + [(0, 0), (0, 0)]
+            if flags & 0x0C000000: streams[5] = lightmap
+            if flags & 0x03000000: streams[4] = values(data, extra + (8 if flags & 0x0C000000 else 0), "2f")
             if expected != start + stride:
                 raise ValueError(f"Unsupported vertex layout {flags:08x}: {expected - start} != {stride}")
             floats = (*position[:2], -position[2], *normal[:2], -normal[2], uv[0], 1 - uv[1])
@@ -270,13 +324,16 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
             vertex_data.extend(struct.pack("<8f4B", *floats, *color))
             if not skinned:
                 vertex_data.extend(struct.pack("<6f", lightmap[0], 1 - lightmap[1], layer_uv[0], 1 - layer_uv[1], mask_uv[0], 1 - mask_uv[1]))
+                raw = (*(c for uv_pair in streams for c in uv_pair), binormal[0], binormal[1], -binormal[2], pivot[0], pivot[1], -pivot[2],
+                       binormal1[0], binormal1[1], -binormal1[2])
+                vertex_data.extend(GH3_STREAMS.pack(*(v if math.isfinite(v) else 0.0 for v in raw)))
             if skinned:
                 vertex_data.extend(weights[vertex] if weighted else struct.pack("<4B4f", 0, 0, 0, 0, 1, 0, 0, 0))
         faces = triangles(values(data, indices_at, f"{index_count}H"), kind)
         if any(max(face) >= vertex_count for face in faces):
             raise ValueError("Triangle index outside vertex buffer")
         if crowd_cards and materials[material]["template"] == "a17d40ed":
-            crowd_uvs(vertex_data, vertex_count, faces, index, 56 if skinned else 60)
+            crowd_uvs(vertex_data, vertex_count, faces, index, 56 if skinned else STATIC_STRIDE)
         if material not in materials:
             raise ValueError("Mesh has no material")
         if skinned or not flags & 0x0F000000:
@@ -335,7 +392,7 @@ def convert(pak_path, destination):
             material["crowd"] = True
     meshes = trim_prop_cutouts(meshes, materials, texture_dir)
     with (destination / "meshes.bin").open("wb") as output:
-        output.write(b"GH3STG03" + struct.pack("<I", len(meshes)))
+        output.write(b"GH3STG04" + struct.pack("<I", len(meshes)))
         for material, count, vertices, faces in meshes:
             output.write(struct.pack("<III", int(material, 16), count, len(faces) * 3))
             output.write(vertices)

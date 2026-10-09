@@ -44,6 +44,8 @@ internal sealed class StageMaterial
     public string Layer { get; set; } = "";
     public float[] LayerColor { get; set; } = Array.Empty<float>();
     public float[] UvWibble { get; set; } = Array.Empty<float>();
+    public StageGh3Material? Gh3 { get; set; }
+    public float[] Color { get; set; } = Array.Empty<float>();
     public int ShadingMode => Shading switch { "unlit" => 0, "ambient" => 1, "lit" => 2, "" => -1, _ => throw new InvalidDataException("Unknown stage shading mode") };
 }
 
@@ -83,6 +85,16 @@ internal sealed class StageAssets : IDisposable
     public List<(uint Object, uint Material, Renderer Renderer, StageMaterial Definition)> MaterialSurfaces { get; } = new();
     public List<(int Slot, Material Material, Texture? Original)> MovieSurfaces { get; } = new();
     public List<(Material Material, StageUvWibble Motion)> WibbleMaterials { get; } = new();
+    // Materials drawn by their translated GH3 template; their meshes carry the original GH3 vertex streams.
+    public Dictionary<Material, StageShaderTemplates.Template> TemplateMaterials { get; } = new();
+    public static StageShaderTemplates? Templates { get; set; }
+    private static readonly string[] SamplerNames = { "_MainTex", "_Gh3Lightmap", "_Gh3NormalTex", "_Gh3SpecularTex", "_Gh3LayerTex", "_Gh3MaskTex",
+        "_Gh3Tex6", "_Gh3Tex7", "_Gh3Tex8", "_Gh3Tex9" };
+    private static readonly int TemplateId = Shader.PropertyToID("_Gh3Template");
+    private static readonly HashSet<string> ReportedFallbacks = new();
+    // Comparison aid: GH3_SKIN_SKIP_TEMPLATES="all" or template checksums / 0x source materials draw with the approximate surface model.
+    private static readonly HashSet<string> SkippedTemplates = (Environment.GetEnvironmentVariable("GH3_SKIN_SKIP_TEMPLATES") ?? "")
+        .Split(',', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
 
     public void SetVisible(string group, bool? visible)
     {
@@ -114,6 +126,40 @@ internal sealed class StageAssets : IDisposable
         else material.DisableKeyword("_ALPHABLEND_ON");
         material.renderQueue = transparent ? 3000 : 2000;
         material.color = Color.white;
+        return material;
+    }
+
+    // GH3's material bind applied to the translated template (see StageGh3RenderState).
+    private Material MakeTemplateMaterial(Shader shader, StageGh3Material source, StageShaderTemplates.Template template,
+        Func<string, bool, bool, Texture2D> load)
+    {
+        var state = StageGh3RenderState.From(source.Flags, source.Blend, source.AlphaRef, source.DrawOrder);
+        var material = Own(new Material(shader));
+        material.SetInt("_SrcBlend", state.SrcBlend);
+        material.SetInt("_DstBlend", state.DstBlend);
+        material.SetInt("_BlendOp", state.BlendOp);
+        material.SetInt("_ZWrite", state.ZWrite ? 1 : 0);
+        material.SetInt("_ZTest", state.ZTest);
+        material.SetInt("_Cull", state.Cull);
+        material.SetColor("_Color", Color.white);
+        material.SetVector(TemplateId, new Vector4 { x = template.Index, y = state.AlphaTest ? 1 : 0, z = state.AlphaRef });
+        for (var i = 0; i < Math.Min(source.VertexConstants.Length, 16); i++)
+        {
+            var c = source.VertexConstants[i];
+            material.SetVector("_Gh3V" + i, new Vector4 { x = c[0], y = c[1], z = c[2], w = c[3] });
+        }
+        for (var i = 0; i < Math.Min(source.PixelConstants.Length, 16); i++)
+        {
+            var c = source.PixelConstants[i];
+            material.SetVector("_Gh3P" + i, new Vector4 { x = c[0], y = c[1], z = c[2], w = c[3] });
+        }
+        for (var i = 0; i < Math.Min(source.Textures.Length, SamplerNames.Length); i++)
+        {
+            if (source.Textures[i].Length == 0) continue;
+            var (clampU, clampV) = StageGh3RenderState.Address(source.Addressing[i]);
+            material.SetTexture(SamplerNames[i], load(source.Textures[i], clampU, clampV));
+        }
+        material.renderQueue = state.Queue;
         return material;
     }
 
@@ -256,11 +302,22 @@ internal sealed class StageAssets : IDisposable
             throw new InvalidDataException("Invalid stage definition");
         var shader = Shader.Find("Particles/Standard Unlit");
         if (shader == null) throw new InvalidOperationException("The stage shader is not available");
+        var meshPath = Path.Combine(directory, "meshes.bin");
+        string header;
+        using (var stream = File.OpenRead(meshPath)) header = System.Text.Encoding.ASCII.GetString(new BinaryReader(stream).ReadBytes(8));
+        var templateStreams = bones == null && header == "GH3STG04";
         var textures = new Dictionary<string, Texture2D>();
-        Texture2D LoadTexture(string name, TextureWrapMode wrap, bool linear = false)
+        Texture2D LoadAddressedTexture(string name, bool clampU, bool clampV)
+        {
+            var texture = LoadTexture(name, TextureWrapMode.Repeat, cacheSuffix: $":{(clampU ? 1 : 0)}{(clampV ? 1 : 0)}");
+            texture.wrapModeU = clampU ? TextureWrapMode.Clamp : TextureWrapMode.Repeat;
+            texture.wrapModeV = clampV ? TextureWrapMode.Clamp : TextureWrapMode.Repeat;
+            return texture;
+        }
+        Texture2D LoadTexture(string name, TextureWrapMode wrap, bool linear = false, string cacheSuffix = "")
         {
             if (name.Length != 8 || !name.All(Uri.IsHexDigit)) throw new InvalidDataException("Invalid stage texture name");
-            var cacheKey = linear ? name + ":linear" : name;
+            var cacheKey = (linear ? name + ":linear" : name) + cacheSuffix;
             if (textures.TryGetValue(cacheKey, out var texture)) return texture;
             texture = Own(new Texture2D(2, 2, TextureFormat.RGBA32, true, linear));
             if (!texture.LoadImage(new Il2CppStructArray<byte>(File.ReadAllBytes(Path.Combine(directory, "textures", name + ".png"))), true))
@@ -273,12 +330,35 @@ internal sealed class StageAssets : IDisposable
         var materials = new Dictionary<uint, Material>();
         foreach (var (key, source) in Definition.Materials)
         {
+            source.Gh3?.Validate();
+            StageShaderTemplates.Template? template = null;
+            if (source.Gh3 != null && surfaceShader != null && templateStreams && !source.Crowd)
+            {
+                if (SkippedTemplates.Contains("all") || SkippedTemplates.Contains(source.Gh3.Template) || SkippedTemplates.Contains(source.Source)) template = null;
+                else if (Templates != null && Templates.TryGet(source.Gh3.Template, out var found)) template = found;
+                else if (ReportedFallbacks.Add(source.Gh3.Template))
+                    MelonLoader.MelonLogger.Warning($"GH3 material template {source.Gh3.Template} is not in the stage shader; " +
+                        $"{source.Source} uses the approximate surface model. " + (Templates?.Untranslated.GetValueOrDefault(source.Gh3.Template) ?? "Run prepare-stage-shaders.py."));
+            }
+            if (template != null)
+            {
+                var generic = MakeTemplateMaterial(surfaceShader!, source.Gh3!, template, LoadAddressedTexture);
+                generic.name = "GH3 Stage " + key + " " + template.Name;
+                materials.Add(Convert.ToUInt32(key, 16), generic);
+                SurfaceMaterials.Add(generic);
+                TemplateMaterials.Add(generic, template);
+                if (source.MovieSlot is < -1 or > 31) throw new InvalidDataException("Invalid movie surface slot");
+                if (source.MovieSlot >= 0) MovieSurfaces.Add((source.MovieSlot, generic, generic.mainTexture));
+                continue;
+            }
             var shaded = surfaceShader != null && source.ShadingMode >= 0;
             // GH3 draws crowd cards (Billboard_Fast) as opaque alpha-tested quads with depth; the lit peds are baked into the atlas.
             // The cards' baked vertex colours (black feet to ~0.66 at the head) treat 0x80 as full brightness.
             var crowdCard = surfaceShader != null && source.Crowd;
             var material = crowdCard ? MakeSurfaceMaterial(surfaceShader!, new StageMaterial { Shading = "unlit", Cutoff = 0.5f, Blend = 0, ColorScale = 2 }) :
                 shaded ? MakeSurfaceMaterial(surfaceShader!, source) : Own(MakeMaterial(shader, source.Blend != 0, source.Blend == 1));
+            if (source.Color.Length == 4 && source.Color.All(float.IsFinite))
+                material.color = new Color(source.Color[0], source.Color[1], source.Color[2], source.Color[3]);
             material.name = "GH3 Stage " + key;
             if (bones != null && shaded) material.SetInt("_Cull", (int)CullMode.Off);
             if (!shaded && !crowdCard && source.Cutoff > 0 && !source.SortedTransparency)
@@ -318,12 +398,12 @@ internal sealed class StageAssets : IDisposable
             if (source.MovieSlot is < -1 or > 31) throw new InvalidDataException("Invalid movie surface slot");
             if (source.MovieSlot >= 0) MovieSurfaces.Add((source.MovieSlot, material, material.mainTexture));
         }
-        using var reader = new BinaryReader(File.OpenRead(Path.Combine(directory, "meshes.bin")));
-        var header = System.Text.Encoding.ASCII.GetString(reader.ReadBytes(8));
-        if (bones == null ? header is not ("GH3STG01" or "GH3STG02" or "GH3STG03") : header != "GH3BND01")
+        using var reader = new BinaryReader(File.OpenRead(meshPath));
+        reader.ReadBytes(8);
+        if (bones == null ? header is not ("GH3STG01" or "GH3STG02" or "GH3STG03" or "GH3STG04") : header != "GH3BND01")
             throw new InvalidDataException("Invalid stage mesh header");
-        var lightmapped = header is "GH3STG02" or "GH3STG03";
-        var layered = header == "GH3STG03";
+        var lightmapped = header is "GH3STG02" or "GH3STG03" or "GH3STG04";
+        var layered = header is "GH3STG03" or "GH3STG04";
         var meshCount = reader.ReadInt32();
         if (meshCount < 1 || meshCount > 10000) throw new InvalidDataException("Invalid stage mesh count");
         if (Definition.LightGroups.Length != 0 && Definition.LightGroups.Length != meshCount)
@@ -364,6 +444,14 @@ internal sealed class StageAssets : IDisposable
             var layerUv = layered ? new Vector2[vertexCount] : null;
             var maskUv = layered ? new Vector2[vertexCount] : null;
             var colors = new Color32[vertexCount];
+            // GH3 vertex streams: UV sets 0-3, texcoord4, texcoord5, binormal 0, position 1.
+            var streams = templateStreams ? new Vector2[6][] : null;
+            if (streams != null) for (var i = 0; i < 6; i++) streams[i] = new Vector2[vertexCount];
+            var binormals = templateStreams ? new Vector4[vertexCount] : null;
+            var pivotXy = templateStreams ? new Vector2[vertexCount] : null;
+            var pivotZ = templateStreams ? new Vector2[vertexCount] : null;
+            var binormal1Xy = templateStreams ? new Vector2[vertexCount] : null;
+            var binormal1Z = templateStreams ? new Vector2[vertexCount] : null;
             var weights = bones == null ? null : new List<SkinWeight>(vertexCount * 3);
             var boneCounts = bones == null ? null : new byte[vertexCount];
             for (var v = 0; v < vertexCount; v++)
@@ -375,6 +463,18 @@ internal sealed class StageAssets : IDisposable
                 if (lightmapUv != null) lightmapUv[v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
                 if (layerUv != null) layerUv[v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
                 if (maskUv != null) maskUv[v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
+                if (streams != null)
+                {
+                    for (var i = 0; i < 6; i++) streams[i][v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
+                    var b = ReadVector(reader);
+                    binormals![v] = new Vector4 { x = b.x, y = b.y, z = b.z, w = 1 };
+                    var p = ReadVector(reader);
+                    pivotXy![v] = new Vector2(p.x, p.y);
+                    pivotZ![v] = new Vector2(p.z, 0);
+                    var b1 = ReadVector(reader);
+                    binormal1Xy![v] = new Vector2(b1.x, b1.y);
+                    binormal1Z![v] = new Vector2(b1.z, 0);
+                }
                 if (weights != null && bones != null)
                 {
                     var indicesForVertex = reader.ReadBytes(4);
@@ -400,11 +500,29 @@ internal sealed class StageAssets : IDisposable
             var crowdCards = bones == null && surfaceShader != null && Definition.Materials[materialId.ToString("x8")].Crowd;
             var cards = crowdCards || bones == null && surfaceShader != null && Definition.Materials[materialId.ToString("x8")].Billboard;
             mesh.normals = new Il2CppStructArray<Vector3>(cards ? CardPivots(vertices, indices) : normals);
-            mesh.uv = new Il2CppStructArray<Vector2>(uv);
-            if (lightmapUv != null) mesh.uv2 = new Il2CppStructArray<Vector2>(lightmapUv);
             var partMaterial = Definition.Materials[materialId.ToString("x8")];
-            if (layerUv != null && partMaterial.Layer.Length > 0) mesh.uv3 = new Il2CppStructArray<Vector2>(layerUv);
-            if (maskUv != null && partMaterial.Mask.Length > 0) mesh.uv4 = new Il2CppStructArray<Vector2>(maskUv);
+            var templateMesh = streams != null && TemplateMaterials.ContainsKey(material);
+            if (templateMesh)
+            {
+                // The translated GH3 vertex shader reads the original streams (see gh3_shader.VERTEX_MAIN).
+                mesh.uv = new Il2CppStructArray<Vector2>(streams![0]);
+                mesh.uv2 = new Il2CppStructArray<Vector2>(streams[1]);
+                mesh.uv3 = new Il2CppStructArray<Vector2>(streams[2]);
+                mesh.uv4 = new Il2CppStructArray<Vector2>(streams[3]);
+                mesh.uv5 = new Il2CppStructArray<Vector2>(streams[4]);
+                mesh.uv6 = new Il2CppStructArray<Vector2>(streams[5]);
+                var binormal1 = TemplateMaterials[material].Extra == "binormal1";
+                mesh.uv7 = new Il2CppStructArray<Vector2>(binormal1 ? binormal1Xy! : pivotXy!);
+                mesh.uv8 = new Il2CppStructArray<Vector2>(binormal1 ? binormal1Z! : pivotZ!);
+                mesh.tangents = new Il2CppStructArray<Vector4>(binormals!);
+            }
+            else
+            {
+                mesh.uv = new Il2CppStructArray<Vector2>(uv);
+                if (lightmapUv != null) mesh.uv2 = new Il2CppStructArray<Vector2>(lightmapUv);
+                if (layerUv != null && partMaterial.Layer.Length > 0) mesh.uv3 = new Il2CppStructArray<Vector2>(layerUv);
+                if (maskUv != null && partMaterial.Mask.Length > 0) mesh.uv4 = new Il2CppStructArray<Vector2>(maskUv);
+            }
             mesh.colors32 = new Il2CppStructArray<Color32>(colors);
             mesh.triangles = new Il2CppStructArray<int>(indices);
             if (weights != null && bones != null)
@@ -414,7 +532,17 @@ internal sealed class StageAssets : IDisposable
                     bone.worldToLocalMatrix * root.transform.localToWorldMatrix).ToArray());
             }
             mesh.RecalculateBounds();
-            if (cards)
+            if (templateMesh && TemplateMaterials[material].Extra == "position1")
+            {
+                // Billboard templates place each corner around its pivot along the camera axes.
+                var reach = 0f;
+                for (var v = 0; v < vertexCount; v++)
+                    reach = Math.Max(reach, (vertices[v] - new Vector3(pivotXy![v].x, pivotXy[v].y, pivotZ![v].x)).magnitude);
+                var bounds = mesh.bounds;
+                bounds.Expand(2 * reach);
+                mesh.bounds = bounds;
+            }
+            if (cards && !templateMesh)
             {
                 var bounds = mesh.bounds;
                 bounds.Expand(crowdCards ? 4 : bounds.size.magnitude);
@@ -422,7 +550,8 @@ internal sealed class StageAssets : IDisposable
             }
             if (bones != null && surfaceShader != null && Definition.Materials[materialId.ToString("x8")].Character != null)
                 mesh.RecalculateTangentsImpl(UnityEngine.Rendering.MeshUpdateFlags.Default);
-            var shadedMode = surfaceShader != null ? Definition.Materials[materialId.ToString("x8")].ShadingMode : -1;
+            var shadedMode = templateMesh ? TemplateMaterials[material].Shading switch { "lit" => 2, "ambient" => 1, _ => 0 } :
+                surfaceShader != null ? Definition.Materials[materialId.ToString("x8")].ShadingMode : -1;
             var dynamicColors = lighting && shadedMode < 0 && (bones != null || Definition.LightGroups.Length > 0);
             if (dynamicColors || sorted) mesh.MarkDynamic();
             mesh.UploadMeshData(!dynamicColors && !sorted);

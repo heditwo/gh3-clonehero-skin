@@ -68,6 +68,9 @@ internal sealed class StageScripts : IDisposable
             surface.Renderer.GetPropertyBlock(properties);
             properties.SetColor("_Color", new(color.X, color.Y, color.Z, color.W));
             properties.SetVector("_MainTex_ST", new(uv.X, uv.Y, uv.Z, uv.W));
+            // The AnimatedTexture templates read m_FPS from vertex constant c2.x.
+            if (surface.Definition is { Gh3: { VertexConstants.Length: > 2 } gh3, Animation: not null })
+                properties.SetVector("_Gh3V2", new(fps ?? gh3.VertexConstants[2][0], gh3.VertexConstants[2][1], gh3.VertexConstants[2][2], gh3.VertexConstants[2][3]));
             surface.Renderer.SetPropertyBlock(properties);
             _materialColors[surface.Renderer] = color;
             _materialUvs[surface.Renderer] = uv;

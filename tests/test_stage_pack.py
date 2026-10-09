@@ -85,7 +85,7 @@ class StagePackTests(unittest.TestCase):
             self.assertEqual(lit[0]["colorScale"], 2)
             self.assertTrue((output/"textures"/(lit[0]["lightmap"]+".png")).exists())
             data = (output/"meshes.bin").read_bytes()
-            self.assertEqual(data[:8], b"GH3STG03")
+            self.assertEqual(data[:8], b"GH3STG04")
             offset = 12; found = []
             for _ in range(struct.unpack_from("<I", data, 8)[0]):
                 material, count, indices = struct.unpack_from("<III", data, offset); offset += 12
