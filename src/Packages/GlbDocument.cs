@@ -124,6 +124,14 @@ internal sealed class GlbDocument
         return null;
     }
 
+    public int? NamedImage(string name)
+    {
+        var images = List("images");
+        for (var i = 0; i < images.Count; i++)
+            if (images[i] is JsonObject image && image["name"] is JsonValue value && value.TryGetValue<string>(out var text) && text == name) return i;
+        return null;
+    }
+
     public byte[] TextureImage(int texture)
     {
         var source = Int(Item("textures", texture), "source", -1);

@@ -174,7 +174,8 @@ def compare_folder(cache, expected, mesh_limit, library=False):
             else: report["close"] += 1; report.setdefault("animationDifference", {})[name] = difference
             continue
         report["different"][name] = "bytes"
-    report["extra"] = sorted(n for n in have if not (Path(n).name == "cache.json"))
+    # The importer copies the manifest preview image for the in-game picker; the Python compiler has no such file.
+    report["extra"] = sorted(n for n in have if n not in ("cache.json", "preview.png"))
     return report
 
 
@@ -246,6 +247,7 @@ def main(argv=None):
     for folder in sorted(p for p in args.cache.iterdir() if (p/"cache.json").is_file()):
         info = json.loads((folder/"cache.json").read_text())
         identifier = info["package"]["id"]
+        if info["package"]["format"].startswith("chchar"): continue
         if info["package"]["format"].startswith("chlib"):
             report[identifier] = row = library_check(folder, args.library, args.events, args.packages/f"{identifier}.chlib")
             summary = {k: row[k] for k in ("files", "audio", "clips")}

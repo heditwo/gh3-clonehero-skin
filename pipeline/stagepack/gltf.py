@@ -279,8 +279,15 @@ class GlbReader:
         return next((i for i, texture in enumerate(self.data.get("textures", []))
                      if 0 <= texture.get("source", -1) < len(images) and images[texture["source"]].get("name") == name), None)
 
+    def named_image(self, name):
+        """Index of the first image with this name, or None."""
+        return next((i for i, image in enumerate(self.data.get("images", [])) if image.get("name") == name), None)
+
     def image(self, texture):
-        row = self.data["images"][self.data["textures"][texture]["source"]]
+        return self.image_at(self.data["textures"][texture]["source"])
+
+    def image_at(self, index):
+        row = self.data["images"][index]
         if "bufferView" not in row: raise ValueError("Stage textures must be embedded in the GLB")
         return Image.open(BytesIO(self.view(row["bufferView"]))).convert("RGBA")
 

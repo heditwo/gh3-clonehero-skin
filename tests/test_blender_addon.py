@@ -359,7 +359,7 @@ class KeeperTests(unittest.TestCase):
         if not folder.is_dir(): self.skipTest("assets/packages is not generated")
         manifest = json.loads((folder / "manifest.json").read_text())
         extra = {k: v for k, v in manifest["entry"].items() if k in ("scripts", "actors")}
-        built = sidecars.build_manifest(sidecars.open_manifest(manifest), sidecars.stage_entry(True, extra))
+        built = sidecars.build_manifest(sidecars.open_manifest(manifest), sidecars.stage_entry(True, extra), manifest.get("preview"))
         self.assertEqual({k: v for k, v in manifest.items() if k != "files"}, {k: v for k, v in built.items() if k != "files"})
         self.assertEqual(list(built["entry"]), ["model", "placements", "cameras", "lighting", "scripts", "actors"])
 

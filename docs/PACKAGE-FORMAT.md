@@ -226,6 +226,8 @@ A texture reference in extras is a string:
 
 **A texture reference must not be a glTF texture or image index.** Blender renumbers textures on export and drops images that no material slot uses (spike result 9.6). Thus the Blender add-on writes sampler-only textures as package files. The pipeline GLB writer (`GlbWriter`) names every image (the GH3 texture checksum, for example `1a52a814`) and writes `#<name>`.
 
+`#<name>` refers to an image, not to a glTF texture: the image does not need a glTF `textures` entry. Both compilers (`pipeline/stagepack/pack.py` and the C# `StageCompiler`) use the runtime texture name of the first glTF texture of the image when there is one (so the compiled GH3 venues do not change), and else the checksum of `image-<image index>`.
+
 ### 6.7 Animation channels and the unit-scale rule
 
 - Channels target skin joints with `translation` or `rotation`, and `LINEAR` or `STEP` interpolation. `CUBICSPLINE` and `weights` channels are not permitted.
@@ -292,7 +294,7 @@ The field meanings are the same as in [CUSTOM-CONTENT.md, section 5](CUSTOM-CONT
 | `library` | Yes | `gh3-band-v1` |
 | `profile` | Yes | `gh3-guitarist-axel-v1`, `gh3-bassist-v1`, `gh3-singer-male-v1`, or `gh3-drummer-v1`. The profile also selects the band role |
 | `hairMaterials` | No | GLB material names with sorted hair transparency |
-| `attachments` | No | `instrument`: a library model ID. Absent: the profile default. The v1 library has one instrument for each profile |
+| `attachments` | No | `instrument`: a library model ID. Absent: the profile default. The v1 library has one instrument for each profile. **Mod 0.9.8 does not use this field** (warning): the library models contain their instrument in the same mesh, so the character GLB must contain its instrument (see [section 20.6](#206-characters)) |
 
 ### 9.2 GLB rules
 
@@ -300,7 +302,7 @@ The field meanings are the same as in [CUSTOM-CONTENT.md, section 5](CUSTOM-CONT
 - Joints map to GH3 bones **by name**: `bone-<8 hex digits>` (the GH3 checksum) or the GH3 bone name. Joint order and vertex order are free.
 - The skin contains every joint of the profile and no other joints, with the profile parents.
 - Nodes above the root joint (for example the Blender `Armature` node) have the identity transform (1e-4).
-- Maximum four influences for each vertex. Blend shapes (morph targets) are optional.
+- Maximum four influences for each vertex. Blend shapes (morph targets) are optional. Mod 0.9.8 accepts them but does not animate them (warning): the GH3 clips move the face with bones.
 - Animations in the GLB are ignored (warning). The library supplies the clips.
 
 ### 9.3 Tolerances (spike result 9.6)
@@ -533,12 +535,12 @@ The current library does not map file for file. Each part has a conversion step 
 
 - Done: GLB image names and `#<name>` references; reproducible zips (section 19).
 - Library band and crowd materials use the raw GH3 blend value (0–12) in `blend`. The stage material contract derives `blend` from `alphaMode` and `gh3Additive`. With a `gh3Shader` record, the importer must take the raw value from `gh3Shader.blend` for library models. The round trip (section 19.4) shows that this rule gives the current `stage.json` for all 85 library materials. The venue compiler (`pack.py`) still derives `blend` from `alphaMode` for venue materials; the C# importer must keep both rules.
-- Open: `preview.png` for each venue. It needs a capture of each venue in the game. The converter writes no `preview` now.
+- Done: `preview.png` for each venue. `scripts/capture-venue-previews.sh` captures GH3's intro of each venue in the game and writes `assets/previews/<id>.png` (512 × 288, 256 colours, 25–90 kB). The converter adds the image when it exists (`decisions.VENUE_PREVIEWS`).
 
 ### 17.3 For the C# importer (step 4)
 
 - Done ([section 20](#20-c-importer)): `ZipArchive` reads the packages in the game (DEFLATE entries; the 658 MB library zip). Zip64 was not needed by the current packages and is not tested. The importer has its own GLB reader (`GlbDocument`) with the node hierarchy, extras, and materials. BC1/BC3 encoding runs on worker threads before the stage loads; the stage waits for the import of its package (it does not show RGBA32 first).
-- Open: cache clean-up (when to delete unused cache folders); development folders are hashed at start, but not watched while the game runs.
+- Done: cache clean-up ([section 20.7](#207-cache-clean-up)). Open: development folders are hashed at start, but not watched while the game runs.
 
 ## 18. In-game check of Brotli
 
@@ -660,12 +662,13 @@ flowchart LR
 - Folders: `Custom/Stages` and `Custom/Characters` of each `GlobalVariables.uniqueCustomContentPaths` entry (group subfolders to depth 4), then `Mods/GH3Skin/Packages/`. Zip files and development folders.
 - Each bad package gives one warning line and is skipped: unknown or newer format (`needs a newer mod`), wrong extension for the format, newer `minModVersion`, a missing or unlisted file, a wrong size (at the scan), a wrong SHA-256 (at the import, `the package is damaged`), a missing required package (`requires gh3-band-v1 1.0.0 … which is not installed`), a failed import of the required library.
 - With two packages of one ID, the higher version wins; with equal versions, the first in scan order.
-- Characters (`.chchar`) are found and logged only.
+- Characters (`.chchar`) import after the library ([section 20.6](#206-characters)).
+- A venue package in a song folder (`venue.chstage`, [PLAYER-GUIDE.md](PLAYER-GUIDE.md#stages-that-a-song-selects)) is found when the song starts, checked as above, and imported first. It does not take part in the ID and version rules: the song uses its own package.
 - `GH3_SKIN_PACKAGES=off` turns packages off (the older install only).
 
 ### 20.2 Import
 
-- One package at a time, on one background thread (`GH3 package importer`), the library first, then the selected stage (`GH3_SKIN_STAGE`), then the others. Texture encoding uses up to 4 threads (half the cores). A warm start runs no import thread: the scan and the cache check run on the main thread.
+- One package at a time, on one background thread (`GH3 package importer`), the library first, then the stage and the characters that a song waits for, then the player's stage (`GH3_SKIN_STAGE` or the picker choice), then the characters, then the others. The thread starts again when a song adds its venue package. Texture encoding uses up to 4 threads (half the cores). A warm start runs no import thread: the scan and the cache check run on the main thread.
 - Venues: a C# port of `compile_stage` and `compile_actor` (`StageCompiler`, `StageGeometry`). Library: the C# side of `roundtrip.py` (`LibraryImporter`).
 - Textures: PNG decode (all colour types, `tRNS`), box-filter mip chain, then BC1 (opaque) or BC3 (alpha) with a managed encoder written for this project (`BlockCompression`: principal axis, least-squares refinement, exact single colours). A size that is not a multiple of 4, a GPU without DXT1/DXT5 (`SystemInfo.SupportsTextureFormat`), or a first level under 36 dB PSNR (art that GH3 did not store as DXT) gives RGBA32.
 - Not ported: the alpha-mask mesh trimming of `pipeline/gh3/mesh_cutout.py`. It applies only to unshaded materials without a GH3 record; no GH3 venue has one. The importer logs a warning for such a material and keeps the full mesh (the shader discards the same pixels).
@@ -676,6 +679,8 @@ flowchart LR
 - `GameplayStage` uses the cache folders when the stage package and its library are ready. While they import, the stage waits (up to 120 s, then the older install is used). Without a package, the older install (`assets/stages`, `assets/libraries`) is used.
 - `StageAssets` uploads `.tex` files with `LoadRawTextureData` and `Apply(false, true)` (no decode on the main thread). All uploads are in the stage load frame: 364 textures of gh3.dive take 140–200 ms.
 - Clip prefetch: `PerformancePlayer.Prepare` gives the song's clip set to `PerformanceClipCache`, which decodes it with `Parallel.ForEach` on worker threads. The main thread waits for it in the stage load (16–35 ms measured). A clip outside the set loads on the main thread with a warning (`clip … was not prefetched`), and the stage reset logs the count. The crowd prefetches all its performance clips (102).
+
+- The importer copies the manifest `preview` image to `preview.png` in the cache folder of a venue or a character, for the picker.
 
 ### 20.4 Comparison with the Python pipeline
 
@@ -705,3 +710,23 @@ Game copy `~/games/clonehero-gh3-importer`, gh3.dive, mycurse-native, 1600 × 90
 | Peak RSS during the cold import of all packages, with the stage loaded | 1,472 MB (the import thread alone: 495 MB peak working set in `tools/PackageImport`) | — |
 
 Visual result: the dive recording from packages and from `main` agree (aligned videos: mean RGB difference 2.3–2.9 in 8 of 10 samples, up to 7.7 when the frame times differ). Screenshot pairs at the same song times differ as much as two `main` runs differ from each other (21–41 dB in both cases, from timing). `tools/audit-materials.py` on the cache gives the same 921 template materials as on `assets/stages`.
+
+### 20.6 Characters
+
+`CharacterImporter` converts a `.chchar` into a band model folder in the cache: `meshes.bin` (`GH3BND02`), `stage.json`, `textures/*.tex`, `character.json` (ID, profile, band role, joint names in skin order), and `bindposes.bin` (magic `GH3BPS01`, joint count, then a row-major 4 × 4 float32 matrix for each joint: the GLB inverse bind matrix in Unity coordinates). It needs the library cache for the profile rig.
+
+| Step | Rule |
+| --- | --- |
+| Joints | Names `bone-<checksum>` or GH3 bone names. The set equals the profile rig of `catalog.json`, with the same parents |
+| Rest pose | Local joint transforms against the profile bind pose of `band/<role>/animation.bin`: 0.1 mm, 0.01° (chord form), scale 1e-4. Nodes above the root joint have no transform |
+| Bind | `world(joint) · IBM = world(mesh node)` within 1e-4 for each mesh node |
+| Vertices | `POSITION`, `NORMAL`, `JOINTS_0`, `WEIGHTS_0` (float or normalized integer; sum 1 within 0.01, normalized again) required; `TEXCOORD_0`, `COLOR_0`, and the `_GH3_UV0`–`_GH3_UV5`, `_GH3_BINORMAL`, `_GH3_TANGENT` streams optional. A material with a `gh3Shader` record and a mesh without the streams uses the surface model (warning) |
+| Materials | The library rules (`LibraryImporter`): `blend` from `gh3Shader.blend` when the record is present. `hairMaterials` add sorted transparency. Material and image names that are not 8 hex digits get checksum names |
+
+A GH3 band member exported with `python -m pipeline.package.character` gives a cache that is byte-equal to the library member (`meshes.bin`, `stage.json`, and all textures; checked for the four members on 2026-10-09).
+
+At load, `StageBand` maps the character joints to the rig of the band role by name. A character can play another role when that rig has all of its joints (the GH3 guitarist and bassist rigs have the same 125 bone names). The role's rig, clips, hair, IK, and hand fire drive the mesh; the GLB inverse bind matrices skin it (`StageAssets.Load(bindposes:)`), so the mesh follows the role's bone positions.
+
+### 20.7 Cache clean-up
+
+When all imports end (or at a warm start, on a worker thread), `PackageManager.CleanCache` deletes the cache folders that no package uses. It keeps the cache folder of each loaded package and the folder of each `index.json` entry whose package file still exists (so the cache of a song's `venue.chstage` stays while the song folder has it). It deletes other folders with the cache name pattern `<64 hex>-i<number>`, which includes all other importer versions, and removes the `index.json` entries of missing package files. It only deletes inside the cache root, never follows links, and leaves other folders.

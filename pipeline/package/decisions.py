@@ -5,6 +5,7 @@ the `packages` step of scripts/regenerate.sh again.
 """
 
 import zipfile
+from pathlib import Path
 
 # O1: zip method for each file suffix. The plan stores GLB and images (section 4.1); DEFLATE for the rest.
 STORED_SUFFIXES = {".glb", ".png", ".br", ".ogg", ".mp3"}
@@ -21,6 +22,7 @@ GH3_LICENSE = "LicenseRef-GH3-Derived"
 GH3_PERMISSIONS = {"redistribute": True, "modify": False, "commercial": False}
 GH3_VENUE_AUTHORS = [{"name": "Neversoft", "role": "original venue"}]
 GH3_LIBRARY_AUTHORS = [{"name": "Neversoft", "role": "original band, crowd, animations, and audio"}]
+GH3_CHARACTER_AUTHORS = [{"name": "Neversoft", "role": "original band member"}]
 CONVERTER_CREDIT = "Converted from the GH3 PC data by the GH3 Gameplay Skin pipeline."
 
 # The example stage is made by the pipeline from boxes, not from GH3 data.
@@ -37,6 +39,11 @@ AUDIO_FORMAT = "wav"
 
 # O5: library movies. "png-frames" keeps the current PNG frames of each GH3VID01 bank (lossless).
 MOVIE_FORMAT = "png-frames"
+
+# Venue preview images (manifest `preview`): `<id>.png` in this folder, 512 × 288, made from an in-game capture
+# (docs/PIPELINE.md, venue previews). A venue without an image gets no preview.
+VENUE_PREVIEWS = Path(__file__).resolve().parents[2]/"assets"/"previews"
+PREVIEW_SIZE = (512, 288)
 
 PACKAGE_VERSION = "1.0.0"
 LIBRARY_VERSION = "1.0.0"

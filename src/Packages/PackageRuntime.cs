@@ -10,6 +10,33 @@ namespace Gh3Skin.Packages;
 internal static class PackageRuntime
 {
     public static PackageManager? Manager { get; private set; }
+    public static string ChoicesPath => Path.Combine(MelonEnvironment.UserDataDirectory, "GH3Skin", "choices.json");
+    private static PlayerChoices? _choices;
+
+    // The picker's choices; read once, then kept in memory and saved by the picker.
+    public static PlayerChoices Choices
+    {
+        get
+        {
+            if (_choices != null) return _choices;
+            _choices = PlayerChoices.Load(ChoicesPath, out var problem);
+            if (problem.Length > 0) MelonLogger.Warning("GH3 picker: " + problem);
+            return _choices;
+        }
+    }
+
+    public static void SaveChoices()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(ChoicesPath)!);
+            Choices.Save(ChoicesPath);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            MelonLogger.Warning($"GH3 picker: the choices could not be saved to {ChoicesPath} ({error.Message})");
+        }
+    }
     public static bool Disabled => Environment.GetEnvironmentVariable("GH3_SKIN_PACKAGES") == "off";
     private static int _frames;
 
@@ -42,9 +69,9 @@ internal static class PackageRuntime
             Application.platform.ToString(),
             SystemInfo.graphicsDeviceType.ToString(),
             version,
-            Environment.GetEnvironmentVariable("GH3_SKIN_STAGE") ?? "gh3.budokan",
+            Environment.GetEnvironmentVariable("GH3_SKIN_STAGE") ?? Choices.Stage,
             Math.Clamp(Environment.ProcessorCount / 2, 1, 4));
-        MelonLogger.Msg($"GH3 packages: scanning {string.Join(", ", custom.Select(c => Path.Combine(c, "Stages")).Append(settings.ModPackages))}; " +
+        MelonLogger.Msg($"GH3 packages: scanning {string.Join(", ", custom.SelectMany(c => new[] { Path.Combine(c, "Stages"), Path.Combine(c, "Characters") }).Append(settings.ModPackages))}; " +
             $"cache {settings.CacheRoot}; textures {(compressed ? "BC1/BC3" : "RGBA32 (BC1/BC3 not supported)")}; {settings.Platform} {settings.GraphicsApi}");
         Manager = new PackageManager(settings);
         Manager.Start();

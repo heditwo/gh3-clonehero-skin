@@ -25,4 +25,4 @@ var clock = Stopwatch.StartNew();
 manager.RunNow();
 while (manager.TryDequeueLog(out var line)) Console.WriteLine((line.Warning ? "WARNING " : "") + line.Text);
 Console.WriteLine($"peak working set {Process.GetCurrentProcess().PeakWorkingSet64 / 1e6:0} MB, {clock.Elapsed.TotalSeconds:0.0} s");
-return manager.Packages.Any(p => p.State != PackageState.Ready && p.Manifest.Kind != PackageKind.Character) ? 1 : 0;
+return manager.Packages.Any(p => p.State != PackageState.Ready) ? 1 : 0;

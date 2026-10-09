@@ -42,7 +42,8 @@ internal sealed class StageBand : IDisposable
     public Dictionary<string, Vector3> Positions { get; } = new();
 
     public void Load(string directory, StageAssets stage, GameObject root, int layer, bool lighting = false,
-        IReadOnlyDictionary<string, StagePlacement>? placements = null, Shader? surfaceShader = null)
+        IReadOnlyDictionary<string, StagePlacement>? placements = null, Shader? surfaceShader = null,
+        IReadOnlyDictionary<string, Packages.CharacterModel>? characters = null)
     {
         var path = Path.Combine(directory, "band.json");
         if (!File.Exists(path))
@@ -84,9 +85,14 @@ internal sealed class StageBand : IDisposable
                 bones[i].SetParent(animation.Parents[i] < 0 ? performer.transform : bones[animation.Parents[i]], false);
                 Apply(bones[i], animation.BindPose[i]);
             }
-            var assets = new StageAssets();
+            var assets = characters != null && characters.TryGetValue(member.Role, out var character)
+                ? LoadCharacter(character, directory, member.Role, performer, layer, bones, lighting, surfaceShader) : null;
+            if (assets == null)
+            {
+                assets = new StageAssets();
+                assets.Load(folder, performer, layer, bones, lighting, surfaceShader: surfaceShader);
+            }
             _assets.Add(assets);
-            assets.Load(folder, performer, layer, bones, lighting, surfaceShader: surfaceShader);
             stage.SurfaceMaterials.AddRange(assets.SurfaceMaterials);
             stage.ShadedSurfaces.AddRange(assets.ShadedSurfaces);
             stage.BandMeshes.AddRange(assets.BandMeshes);
@@ -99,6 +105,37 @@ internal sealed class StageBand : IDisposable
         }
         MelonLogger.Msg($"GH3 band loaded: {_players.Count} performers; default male singer; original GH3 animations");
         if (hair != null) MelonLogger.Msg($"GH3 hair physics: {hair.Members.Values.Sum(m => m.Joints.Length)} original joints");
+    }
+
+    // A character package plays the role on the role's rig: its joints map to the rig bones by name, and its own inverse
+    // bind matrices skin the mesh. It draws through StageAssets as the library members do. Null: use the venue default.
+    private static StageAssets? LoadCharacter(Packages.CharacterModel character, string directory, string role, GameObject performer, int layer,
+        Transform[] bones, bool lighting, Shader? surfaceShader)
+    {
+        var children = performer.transform.childCount;
+        StageAssets? assets = null;
+        try
+        {
+            var rig = Packages.CharacterImporter.Rig(Path.GetDirectoryName(Path.GetFullPath(directory))!, role).Bones;
+            var map = character.Map(rig) ?? throw new InvalidDataException($"its joints are not all in the {role} rig");
+            var bindposes = character.Bindposes.Select(m => new Matrix4x4
+            {
+                m00 = m[0], m01 = m[1], m02 = m[2], m03 = m[3], m10 = m[4], m11 = m[5], m12 = m[6], m13 = m[7],
+                m20 = m[8], m21 = m[9], m22 = m[10], m23 = m[11], m30 = m[12], m31 = m[13], m32 = m[14], m33 = m[15],
+            }).ToArray();
+            assets = new StageAssets();
+            assets.Load(character.Folder, performer, layer, map.Select(i => bones[i]).ToArray(), lighting, surfaceShader: surfaceShader, bindposes: bindposes);
+            MelonLogger.Msg($"GH3 band {role}: character {character.Id} ({character.Name}, {character.Role} profile)");
+            return assets;
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or Packages.PackageException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            assets?.Dispose();
+            for (var i = performer.transform.childCount - 1; i >= children; i--)
+                UnityEngine.Object.Destroy(performer.transform.GetChild(i).gameObject);
+            MelonLogger.Warning($"GH3 band {role}: character {character.Id} could not load ({error.Message}); the venue default plays");
+            return null;
+        }
     }
 
     // Waits for the clip prefetch of all performers; returns the clip count, the worker time, and the time the caller waited.

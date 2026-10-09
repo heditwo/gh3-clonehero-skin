@@ -23,10 +23,12 @@ internal sealed class SkinOptions
     {
         var captureAfter = ParseFloat("GH3_SKIN_CAPTURE_AFTER") ?? 0;
         captureAfter = captureAfter > 0 ? captureAfter : 0;
+        var songClock = Environment.GetEnvironmentVariable("GH3_SKIN_CAPTURE_CLOCK") == "song";
+        // On the song clock, negative times capture GH3's intro (the 8 s before the song).
         var captureTimes = (Environment.GetEnvironmentVariable("GH3_SKIN_CAPTURE_TIMES") ?? "")
             .Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(value => float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var time) ? time : 0)
-            .Where(time => float.IsFinite(time) && time > 0)
+            .Where(time => float.IsFinite(time) && (time > 0 || songClock && time < 0))
             .Distinct()
             .OrderBy(time => time)
             .ToArray();
@@ -50,7 +52,7 @@ internal sealed class SkinOptions
             ForceStarPowerActive = Environment.GetEnvironmentVariable("GH3_SKIN_FORCE_STAR_POWER_ACTIVE") == "1",
             CaptureAfter = captureAfter,
             CaptureTimes = captureTimes,
-            CaptureSongClock = Environment.GetEnvironmentVariable("GH3_SKIN_CAPTURE_CLOCK") == "song",
+            CaptureSongClock = songClock,
             CaptureDirectory = Path.GetFullPath(Environment.GetEnvironmentVariable("GH3_SKIN_CAPTURE_DIR") ??
                 Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Captures", "GH3Skin")),
             ScreenshotPath = Path.GetFullPath(Environment.GetEnvironmentVariable("GH3_SKIN_SCREENSHOT") ??

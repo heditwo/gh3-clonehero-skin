@@ -247,8 +247,9 @@ internal sealed class StageAssets : IDisposable
     }
 
     public void Load(string directory, GameObject root, int layer, Transform[]? bones = null, bool lighting = false, string? lightGroup = null, Shader? surfaceShader = null,
-        System.Numerics.Vector3? lightAt = null)
+        System.Numerics.Vector3? lightAt = null, Matrix4x4[]? bindposes = null)
     {
+        if (bindposes != null && (bones == null || bindposes.Length != bones.Length)) throw new InvalidDataException("Bind poses do not match the bones");
         Definition = JsonSerializer.Deserialize<StageDefinition>(File.ReadAllText(Path.Combine(directory, "stage.json")),
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? throw new InvalidDataException("Missing stage definition");
         if (Definition.Version != 1 || Definition.Materials.Count > 2048 ||
@@ -494,7 +495,8 @@ internal sealed class StageAssets : IDisposable
             if (weights != null && bones != null)
             {
                 SetSkinWeights(mesh, boneCounts!, weights.ToArray());
-                mesh.bindposes = new Il2CppStructArray<Matrix4x4>(bones.Select(bone =>
+                // Characters bring the inverse bind matrices of their GLB; the library members use their rig at bind time.
+                mesh.bindposes = new Il2CppStructArray<Matrix4x4>(bindposes ?? bones.Select(bone =>
                     bone.worldToLocalMatrix * root.transform.localToWorldMatrix).ToArray());
             }
             mesh.RecalculateBounds();

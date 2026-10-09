@@ -216,7 +216,8 @@ def texture_reference(glb, reference, texture_dir, images):
     """Compile a texture reference from material extras and return the runtime texture name ('' for none).
 
     References are '#<GLB image name>' or a pack-relative PNG path (package format v1, section 6.6). Older packs use
-    glTF texture indices (-1 for none); they still compile. A named image keeps the runtime name of its texture index."""
+    glTF texture indices (-1 for none); they still compile. A named image keeps the runtime name of its texture index.
+    A named image without a glTF texture (Blender keeps sampler-only images this way) gets a name from its image index."""
     if reference in ("", -1): return ""
     textures = glb.data.get("textures", [])
     if type(reference) == int:
@@ -224,7 +225,13 @@ def texture_reference(glb, reference, texture_dir, images):
         index = reference
     elif isinstance(reference, str) and reference.startswith("#"):
         index = glb.named_texture(reference[1:])
-        if index is None: raise ValueError(f"No GLB image named {reference[1:]}")
+        if index is None:
+            image = glb.named_image(reference[1:])
+            if image is None: raise ValueError(f"No GLB image named {reference[1:]}")
+            name = f"{key('image-'+str(image)):08x}"
+            if name not in images:
+                images[name] = glb.image_at(image); images[name].save(texture_dir/(name+".png"))
+            return name
     elif isinstance(reference, str) and reference.lower().endswith(".png"):
         name = f"{key('file-'+reference):08x}"
         if name not in images:

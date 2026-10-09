@@ -9,6 +9,7 @@ internal sealed class PreviewCapture
     private float _gameplayStart;
     private bool _captured;
     private int _captureIndex;
+    private double _earliest = double.PositiveInfinity;
 
     public PreviewCapture(SkinOptions options)
     {
@@ -24,11 +25,13 @@ internal sealed class PreviewCapture
         _gameplayStart = Time.time;
         _captured = false;
         _captureIndex = 0;
+        _earliest = double.PositiveInfinity;
     }
 
     public void Update(double songTime)
     {
         var elapsed = _options.CaptureSongClock ? songTime : Time.time - _gameplayStart;
+        _earliest = Math.Min(_earliest, elapsed);
         if (_options.CaptureAfter > 0 && !_captured && Time.time - _gameplayStart > _options.CaptureAfter)
         {
             var screenshot = _options.ScreenshotPath;
@@ -36,7 +39,9 @@ internal sealed class PreviewCapture
             MelonLogger.Msg($"Captured {screenshot}");
             _captured = true;
         }
-        if (_captureIndex < _options.CaptureTimes.Count && elapsed >= _options.CaptureTimes[_captureIndex])
+        // A negative song time is captured after the clock passed it from below: Clone Hero holds the clock at -1 s while
+        // the song loads, before the stage moves it back to the start of the intro.
+        if (_captureIndex < _options.CaptureTimes.Count && elapsed >= _options.CaptureTimes[_captureIndex] && _earliest <= _options.CaptureTimes[_captureIndex])
         {
             var screenshot = Path.Combine(_options.CaptureDirectory, $"frame-{_captureIndex:00}.png");
             ScreenCapture.CaptureScreenshot(screenshot);

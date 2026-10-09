@@ -66,6 +66,16 @@ MISE_QUIET=1 scripts/capture-preview.sh
 
 The script starts a temporary Xwayland display, plays a chart with the command-line bot, and saves frames. It needs Hyprland, Xwayland, `xrandr`, `jq`, `ripgrep`, ImageMagick, and Python.
 
+### Menus and the picker
+
+```bash
+flock /tmp/opencode/gh3-record.lock env GH3_CLONE_HERO_DIR=<copy> \
+  GH3_SKIN_PICKER_TEST="ready;wait 3;open;apply stage=gh3.dive bassist=gh3.axel;capture /tmp/opencode/picker.png;close;quit" \
+  bash scripts/capture-menu.sh
+```
+
+The script starts the game in its menus in a temporary Xwayland display and runs the picker steps (`ready` waits for the package import). `GH3_SKIN_MENU_INPUT` runs a command on that display while the game runs, for example XTest mouse clicks and keys with `python-xlib`, to test the picker with real input. The picker writes `GH3 picker opened` and `GH3 picker closed: <choices>` to the log; each song writes `GH3 stage choice: <id> (<reason>)` and `GH3 band <role>: character <id>`. Clone Hero's settings are in `~/.clonehero`, which all game copies share: add test packages to `~/.clonehero/Custom` only under the record lock, and remove them after the run.
+
 ## Video
 
 ```bash
@@ -140,7 +150,9 @@ These variables are for checks and captures. Normal play needs none of them.
 
 | Variable | Purpose |
 | --- | --- |
-| `GH3_SKIN_STAGE` | Stage ID (package or older pack), for example `gh3.hell` or `example.studio`. Default `gh3.budokan`. `off` shows the stock background |
+| `GH3_SKIN_STAGE` | Stage ID (package or older pack), for example `gh3.hell` or `example.studio`; it overrides the picker and the song's stage. `random` or `song` act as the picker items. `off` shows the stock background. Without the variable, the picker choice (`UserData/GH3Skin/choices.json`, default `gh3.budokan`) applies |
+| `GH3_SKIN_CHARACTER_GUITARIST`, `_BASSIST`, `_DRUMMER`, `_SINGER` | Character package ID for a band role (or `default`); overrides the picker |
+| `GH3_SKIN_PICKER_TEST` | Picker steps in the menus without a mouse (`src/Menu/PickerTest.cs`), for `scripts/capture-menu.sh` |
 | `GH3_SKIN_PACKAGES=off` | Ignores packages; the stage loads from the older install (`assets/stages`, `assets/libraries`) |
 | `GH3_SKIN_CAMERA` | `auto` (default), `fixed`, or a shot group: `wide`, `singer`, `guitarist`, `bassist`, `drummer`, `orbit` |
 | `GH3_SKIN_CAMERA_SHOT` | Forces one shot name, to match a GH3 reference frame |
@@ -149,7 +161,7 @@ These variables are for checks and captures. Normal play needs none of them.
 | `GH3_SKIN_PREVIEW_SONG` | Chart folder for `run-gh3-skin.sh --preview` and the capture scripts |
 | `GH3_SKIN_PREVIEW_WIDTH`, `GH3_SKIN_PREVIEW_HEIGHT` | Window size; default 1600 × 900 |
 | `GH3_SKIN_CAPTURE_AFTER`, `GH3_SKIN_CAPTURE_TIMES` | Screenshot times |
-| `GH3_SKIN_CAPTURE_CLOCK=song` | Screenshot times use the song clock, not the scene clock |
+| `GH3_SKIN_CAPTURE_CLOCK=song` | Screenshot times use the song clock, not the scene clock. Negative times capture GH3's intro before the song |
 | `GH3_SKIN_CAPTURE_DIR`, `GH3_SKIN_SCREENSHOT` | Screenshot output |
 | `GH3_SKIN_VIDEO`, `GH3_SKIN_VIDEO_SECONDS`, `GH3_SKIN_VIDEO_TRIM`, `GH3_SKIN_VIDEO_FPS` | Video output, length, and rate |
 | `GH3_SKIN_VIDEO_X`, `GH3_SKIN_VIDEO_Y` | Window position; keep the whole window on the screen |

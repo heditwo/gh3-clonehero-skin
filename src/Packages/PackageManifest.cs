@@ -23,6 +23,7 @@ internal sealed class PackageManifest
     public IReadOnlyDictionary<string, PackageFile> Files { get; private init; } = new Dictionary<string, PackageFile>();
     public PackageRequirement[] Requires { get; private init; } = Array.Empty<PackageRequirement>();
     public SemanticVersion? MinModVersion { get; private init; }
+    public string Preview { get; private init; } = "";
 
     public static string Extension(PackageKind kind) => kind switch
     {
@@ -109,10 +110,12 @@ internal sealed class PackageManifest
         };
         foreach (var role in requiredEntries)
             if (!entry.ContainsKey(role)) throw new PackageException($"manifest.json entry needs '{role}'");
+        var preview = root["preview"] == null ? "" : Text("preview");
+        if (preview.Length > 0 && (!ValidPath(preview) || !preview.EndsWith(".png", StringComparison.Ordinal))) throw new PackageException("invalid preview path");
         return new PackageManifest
         {
             Kind = kind, Format = format, Id = id, Version = version, Name = name, Entry = entry, Files = files,
-            Requires = requires.ToArray(), MinModVersion = minMod,
+            Requires = requires.ToArray(), MinModVersion = minMod, Preview = preview,
         };
     }
 }

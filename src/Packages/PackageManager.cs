@@ -17,6 +17,7 @@ internal sealed class InstalledPackage
     public volatile PackageState State = PackageState.Pending;
     public string CacheDirectory { get; set; } = "";
     public string Error { get; set; } = "";
+    public bool SongPackage { get; init; }
 
     public InstalledPackage(string location, PackageManifest manifest, int order)
     {
@@ -51,6 +52,9 @@ internal sealed class PackageManager
     private readonly List<InstalledPackage> _packages = new();
     private readonly List<string> _priority = new();
     private Thread? _thread;
+    private bool _stopping;
+    // Cache folder renames, index.json writes, and the clean-up do not overlap.
+    private readonly object _cacheGate = new();
     public volatile bool Scanned;
     public volatile bool Finished;
     public volatile string Activity = "starting";
@@ -65,17 +69,59 @@ internal sealed class PackageManager
     {
         var clock = Stopwatch.StartNew();
         Scan();
-        foreach (var package in Packages.Where(p => p.Manifest.Kind != PackageKind.Character).OrderBy(p => p.Manifest.Kind == PackageKind.Library ? 0 : 1))
+        foreach (var package in Packages.OrderBy(p => p.Manifest.Kind == PackageKind.Library ? 0 : 1))
             if (TryCacheHit(package)) package.State = PackageState.Ready;
-        if (Packages.All(p => p.State != PackageState.Pending || p.Manifest.Kind == PackageKind.Character))
+        if (Packages.All(p => p.State != PackageState.Pending))
         {
             Activity = "finished";
             Finished = true;
             Log($"all packages ready from the cache in {clock.ElapsedMilliseconds} ms");
+            // The clean-up deletes files; it does not need the main thread.
+            Task.Run(CleanCache);
             return;
         }
-        _thread = new Thread(Run) { IsBackground = true, Name = "GH3 package importer", Priority = ThreadPriority.BelowNormal };
-        _thread.Start();
+        StartWorker();
+    }
+
+    private void StartWorker()
+    {
+        lock (_gate)
+        {
+            if (_thread is { IsAlive: true } && !_stopping) return;
+            Finished = false;
+            _stopping = false;
+            _thread = new Thread(Run) { IsBackground = true, Name = "GH3 package importer", Priority = ThreadPriority.BelowNormal };
+            _thread.Start();
+        }
+    }
+
+    // A venue package in a song folder (StageSelection.SongPackage) is found when the song starts, not at the scan.
+    // Returns the package (already known or added now, then imported in the background) or null with a warning.
+    public InstalledPackage? AddSongPackage(string path)
+    {
+        lock (_gate)
+            if (_packages.FirstOrDefault(p => p.Location == path) is { } known) return known;
+        try
+        {
+            using var source = PackageSource.At(path);
+            if (!source.Contains("manifest.json")) throw new PackageException("manifest.json is missing");
+            var manifest = PackageManifest.Parse(source.ReadAll("manifest.json"), PackageKind.Stage, _settings.ModVersion);
+            VerifiedPackage.CheckFileList(source, manifest);
+            var missing = manifest.Requires.FirstOrDefault(requirement =>
+                !Packages.Any(p => p.Manifest.Id == requirement.Id && p.Manifest.Version.Satisfies(requirement.Version)));
+            if (missing.Id != null) throw new PackageException($"it requires {missing.Id} {missing.Version} (same major version or later), which is not installed");
+            var package = new InstalledPackage(path, manifest, int.MaxValue) { SongPackage = true };
+            if (TryCacheHit(package)) package.State = PackageState.Ready;
+            lock (_gate) _packages.Add(package);
+            Log($"song venue {package.Label} {(package.State == PackageState.Ready ? "ready from the cache" : "imports now")}");
+            if (package.State == PackageState.Pending) StartWorker();
+            return package;
+        }
+        catch (Exception error) when (error is PackageException or InvalidDataException or IOException or System.Text.Json.JsonException or UnauthorizedAccessException or KeyNotFoundException or InvalidOperationException or FormatException)
+        {
+            Warn($"skipped the song venue {path}: {error.Message}");
+            return null;
+        }
     }
 
     // Scan and import on the calling thread (tools and tests).
@@ -121,7 +167,7 @@ internal sealed class PackageManager
 
     public InstalledPackage? Find(PackageKind kind, string id)
     {
-        lock (_gate) return _packages.FirstOrDefault(p => p.Manifest.Kind == kind && p.Manifest.Id == id);
+        lock (_gate) return _packages.FirstOrDefault(p => p.Manifest.Kind == kind && p.Manifest.Id == id && !p.SongPackage);
     }
 
     public IReadOnlyList<InstalledPackage> Packages
@@ -129,9 +175,10 @@ internal sealed class PackageManager
         get { lock (_gate) return _packages.ToList(); }
     }
 
-    public void Prioritize(string id)
+    // The stage that a song waits for imports next.
+    public void Prioritize(InstalledPackage package)
     {
-        lock (_gate) if (!_priority.Contains(id)) _priority.Insert(0, id);
+        lock (_gate) if (!_priority.Contains(package.Location)) _priority.Insert(0, package.Location);
     }
 
     private void Run()
@@ -145,18 +192,21 @@ internal sealed class PackageManager
                 InstalledPackage? next;
                 lock (_gate)
                 {
-                    next = _packages.Where(p => p.State == PackageState.Pending && p.Manifest.Kind != PackageKind.Character)
+                    next = _packages.Where(p => p.State == PackageState.Pending)
                         .OrderBy(p => p.Manifest.Kind == PackageKind.Library ? 0 : 1)
-                        .ThenBy(p => _priority.IndexOf(p.Manifest.Id) is var index and >= 0 ? index : int.MaxValue)
+                        .ThenBy(p => _priority.IndexOf(p.Location) is var index and >= 0 ? index : int.MaxValue)
                         .ThenBy(p => p.Manifest.Id == _settings.PreferredStage ? 0 : 1)
+                        .ThenBy(p => p.Manifest.Kind == PackageKind.Character ? 0 : 1)
                         .ThenBy(p => p.Manifest.Id, StringComparer.Ordinal).FirstOrDefault();
                     if (next != null) next.State = PackageState.Importing;
+                    else _stopping = true;
                 }
                 if (next == null) break;
                 Prepare(next);
             }
             Activity = "finished";
             Log($"all packages ready; the imports took {clock.Elapsed.TotalSeconds:0.0} s");
+            CleanCache();
         }
         catch (Exception error)
         {
@@ -168,7 +218,10 @@ internal sealed class PackageManager
                     package.Error = "the importer stopped";
                 }
         }
-        finally { Finished = true; }
+        finally
+        {
+            lock (_gate) if (_thread == Thread.CurrentThread) Finished = true;
+        }
     }
 
     // Package files and folders: Custom/Stages and Custom/Characters of each Clone Hero content folder (group subfolders
@@ -242,8 +295,7 @@ internal sealed class PackageManager
                 Warn($"skipped {package.Label}: it requires {missing.Id} {missing.Version} (same major version or later), which is not installed");
                 continue;
             }
-            if (package.Manifest.Kind == PackageKind.Character)
-                Log($"found character {package.Label}; character loading is not available yet");
+            if (package.Manifest.Kind == PackageKind.Character) Log($"found character {package.Label}");
             lock (_gate) _packages.Add(package);
         }
     }
@@ -292,6 +344,66 @@ internal sealed class PackageManager
         finally { Activity = "idle"; }
     }
 
+    private static void CopyPreview(VerifiedPackage package, string folder)
+    {
+        var preview = package.Manifest.Preview;
+        if (preview.Length > 0 && package.Contains(preview)) package.CopyTo(preview, Path.Combine(folder, "preview.png"));
+    }
+
+    // Deletes the cache folders that no package uses: other importer versions, and keys that no installed package and no
+    // index.json entry of an existing package file has. Only folder names of the cache layout inside the cache root are
+    // deleted; links are never followed.
+    public void CleanCache()
+    {
+        lock (_cacheGate)
+        try
+        {
+            if (!Directory.Exists(_settings.CacheRoot)) return;
+            var index = ReadIndex();
+            var keep = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var package in Packages)
+                if (package.CacheDirectory.Length > 0) keep.Add(Path.GetFileName(package.CacheDirectory));
+            var stale = new List<string>();
+            foreach (var (location, row) in index.ToList())
+            {
+                var exists = File.Exists(location) || Directory.Exists(location);
+                if (exists && row is JsonObject entry && PackageJson.Text(entry["sha256"]) is { Length: 64 } key) keep.Add($"{key}-i{ImporterVersion}");
+                if (!exists) stale.Add(location);
+            }
+            var removed = 0;
+            long bytes = 0;
+            foreach (var folder in Directory.EnumerateDirectories(_settings.CacheRoot))
+            {
+                var name = Path.GetFileName(folder);
+                if (!CacheFolderName.IsMatch(name) || keep.Contains(name)) continue;
+                var info = new DirectoryInfo(folder);
+                if (info.Attributes.HasFlag(FileAttributes.ReparsePoint)) continue;
+                try
+                {
+                    var size = info.EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
+                    info.Delete(true);
+                    removed++;
+                    bytes += size;
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Warn($"cache folder {name} could not be deleted: {error.Message}"); }
+            }
+            if (stale.Count > 0)
+            {
+                foreach (var location in stale) index.Remove(location);
+                var indexPath = Path.Combine(_settings.CacheRoot, "index.json");
+                PackageJson.Write(indexPath + ".tmp", index);
+                File.Move(indexPath + ".tmp", indexPath, true);
+            }
+            if (removed > 0) Log($"deleted {removed} unused cache folder(s), {bytes / 1e6:0} MB");
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            Warn($"the cache clean-up stopped: {error.Message}");
+        }
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex CacheFolderName = new(@"\A[0-9a-f]{64}-i[0-9]{1,4}\z");
+
     private bool CacheMatches(string folder)
     {
         var path = Path.Combine(folder, "cache.json");
@@ -325,6 +437,17 @@ internal sealed class PackageManager
                 var result = new LibraryImporter(verified, textures).Import(temporary);
                 detail = $"{result.Models} models, {result.Clips} clips, {result.Samples} sounds, {result.Movies} movies";
             }
+            else if (package.Manifest.Kind == PackageKind.Character)
+            {
+                var library = package.Manifest.Requires.Select(r => Find(PackageKind.Library, r.Id)).FirstOrDefault(p => p?.State == PackageState.Ready)
+                    ?? throw new PackageException("a character needs the band library (requires gh3-band-v1)");
+                var importer = new CharacterImporter(verified, textures, library.CacheDirectory);
+                var result = importer.Import(temporary);
+                CopyPreview(verified, temporary);
+                verified.VerifyRemaining();
+                foreach (var warning in importer.Warnings.Distinct().Take(8)) Warn($"{package.Manifest.Id}: {warning}");
+                detail = $"{result.Role} profile, {result.Joints} joints, {result.Meshes} meshes, {result.Vertices} vertices";
+            }
             else
             {
                 var library = package.Manifest.Requires.Select(r => Find(PackageKind.Library, r.Id)).FirstOrDefault(p => p?.State == PackageState.Ready);
@@ -332,6 +455,7 @@ internal sealed class PackageManager
                 var catalog = File.Exists(catalogPath) ? PackageJson.Object(File.ReadAllBytes(catalogPath)) : null;
                 var compiler = new StageCompiler(verified, textures, catalog);
                 var result = compiler.Compile(temporary);
+                CopyPreview(verified, temporary);
                 verified.VerifyRemaining();
                 foreach (var warning in compiler.Warnings.Distinct().Take(8)) Warn($"{package.Manifest.Id}: {warning}");
                 detail = $"{result.Meshes} meshes, {result.Vertices} vertices, {result.Materials} materials, {result.Fixtures} fixtures, {result.Actors} actors";
@@ -346,8 +470,11 @@ internal sealed class PackageManager
                 ["platform"] = _settings.Platform, ["graphicsApi"] = _settings.GraphicsApi, ["textureFormat"] = TextureFormat,
                 ["importSeconds"] = Math.Round(clock.Elapsed.TotalSeconds, 2), ["created"] = DateTime.UtcNow.ToString("o"),
             });
-            if (Directory.Exists(folder)) Directory.Delete(folder, true);
-            Directory.Move(temporary, folder);
+            lock (_cacheGate)
+            {
+                if (Directory.Exists(folder)) Directory.Delete(folder, true);
+                Directory.Move(temporary, folder);
+            }
             Log($"imported {package.Manifest.Id} {package.Manifest.Version} in {clock.Elapsed.TotalSeconds:0.00} s " +
                 $"({verified.BytesVerified / 1e6:0} MB checked, {textures.Written} textures as {TextureFormat} in {textures.Time.TotalSeconds:0.00} s of worker time; {detail}; " +
                 $"managed heap {startMemory / 1e6:0} -> {GC.GetTotalMemory(false) / 1e6:0} MB)");
@@ -398,11 +525,15 @@ internal sealed class PackageManager
             using var sha = SHA256.Create();
             key = Convert.ToHexString(sha.ComputeHash(stream)).ToLowerInvariant();
         }
-        index[location] = new JsonObject { ["signature"] = signature, ["sha256"] = key };
-        Directory.CreateDirectory(_settings.CacheRoot);
-        var temporary = indexPath + ".tmp";
-        PackageJson.Write(temporary, index);
-        File.Move(temporary, indexPath, true);
+        lock (_cacheGate)
+        {
+            index = ReadIndex();
+            index[location] = new JsonObject { ["signature"] = signature, ["sha256"] = key };
+            Directory.CreateDirectory(_settings.CacheRoot);
+            var temporary = indexPath + ".tmp";
+            PackageJson.Write(temporary, index);
+            File.Move(temporary, indexPath, true);
+        }
         return key;
     }
 

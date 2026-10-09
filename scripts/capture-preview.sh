@@ -24,13 +24,13 @@ frames="${GH3_SKIN_CAPTURE_DIR:-$(mktemp -d "$temporary_root/gh3-preview-frames.
 mkdir -p "$frames"
 frames="$(realpath "$frames")"
 capture_times="${GH3_SKIN_CAPTURE_TIMES:-$(awk -v start="$capture_after" 'BEGIN { for (i = 0; i < 7; i++) printf "%s%.1f", i ? "," : "", start + i }')}"
-read -r expected duration < <(python3 - "$capture_times" <<'PY'
+read -r expected duration < <(python3 - "$capture_times" "${GH3_SKIN_CAPTURE_CLOCK:-}" <<'PY'
 import math
 import sys
 times = sorted(set(float(value) for value in sys.argv[1].split(',') if value))
-if not times or any(not math.isfinite(value) or value <= 0 for value in times):
-    raise SystemExit("Capture times must be finite positive seconds")
-print(len(times), math.ceil(times[-1]) + 30)
+if not times or any(not math.isfinite(value) or value == 0 for value in times) or times[0] < 0 and sys.argv[2] != "song":
+    raise SystemExit("Capture times must be finite seconds, positive (negative only with GH3_SKIN_CAPTURE_CLOCK=song)")
+print(len(times), max(0, math.ceil(times[-1])) + 30)
 PY
 )
 if compgen -G "$frames/frame-*.png" >/dev/null; then

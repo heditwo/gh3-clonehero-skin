@@ -10,6 +10,7 @@ from pipeline.package import build, roundtrip, runtime
 from pipeline.package.validate import Validator
 from pipeline.stagepack import template
 from pipeline.stagepack.gltf import SKINNED_GH3_VERTEX, STATIC_VERTEX, GlbReader, GlbWriter
+from pipeline.gh3.formats import key
 from pipeline.stagepack.pack import compile_stage, load_json
 from tests.test_package_format import png
 
@@ -154,6 +155,33 @@ class ImageNameTests(unittest.TestCase):
             self.assertEqual((named["gh3"]["textures"][2], mixed["gh3"]["textures"][2]), ("", ""))
             self.assertTrue((root/"mixed/textures"/(mixed["gh3"]["textures"][1] + ".png")).is_file())
 
+    def test_named_image_without_gltf_texture_compiles(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); source = root/"source"
+            template.create(source)
+            vertices = np.zeros(3, dtype=STATIC_VERTEX)
+            vertices["position"] = [[0, 0, 0], [1, 0, 0], [0, 1, 0]]; vertices["normal"] = [0, 0, 1]; vertices["color"] = 255
+            images = {"0000aaaa": Image.new("RGBA", (4, 4), (10, 20, 30, 255))}
+            materials = {"masked": {"blend": 0, "texture": "0000aaaa", "shading": "lit", "gh3": gh3(["0000aaaa"])}}
+            writer = GlbWriter(); writer.data = GlbReader(source/"stage.glb").data; writer.binary = bytearray(GlbReader(source/"stage.glb").binary)
+            writer.node("masked", writer.mesh("masked", [("masked", 3, vertices.tobytes(), [(0, 1, 2)])], materials, images))
+            writer.save(source/"stage.glb")
+            # Blender writes a sampler-only image as an image without a glTF texture (PACKAGE-FORMAT.md section 6.6).
+            data = GlbReader(source/"stage.glb").data
+            data["images"].append(dict(data["images"][-1], name="sampler-only"))
+            material = next(m for m in data["materials"] if m["name"] == "masked")
+            material["extras"]["gh3MaskTexture"] = "#sampler-only"
+            material["extras"]["gh3Shader"]["textures"] = ["#sampler-only"]
+            writer = GlbWriter(); writer.data = data; writer.binary = bytearray(GlbReader(source/"stage.glb").binary)
+            writer.save(source/"stage.glb")
+            self.assertIsNone(GlbReader(source/"stage.glb").named_texture("sampler-only"))
+            compile_stage(source, root/"out")
+            compiled = {m["source"]: m for m in load_json(root/"out/stage.json")["materials"].values()}["masked"]
+            expected = f"{key('image-' + str(len(data['images']) - 1)):08x}"
+            self.assertEqual((compiled["mask"], compiled["gh3"]["textures"]), (expected, [expected]))
+            self.assertEqual(Image.open(root/"out/textures"/(expected + ".png")).getpixel((0, 0)), (10, 20, 30, 255))
+
 
 class VenueBuildTests(unittest.TestCase):
     def test_venue_package_is_valid_reproducible_and_round_trips(self):
@@ -237,6 +265,21 @@ class LibraryBuildTests(unittest.TestCase):
             reference = jsonschema.Draft202012Validator(json.loads((SCHEMA_DIR/schema).read_text()), registry=registry).is_valid(value)
             self.assertEqual(reference, valid, schema)
             self.assertEqual(not schemas.validate(value, schema), reference, schema)
+
+    def test_library_member_exports_as_a_valid_character(self):
+        from pipeline.package import character
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source, events = library(root/"current/gh3-band-v1")
+            (root/"out").mkdir(); (root/"characters").mkdir()
+            (_, archive), _ = build.build_library(source, events, root/"out", jobs=1)
+            folder, package = character.build_character(archive, "singer", root/"characters", "test.singer", "Test Singer")
+            self.assertEqual(package.name, "test.singer.chchar")
+            report = Validator(package, library=archive).run()
+            self.assertEqual((report.errors, report.warnings), ([], []))
+            glb = GlbReader(folder/"character.glb").data
+            self.assertNotIn("animations", glb)
+            self.assertEqual(json.loads((folder/"character.json").read_text())["profile"], "gh3-singer-male-v1")
 
     def test_validator_finds_missing_library_files(self):
         with tempfile.TemporaryDirectory() as temporary:

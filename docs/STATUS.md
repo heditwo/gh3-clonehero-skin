@@ -9,7 +9,8 @@ Version **0.9.8**. Clone Hero `v1.1.0.6142-final` with MelonLoader 0.7.3, Linux 
 - **Stage.** All ten GH3 venues as stage packs. Four performers with original rigs, instruments, clips, hair physics, fret-hand fingers, drummer IK, and 100-note hand fire. Crowd impostors per row. Original cameras with GH3's shot selection and geometry. Lightshow snapshots, beams, housings, and node flags. GH3 particles, Tesla, movies, outlines, screen color. All 921 used materials draw with their translated GH3 shader templates. Pre-song intro and post-song win sequences.
 - **Direction.** Native song PAK, `stage-events.json` versions 1 and 2, chart and MIDI direction tracks, the original song library for 159 songs, the Rock Band `VENUE` track (RB1/RB2 and RB3; camera cuts, lighting, pyro, fog), and generated cues from chart sections for charts without direction. Shared command dispatch for native and authored commands.
 - **Custom stages.** The public stage-pack format, compiler, and example pack.
-- **Packages.** The mod loads the venues and the library from package format v1 (`Mods/GH3Skin/Packages/`, `Custom/Stages`) through a per-machine cache with BC1/BC3 textures and a worker-thread clip prefetch ([PACKAGE-FORMAT.md section 20](PACKAGE-FORMAT.md#20-c-importer)). The older install stays as a fallback. No stage or character picker yet; `GH3_SKIN_STAGE` selects the stage.
+- **Packages.** The mod loads the venues and the library from package format v1 (`Mods/GH3Skin/Packages/`, `Custom/Stages`) through a per-machine cache with BC1/BC3 textures and a worker-thread clip prefetch ([PACKAGE-FORMAT.md section 20](PACKAGE-FORMAT.md#20-c-importer)). The older install stays as a fallback.
+- **Pickers.** In the menus, F6 opens the stage and band picker ([PLAYER-GUIDE.md](PLAYER-GUIDE.md)): a stage, Random, or Song's choice, with preview images; a character for each band role. A song can select its stage (`venue.chstage` in the song folder, `gh3_stage` in `song.ini`, or the GH3 career venue of a GH3 song); the player can turn this off. Character packages (`.chchar`) import into the cache and play on the role rigs through `StageAssets`. Unused cache folders are deleted at start.
 
 ## Known differences from GH3
 
@@ -31,10 +32,11 @@ Version **0.9.8**. Clone Hero `v1.1.0.6142-final` with MelonLoader 0.7.3, Linux 
 
 ### Packages
 
-- Stage and character pickers, character loading (PACKAGING-PLAN step 4 part 2). An in-game option for the VENUE track (`StageChartReader.UseVenueTrack`; now `GH3_SKIN_VENUE_TRACK=off`).
+- Character `attachments` are not used yet: a character GLB from the Blender add-on has no instrument, and the loader does not add the library instrument. An in-game option for the VENUE track (`StageChartReader.UseVenueTrack`; now `GH3_SKIN_VENUE_TRACK=off`).
 - Rock Band VENUE: tested with synthetic MIDI files only (no converted Rock Band chart was available). Post-processing, spotlights, sing-alongs, and the directed-cut pre-roll are not used; the mapping has choices by judgment ([CUSTOM-CONTENT.md](CUSTOM-CONTENT.md#rock-band-venue-track)).
-- Cache clean-up (unused cache folders stay), development folders are not watched while the game runs, Zip64 packages are not tested, Ogg and MP3 samples in a library are rejected (the importer reads WAV only).
-- Runtime stability: in 32 test starts on 2026-10-09, the branch had three CoreCLR faults (a crash in the type loader during the stage load, a stuck import thread followed by a crash in the JIT at exit, and a crash in the tiered-compilation thread before any package code ran), and one start where `uint.Parse` returned 0 (`Duplicate light housing object 00000000`; the same message is in an earlier spike log without packages). `main` had no fault in 12 starts. The symbolized stacks are in CoreCLR (`Module::GetMDImport`, `MemberLoader::GetMethodDescFromMethodDef`, `MethodTable::GetModule`). The cause is not known; the import thread and the clip prefetch add background managed threads. A start with a stuck import falls back to the older install after 120 s.
+- Picker: mouse only (no guitar or keyboard navigation inside the window; the keyboard still moves the Clone Hero menu below it). Songs in `.sng` containers cannot suggest a stage (the mod reads `song.ini` and `venue.chstage` from song folders only). Character `attachments` and blend shapes are not used; a character GLB must contain its instrument.
+- Development folders are not watched while the game runs, Zip64 packages are not tested, Ogg and MP3 samples in a library are rejected (the importer reads WAV only).
+- Runtime stability: the CoreCLR faults seen on 2026-10-09 came from MelonLoader's Dobby hook pages; see [Stability](#stability). A start with a stuck import falls back to the older install after 120 s.
 
 ### Commands and scripts
 

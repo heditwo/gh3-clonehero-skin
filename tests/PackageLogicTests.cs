@@ -65,7 +65,7 @@ internal static class PackageLogicTests
         Check(PackageJson.PythonRepr(0.1 + 0.2) == "0.30000000000000004", "Python repr uses the shortest round-trip digits");
     }
 
-    private static byte[] PngFile(int width, int height, int colorType, int depth, byte[] rows, byte[]? palette = null, byte[]? transparency = null)
+    internal static byte[] PngFile(int width, int height, int colorType, int depth, byte[] rows, byte[]? palette = null, byte[]? transparency = null)
     {
         using var output = new MemoryStream();
         output.Write(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A });

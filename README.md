@@ -25,7 +25,7 @@ MISE_QUIET=1 bash install.sh
 MISE_QUIET=1 bash run-gh3-skin.sh
 ```
 
-Select a venue with its pack ID:
+In the menus, push **F6** to select the venue (a venue, **Random**, or **Song's choice**) and the band members. See [docs/PLAYER-GUIDE.md](docs/PLAYER-GUIDE.md). For tests, `GH3_SKIN_STAGE` selects a venue with its pack ID and overrides the picker:
 
 ```bash
 MISE_QUIET=1 GH3_SKIN_STAGE=gh3.hell bash run-gh3-skin.sh
@@ -60,6 +60,7 @@ See [docs/STATUS.md](docs/STATUS.md) for the known differences from GH3.
 
 | Document | Contents |
 | --- | --- |
+| [PLAYER-GUIDE.md](docs/PLAYER-GUIDE.md) | Select the stage and the band in the game; add stages and characters |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Runtime modules, pipeline, asset formats, data flow |
 | [PIPELINE.md](docs/PIPELINE.md) | Regenerate the assets from GH3 data |
 | [VERIFICATION.md](docs/VERIFICATION.md) | Tests, recordings, comparisons, runtime variables |

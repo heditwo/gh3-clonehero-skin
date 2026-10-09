@@ -127,7 +127,12 @@ def build_venue(source, output):
         for file in sorted({*scripts.get("textures", {}).values(), *scripts.get("movies", {}).values()}):
             writer.add_file(file, source/file)
     entry = {key: entry[key] for key in ("model", "placements", "cameras", "lighting", "scripts", "actors") if key in entry}
-    writer.finish(venue_manifest(stage, entry))
+    manifest = venue_manifest(stage, entry)
+    preview = decisions.VENUE_PREVIEWS/(stage["id"] + ".png")
+    if preview.is_file():
+        writer.add_file("preview.png", preview)
+        manifest["preview"] = "preview.png"
+    writer.finish(manifest)
     return publish(writer, output, name)
 
 

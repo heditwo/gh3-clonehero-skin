@@ -14,6 +14,8 @@ public sealed class SkinMod : MelonMod
     private GameplayHud? _hud;
     private PreviewCapture? _capture;
     private GameplayStage? _stage;
+    private readonly PickerOverlay _picker = new();
+    private PickerTest? _pickerTest;
     private readonly GameplayScene _scene = new();
     private bool _gameplay;
     private double _lastSongTime = double.NegativeInfinity;
@@ -62,12 +64,14 @@ public sealed class SkinMod : MelonMod
         _hud = new GameplayHud(assets, tuning, !_options.KeepStockFlames);
         _capture = new PreviewCapture(_options);
         _stage = new GameplayStage(assetsDirectory);
+        _pickerTest = PickerTest.FromEnvironment();
         MelonLogger.Msg($"Loaded {assets.GameplaySpriteCount} GH3 skin gameplay sprites");
     }
 
     public override void OnSceneWasLoaded(int buildIndex, string sceneName)
     {
         _gameplay = sceneName == "Gameplay";
+        if (_stage != null) _picker.SceneChanged(!_gameplay);
         _scene.Reset();
         _lastSongTime = double.NegativeInfinity;
         _renderer?.Reset();
@@ -86,7 +90,15 @@ public sealed class SkinMod : MelonMod
 
     public override void OnUpdate()
     {
-        if (_stage != null) Packages.PackageRuntime.Update();
+        if (_stage == null) return;
+        Packages.PackageRuntime.Update();
+        _picker.Update();
+        _pickerTest?.Update(_picker);
+    }
+
+    public override void OnGUI()
+    {
+        if (_stage != null) _picker.OnGUI();
     }
 
     public override void OnLateUpdate()

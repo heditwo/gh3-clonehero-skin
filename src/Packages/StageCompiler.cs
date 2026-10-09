@@ -471,7 +471,17 @@ internal sealed class StageCompiler
             if (index < 0 || index >= glb.List("textures").Count) throw new PackageException("invalid material texture index");
         }
         else if (Text(reference) is { } text && text.StartsWith('#'))
-            index = glb.NamedTexture(text[1..]) ?? throw new PackageException($"no GLB image named {text[1..]}");
+        {
+            if (glb.NamedTexture(text[1..]) is { } named) index = named;
+            else
+            {
+                // A named image without a glTF texture (Blender keeps sampler-only images so): name it by its image index.
+                var image = glb.NamedImage(text[1..]) ?? throw new PackageException($"no GLB image named {text[1..]}");
+                var imageName = Key("image-" + image);
+                if (images.Add(imageName)) _textures.Add(Path.Combine(textureFolder, imageName), () => glb.Image(image));
+                return imageName;
+            }
+        }
         else if (Text(reference) is { } path && path.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
         {
             var name = Key("file-" + path);

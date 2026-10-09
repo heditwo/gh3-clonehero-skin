@@ -1,0 +1,336 @@
+using System.Buffers.Binary;
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
+using static Gh3Skin.Packages.PackageJson;
+
+namespace Gh3Skin.Packages;
+
+// Character package (`.chchar`, PACKAGE-FORMAT.md section 9) to a band model folder that StageAssets draws as the library
+// members: GH3BND02 meshes, stage.json, and textures, plus the joint list (character.json) and the GLB inverse bind matrices
+// (bindposes.bin). The material rules are the library rules (LibraryImporter.ImportModel), so a library member exported as a
+// character gives the same meshes and materials. The band role's rig and clips drive it; joints map by name.
+internal sealed class CharacterImporter
+{
+    public const double JointPosition = 1e-4;
+    public const double JointRotation = 0.01;
+    public const double JointScale = 1e-4;
+    public const double BindTolerance = 1e-4;
+    public static readonly IReadOnlyDictionary<string, string> Profiles = new Dictionary<string, string>
+    {
+        ["gh3-guitarist-axel-v1"] = "guitarist", ["gh3-bassist-v1"] = "bassist", ["gh3-singer-male-v1"] = "singer", ["gh3-drummer-v1"] = "drummer",
+    };
+    private readonly VerifiedPackage _package;
+    private readonly TextureJobs _textures;
+    private readonly string _library;
+    public List<string> Warnings { get; } = new();
+
+    public CharacterImporter(VerifiedPackage package, TextureJobs textures, string libraryCache)
+    {
+        _package = package;
+        _textures = textures;
+        _library = libraryCache;
+    }
+
+    private static string Key(string text) => Gh3Checksum.Of(text);
+
+    public static string JointChecksum(string name) => Regex.IsMatch(name, @"\Abone-[0-9a-f]{8}\z") ? name[5..] : Key(name);
+
+    public (string Role, int Joints, int Meshes, int Vertices) Import(string folder)
+    {
+        var entry = _package.Manifest.Entry;
+        var character = Object(_package.Read(entry["character"]));
+        Fields(character, "character.json", new[] { "version", "library", "profile", "hairMaterials", "attachments" }, "version", "library", "profile");
+        if (Number(character["version"], "version") != 1) throw new PackageException("character.json version must be 1");
+        var profile = Text(character["profile"]) ?? "";
+        if (!Profiles.TryGetValue(profile, out var role)) throw new PackageException($"unknown character profile '{profile}'");
+        var hair = (character["hairMaterials"] as JsonArray ?? new JsonArray()).Select(n => Text(n) ?? throw new PackageException("invalid hair material")).ToHashSet();
+        if (character["attachments"] is JsonObject { Count: > 0 })
+            Warnings.Add("attachments are not used by this mod version; the character GLB carries its instrument");
+        var (rigBones, rigParents, rigBind) = Rig(_library, role);
+        var glb = new GlbDocument(_package.Read(entry["model"]));
+        if (glb.List("animations").Count > 0) Warnings.Add("the GLB animations are ignored; the library supplies the clips");
+        var skins = glb.List("skins");
+        if (skins.Count != 1) throw new PackageException("a character GLB needs one skin");
+        var skin = (JsonObject)skins[0]!;
+        var joints = ((JsonArray)skin["joints"]!).Select(j => j!.GetValue<int>()).ToArray();
+        if (joints.Length is < 1 or > 255 || joints.Distinct().Count() != joints.Length) throw new PackageException("invalid character joints");
+        var nodes = glb.List("nodes");
+        var names = joints.Select(j => JointChecksum(Text(nodes[j]?["name"]) ?? throw new PackageException("character joints need names"))).ToArray();
+        if (names.Distinct().Count() != names.Length) throw new PackageException("two character joints have the same GH3 bone name");
+        var missing = rigBones.Where(b => !names.Contains(b)).ToArray();
+        var extra = names.Where(b => !rigBones.Contains(b)).ToArray();
+        if (missing.Length > 0) throw new PackageException($"{missing.Length} joints of profile {profile} are missing, for example bone-{missing[0]}");
+        if (extra.Length > 0) throw new PackageException($"{extra.Length} joints are not in profile {profile}, for example bone-{extra[0]}");
+        var parentNodes = glb.Parents();
+        var world = glb.Nodes().ToDictionary(n => n.Index, n => n.World);
+        if (joints.Any(j => !world.ContainsKey(j))) throw new PackageException("a character joint is outside the scene");
+        var worst = (Position: 0.0, Rotation: 0.0, Scale: 0.0);
+        for (var i = 0; i < joints.Length; i++)
+        {
+            var bone = System.Array.IndexOf(rigBones, names[i]);
+            var parent = parentNodes.TryGetValue(joints[i], out var p) ? System.Array.IndexOf(joints, p) : -1;
+            var expected = rigParents[bone];
+            if ((parent < 0) != (expected < 0) || parent >= 0 && names[parent] != rigBones[expected])
+                throw new PackageException($"joint bone-{names[i]} has another parent than profile {profile}");
+            for (var above = parent < 0 && parentNodes.TryGetValue(joints[i], out var first) ? first : -1; above >= 0;
+                 above = parentNodes.TryGetValue(above, out var next) ? next : -1)
+                if (!Matrix4d.FromNode(glb.Item("nodes", above)).Close(Matrix4d.Identity, BindTolerance))
+                    throw new PackageException("the nodes above the root joint must have no transform (apply the armature transform before export)");
+            var local = Matrix4d.Reflect(Matrix4d.FromNode(glb.Item("nodes", joints[i])));
+            var m = local.Upper3();
+            var scale = new double[3];
+            for (var c = 0; c < 3; c++) scale[c] = Math.Sqrt(m[c] * m[c] + m[3 + c] * m[3 + c] + m[6 + c] * m[6 + c]);
+            for (var r = 0; r < 3; r++) for (var c = 0; c < 3; c++) m[r * 3 + c] /= scale[c];
+            var q = Matrix4d.Quaternion(m);
+            var t = local.Translation;
+            var b = rigBind[bone];
+            var position = Math.Sqrt(Enumerable.Range(0, 3).Sum(c => (t[c] - b[c]) * (t[c] - b[c])));
+            // Chord form 4 asin(|a - b| / 2): acos of a dot product near 1 loses the precision of the float32 rig.
+            var length = Math.Sqrt(b[3] * (double)b[3] + b[4] * (double)b[4] + b[5] * (double)b[5] + b[6] * (double)b[6]);
+            var sign = q[0] * b[3] + q[1] * b[4] + q[2] * b[5] + q[3] * b[6] < 0 ? -1 : 1;
+            var chord = Math.Sqrt(Enumerable.Range(0, 4).Sum(c => Math.Pow(q[c] - sign * b[3 + c] / length, 2)));
+            var angle = 4 * Math.Asin(Math.Min(1, chord / 2)) * 180 / Math.PI;
+            worst = (Math.Max(worst.Position, position), Math.Max(worst.Rotation, angle), Math.Max(worst.Scale, scale.Max(s => Math.Abs(s - 1))));
+        }
+        if (worst.Position > JointPosition) throw new PackageException($"joint positions differ from profile {profile} by {worst.Position * 1000:0.###} mm (limit 0.1 mm)");
+        if (worst.Rotation > JointRotation) throw new PackageException($"joint rotations differ from profile {profile} by {worst.Rotation:0.###}° (limit 0.01°)");
+        if (worst.Scale > JointScale) throw new PackageException($"joint scale differs from 1 by {worst.Scale:g3} (limit 1e-4)");
+
+        var inverseValues = glb.Accessor(skin["inverseBindMatrices"] is JsonValue ibm ? ibm.GetValue<int>() : throw new PackageException("the character skin needs inverse bind matrices"));
+        if (inverseValues.Count != joints.Length || inverseValues.Columns != 16) throw new PackageException("the inverse bind matrix count differs from the joints");
+        var bindposes = new Matrix4d[joints.Length];
+        for (var i = 0; i < joints.Length; i++)
+        {
+            var m = new double[16];
+            for (var k = 0; k < 16; k++) m[(k % 4) * 4 + k / 4] = inverseValues.Values[i * 16 + k];
+            bindposes[i] = Matrix4d.Reflect(new Matrix4d(m));
+        }
+        var meshNodes = glb.Nodes().Where(n => n.Node["mesh"] != null).ToList();
+        if (meshNodes.Count == 0) throw new PackageException("the character has no mesh");
+        foreach (var (_, node, meshWorld) in meshNodes)
+        {
+            if (node["skin"] is not JsonValue skinIndex || skinIndex.GetValue<int>() != 0) throw new PackageException("all character meshes must use its skin");
+            for (var i = 0; i < joints.Length; i++)
+                if (!(world[joints[i]] * bindposes[i]).Close(meshWorld, BindTolerance))
+                    throw new PackageException("the inverse bind matrices differ from the joints (export in the rest position)");
+        }
+
+        Directory.CreateDirectory(folder);
+        var materials = glb.List("materials");
+        var imageNames = ImageNames(glb);
+        var materialIds = new Dictionary<int, string>();
+        for (var i = 0; i < materials.Count; i++)
+        {
+            var name = Text(materials[i]?["name"]) ?? "";
+            materialIds[i] = Regex.IsMatch(name, @"\A[0-9a-f]{8}\z") ? name : Key("material-" + (name.Length > 0 ? name : i.ToString()));
+        }
+        var fallbackMaterial = Key("material-default");
+        var parts = new List<MeshPart>();
+        var streamless = new HashSet<string>();
+        var morphs = 0;
+        foreach (var (_, node, _) in meshNodes)
+            foreach (var primitive in (JsonArray)glb.Item("meshes", node["mesh"]!.GetValue<int>())["primitives"]!)
+            {
+                if (GlbDocument.Int((JsonObject)primitive!, "mode", 4) != 4) throw new PackageException("triangulate the character meshes before export");
+                if (primitive!["targets"] is JsonArray { Count: > 0 }) morphs++;
+                var material = primitive["material"] is JsonValue mi ? materialIds[mi.GetValue<int>()] : fallbackMaterial;
+                var (vertices, count, hasStreams) = Vertices(glb, (JsonObject)primitive["attributes"]!, joints.Length);
+                if (!hasStreams) streamless.Add(material);
+                var faces = primitive["indices"] is JsonValue indices ? glb.Accessor(indices.GetValue<int>(), normalize: false).Values.Select(i => (int)i).ToArray() :
+                    Enumerable.Range(0, count).ToArray();
+                if (faces.Length % 3 != 0 || faces.Any(f => f < 0 || f >= count)) throw new PackageException("invalid character triangles");
+                for (var i = 0; i < faces.Length; i += 3) (faces[i + 1], faces[i + 2]) = (faces[i + 2], faces[i + 1]);
+                if (faces.Length == 0) continue;
+                if (count <= 65535) parts.Add(new MeshPart(material, count, vertices, faces));
+                else parts.AddRange(StageGeometry.Split(material, vertices, StageGeometry.SkinnedStride, faces));
+            }
+        if (morphs > 0) Warnings.Add($"{morphs} primitives have blend shapes; this mod version does not animate them");
+        if (parts.Count == 0) throw new PackageException("the character has no triangles");
+        StageGeometry.WriteMeshes(Path.Combine(folder, "meshes.bin"), parts, skinned: true);
+
+        var rows = new JsonObject();
+        var referenced = new Dictionary<string, Func<byte[]>>();
+        string Texture(string? reference)
+        {
+            if (string.IsNullOrEmpty(reference)) return "";
+            if (reference.StartsWith('#'))
+            {
+                var image = glb.NamedImage(reference[1..]) ?? throw new PackageException($"no GLB image named {reference[1..]}");
+                referenced.TryAdd(imageNames[image], () => glb.Image(image));
+                return imageNames[image];
+            }
+            if (!reference.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || !_package.Contains(reference)) throw new PackageException($"invalid texture reference {reference}");
+            var name = Key("file-" + reference);
+            referenced.TryAdd(name, () => _package.Read(reference));
+            return name;
+        }
+        var used = parts.Select(p => p.Material).ToHashSet();
+        for (var i = 0; i <= materials.Count; i++)
+        {
+            var id = i < materials.Count ? materialIds[i] : fallbackMaterial;
+            if (rows.ContainsKey(id) || i == materials.Count && !used.Contains(id)) continue;
+            var material = i < materials.Count ? (JsonObject)materials[i]! : new JsonObject();
+            var pbr = material["pbrMetallicRoughness"] as JsonObject ?? new JsonObject();
+            var extras = material["extras"] as JsonObject ?? new JsonObject();
+            var shader = extras["gh3Shader"] as JsonObject;
+            if (shader != null && streamless.Contains(id))
+            {
+                Warnings.Add($"material {Text(material["name"])} has a GH3 shader record but its mesh has no _GH3_* streams; it uses the surface model");
+                shader = null;
+            }
+            var mode = Text(material["alphaMode"]) ?? "OPAQUE";
+            var baseTexture = "";
+            if (pbr["baseColorTexture"] is JsonObject info)
+            {
+                if (GlbDocument.Int(info, "texCoord", 0) != 0) throw new PackageException("character materials use TEXCOORD_0");
+                var image = GlbDocument.Int(glb.Item("textures", info["index"]!.GetValue<int>()), "source", -1);
+                if (image < 0 || image >= imageNames.Length) throw new PackageException("invalid character texture");
+                baseTexture = imageNames[image];
+                referenced.TryAdd(baseTexture, () => glb.Image(image));
+            }
+            var row = new JsonObject
+            {
+                ["blend"] = shader != null ? Clone(shader["blend"]) : Bool(extras["gh3Additive"]) == true ? 1 : mode == "BLEND" ? 2 : 0,
+                ["cutoff"] = mode == "MASK" ? Clone(material["alphaCutoff"]) ?? 0.5 : Clone(extras["gh3AlphaCutoff"]) ?? 0,
+                ["doubleSided"] = Bool(material["doubleSided"]) == true,
+                ["texture"] = baseTexture,
+            };
+            if (shader != null)
+            {
+                var gh3 = (JsonObject)Clone(shader)!;
+                gh3["textures"] = new JsonArray(((JsonArray)shader["textures"]!).Select(reference => (JsonNode?)Texture(Text(reference))).ToArray());
+                row["gh3"] = gh3;
+            }
+            if (extras["gh3Shading"] != null) row["shading"] = Clone(extras["gh3Shading"]);
+            if (Bool(extras["gh3SortedTransparency"]) == true || hair.Contains(Text(material["name"]) ?? "\0")) row["sortedTransparency"] = true;
+            if (pbr["baseColorFactor"] is JsonArray factor)
+            {
+                var scale = extras["gh3ColorScale"] == null ? 1 : Number(extras["gh3ColorScale"], "gh3ColorScale");
+                row["color"] = Array(new[] { Number(factor[0], "color") * scale, Number(factor[1], "color") * scale, Number(factor[2], "color") * scale, Number(factor[3], "color") });
+            }
+            rows[id] = row;
+        }
+        foreach (var name in hair.Where(name => !materials.Any(m => Text(m?["name"]) == name)))
+            Warnings.Add($"hair material {name} is not in the GLB");
+        Write(Path.Combine(folder, "stage.json"), new JsonObject
+        {
+            ["version"] = 1, ["name"] = _package.Manifest.Name, ["cameraPosition"] = new JsonArray(0, 0, 0), ["cameraTarget"] = new JsonArray(0, 1, 0), ["materials"] = rows,
+        });
+        foreach (var (name, png) in referenced) _textures.Add(Path.Combine(folder, "textures", name), png);
+        _textures.Flush();
+
+        using (var writer = new BinaryWriter(File.Create(Path.Combine(folder, "bindposes.bin"))))
+        {
+            writer.Write(System.Text.Encoding.ASCII.GetBytes("GH3BPS01"));
+            writer.Write(joints.Length);
+            foreach (var matrix in bindposes)
+                for (var r = 0; r < 4; r++) for (var c = 0; c < 4; c++) writer.Write((float)matrix[r, c]);
+        }
+        Write(Path.Combine(folder, "character.json"), new JsonObject
+        {
+            ["version"] = 1, ["id"] = _package.Manifest.Id, ["name"] = _package.Manifest.Name, ["profile"] = profile, ["role"] = role,
+            ["joints"] = new JsonArray(names.Select(n => (JsonNode?)n).ToArray()),
+        });
+        return (role, joints.Length, parts.Count, parts.Sum(p => p.Count));
+    }
+
+    // Runtime texture names are 8 hex digits: the image name when it is one (GH3 texture checksums), else a checksum of
+    // the image index.
+    private static string[] ImageNames(GlbDocument glb)
+    {
+        var images = glb.List("images");
+        var result = new string[images.Count];
+        var taken = new HashSet<string>();
+        for (var i = 0; i < images.Count; i++)
+            if (Text(images[i]?["name"]) is { } name && Regex.IsMatch(name, @"\A[0-9a-f]{8}\z") && taken.Add(name)) result[i] = name;
+        for (var i = 0; i < images.Count; i++)
+            if (result[i] == null)
+            {
+                var name = Key("image-" + i);
+                while (!taken.Add(name)) name = Key("image-" + name);
+                result[i] = name;
+            }
+        return result;
+    }
+
+    // GH3BND02 vertices (pipeline/package/roundtrip.py model_runtime): the standard attributes in Unity coordinates, then the
+    // optional original GH3 streams.
+    private static (byte[] Vertices, int Count, bool Streams) Vertices(GlbDocument glb, JsonObject attributes, int jointCount)
+    {
+        GlbAccessor? Optional(string name, bool normalize = false) => attributes[name] is JsonValue index ? glb.Accessor(index.GetValue<int>(), normalize) : null;
+        GlbAccessor Required(string name, bool normalize = false) => Optional(name, normalize) ?? throw new PackageException($"character meshes need {name}");
+        var positions = Required("POSITION");
+        var count = positions.Count;
+        var normals = Required("NORMAL");
+        var uv = Optional("TEXCOORD_0", normalize: true);
+        var colorIndex = attributes["COLOR_0"] is JsonValue ci ? ci.GetValue<int>() : -1;
+        // Unsigned bytes stay as stored (the library GLBs); other types scale from 0-1 to 0-255.
+        var rawColor = colorIndex >= 0 && glb.Item("accessors", colorIndex)["componentType"]!.GetValue<int>() == 5121;
+        var color = colorIndex >= 0 ? glb.Accessor(colorIndex, normalize: !rawColor) : (GlbAccessor?)null;
+        var joint = Required("JOINTS_0");
+        var weightIndex = attributes["WEIGHTS_0"] is JsonValue wi ? wi.GetValue<int>() : throw new PackageException("character meshes need WEIGHTS_0");
+        var weight = glb.Accessor(weightIndex, normalize: true);
+        if (attributes.ContainsKey("JOINTS_1") || attributes.ContainsKey("WEIGHTS_1")) throw new PackageException("characters have at most four joint influences for each vertex");
+        foreach (var (name, accessor, columns) in new[] { ("NORMAL", normals, 3), ("JOINTS_0", joint, 4), ("WEIGHTS_0", weight, 4) })
+            if (accessor.Count != count || accessor.Columns != columns) throw new PackageException($"invalid character {name}");
+        if (positions.Columns != 3 || uv is { } u && (u.Count != count || u.Columns != 2) || color is { } k && (k.Count != count || k.Columns is not (3 or 4)))
+            throw new PackageException("invalid character vertex attributes");
+        var streams = attributes.ContainsKey("_GH3_UV0");
+        var gh3Uv = streams ? Enumerable.Range(0, 6).Select(i => Required($"_GH3_UV{i}")).ToArray() : null;
+        var binormal = streams ? Required("_GH3_BINORMAL") : default;
+        var tangent = streams ? Required("_GH3_TANGENT") : default;
+        var vertices = new byte[count * StageGeometry.SkinnedStride];
+        for (var v = 0; v < count; v++)
+        {
+            var offset = v * StageGeometry.SkinnedStride;
+            var row = vertices.AsSpan(offset, StageGeometry.SkinnedStride);
+            void F(int at, double value) => BinaryPrimitives.WriteSingleLittleEndian(vertices.AsSpan(offset + at), (float)value);
+            F(0, positions[v, 0]); F(4, positions[v, 1]); F(8, -positions[v, 2]);
+            F(12, normals[v, 0]); F(16, normals[v, 1]); F(20, -normals[v, 2]);
+            if (uv is { } texture) { F(24, texture[v, 0]); BinaryPrimitives.WriteSingleLittleEndian(row[28..], 1f - (float)texture[v, 1]); }
+            for (var c = 0; c < 4; c++)
+                row[32 + c] = color is not { } paint ? (byte)255 : c >= paint.Columns ? (byte)255 :
+                    rawColor ? (byte)paint[v, c] : (byte)Math.Clamp(Math.Round(paint[v, c] * 255), 0, 255);
+            double sum = 0;
+            for (var c = 0; c < 4; c++)
+            {
+                var index = joint[v, c];
+                if (index < 0 || index >= jointCount || weight[v, c] < 0) throw new PackageException("invalid character skin weights");
+                row[36 + c] = (byte)index;
+                sum += weight[v, c];
+            }
+            if (Math.Abs(sum - 1) > 0.01) throw new PackageException("character skin weights must add up to 1");
+            // Normalized integer weights round; float weights stay as exported.
+            var renormalize = Math.Abs(sum - 1) > 1e-6;
+            for (var c = 0; c < 4; c++) F(40 + c * 4, renormalize ? weight[v, c] / sum : weight[v, c]);
+            if (gh3Uv != null)
+            {
+                for (var i = 0; i < 6; i++) { F(56 + i * 8, gh3Uv[i][v, 0]); F(60 + i * 8, gh3Uv[i][v, 1]); }
+                F(104, binormal[v, 0]); F(108, binormal[v, 1]); F(112, -binormal[v, 2]);
+                F(116, tangent[v, 0]); F(120, tangent[v, 1]); F(124, -tangent[v, 2]);
+            }
+        }
+        return (vertices, count, streams);
+    }
+
+    // The profile rig of a band role in the library cache: bone checksums (catalog.json), parents and bind pose (animation.bin).
+    public static (string[] Bones, int[] Parents, float[][] Bind) Rig(string libraryCache, string role)
+    {
+        var catalog = Object(File.ReadAllBytes(Path.Combine(libraryCache, "catalog.json")));
+        var bones = (catalog["members"]?[role]?["bones"] as JsonArray ?? throw new PackageException($"the library has no {role} rig"))
+            .Select(b => Text(b) ?? throw new PackageException("invalid library bone")).ToArray();
+        using var reader = new BinaryReader(File.OpenRead(Path.Combine(libraryCache, "band", role, "animation.bin")));
+        if (System.Text.Encoding.ASCII.GetString(reader.ReadBytes(8)) != "GH3ANM01") throw new PackageException("invalid library rig");
+        var count = reader.ReadInt32();
+        reader.ReadInt32();
+        if (count != bones.Length) throw new PackageException($"the library {role} rig and catalog differ");
+        var parents = new int[count];
+        var bind = new float[count][];
+        for (var i = 0; i < count; i++)
+        {
+            parents[i] = reader.ReadInt32();
+            bind[i] = Enumerable.Range(0, 7).Select(_ => reader.ReadSingle()).ToArray();
+        }
+        return (bones, parents, bind);
+    }
+}

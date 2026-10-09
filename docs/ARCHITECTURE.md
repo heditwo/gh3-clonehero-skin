@@ -32,7 +32,7 @@ flowchart LR
 
 ## Runtime modules
 
-`SkinMod` (`src/Gh3Skin.cs`) is the MelonLoader entry point. It checks the game version and platform (`GameCompatibility`), binds the obfuscated Clone Hero members (`CloneHeroBindings`), reads the test options (`SkinOptions`), loads textures once (`SkinAssets`), and creates the per-scene parts when the gameplay scene loads. A scene change or a backward jump of the song clock resets them.
+`SkinMod` (`src/Gh3Skin.cs`) is the MelonLoader entry point. It checks the game version and platform (`GameCompatibility`), binds the obfuscated Clone Hero members (`CloneHeroBindings`), reads the test options (`SkinOptions`), loads textures once (`SkinAssets`), and creates the per-scene parts when the gameplay scene loads. A scene change or a backward jump of the song clock resets them. In the other scenes (the menus) it runs the stage and band picker (`PickerOverlay`).
 
 | Folder | Contents |
 | --- | --- |
@@ -40,11 +40,12 @@ flowchart LR
 | `src/Gameplay/` | `GameplayScene` (cached game objects), `GameplayStateReader` (score, streak, rock, and Star Power from the engine), `GameplaySpriteRenderer` (highway, gems, sustains, stock-effect hiding; split into `.Highway`, `.Gems`, `.Sustains` parts), `HighwayView` (GH3 camera and highway geometry), `BeatlineVisual`, `GemKind`, `GemAnimation`, `SustainBend` and `SustainVariant` (whammy bend, star whammy), `HitEffects` (GH3 2D hit particles) |
 | `src/Hud/` | `GameplayHud` builds the HUD tree. Components: `HighwayHud`, `ReadyBannerHud`, `RockMeterHud` (`RockGaugeHud`, `StarPowerBulbsHud`), `ScorePanelHud` (`AmpHud`, `LampColumnHud`, `ComboHud`, `ComboDigitHud`), `MessageHud`, `HitEffectsHud`, `YouRockHud`. Pure state and animation classes (`HudState`, `RockMeterState`, `ComboReelAnimation`, `StarPowerBulbAnimation`, `StarPowerHighwayAnimation`, `IntroHudAnimation`, `YouRockAnimation`, `ReadyAnimationTrigger`, `HudTuning`, `HudViewport`) have no Unity calls; the logic tests use them |
 | `src/Native/` | GH3 data and script engine: `Gh3Pak`, `Gh3Qb`, `Gh3QbText` (typed QB values), `Gh3Checksum`, `Gh3Song` (native song PAK), `Gh3ScriptCode` and `Gh3ScriptRuntime` (QB bytecode interpreter), `Gh3CommandDispatch`, `Gh3PcCommands`, `Gh3ComponentWait`, `Gh3Random` (GH3's RNG), `Gh3ScriptEvent` |
-| `src/Packages/` | Package format v1 at runtime ([PACKAGE-FORMAT.md section 20](PACKAGE-FORMAT.md#20-c-importer)): `PackageManager` (scan, checks, cache keys, one import at a time on a background thread), `PackageManifest`, `PackageSource` (zip or folder, SHA-256 checks), `GlbDocument`, `StageCompiler` and `StageGeometry` (port of `pipeline/stagepack`), `LibraryImporter`, `TextureCodec`, `Png`, `BlockCompression` (BC1/BC3), `PackageJson`, and `PackageRuntime` (Unity glue: content folders, GPU formats, log lines). Only `PackageRuntime` uses Unity |
-| `src/Stage/` | `GameplayStage` (stage source: package cache or older install; stage camera, scene resources, per-frame update order), `StagePack` (compiled pack loader), `Shaders/` (GLSL sources for the bundles) |
+| `src/Packages/` | Package format v1 at runtime ([PACKAGE-FORMAT.md section 20](PACKAGE-FORMAT.md#20-c-importer)): `PackageManager` (scan, checks, cache keys, one import at a time on a background thread, song venue packages, cache clean-up), `PackageManifest`, `PackageSource` (zip or folder, SHA-256 checks), `GlbDocument`, `StageCompiler` and `StageGeometry` (port of `pipeline/stagepack`), `LibraryImporter`, `CharacterImporter` and `CharacterModel` (`.chchar` to a band model folder with GLB bind poses), `TextureCodec`, `Png`, `BlockCompression` (BC1/BC3), `PackageJson`, `PlayerChoices` (`UserData/GH3Skin/choices.json`), `StageSelection` and `NativeVenues` (stage of a song: player choice, song suggestion, GH3 career venue), and `PackageRuntime` (Unity glue: content folders, GPU formats, log lines, the saved choices). Only `PackageRuntime` uses Unity |
+| `src/Menu/` | `PickerOverlay`: the stage and band picker, an IMGUI window that F6 opens in the menus ([PLAYER-GUIDE.md](PLAYER-GUIDE.md)). `PickerTest`: picker steps without a mouse for captures (`GH3_SKIN_PICKER_TEST`) |
+| `src/Stage/` | `GameplayStage` (stage choice for each song, stage source: package cache or older install; band characters; stage camera, scene resources, per-frame update order), `StagePack` (compiled pack loader), `Shaders/` (GLSL sources for the bundles) |
 | `src/Stage/Rendering/` | `StageAssets` (meshes, materials, translated GH3 templates, fallback surface model), `StageShader` (loads a bundle shader and stops the stage with an error when the graphics API has no program), `StageGh3Material` (template table and GH3 render state), `StageMaterialState`, `StageRenderControlState`, `StageTextureAnimation`, `StageUvWibble`, `StageTransparency`, `StageTriangleOrder`, `StageHighwayMask` |
 | `src/Stage/Direction/` | Song direction: `StageTimeline` (cue evaluation on the song clock), `StageCue`, `StageChartReader` (chart and MIDI tracks), `StageRockBandVenue` (Rock Band `VENUE` track to GH3 cues) and `StageGeneratedDirection` (cues from chart sections), `StageNativeSong`, `StageSongDirection` (version 2 channels), `StageGh3Events`, `StageShowFlow` (intro and win sequences), `StageCameraPath` (GH3 camera cuts), `StageNoteHits` |
-| `src/Stage/Band/` | `StageBand`, `StagePerformance`, `BandAnimation`, `StageGuitarArms` (DegenerateBlend tracks, Havok-style IK), `StageDrummer`, `StageHair`, `StageHandFire` |
+| `src/Stage/Band/` | `StageBand` (the library members or character packages on the role rigs), `StagePerformance`, `BandAnimation`, `StageGuitarArms` (DegenerateBlend tracks, Havok-style IK), `StageDrummer`, `StageHair`, `StageHandFire` |
 | `src/Stage/Crowd/` | `StageCrowd` (one impostor render texture per row), `StageCrowdState`, `StageCrowdPerformance` |
 | `src/Stage/Lighting/` | `StageLighting`, `StageLightShowState`, `StageLightScene`, `StageLightSpatial`, `StageLightNative`, `StageLightTransition`, `StageLightingRenderer` (light-data texture), `StageBeamMotion`, `StageHousingRotation`, `StageFixtures` |
 | `src/Stage/Particles/` | GH3 particle system: definitions, emission, motion, wind, LOD, visibility, render list and order, techniques, geometry, and batches (`StageParticles`) |
@@ -68,6 +69,7 @@ Clone Hero is an Il2Cpp build. Many Unity methods are stripped or slow through t
 - `Shader.isSupported` is true also when Unity replaces a shader with its error shader (no program for the graphics API). `StageShader` checks the pass name `GH3` instead (`Material.GetPassName`). `Shader.FindPassTagValue` is stripped.
 - Keep loaded shaders and textures with `HideFlags.DontUnloadUnusedAsset`. Stage cleanup runs in `OnApplicationQuit` and `OnDeinitializeMelon`.
 - Background threads run only managed code without Unity or Il2Cpp objects: the package import thread and the clip prefetch (`Parallel.ForEach`). They hand results to the main thread through files, thread-safe collections, and a log queue that `PackageRuntime.Update` writes on the main thread. The main thread waits for the clip prefetch in the stage load, so no other mod code runs on it at the same time. A warm start starts no import thread.
+- IMGUI: `GUI.DrawTexture` is stripped ("Method unstripping failed"). The picker draws images as `GUIStyle.normal.background` of a `GUI.Box`. `GUI.Box`, `Label`, `Button`, `Toggle`, `BeginScrollView`, `GUIStyle`, and `Event.current` work. The picker turns itself off after the first IMGUI exception.
 - Linux: MelonLoader's hook library (Dobby) maps its hook pages with `MAP_FIXED` over memory in use, which crashed the game at random places (CoreCLR type loader, JIT, hook jumps). `HookPageGuard` runs first in `OnEarlyInitializeMelon` and moves these pages to the relocation table of `GameAssembly.so`. Keep it the first statement there. See [STATUS.md](STATUS.md#stability).
 
 ### Clone Hero bindings
@@ -80,6 +82,23 @@ The mod reads obfuscated members of Clone Hero `v1.1.0.6142-final` for Linux and
 - Add each new obfuscated member to `CloneHeroBindings` with its metadata name. Get the name with `tools/InteropMap`.
 
 The member map and the evidence are in [PARITY-NOTES.md](PARITY-NOTES.md#clone-hero-bindings).
+
+## Stage and band selection
+
+```mermaid
+flowchart TD
+    Env{GH3_SKIN_STAGE<br/>is a stage ID?} -- yes --> Fixed[That stage]
+    Env -- no --> Suggest{Song suggests a stage<br/>and suggestions are on<br/>or the choice is Song's choice?}
+    Suggest -- venue.chstage --> SongPackage[Import the song package<br/>on the importer thread]
+    Suggest -- song.ini gh3_stage<br/>or GH3 career venue --> Installed{Installed?}
+    Installed -- yes --> SongStage[The song's stage]
+    Installed -- no --> Choice
+    Suggest -- no --> Choice{Player choice}
+    Choice -- stage ID --> Picked[That stage, else gh3.budokan]
+    Choice -- Random or Song's choice --> Random[Random installed stage]
+```
+
+`GameplayStage` decides once for each song (`StageSelection`) and logs `GH3 stage choice: <id> (<reason>)`. For each band role with a character in `choices.json`, `StageBand` loads the character's cache folder through `StageAssets` (the same renderer setup as the library members) on the role's rig: the character joints map to the rig bones by name (`CharacterModel.Map`), and the GLB inverse bind matrices are the mesh bind poses. The role's clips, hair, IK, and hand fire stay. A character that fails to load gives the venue default.
 
 ## Song direction sources
 
