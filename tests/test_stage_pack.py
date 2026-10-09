@@ -1,31 +1,30 @@
-from copy import deepcopy
-import importlib.util
-from pathlib import Path
 import struct
 import tempfile
 import unittest
+from copy import deepcopy
+from pathlib import Path
 
 import numpy as np
 
-from stage_gltf import GlbReader, GlbWriter, VERTEX
-from stage_pack import compile_stage, load_json, write_json
-from gh3_venue_scripts import literal_positions, script_bytes
-from gh3_formats import key, node_prefixes
-from gh3_direction import camera_motion, camera_point
-from gh3_band_formats import remap_animation
-from stage_pack import compile_cameras
-
-
-SPEC = importlib.util.spec_from_file_location("template", Path(__file__).resolve().parents[1]/"create-stage-template.py")
-TEMPLATE = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(TEMPLATE)
+from pipeline.gh3.band_formats import remap_animation
+from pipeline.gh3.direction import camera_motion, camera_point
+from pipeline.gh3.formats import key, node_prefixes
+from pipeline.gh3.venue_scripts import literal_positions, script_bytes
+from pipeline.stagepack import template
+from pipeline.stagepack.gltf import VERTEX, GlbReader, GlbWriter
+from pipeline.stagepack.pack import (
+    compile_cameras,
+    compile_stage,
+    load_json,
+    write_json,
+)
 
 
 class StagePackTests(unittest.TestCase):
     def test_custom_pack_uses_public_assets_and_same_compiler(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); source = root/"author"; output = root/"compiled"
-            TEMPLATE.create(source)
+            template.create(source)
             result = compile_stage(source, output)
             self.assertEqual(result["id"], "example.studio")
             pack = load_json(output/"pack.json")
@@ -59,10 +58,11 @@ class StagePackTests(unittest.TestCase):
 
     def test_lightmap_shading_and_second_uv_survive_import(self):
         from PIL import Image
-        from stage_gltf import STATIC_VERTEX
+
+        from pipeline.stagepack.gltf import STATIC_VERTEX
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); source = root/"source"; output = root/"cache"
-            TEMPLATE.create(source)
+            template.create(source)
             glb = GlbReader(source/"stage.glb")
             vertices = np.zeros(3, dtype=STATIC_VERTEX)
             vertices["position"] = [[0, 0, 0], [1, 0, 0], [0, 1, 0]]
@@ -96,10 +96,11 @@ class StagePackTests(unittest.TestCase):
 
     def test_alpha_cutoff_layers_and_masks_survive_import(self):
         from PIL import Image
-        from stage_gltf import STATIC_VERTEX
+
+        from pipeline.stagepack.gltf import STATIC_VERTEX
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); source = root/"source"; output = root/"cache"
-            TEMPLATE.create(source)
+            template.create(source)
             glb = GlbReader(source/"stage.glb")
             vertices = np.zeros(3, dtype=STATIC_VERTEX)
             vertices["position"] = [[0, 0, 0], [1, 0, 0], [0, 1, 0]]
@@ -134,8 +135,8 @@ class StagePackTests(unittest.TestCase):
                 np.testing.assert_allclose(sorted(map(tuple, found[field])), sorted(map(tuple, vertices[field])), atol=1e-6)
 
     def test_material_templates_classify_original_pixel_shaders(self):
-        import gh3_materials
-        if not gh3_materials.LIBRARY.exists(): self.skipTest("Original GH3 material library is not installed")
+        from pipeline.gh3 import materials as gh3_materials
+        if not gh3_materials.MATERIAL_LIBRARY.exists(): self.skipTest("Original GH3 material library is not installed")
         named = {value["name"]: value for value in gh3_materials.templates().values()}
         self.assertEqual((named["D_3ChkBox_Pass0"]["shading"], named["D_3ChkBox_Pass0"]["diffuseConstant"]), ("lit", 0))
         self.assertEqual((named["D_N_S_4ChkBox"]["shading"], named["D_N_S_4ChkBox"]["diffuseConstant"]), ("lit", 1))
@@ -152,7 +153,7 @@ class StagePackTests(unittest.TestCase):
     def test_scenery_visibility_survives_import_and_invalid_edits_preserve_cache(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); source = root/"source"; output = root/"cache"
-            TEMPLATE.create(source)
+            template.create(source)
             glb = GlbReader(source/"stage.glb")
             scenery = [node for node in glb.data["nodes"] if "mesh" in node and not node.get("extras", {}).get("gh3FixtureId")]
             scenery[0].setdefault("extras", {}).update(gh3VisibilityGroup="crowd-lighters", gh3InitiallyVisible=False)
@@ -175,7 +176,7 @@ class StagePackTests(unittest.TestCase):
     def test_stage_crowd_cast_preserves_model_profile_and_orientation(self):
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary)/"source"; output = Path(temporary)/"cache"
-            TEMPLATE.create(source)
+            template.create(source)
             manifest = load_json(source/"stage-pack.json")
             member = {"role": "crowd3", "model": "crowd_prison_01", "yaw": -90}
             manifest["crowd"] = [member]
@@ -190,7 +191,7 @@ class StagePackTests(unittest.TestCase):
     def test_scenery_object_pivots_and_script_data_survive_import(self):
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary)/"source"; output = Path(temporary)/"cache"
-            TEMPLATE.create(source)
+            template.create(source)
             glb = GlbReader(source/"stage.glb")
             scenery = [node for node in glb.data["nodes"] if "mesh" in node and not node.get("extras", {}).get("gh3FixtureId")]
             for node in scenery[:2]: node.setdefault("extras", {}).update(gh3Object="moving-sign", gh3ObjectPivot=[1, 2, 3])
@@ -213,7 +214,7 @@ class StagePackTests(unittest.TestCase):
     def test_actor_armature_container_is_baked_into_root_motion(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); source = root/"source"; output = root/"cache"
-            TEMPLATE.create(source)
+            template.create(source)
             glb = GlbReader(source/"sign.glb")
             children = glb.data["scenes"][0]["nodes"]
             glb.data["scenes"][0]["nodes"] = [len(glb.data["nodes"])]
@@ -228,7 +229,7 @@ class StagePackTests(unittest.TestCase):
     def test_actor_actions_and_visibility_keep_clip_references(self):
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary)/"source"; output = Path(temporary)/"cache"
-            TEMPLATE.create(source)
+            template.create(source)
             manifest = load_json(source/"stage-pack.json")
             actor = next(iter(manifest["actors"].values()))
             clip = GlbReader(source/actor["model"]).data["animations"][0]["name"]
@@ -248,7 +249,7 @@ class StagePackTests(unittest.TestCase):
     def test_scripted_actor_bindings_and_meshless_pivots_survive_compilation(self):
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary)/"source"; output = Path(temporary)/"cache"
-            TEMPLATE.create(source)
+            template.create(source)
             manifest = load_json(source/"stage-pack.json")
             actor = next(iter(manifest["actors"].values()))
             actor.update(object="dancer", script="dancer_start", created=False, animationEvents="dancer_events", scale=[2, 3, 4])
@@ -270,7 +271,7 @@ class StagePackTests(unittest.TestCase):
         from PIL import Image
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary)/"source"; output = Path(temporary)/"cache"
-            TEMPLATE.create(source)
+            template.create(source)
             (source/"particles").mkdir()
             Image.new("RGBA", (4, 4), (255, 80, 20, 255)).save(source/"particles/fire.png")
             bank = {"version": 1, "definitions": {f"{key('nodes'):08x}": [12, []]}, "nodes": ["nodes"], "textures": {"fire": "particles/fire.png"}}
@@ -303,7 +304,7 @@ class StagePackTests(unittest.TestCase):
     def test_stage_can_place_only_some_performers(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); source = root/"source"; output = root/"compiled"
-            TEMPLATE.create(source)
+            template.create(source)
             manifest = load_json(source/"stage-pack.json"); manifest["band"] = {"guitarist": manifest["band"]["guitarist"]}
             write_json(source/"stage-pack.json",manifest)
             camera = load_json(source/"cameras.json"); camera["shots"]["wide"]["points"][0]["lookAt"] = "guitarist.head"
@@ -314,7 +315,7 @@ class StagePackTests(unittest.TestCase):
     def test_manifest_camera_and_fixture_failures_preserve_cache(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); source = root/"source"; output = root/"cache"
-            TEMPLATE.create(source); compile_stage(source,output)
+            template.create(source); compile_stage(source,output)
             manifest = load_json(source/"stage-pack.json")
             for field,value in [("unexpected",True),("id","../bad"),("band",{}),("band",{**manifest["band"],"keyboardist":manifest["band"]["guitarist"]}),
                                 ("effects",{"unknown":[]})]:

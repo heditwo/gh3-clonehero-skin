@@ -3,10 +3,10 @@
 Usage: audit-materials.py [--stages assets/stages] [--json out.json] [venue...]"""
 
 import argparse
-from collections import Counter, defaultdict
 import json
-from pathlib import Path
 import struct
+from collections import Counter, defaultdict
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 

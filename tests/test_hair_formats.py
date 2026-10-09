@@ -1,11 +1,11 @@
 import os
-from pathlib import Path
 import struct
 import unittest
+from pathlib import Path
 
-from gh3_formats import key
-from gh3_direction import Source
-from gh3_havok import Ragdoll
+from pipeline.gh3.direction import Source
+from pipeline.gh3.formats import key
+from pipeline.gh3.havok import Ragdoll
 
 
 class HairFormatTests(unittest.TestCase):

@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace Gh3Skin;
 
-// A GH3 font atlas and glyph table exported by prepare-fonts.py. Sizes and offsets are in atlas texels.
+// A GH3 font atlas and glyph table exported by pipeline/hud/fonts.py. Sizes and offsets are in atlas texels.
 internal sealed class HudFont
 {
     internal sealed record Glyph(Rect Uv, float Width, float Height, float X, float Y);

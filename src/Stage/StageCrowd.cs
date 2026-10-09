@@ -56,7 +56,7 @@ internal sealed class StageCrowd : IDisposable
         if (stage.CrowdMaterials.Count == 0) return;
         if (!File.Exists(path))
         {
-            MelonLogger.Warning("GH3 crowd animations are missing. Run prepare-crowd.py and install.sh.");
+            MelonLogger.Warning("GH3 crowd animations are missing. Run scripts/regenerate.sh library and install.sh.");
             return;
         }
         var definition = CrowdDefinition.Load(path);
@@ -88,7 +88,7 @@ internal sealed class StageCrowd : IDisposable
                 members.Length == 0 ? null : members[cell % members.Length];
             var role = roles.Length > 0 ? roles[cell] : member?.Role ?? "crowd" + (cell % 8 + 1);
             var model = definition.Version == 2 ? member?.Model ?? definition.Members[role].Model : definition.Models[cell % definition.Models.Length];
-            if (!animations.ContainsKey(model)) throw new InvalidDataException($"The crowd library has no model '{model}'. Run prepare-crowd.py.");
+            if (!animations.ContainsKey(model)) throw new InvalidDataException($"The crowd library has no model '{model}'. Run scripts/regenerate.sh library.");
             var animation = animations[model];
             var person = new GameObject($"GH3 Crowd {cell}") { layer = Layer };
             person.transform.SetParent(_root.transform, false);
@@ -184,7 +184,7 @@ internal sealed class StageCrowd : IDisposable
         if (_definition?.Version != 2)
         {
             if (timeline.PlaybackCues.Any(cue => cue.Type.StartsWith("crowd-", StringComparison.Ordinal)))
-                MelonLogger.Warning("Crowd direction needs the version 2 crowd library. Run prepare-crowd.py and install.sh.");
+                MelonLogger.Warning("Crowd direction needs the version 2 crowd library. Run scripts/regenerate.sh library and install.sh.");
             return;
         }
         for (var index = 0; index < _players.Count; index++)

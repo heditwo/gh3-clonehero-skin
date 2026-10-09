@@ -1,8 +1,8 @@
 import struct
 import unittest
 
-from gh3_direction import camera_point, performance_command
-from gh3_formats import key, qb_struct, qb_array
+from pipeline.gh3.direction import camera_point, performance_command
+from pipeline.gh3.formats import key, qb_array, qb_struct
 
 
 class DirectionFormatTests(unittest.TestCase):

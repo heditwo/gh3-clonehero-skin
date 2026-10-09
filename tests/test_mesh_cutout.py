@@ -1,11 +1,12 @@
 import math
 import struct
 import tempfile
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 from PIL import Image
-from gh3_mesh_cutout import trim_mesh, trim_prop_cutouts
+
+from pipeline.gh3.mesh_cutout import trim_mesh, trim_prop_cutouts
 
 
 def square(skinned=False, uv_offset=0):

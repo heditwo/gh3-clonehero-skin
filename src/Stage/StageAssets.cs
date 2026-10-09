@@ -213,7 +213,7 @@ internal sealed class StageAssets : IDisposable
     private static readonly int LayerColorId = Shader.PropertyToID("_Gh3LayerColor");
     private static readonly int LayersId = Shader.PropertyToID("_Gh3Layers");
 
-    // GH3 two-layer and masked templates (D_3ChkBox_Pass0_Pass1, D_3ChkBox_Pass1, Wibble_Simple); see prepare-stage.py.
+    // GH3 two-layer and masked templates (D_3ChkBox_Pass0_Pass1, D_3ChkBox_Pass1, Wibble_Simple); see pipeline/gh3/scene.py.
     private void ConfigureLayers(Material material, StageMaterial source, Func<string, Texture2D> load)
     {
         if (source.Layer.Length > 0 && (source.LayerColor.Length != 4 || !source.LayerColor.All(float.IsFinite)))
@@ -296,7 +296,7 @@ internal sealed class StageAssets : IDisposable
                 if (Templates != null && Templates.TryGet(source.Gh3.Template, out var found)) template = found;
                 else if (ReportedFallbacks.Add(source.Gh3.Template))
                     MelonLoader.MelonLogger.Warning($"GH3 material template {source.Gh3.Template} is not in the stage shader; " +
-                        $"{source.Source} uses the approximate surface model. " + (Templates?.Untranslated.GetValueOrDefault(source.Gh3.Template) ?? "Run prepare-stage-shaders.py."));
+                        $"{source.Source} uses the approximate surface model. " + (Templates?.Untranslated.GetValueOrDefault(source.Gh3.Template) ?? "Run scripts/regenerate.sh render."));
             }
             if (template != null)
             {
@@ -362,7 +362,7 @@ internal sealed class StageAssets : IDisposable
             Definition.HiddenGroups.Any(group => string.IsNullOrEmpty(group) || !Definition.VisibilityGroups.Contains(group)))
             throw new InvalidDataException("Invalid scenery visibility groups");
         if (lighting && bones == null && Definition.LightGroups.Length == 0)
-            throw new InvalidDataException("Stage light groups are missing. Run prepare-stage.py again.");
+            throw new InvalidDataException("Stage light groups are missing. Run scripts/regenerate.sh venues again.");
         if (Definition.ObjectIds.Length != 0 && Definition.ObjectIds.Length != meshCount ||
             Definition.ObjectIds.Any(id => id.Length > 0 && !Definition.Objects.ContainsKey(id)) || Definition.Objects.Count > 10000)
             throw new InvalidDataException("Invalid stage object groups");
@@ -442,7 +442,7 @@ internal sealed class StageAssets : IDisposable
                     for (var i = 0; i < 6; i++) streams[i][v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
                     var b = ReadVector(reader);
                     var t = ReadVector(reader);
-                    // The translated vertex shader rebuilds binormal 0 as normal x tangent with this sign (see gh3_shader.VERTEX_MAIN).
+                    // The translated vertex shader rebuilds binormal 0 as normal x tangent with this sign (see pipeline/gh3/shader.py VERTEX_MAIN).
                     var sign = Vector3.Dot(b, Vector3.Cross(normals[v], t)) < 0 ? -1f : 1f;
                     tangents[v] = new Vector4 { x = t.x, y = t.y, z = t.z, w = sign };
                 }
@@ -463,7 +463,7 @@ internal sealed class StageAssets : IDisposable
             var templateMesh = TemplateMaterials.ContainsKey(material);
             if (templateMesh)
             {
-                // The translated GH3 vertex shader reads the original streams (see gh3_shader.VERTEX_MAIN).
+                // The translated GH3 vertex shader reads the original streams (see pipeline/gh3/shader.py VERTEX_MAIN).
                 mesh.uv = new Il2CppStructArray<Vector2>(streams[0]);
                 mesh.uv2 = new Il2CppStructArray<Vector2>(streams[1]);
                 mesh.uv3 = new Il2CppStructArray<Vector2>(streams[2]);

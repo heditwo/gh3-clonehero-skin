@@ -54,7 +54,7 @@ internal readonly record struct StageGh3RenderState(int SrcBlend, int DstBlend, 
     public static (bool ClampU, bool ClampV) Address(int value) => ((value & 1) != 0, (value & 2) != 0);
 }
 
-// The templates compiled into render/stage.bundle (written by prepare-stage-shaders.py).
+// The templates compiled into render/stage.bundle (written by pipeline/render/shaders.py).
 internal sealed class StageShaderTemplates
 {
     // Extra: the vertex stream that texture coordinates 6-7 carry ("position1", "binormal1", or none).

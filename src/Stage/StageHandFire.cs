@@ -41,7 +41,7 @@ internal sealed class StageHandFire
         var definition = HandFireDefinition.Load(Path.Combine(directory, "hand-fire.json"));
         if (definition == null)
         {
-            MelonLogger.Warning("GH3 hand-fire assets are missing. Run prepare-hand-fire.py and install.sh.");
+            MelonLogger.Warning("GH3 hand-fire assets are missing. Run scripts/regenerate.sh library and install.sh.");
             return null;
         }
         var left = band.HandFireBone(definition.Bones[0], 45);

@@ -46,7 +46,7 @@ internal sealed class StageBand : IDisposable
         var path = Path.Combine(directory, "band.json");
         if (!File.Exists(path))
         {
-            throw new FileNotFoundException("Shared band library is missing. Run prepare-library.py and install.sh.", path);
+            throw new FileNotFoundException("Shared band library is missing. Run scripts/regenerate.sh library and install.sh.", path);
         }
         var definition = JsonSerializer.Deserialize<BandDefinition>(File.ReadAllText(path),
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
@@ -107,7 +107,7 @@ internal sealed class StageBand : IDisposable
         _performance = performance ?? StagePerformance.Load(Path.Combine(directory, "performance.json"));
         if (_performance == null)
         {
-            MelonLogger.Warning("GH3 direction assets are missing. Run prepare-direction.py and install.sh.");
+            MelonLogger.Warning("GH3 direction assets are missing. Run scripts/regenerate.sh library and install.sh.");
             return;
         }
         foreach (var player in _players)

@@ -1,15 +1,11 @@
-import importlib.util
-from pathlib import Path
 import struct
 import unittest
+from pathlib import Path
 
-from gh3_formats import find_array, key, pak_entries, qb_struct
-
+from pipeline import events
+from pipeline.gh3.formats import find_array, key, pak_entries, qb_struct
 
 ROOT = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location("export_stage_events", ROOT / "export-stage-events.py")
-EXPORT = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(EXPORT)
 
 
 def words(*values):
@@ -34,7 +30,7 @@ def song_fixture():
 
 class StageFormatTests(unittest.TestCase):
     def test_original_lightshow_export_preserves_pyro_time(self):
-        result = EXPORT.extract(song_fixture(), "fixture")
+        result = events.extract(song_fixture(), "fixture")
         self.assertEqual([(e["time"], e["type"], e["value"], e["duration"], e["velocity"]) for e in result["events"]], [
             (45.274, "gh3-note", "56", 0.055, None),
             (46.0, "gh3-note", "72", 0.043, None),
@@ -43,7 +39,7 @@ class StageFormatTests(unittest.TestCase):
 
     def test_wrong_song_id_is_not_silently_exported(self):
         with self.assertRaisesRegex(ValueError, "Expected one native chart"):
-            EXPORT.extract(song_fixture(), "another_song")
+            events.extract(song_fixture(), "another_song")
 
     def test_truncated_pak_entry_is_rejected(self):
         with self.assertRaises(ValueError):
@@ -64,7 +60,7 @@ class StageFormatTests(unittest.TestCase):
         pak = bytearray(song_fixture())
         pak[64 + 84:64 + 88] = words(256)
         with self.assertRaisesRegex(ValueError, "Invalid native lightshow note"):
-            EXPORT.extract(pak, "fixture")
+            events.extract(pak, "fixture")
 
 
 if __name__ == "__main__":

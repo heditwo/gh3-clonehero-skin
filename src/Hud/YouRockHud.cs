@@ -10,7 +10,7 @@ internal sealed class YouRockHud
 {
     // GH3 screen elements use 1280 x 720 units; this canvas is 1920 x 1080.
     private const float Units = 1.5f;
-    // prepare-fonts.py writes the 45 movie frames (29.97 fps) into a 9-column atlas.
+    // pipeline/hud/fonts.py writes the 45 movie frames (29.97 fps) into a 9-column atlas.
     private const int FlameFrames = 45;
     private const int FlameColumns = 9;
     private const float FlameRate = 29.97f;

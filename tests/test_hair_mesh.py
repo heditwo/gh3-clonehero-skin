@@ -1,12 +1,12 @@
 import copy
-from pathlib import Path
 import struct
 import tempfile
 import unittest
+from pathlib import Path
 
 from PIL import Image
 
-from gh3_hair_mesh import combine_hair
+from pipeline.gh3.hair_mesh import combine_hair
 
 
 class HairMeshTests(unittest.TestCase):

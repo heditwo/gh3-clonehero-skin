@@ -1,11 +1,10 @@
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import unittest
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = r'''#!/usr/bin/env python3
@@ -49,7 +48,8 @@ class CaptureContractTests(unittest.TestCase):
         self.game.mkdir()
         self.frames = self.root / "frames"
         self.frames.mkdir()
-        shutil.copy(ROOT / "capture-preview.sh", self.root / "capture-preview.sh")
+        (self.root / "scripts").mkdir()
+        shutil.copy(ROOT / "scripts/capture-preview.sh", self.root / "scripts/capture-preview.sh")
         for name in ("hyprctl", "Xwayland", "xrandr", "magick", "run-gh3-skin.sh"):
             path = (self.root if name.endswith(".sh") else self.bin) / name
             path.write_text(FIXTURE)
@@ -65,7 +65,7 @@ class CaptureContractTests(unittest.TestCase):
         })
 
     def run_capture(self):
-        return subprocess.run(["bash", str(self.root / "capture-preview.sh")], env=self.env,
+        return subprocess.run(["bash", str(self.root / "scripts/capture-preview.sh")], env=self.env,
                               capture_output=True, text=True, timeout=20)
 
     def test_supplied_times_and_output_folder_survive_capture(self):

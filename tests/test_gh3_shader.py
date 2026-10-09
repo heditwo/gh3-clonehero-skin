@@ -1,14 +1,13 @@
 import shutil
 import struct
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
+from pipeline.gh3 import shader as gh3_shader
+
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-import gh3_shader  # noqa: E402
 
 VENUE_TEMPLATES = {"D_3ChkBox_Pass0", "D_N_S_4ChkBox", "D_1VertexColorOnly", "Billboard_Fast", "Wibble_Simple", "AnimatedTexture",
                    "D_S_3ChkBox_Pass0", "D_3ChkBox_Pass0_Pass1", "D_N_S_1SeperateChnl", "EnvMask_D_N_S_2ChkBox", "D_3ChkBox_Pass1",
@@ -58,7 +57,7 @@ class TranslatorTests(unittest.TestCase):
             gh3_shader.Program(code, "ps")
 
 
-@unittest.skipUnless(gh3_shader.gh3_materials.LIBRARY.exists(), "GH3 MaterialLibrary is not installed")
+@unittest.skipUnless(gh3_shader.gh3_materials.MATERIAL_LIBRARY.exists(), "GH3 MaterialLibrary is not installed")
 class LibraryTests(unittest.TestCase):
     def test_every_venue_template_translates(self):
         names = {checksum: row[0] for checksum, row in gh3_shader.library().items()}

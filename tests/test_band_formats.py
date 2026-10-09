@@ -2,7 +2,14 @@ import struct
 import unittest
 
 import numpy as np
-from gh3_band_formats import animation, quaternion, rotation, sample_animation, sample_track
+
+from pipeline.gh3.band_formats import (
+    animation,
+    quaternion,
+    rotation,
+    sample_animation,
+    sample_track,
+)
 
 
 def clip_fixture():

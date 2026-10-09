@@ -264,7 +264,7 @@ internal sealed class GameplayStage
         var path = Path.Combine(library, "render", "stage.bundle");
         if (!File.Exists(path))
         {
-            MelonLogger.Warning("GH3 stage surface shader is missing. Run prepare-stage-shaders.py.");
+            MelonLogger.Warning("GH3 stage surface shader is missing. Run scripts/regenerate.sh render.");
             return null;
         }
         _surfaceBundle = AssetBundle.LoadFromFile(path) ?? throw new InvalidDataException("Stage surface shader bundle did not load");
@@ -273,7 +273,7 @@ internal sealed class GameplayStage
         if (!shader.isSupported) throw new InvalidDataException("Stage surface shader is not supported by this graphics API");
         var templates = Path.Combine(library, "render", "stage-templates.json");
         StageAssets.Templates = File.Exists(templates) ? StageShaderTemplates.Parse(File.ReadAllText(templates)) : null;
-        if (StageAssets.Templates == null) MelonLogger.Warning("GH3 material template table is missing. Run prepare-stage-shaders.py.");
+        if (StageAssets.Templates == null) MelonLogger.Warning("GH3 material template table is missing. Run scripts/regenerate.sh render.");
         return shader;
     }
 
@@ -283,7 +283,7 @@ internal sealed class GameplayStage
         if (_directory.Length == 0) return;
         if (!File.Exists(Path.Combine(_directory, "pack.json")))
         {
-            MelonLogger.Warning("Stage pack is missing. Run import-stage.py and install.sh.");
+            MelonLogger.Warning("Stage pack is missing. Run scripts/regenerate.sh venues and install.sh.");
             return;
         }
         try
@@ -382,7 +382,7 @@ internal sealed class GameplayStage
                 _movies = new(_assets, _scripts);
                 var shaders = Path.Combine(library, "render", "screen-color.bundle");
                 if (File.Exists(shaders)) _screenEffects = new(_scripts, _camera, shaders);
-                else MelonLogger.Warning("GH3 stage screen shaders are missing. Run prepare-stage-shaders.py.");
+                else MelonLogger.Warning("GH3 stage screen shaders are missing. Run scripts/regenerate.sh render.");
                 var outlines = Path.Combine(library, "render", "outline.bundle");
                 if (File.Exists(outlines)) _outlines = new(_scripts, _camera, _assets, _actors, outlines);
             }

@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import gh3_materials  # noqa: E402
+from pipeline.gh3 import materials as gh3_materials  # noqa: E402
 
 OPCODES = {1: "mov", 2: "add", 3: "sub", 4: "mad", 5: "mul", 6: "rcp", 7: "rsq", 8: "dp3", 9: "dp4", 10: "min", 11: "max",
            12: "slt", 13: "sge", 14: "exp", 15: "log", 18: "lrp", 19: "frc", 23: "m3x3", 31: "dcl", 32: "pow", 33: "crs",
@@ -46,7 +46,7 @@ def listing(code):
 
 
 def main():
-    records = {name: code for _, name, code in gh3_materials._records(gh3_materials.LIBRARY.read_bytes())}
+    records = {name: code for _, name, code in gh3_materials._records(gh3_materials.MATERIAL_LIBRARY.read_bytes())}
     for name in sys.argv[1:]:
         print(f"== {name}")
         for line in listing(records[name]):

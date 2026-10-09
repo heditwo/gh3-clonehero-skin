@@ -1,12 +1,7 @@
-import importlib.util
-from pathlib import Path
 import struct
 import unittest
 
-
-SPEC = importlib.util.spec_from_file_location("prepare_stage", Path(__file__).resolve().parents[1] / "prepare-stage.py")
-STAGE = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(STAGE)
+from pipeline.gh3 import scene
 
 
 def crowd_fixture():
@@ -38,10 +33,10 @@ def crowd_fixture():
 
 class CrowdFormatTests(unittest.TestCase):
     def test_atlas_rows_and_wrap_preserve_complete_people(self):
-        _, meshes = STAGE.scene(crowd_fixture()[0])
+        _, meshes = scene.scene(crowd_fixture()[0])
         vertices = meshes[0][2]
         for person, left, top in [(0, 0, 1), (7, 7 / 8, 1), (8, 0, 2 / 3), (23, 7 / 8, 1 / 3), (24, 0, 1)]:
-            uv = [struct.unpack_from("<2f", vertices, (person * 4 + i) * STAGE.STATIC_STRIDE + 24) for i in range(4)]
+            uv = [struct.unpack_from("<2f", vertices, (person * 4 + i) * scene.STATIC_STRIDE + 24) for i in range(4)]
             for actual, expected in zip(uv, [(left, top), (left, top - 1 / 3), (left + 1 / 8, top), (left + 1 / 8, top - 1 / 3)]):
                 self.assertAlmostEqual(actual[0], expected[0], places=6)
                 self.assertAlmostEqual(actual[1], expected[1], places=6)
@@ -50,7 +45,7 @@ class CrowdFormatTests(unittest.TestCase):
         data, indices = crowd_fixture()
         struct.pack_into(">H", data, indices + 4, 6)
         with self.assertRaisesRegex(ValueError, "independent crowd"):
-            STAGE.scene(data)
+            scene.scene(data)
 
 
 if __name__ == "__main__":
