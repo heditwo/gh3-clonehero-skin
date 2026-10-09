@@ -59,11 +59,11 @@ internal sealed class GameplayHud
         _rock = new RockMeterHud(_screenRoot, _tuning, _assets.Textures);
         HudVisual.Position(_rock.Root, RockPosition);
         _score = new ScorePanelHud(_screenRoot, _tuning, _assets.Textures, _assets.AmpMaterial,
-            new HudFont(_assets.Root, "score-font"), new HudFont(_assets.Root, "counter-font"));
+            new HudFont(_assets.Fonts, "score-font"), new HudFont(_assets.Fonts, "counter-font"));
         HudVisual.Position(_score.Root, ScorePosition);
-        if (File.Exists(Path.Combine(_assets.Root, "message-font.png"))) _message = new MessageHud(_screenRoot, _assets.Root);
+        if (File.Exists(Path.Combine(_assets.Fonts, "message-font.png"))) _message = new MessageHud(_screenRoot, _assets.Fonts);
         _overlayRoot = HudVisual.Group("Screen overlay", _canvas.transform);
-        if (File.Exists(Path.Combine(_assets.Root, "yourock-font.png"))) _youRock = new YouRockHud(_overlayRoot, _assets.Root);
+        if (File.Exists(Path.Combine(_assets.Fonts, "yourock-font.png"))) _youRock = new YouRockHud(_overlayRoot, _assets.Fonts, _assets.YouRockFlames);
     }
 
     // With intro set, the highway and HUD enter as in GH3's intro transition. winTime is the song time of GH3's

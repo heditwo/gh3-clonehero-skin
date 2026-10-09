@@ -14,15 +14,15 @@ internal sealed class HudFont
     public Texture2D Atlas { get; }
     public float Baseline { get; }
 
-    public HudFont(string assets, string name)
+    public HudFont(string directory, string name)
     {
         Atlas = new Texture2D(2, 2, TextureFormat.RGBA32, false);
-        if (!Atlas.LoadImage(new Il2CppStructArray<byte>(File.ReadAllBytes(Path.Combine(assets, name + ".png"))), true))
+        if (!Atlas.LoadImage(new Il2CppStructArray<byte>(File.ReadAllBytes(Path.Combine(directory, name + ".png"))), true))
             throw new InvalidDataException($"Invalid font atlas: {name}");
         Atlas.filterMode = FilterMode.Bilinear;
         Atlas.wrapMode = TextureWrapMode.Clamp;
         Atlas.hideFlags = HideFlags.DontUnloadUnusedAsset;
-        using var json = JsonDocument.Parse(File.ReadAllText(Path.Combine(assets, name + ".json")));
+        using var json = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, name + ".json")));
         Baseline = json.RootElement.TryGetProperty("baseline", out var baseline) ? baseline.GetSingle() : 0;
         foreach (var glyph in json.RootElement.GetProperty("glyphs").EnumerateObject())
         {

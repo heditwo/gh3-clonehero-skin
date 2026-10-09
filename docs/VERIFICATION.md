@@ -105,7 +105,7 @@ One `Gh3Skin.dll` works on Linux and Windows Clone Hero `v1.1.0.6142-final` (see
 3. Start the game once and close it. MelonLoader generates `MelonLoader\Il2CppAssemblies\` (the first start needs the network). Then set `force_offline_generation = true` in `UserData\Loader.cfg` (see [Test game](#test-game)).
 4. Copy the files to the same places as on Linux:
    - `Gh3Skin.dll` to `<game>\Mods\Gh3Skin.dll`.
-   - The `assets` folder (images, fonts, JSON, `stages\`, `libraries\`) to `<game>\Mods\GH3Skin\assets\`, and `counter-tuning.json` to `<game>\Mods\GH3Skin\`.
+   - The skin folders of `assets` (`gems\`, `sustains\`, `highway\`, `hud\`, `fonts\`, `hit-effects\`) and `stages\`, `libraries\` to `<game>\Mods\GH3Skin\assets\`, with the same layout. Remove the files of an earlier install first: the files directly in `Mods\GH3Skin\assets\` and `Mods\GH3Skin\counter-tuning.json`.
 5. Start Clone Hero with the launch option `-force-glcore`. Without it, Clone Hero uses Direct3D 11, and the stage is pink because the shader bundles have OpenGL programs only ([spike](spike/d3d11.md)).
 
 From Linux, `GH3_CLONE_HERO_DIR=<windows game folder> bash install.sh` does step 4. It builds against the Windows interop assemblies of that folder; the result works on Linux too.

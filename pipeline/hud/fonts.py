@@ -14,7 +14,7 @@ from PIL import Image
 
 from pipeline.gh3.direction import Source
 from pipeline.gh3.formats import key
-from pipeline.paths import ASSETS, GH3_DATA
+from pipeline.paths import FONTS as FONT_FOLDER, GH3_DATA, MESSAGES, YOU_ROCK
 
 FONT_TYPE = 0x7E1ABC70
 CHARACTER_TABLE = 0x14
@@ -64,8 +64,8 @@ def export_flames(movie, output):
     print(f"Exported {len(frames)} Fret_Flames frames")
 
 
-def convert(data, output):
-    output.mkdir(parents=True, exist_ok=True)
+def convert(data, fonts=FONT_FOLDER, sprites_folder=MESSAGES, flames_folder=YOU_ROCK):
+    for folder in (fonts, sprites_folder, flames_folder): folder.mkdir(parents=True, exist_ok=True)
     names = {key(font): name for font, name in FONTS.items()}
     sprites = {key(sprite): name for sprite, name in SPRITES.items()}
     found, images = {}, {}
@@ -75,12 +75,12 @@ def convert(data, output):
         if kind == key(".img") and name in sprites: images[sprites[name]] = blob
     if len(found) != len(FONTS): raise ValueError(f"Missing GH3 fonts: {set(FONTS.values()) - set(found)}")
     if len(images) != len(SPRITES): raise ValueError(f"Missing GH3 HUD sprites: {set(SPRITES.values()) - set(images)}")
-    for name, blob in found.items(): export(blob, output, name)
+    for name, blob in found.items(): export(blob, fonts, name)
     for name, blob in images.items():
-        Image.open(BytesIO(blob[blob.index(b"DDS "):])).convert("RGBA").save(output / f"{name}.png")
+        Image.open(BytesIO(blob[blob.index(b"DDS "):])).convert("RGBA").save(sprites_folder / f"{name}.png")
         print(f"Exported {name}")
-    export_flames(Path(data) / FLAMES_MOVIE, output)
+    export_flames(Path(data) / FLAMES_MOVIE, flames_folder)
 
 
 if __name__ == "__main__":
-    convert(GH3_DATA, ASSETS)
+    convert(GH3_DATA)

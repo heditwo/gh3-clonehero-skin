@@ -9,7 +9,7 @@ The project has two parts:
 flowchart LR
     GH3[GH3 PC DATA<br/>PAK, QB, SKA, SCN, TEX] --> Pipeline[pipeline/]
     Art[Extracted HUD art,<br/>BetterGH3, FastGH3] --> Pipeline
-    Pipeline --> HudAssets[assets/*.png, *.dds,<br/>fonts]
+    Pipeline --> HudAssets[assets/gems, sustains, highway,<br/>hud, fonts, hit-effects]
     Pipeline --> Library[assets/libraries/gh3-band-v1]
     Pipeline --> Packs[assets/stage-packs<br/>source packs]
     Packs --> Compiler[pipeline.stagepack]
@@ -36,7 +36,7 @@ flowchart LR
 
 | Folder | Contents |
 | --- | --- |
-| `src/` | `SkinMod`, `SkinAssets`, `SkinOptions`, `GameCompatibility`, `CloneHeroBindings`, `PreviewCapture` (timed screenshots), `FrameProfile` (`GH3_SKIN_PROFILE`), `BindingTrace` (`GH3_SKIN_TRACE`) |
+| `src/` | `SkinMod`, `SkinAssets`, `SkinAssetPaths`, `SkinOptions`, `GameCompatibility`, `CloneHeroBindings`, `PreviewCapture` (timed screenshots), `FrameProfile` (`GH3_SKIN_PROFILE`), `BindingTrace` (`GH3_SKIN_TRACE`) |
 | `src/Gameplay/` | `GameplayScene` (cached game objects), `GameplayStateReader` (score, streak, rock, and Star Power from the engine), `GameplaySpriteRenderer` (highway, gems, sustains, stock-effect hiding; split into `.Highway`, `.Gems`, `.Sustains` parts), `HighwayView` (GH3 camera and highway geometry), `BeatlineVisual`, `GemKind`, `GemAnimation`, `SustainBend` and `SustainVariant` (whammy bend, star whammy), `HitEffects` (GH3 2D hit particles) |
 | `src/Hud/` | `GameplayHud` builds the HUD tree. Components: `HighwayHud`, `ReadyBannerHud`, `RockMeterHud` (`RockGaugeHud`, `StarPowerBulbsHud`), `ScorePanelHud` (`AmpHud`, `LampColumnHud`, `ComboHud`, `ComboDigitHud`), `MessageHud`, `HitEffectsHud`, `YouRockHud`. Pure state and animation classes (`HudState`, `RockMeterState`, `ComboReelAnimation`, `StarPowerBulbAnimation`, `StarPowerHighwayAnimation`, `IntroHudAnimation`, `YouRockAnimation`, `ReadyAnimationTrigger`, `HudTuning`, `HudViewport`) have no Unity calls; the logic tests use them |
 | `src/Native/` | GH3 data and script engine: `Gh3Pak`, `Gh3Qb`, `Gh3QbText` (typed QB values), `Gh3Checksum`, `Gh3Song` (native song PAK), `Gh3ScriptCode` and `Gh3ScriptRuntime` (QB bytecode interpreter), `Gh3CommandDispatch`, `Gh3PcCommands`, `Gh3ComponentWait`, `Gh3Random` (GH3's RNG), `Gh3ScriptEvent` |
@@ -120,9 +120,9 @@ Native, converted, and authored commands share `Gh3CommandDispatch`. The Rock Ba
 
 | File | Format |
 | --- | --- |
-| `assets/*.png`, `*.dds` | HUD, gem, sustain, highway, and hit-effect textures. The amp and multiplier `.dds` files are DXT5 blocks captured from GH3; `SkinAssets` uploads them without conversion |
-| `assets/*-font.json` + `.png` | GH3 font atlas and glyph table (`num_a9`, `num_a7`, `text_a6`, `text_a10_large`, `text_a1`) |
-| `assets/counter-tuning.json` | Measured streak-counter animation and placement values (`HudTuning`) |
+| `assets/gems/`, `sustains/`, `highway/`, `hud/`, `hit-effects/` (`.png`, `.dds`) | Gem, sustain, highway, HUD, and hit-effect textures, one folder for each type ([assets/README.md](../assets/README.md)). The amp and multiplier `.dds` files in `hud/score/` are DXT5 blocks captured from GH3; `SkinAssets` uploads them without conversion. `SkinAssetPaths` has the folder of each file; `Mods/GH3Skin/assets/` has the same layout |
+| `assets/fonts/*-font.json` + `.png` | GH3 font atlas and glyph table (`num_a9`, `num_a7`, `text_a6`, `text_a10_large`, `text_a1`) |
+| `assets/hud/counter-tuning.json` | Measured streak-counter animation and placement values (`HudTuning`) |
 | `*.chstage`, `*.chlib`, `*.chchar` | Packages ([PACKAGE-FORMAT.md](PACKAGE-FORMAT.md)). The mod converts them to `UserData/GH3Skin/Cache/<sha256>-i<importer>/` with the runtime files below; `textures/*.tex` (BC1, BC3, or RGBA32 with mips), `*.q48.br` clips, and `audio/*.pcm` replace the PNG, `.bin.gz`, and `.pcm.gz` files of the older install |
 | `meshes.bin` | `GH3STG04` (static, 144-byte vertex: 60-byte stage vertex with lightmap, layer, and mask UVs, then GH3 UV sets 0–3, texcoord 4–5, binormal 0, position 1, binormal 1) or `GH3BND02` (skinned, 128-byte vertex: 56-byte vertex with four bone indices and weights, then UV sets 0–3, texcoord 4–5, binormal 0, tangent 0). Header: magic, mesh count; then per mesh: material ID, vertex count, index count, vertices, 32-bit indices |
 | `stage.json` | Materials (texture, blend, cutoff, shading, lightmap, layer, mask, UV wibble, and the GH3 record `gh3`: template, constant banks, samplers, addressing, flags, blend, alpha reference, draw order), light groups, visibility groups, object pivots |

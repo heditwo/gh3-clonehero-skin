@@ -8,9 +8,15 @@ game_dir="${GH3_CLONE_HERO_DIR:-$HOME/games/clonehero-gh3-melon}"
 dotnet build "$project_dir/src/Gh3Skin.csproj" -c Release --nologo -p:GameRoot="$game_dir"
 mkdir -p "$game_dir/Mods/GH3Skin/assets"
 cp "$project_dir/src/bin/Release/net6.0/Gh3Skin.dll" "$game_dir/Mods/Gh3Skin.dll"
-cp "$project_dir/assets/"*.{png,dds} "$game_dir/Mods/GH3Skin/assets/"
-cp "$project_dir/assets/ready-animation.json" "$project_dir/assets/"*-font.json "$game_dir/Mods/GH3Skin/assets/"
-cp "$project_dir/assets/counter-tuning.json" "$game_dir/Mods/GH3Skin/counter-tuning.json"
+# The skin folders of assets/README.md. Mods/GH3Skin/assets mirrors them (src/SkinAssetPaths.cs). Earlier installs put
+# these files flat in Mods/GH3Skin/assets and the HUD tuning in Mods/GH3Skin; remove them so that no old file stays.
+skin_folders=(gems sustains highway hud fonts hit-effects)
+find "$game_dir/Mods/GH3Skin/assets" -maxdepth 1 -type f -delete
+rm -f "$game_dir/Mods/GH3Skin/counter-tuning.json"
+for folder in "${skin_folders[@]}"; do
+  rm -rf "$game_dir/Mods/GH3Skin/assets/$folder"
+  cp -r "$project_dir/assets/$folder" "$game_dir/Mods/GH3Skin/assets/"
+done
 if [[ -d "$project_dir/assets/stages" ]]; then
   cp -a "$project_dir/assets/stages" "$game_dir/Mods/GH3Skin/assets/"
 fi

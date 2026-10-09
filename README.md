@@ -82,5 +82,5 @@ MISE_QUIET=1 scripts/test.sh
 | `scripts/` | `regenerate.sh`, `test.sh`, capture and recording scripts |
 | `tests/` | C# logic tests and Python pipeline tests |
 | `tools/` | GH3 song tool, audits, comparison and reference tools |
-| `assets/` | Prepared HUD and gem textures (in Git) and generated stage assets (not in Git) |
+| `assets/` | Prepared HUD and gem textures (in Git) and generated stage assets (not in Git), one folder for each type ([assets/README.md](assets/README.md)) |
 | `charts/` | Test charts |

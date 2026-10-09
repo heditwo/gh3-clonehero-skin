@@ -8,13 +8,14 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
-from pipeline.paths import ASSETS, ROOT
+from pipeline.paths import READY_ANIMATION, ROOT
 
 parser = argparse.ArgumentParser(prog="python -m pipeline.hud.ready_animation", description=__doc__)
 parser.add_argument("--video", type=Path, default=ROOT/"gh3-long-star-power-1600x900.mp4",
                     help="The owner's 1600 x 900 GH3 Star Power reference recording")
 video = parser.parse_args().video
-target = ASSETS
+target = READY_ANIMATION
+target.mkdir(parents=True, exist_ok=True)
 width, height, top = 1600, 820, 30
 frame_bytes = width * height * 3
 lightning_left, lightning_top = 970, 370

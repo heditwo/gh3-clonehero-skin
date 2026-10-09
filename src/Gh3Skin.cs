@@ -58,7 +58,7 @@ public sealed class SkinMod : MelonMod
         var assetsDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Mods", "GH3Skin", "assets");
         _options = SkinOptions.FromEnvironment();
         _comboOverride = new ComboOverride(_options.ForceCombo, _options.ForceComboBreak);
-        var tuning = HudTuning.Load(Path.Combine(assetsDirectory, "..", "counter-tuning.json"));
+        var tuning = HudTuning.Load(SkinAssetPaths.HudTuning(assetsDirectory));
         var assets = new SkinAssets(assetsDirectory);
         _renderer = new GameplaySpriteRenderer(assets, _options);
         _hud = new GameplayHud(assets, tuning, !_options.KeepStockFlames);

@@ -39,10 +39,10 @@ internal sealed class MessageHud
     private int _lastCombo;
     private bool _wasReady;
 
-    public MessageHud(Transform parent, string assets)
+    public MessageHud(Transform parent, string fonts)
     {
         _root = HudVisual.Group("Gameplay message", parent);
-        _font = new HudFont(assets, "message-font");
+        _font = new HudFont(fonts, "message-font");
         _streakTexture = StreakTexture();
         _streak = HudVisual.Image(_root, "streak", _streakTexture, new Rect(0, 0, 1, 1));
         _streak.enabled = false;

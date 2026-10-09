@@ -9,14 +9,15 @@ import numpy as np
 from PIL import Image
 
 from pipeline.hud.highway_overlay import warp
-from pipeline.paths import ASSETS, GH3_SKIN_ASSETS, ROOT
+from pipeline.paths import GH3_SKIN_ASSETS, ROOT, STAR_POWER_HIGHWAY
 
 parser = argparse.ArgumentParser(prog="python -m pipeline.hud.star_power", description=__doc__)
 parser.add_argument("--video", type=Path, default=ROOT/"gh3-long-star-power-1600x900.mp4",
                     help="The owner's 1600 x 900 GH3 Star Power reference recording")
 video = parser.parse_args().video
 source = GH3_SKIN_ASSETS / "global-gfx-png"
-target = ASSETS
+target = STAR_POWER_HIGHWAY
+target.mkdir(parents=True, exist_ok=True)
 bolts = np.array(Image.open(source / "010_1024x512_DXT1.png").convert("RGB"), dtype=np.float32)
 glow = np.array(Image.open(source / "053_128x512_DXT5.png").convert("RGBA"), dtype=np.float32)
 glow = glow[:, :, :3] * glow[:, :, 3:] / 255

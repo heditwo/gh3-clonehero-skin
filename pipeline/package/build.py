@@ -21,10 +21,10 @@ import numpy as np
 from pipeline.package import decisions, q48, runtime
 from pipeline.package.container import file_list, json_bytes, write_zip
 from pipeline.package.glb import Glb
-from pipeline.paths import LIBRARY, STAGE_PACKS, STAGES
+from pipeline.paths import LIBRARY, PACKAGES, STAGE_PACKS, STAGES
 from pipeline.stagepack.gltf import GlbWriter
 
-OUTPUT = STAGE_PACKS.parent/"packages"
+OUTPUT = PACKAGES
 EVENTS = STAGES/"events"
 BROTLI_QUALITY = 11
 BROTLI_WINDOW = 24

@@ -13,7 +13,7 @@ from PIL import Image
 
 from pipeline.gh3.direction import Source
 from pipeline.gh3.formats import key, values, word
-from pipeline.paths import ASSETS, GH3_DATA
+from pipeline.paths import GH3_DATA, HIT_EFFECTS
 
 # Material, texture, output, texture size, and (columns, rows, frames per second) for animated materials.
 MATERIALS = [
@@ -84,7 +84,7 @@ def convert(source, output):
 def main():
     parser = argparse.ArgumentParser(prog="python -m pipeline.hud.hit_effects", description=__doc__)
     parser.add_argument("--data", type=Path, default=GH3_DATA)
-    parser.add_argument("--output", type=Path, default=ASSETS)
+    parser.add_argument("--output", type=Path, default=HIT_EFFECTS)
     arguments = parser.parse_args()
     convert(Source(arguments.data), arguments.output)
 

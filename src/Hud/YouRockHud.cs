@@ -22,19 +22,18 @@ internal sealed class YouRockHud
     private readonly RawImage? _flames;
     private readonly List<RawImage> _letters = new();
 
-    public YouRockHud(Transform parent, string assets)
+    public YouRockHud(Transform parent, string fonts, string flames)
     {
         _root = HudVisual.Group("You Rock", parent);
-        _font = new HudFont(assets, "yourock-font");
-        using (var json = JsonDocument.Parse(File.ReadAllText(Path.Combine(assets, "yourock-font.json"))))
+        _font = new HudFont(fonts, "yourock-font");
+        using (var json = JsonDocument.Parse(File.ReadAllText(Path.Combine(fonts, "yourock-font.json"))))
             _lineHeight = json.RootElement.GetProperty("lineHeight").GetSingle();
-        var fit = new HudFont(assets, "fit-font");
+        var fit = new HudFont(fonts, "fit-font");
         var width = 0f;
         foreach (var character in YouRockAnimation.Text)
             if (fit.TryGet(character, out var glyph)) width += glyph.Width;
         UnityEngine.Object.Destroy(fit.Atlas);
         _animation = new YouRockAnimation(width);
-        var flames = Path.Combine(assets, "you-rock-flames.png");
         if (File.Exists(flames))
         {
             var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);

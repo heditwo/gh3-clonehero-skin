@@ -1,6 +1,6 @@
 # Asset pipeline and regeneration
 
-The Python package `pipeline/` makes all generated assets from the owner's GH3 PC files. Git keeps only the HUD and gem textures in `assets/`. The shared band library, the stage packs, and the song direction are local outputs. Git ignores them.
+The Python package `pipeline/` makes all generated assets from the owner's GH3 PC files. Git keeps only the HUD and gem textures and the venue previews in `assets/` ([assets/README.md](../assets/README.md) lists the folders). The shared band library, the stage packs, and the song direction are local outputs. Git ignores them.
 
 ## Inputs
 
@@ -55,8 +55,8 @@ flowchart LR
 | `venues` | `python -m pipeline.venues --data DATA` | `assets/stage-packs/gh3.*` (editable source packs) and `assets/stages/gh3.*` (compiled packs), `assets/stages/index.json` |
 | `events` | `python3 -m pipeline.events DATA --library --output assets/stages/events` | Original song direction for all songs, `index.json`, `export-report.json` |
 | `render` | `python -m pipeline.render.shaders --game GAME --windows-game WINDOWS_GAME` and `python -m pipeline.render.particle_materials` | `render/*.bundle`, `render/stage-templates.json`, `render/particle-materials.json` in the library |
-| `hud` | `python -m pipeline.hud.textures`, `pipeline.hud.hit_effects`, `pipeline.hud.fonts` | Gem, sustain, highway, HUD, hit-effect, and font files in `assets/` |
-| `hud-video` | `python -m pipeline.hud.star_power --video V`, `pipeline.hud.ready_animation --video V` | `active-highway-*.png`, `ready-*.png`, `ready-animation.json` in `assets/` |
+| `hud` | `python -m pipeline.hud.textures`, `pipeline.hud.hit_effects`, `pipeline.hud.fonts` | `assets/gems/`, `sustains/`, `highway/` (with `beat-lines/`), `hud/` (`clear.png`, `rock-meter/`, `score/`, `counter/`, `messages/`, `you-rock/`), `fonts/`, `hit-effects/` |
+| `hud-video` | `python -m pipeline.hud.star_power --video V`, `pipeline.hud.ready_animation --video V` | `assets/highway/star-power/active-highway-*.png`, `assets/hud/ready/` (`ready-*.png`, `ready-animation.json`) |
 | `template` | `python -m pipeline.stagepack.template`, then `python -m pipeline.stagepack.install assets/stage-packs/example.studio` | The `example.studio` custom stage |
 | `packages` | `python -m pipeline.package.build`, then `python -m pipeline.package.validate` | `assets/packages/*.chstage` and `gh3-band-v1.chlib` (package format v1), the same packages as folders in `assets/packages/unpacked/`, `build-report.json` |
 
@@ -102,7 +102,7 @@ GH3_WINE=~/games/gh3-test-tools/wine-root/usr/bin/wine GH3_ACCEPT_WINDOWS_SDK_LI
 | Venue preview images (`assets/previews/<id>.png`) | `GH3_CLONE_HERO_DIR=<game copy> scripts/capture-venue-previews.sh [id ...]` (one game run for each venue, under the record lock), then `python -m pipeline.package.build --no-library` |
 | Test characters from the library members | `python -m pipeline.package.character --library assets/packages/gh3-band-v1.chlib --output DIR [--role ROLE ...]` writes `gh3.<role>.chchar` (body and hair, no instrument; not installed by `install.sh`) |
 
-After a change, run `install.sh`. The installer copies `assets/*.png`, `*.dds`, the font and ready-animation JSON, `assets/counter-tuning.json`, `assets/stages`, and `assets/libraries` into the game. It also copies the packages (`assets/packages/*.chstage`, `gh3-band-v1.chlib`, zip form, with their file times) to `Mods/GH3Skin/Packages/` and the shader bundles to `Mods/GH3Skin/render/`. The mod prefers the packages; `assets/stages` and `assets/libraries` stay in the game as a fallback until a later cleanup. A changed package gets a new cache entry in `UserData/GH3Skin/Cache/` at the next start.
+After a change, run `install.sh`. The installer copies the skin folders (`gems`, `sustains`, `highway`, `hud`, `fonts`, `hit-effects`), `assets/stages`, and `assets/libraries` to `Mods/GH3Skin/assets/` with the same layout. It first removes the skin folders and the files of earlier installs (the flat files in `Mods/GH3Skin/assets/` and `Mods/GH3Skin/counter-tuning.json`), so that no old file stays. It also copies the packages (`assets/packages/*.chstage`, `gh3-band-v1.chlib`, zip form, with their file times) to `Mods/GH3Skin/Packages/` and the shader bundles to `Mods/GH3Skin/render/`. The mod prefers the packages; `assets/stages` and `assets/libraries` stay in the game as a fallback until a later cleanup. A changed package gets a new cache entry in `UserData/GH3Skin/Cache/` at the next start.
 
 ## Check the result
 
@@ -139,7 +139,7 @@ flock /tmp/opencode/gh3-heavy.lock env MISE_QUIET=1 uv run --with numpy --with p
 
 Expected result: every package `equal` (character caches are skipped; `preview.png` is a copy of the manifest preview); textures BC1/BC3 with a minimum first-level PSNR above 36 dB. With `--rgba` (no BC encoding) all textures are pixel-equal (`maxError` 0). Put the cache folder on a disk, not on `/tmp` (a RAM disk here).
 
-The `hud` step makes `beatline*.png` files that are different from the files in Git (also with the code before the cleanup). Do not commit the new files without a visual check.
+The `hud` step makes `assets/highway/beat-lines/beatline*.png` files that are different from the files in Git (also with the code before the cleanup). Do not commit the new files without a visual check. To keep the files in Git, run `git checkout -- assets/highway/beat-lines`.
 
 ## Package layout
 

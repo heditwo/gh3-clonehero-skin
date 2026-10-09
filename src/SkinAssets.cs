@@ -53,6 +53,8 @@ internal sealed class SkinAssets
     }
 
     public string Root { get; }
+    public string Fonts => SkinAssetPaths.Fonts(Root);
+    public string YouRockFlames => SkinAssetPaths.YouRockFlames(Root);
     public Texture2D? HighwayTexture { get; private set; }
 
     public SkinAssets(string root)
@@ -66,15 +68,16 @@ internal sealed class SkinAssets
 
     private void LoadCoreTextures(string root)
     {
-        _textures["highway"] = LoadTexture(Path.Combine(root, "highway.png"));
+        var highway = SkinAssetPaths.Highway(root);
+        _textures["highway"] = LoadTexture(Path.Combine(highway, "highway.png"));
         _textures["highway"].wrapMode = TextureWrapMode.Repeat;
         HighwayTexture = _textures["highway"];
-        _textures["highway-edges-blue"] = LoadTexture(Path.Combine(root, "highway-edges-blue.png"));
-        _textures["highway-edges-normal"] = LoadTexture(Path.Combine(root, "highway-edges-normal.png"));
+        _textures["highway-edges-blue"] = LoadTexture(Path.Combine(highway, "highway-edges-blue.png"));
+        _textures["highway-edges-normal"] = LoadTexture(Path.Combine(highway, "highway-edges-normal.png"));
         for (var frame = 0; frame < StarPowerHighwayAnimation.FrameCount; frame++)
         {
             var name = $"active-highway-{frame:00}";
-            var texture = LoadTexture(Path.Combine(root, name + ".png"));
+            var texture = LoadTexture(Path.Combine(SkinAssetPaths.StarPowerHighway(root), name + ".png"));
             texture.name = name;
             texture.wrapMode = TextureWrapMode.Clamp;
             _textures[name] = texture;
@@ -83,6 +86,7 @@ internal sealed class SkinAssets
 
     private void LoadReadyAnimation(string root)
     {
+        root = SkinAssetPaths.ReadyAnimation(root);
         using (var animation = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "ready-animation.json"))))
         {
             if (animation.RootElement.GetProperty("fps").GetInt32() != 60)
@@ -113,25 +117,17 @@ internal sealed class SkinAssets
 
     private void LoadGameplaySprites(string root)
     {
-        Load(root, "active-note", 720, new Vector2(0.5f, 0.16f));
-        Load(root, "active-glow", 720, new Vector2(0.5f, 0.16f));
-        Load(root, "active-tap", 720, new Vector2(0.5f, 0.16f));
-        for (var frame = 0; frame < GemAnimation.FrameCount; frame++)
+        foreach (var lane in Lanes.Append("active"))
         {
-            Load(root, $"active-star-{frame}", 550, new Vector2(0.5f, 0.16f));
-            Load(root, $"active-star-glow-{frame}", 550, new Vector2(0.5f, 0.16f));
-            Load(root, $"active-star-tap-{frame}", 550, new Vector2(0.5f, 0.16f));
-        }
-        foreach (var lane in Lanes)
-        {
-            Load(root, $"{lane}-note", 720, new Vector2(0.5f, 0.16f));
-            Load(root, $"{lane}-glow", 720, new Vector2(0.5f, 0.16f));
-            Load(root, $"{lane}-tap", 720, new Vector2(0.5f, 0.16f));
+            var gems = SkinAssetPaths.Gems(root, lane);
+            Load(gems, $"{lane}-note", 720, new Vector2(0.5f, 0.16f));
+            Load(gems, $"{lane}-glow", 720, new Vector2(0.5f, 0.16f));
+            Load(gems, $"{lane}-tap", 720, new Vector2(0.5f, 0.16f));
             for (var frame = 0; frame < GemAnimation.FrameCount; frame++)
             {
-                Load(root, $"{lane}-star-{frame}", 550, new Vector2(0.5f, 0.16f));
-                Load(root, $"{lane}-star-glow-{frame}", 550, new Vector2(0.5f, 0.16f));
-                Load(root, $"{lane}-star-tap-{frame}", 550, new Vector2(0.5f, 0.16f));
+                Load(gems, $"{lane}-star-{frame}", 550, new Vector2(0.5f, 0.16f));
+                Load(gems, $"{lane}-star-glow-{frame}", 550, new Vector2(0.5f, 0.16f));
+                Load(gems, $"{lane}-star-tap-{frame}", 550, new Vector2(0.5f, 0.16f));
             }
         }
 
@@ -156,18 +152,19 @@ internal sealed class SkinAssets
             _activeGems[5, frame] = _sprites[$"active-star-tap-{frame}"];
         }
 
-        Load(root, "clear", 20, new Vector2(0.5f, 0.16f));
+        Load(SkinAssetPaths.Hud(root), "clear", 20, new Vector2(0.5f, 0.16f));
         foreach (var name in new[] { "beatline", "beatline-beat", "beatline-half" })
         {
-            Load(root, name, 1024, new Vector2(0.5f, 0));
+            Load(SkinAssetPaths.BeatLines(root), name, 1024, new Vector2(0.5f, 0));
             _sprites[name].texture.wrapMode = TextureWrapMode.Clamp;
         }
+        var sustains = SkinAssetPaths.Sustains(root);
         for (var variant = 0; variant < SustainVariants.Length; variant++)
         {
-            _sustains[variant] = LoadSustain(root, $"sustain-{SustainVariants[variant]}");
+            _sustains[variant] = LoadSustain(sustains, $"sustain-{SustainVariants[variant]}");
             _heldSustains[variant] = (SustainVariant)variant == SustainVariant.Dead
                 ? _sustains[variant]
-                : LoadSustain(root, $"sustain-held-{SustainVariants[variant]}");
+                : LoadSustain(sustains, $"sustain-held-{SustainVariants[variant]}");
         }
     }
 
@@ -192,9 +189,10 @@ internal sealed class SkinAssets
 
         foreach (var name in hudNames)
         {
+            var directory = SkinAssetPaths.HudTextureFolder(root, name);
             var texture = name == "HUD_score_body" || name.StartsWith("HUD_score_nixie_", StringComparison.Ordinal)
-                ? LoadDxt5(Path.Combine(root, name + ".dds"))
-                : LoadTexture(Path.Combine(root, name + ".png"));
+                ? LoadDxt5(Path.Combine(directory, name + ".dds"))
+                : LoadTexture(Path.Combine(directory, name + ".png"));
             if (name.StartsWith("HUD_score_light_", StringComparison.Ordinal) || name.StartsWith("gh3-", StringComparison.Ordinal))
                 texture.wrapMode = TextureWrapMode.Clamp;
             _textures[name] = texture;
@@ -222,9 +220,9 @@ internal sealed class SkinAssets
     }
 
     // Matches Clone Hero's sliced sustain sprites: bottom pivot, 100 pixels per unit, and the cap above a 38-pixel top border.
-    private Sprite LoadSustain(string root, string name)
+    private Sprite LoadSustain(string directory, string name)
     {
-        var texture = LoadTexture(Path.Combine(root, name + ".png"));
+        var texture = LoadTexture(Path.Combine(directory, name + ".png"));
         texture.wrapMode = TextureWrapMode.Clamp;
         var sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), new Vector2(0.5f, 0), 100, 0,
             SpriteMeshType.FullRect, new Vector4(0, 0, 0, 38));
@@ -234,9 +232,9 @@ internal sealed class SkinAssets
         return sprite;
     }
 
-    private void Load(string root, string name, float pixelsPerUnit, Vector2 pivot)
+    private void Load(string directory, string name, float pixelsPerUnit, Vector2 pivot)
     {
-        var texture = LoadTexture(Path.Combine(root, name + ".png"));
+        var texture = LoadTexture(Path.Combine(directory, name + ".png"));
         var sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), pivot, pixelsPerUnit);
         sprite.name = "GH3_" + name;
         sprite.hideFlags = HideFlags.DontUnloadUnusedAsset;

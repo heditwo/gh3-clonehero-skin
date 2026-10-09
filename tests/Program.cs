@@ -186,7 +186,13 @@ finally
 }
 
 var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../.."));
-var tuning = HudTuning.Load(Path.Combine(root, "assets", "counter-tuning.json"));
+var assetRoot = Path.Combine(root, "assets");
+Equal("README.md", string.Join(", ", Directory.GetFiles(assetRoot).Select(Path.GetFileName).Order()), "assets/ has only its README and folders");
+// The HUD skips these optional files when they are missing, so a wrong path would not fail at load.
+foreach (var optional in new[] { "message-font.png", "yourock-font.png", "fit-font.png" }.Select(name => Path.Combine(SkinAssetPaths.Fonts(assetRoot), name))
+    .Append(SkinAssetPaths.YouRockFlames(assetRoot)))
+    if (!File.Exists(optional)) throw new Exception($"Missing optional HUD file: {optional}");
+var tuning = HudTuning.Load(SkinAssetPaths.HudTuning(assetRoot));
 Equal(tuning.RollAlphas.Length, tuning.RollOffsets.Length, "matched animation arrays");
 foreach (var (width, height, expectedScale, expectedX, expectedCenterY, expectedBottomY) in new[]
 {
@@ -250,7 +256,7 @@ foreach (var active in new[] { false, true })
         var actual = active ? multiplier * 2 : multiplier;
         Equal(multiplier, HudState.BaseMultiplier(actual, active), "streak multiplier is separate from Star Power");
         var texture = HudState.MultiplierTexture(actual, active);
-        if (!File.Exists(Path.Combine(root, "assets", texture + ".dds")))
+        if (!File.Exists(Path.Combine(SkinAssetPaths.HudTextureFolder(assetRoot, texture), texture + ".dds")))
             throw new Exception($"Missing multiplier texture: {texture}");
     }
 Equal("HUD_score_nixie_8b", HudState.MultiplierTexture(8, true), "active 8x art");
@@ -408,13 +414,13 @@ foreach (var lane in new[] { "green", "red", "yellow", "blue", "orange" })
 var gemHeader = new byte[24];
 foreach (var texture in gemTextures)
 {
-    using var image = File.OpenRead(Path.Combine(root, "assets", texture + ".png"));
+    using var image = File.OpenRead(Path.Combine(SkinAssetPaths.Gems(assetRoot, texture[..texture.IndexOf('-')]), texture + ".png"));
     image.ReadExactly(gemHeader);
     Equal(128, BinaryPrimitives.ReadInt32BigEndian(gemHeader.AsSpan(16)), "gem frame width");
     Equal(64, BinaryPrimitives.ReadInt32BigEndian(gemHeader.AsSpan(20)), "gem frame height");
 }
 
-using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "assets/ready-animation.json")));
+using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(SkinAssetPaths.ReadyAnimation(assetRoot), "ready-animation.json")));
 Equal(60, manifest.RootElement.GetProperty("fps").GetInt32(), "ready animation frame rate");
 Span<byte> header = stackalloc byte[24];
 foreach (var (sequence, prefix, expected) in new[]
@@ -427,7 +433,7 @@ foreach (var (sequence, prefix, expected) in new[]
     Equal(expected, frames.Length, $"{sequence} frame count");
     for (var index = 0; index < frames.Length; index++)
     {
-        using var image = File.OpenRead(Path.Combine(root, "assets", $"{prefix}-{index:000}.png"));
+        using var image = File.OpenRead(Path.Combine(SkinAssetPaths.ReadyAnimation(assetRoot), $"{prefix}-{index:000}.png"));
         image.ReadExactly(header);
         Equal("89504e470d0a1a0a", Convert.ToHexStringLower(header[..8]), "PNG signature");
         Equal(frames[index].GetProperty("width").GetInt32(), BinaryPrimitives.ReadInt32BigEndian(header[16..20]), "frame width");
