@@ -1,6 +1,6 @@
 # Packaging and creator workflow plan
 
-Status: **step 3 done: format v1 frozen ([PACKAGE-FORMAT.md](PACKAGE-FORMAT.md)), and the pipeline writes the ten venues and the library as packages (part 2). Step 4 (the C# importer) is next.** This document records the research and the decisions for the release format of this mod. Start a new work session from this file. The spike results are in [section 9](#9-spike-results).
+Status: **step 3 done: format v1 frozen ([PACKAGE-FORMAT.md](PACKAGE-FORMAT.md)), and the pipeline writes the ten venues and the library as packages (part 2). Step 4 (the C# importer) is next. Step 5 part 1 (Blender add-on foundation, [BLENDER-ADDON.md](BLENDER-ADDON.md)) done.** This document records the research and the decisions for the release format of this mod. Start a new work session from this file. The spike results are in [section 9](#9-spike-results).
 
 ## 1. Goal
 
@@ -104,7 +104,7 @@ Three research passes were made in October 2026 (rhythm-game ecosystem, asset fo
   - Cameras: Blender cameras with shot type, control, groups, anchor and look-at, screen offset; a shot browser and preview.
   - Lighting: light groups, snapshots per mood with capture and apply, fixtures with beam gizmos, live preview.
   - One **Validate** button (clickable errors) and one **Export** button (writes the `.chstage`, optionally into the game folder).
-  - Bundle the existing Python validator (`stage_pack.py`, `stage_gltf.py`) so the add-on and the converter share one source of truth. Replace or bundle `shapely` and Pillow as wheels.
+  - Bundle the package validator (`pipeline/package`, numpy only) so the add-on and the converter share one source of truth (done: `blender/build.py` copies it into the extension).
 - **Characters:** GH3 rig templates, "transfer weights from GH3 body", hair-bone helpers, attachment previews (instrument, sticks, microphone), bind-pose and weight validation, and clip preview in Blender (convert clips to Actions) so creators can check deformation.
 - The Blender glTF exporter does not export custom properties on Actions and cannot carry GH3 light attenuation, hotspot/field, or negative intensity. Therefore the add-on writes `cameras.json` and `lighting.json` itself and uses the GLB only for geometry, materials, and node extras.
 
@@ -135,6 +135,8 @@ Three research passes were made in October 2026 (rhythm-game ecosystem, asset fo
    - **Part 2, done** ([PACKAGE-FORMAT.md section 19](PACKAGE-FORMAT.md#19-converter)): `python -m pipeline.package.build` (the `packages` step of `scripts/regenerate.sh`) writes the ten venues and `example.studio` as `.chstage` and the library as `gh3-band-v1.chlib`, as zip and as folder, reproducibly. The GLB writer names the images and writes `#<name>` texture references. The library JSON files have schemas. All packages are valid (0 errors). `python -m pipeline.package.roundtrip` converts the packages back to the current runtime files: the venues are byte-equal, the library is byte-equal or JSON-equal, and the clips are within the q48 bound. Sizes: venues 551 MB, library 658 MB (zip). The owner choices O1–O5 have defaults in `pipeline/package/decisions.py`. Open: `preview.png` for each venue (needs captures).
 4. **Runtime:** C# GLB importer, cache, loader, clip prefetch, stage and character pickers, chart cue tracks.
 5. **Blender add-on:** venue MVP first (geometry, materials, band markers, wide and role cameras, lights with moods, validate, export, open package), then the full venue tool set, then characters on fixed rigs.
+   - **Part 1, done:** the foundation ([BLENDER-ADDON.md](BLENDER-ADDON.md)). CH Stage Tools is a Blender extension (minimum 4.2, tested on 4.2.23 and 5.2.1). It has property groups and panels for the manifest, materials, markers, cameras, and lighting, "New stage from template", and "Validate" with clickable issues. It bundles `pipeline/package` and the schemas at build time (`blender/build.py`). `blender/test.sh` runs a headless test in Blender.
+   - **Part 2, next:** export to `.chstage` (zip, hashes, preview, lightmaps as glTF occlusion textures), "Open package", then actors and scripts.
 6. **Release cleanup:** repository and documentation cleanup, install instructions, a short creator guide with an example stage, credits for BetterGH3 and FastGH3 gem art (or replacements). The owner records the showcase video and posts the release.
 
 ## 7. Effort estimates (from the tooling research, one experienced developer)
@@ -214,10 +216,11 @@ The spike ran on 2026-10-09. Each item has a report in [docs/spike/](spike/) wit
 - `TEMPERANCE` and `FORTUNE` bone modes, flattened hierarchy, Z-up, and `merge_vertices` break the rig.
 - `export_extras` and `export_attributes` are off by default. Without them, all `gh3*` extras and `_GH3_*` streams are lost. Extras that hold glTF texture indices are wrong even with extras on, because Blender renumbers textures.
 - Blender samples clips at the scene rate (24 fps after import). Set the scene rate to the clip rate before import.
-- `compile_actor` rejects every Blender output: Blender writes unit scale channels.
+- `compile_actor` rejected every Blender output: Blender writes unit scale channels (fixed later).
 - **Decisions:**
   - Characters: map by joint name; check each joint against the fixed GH3 profile (position 0.1 mm, rotation 0.01°, scale within 1e-4 of 1) and the IBMs against the joints (1e-4).
   - Accept and drop scale channels within 1e-4 of 1 (fix `compile_actor`).
   - Refer to textures in extras by image name or package path, not by glTF index.
   - The add-on sets the export options (extras and attributes on, Y-up, rest position, no flattening) and the import options (`BLENDER` bones, no vertex merge).
-  - Blender 4.2 is not tested; test it before the add-on sets 4.2 as the minimum.
+  - Blender 4.2.23 gives the same results as 5.2.1 when the add-on fixes a 4.2 importer bug (custom vertex attributes in a random order). The add-on minimum is 4.2 ([BLENDER-ADDON.md section 2.4](BLENDER-ADDON.md#24-blender-42-result)).
+  - `compile_actor` now drops unit scale channels (fixed with the add-on foundation).

@@ -15,3 +15,5 @@ __pycache__/
 /assets/libraries/
 /assets/packages/
 /assets/event-audit/
+/blender/chstage_tools/vendor/
+/blender/dist/

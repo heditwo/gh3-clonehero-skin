@@ -12,13 +12,15 @@ import stat
 import struct
 import sys
 import zipfile
+import zlib
 from pathlib import Path, PurePosixPath
 
 import numpy as np
 
-from pipeline.package import q48
-from pipeline.package.glb import Glb, GlbError, decompose, quaternion_angle
-from pipeline.package.schema import Schemas
+# Relative imports: the Blender add-on bundles this package (blender/build.py).
+from . import q48
+from .glb import Glb, GlbError, decompose, quaternion_angle
+from .schema import Schemas
 
 FORMAT_MINOR = {"chstage": 0, "chchar": 0, "chlib": 0}
 EXTENSIONS = {".chstage": "chstage", ".chchar": "chchar", ".chlib": "chlib"}
@@ -605,8 +607,8 @@ class Validator:
 
 
 def gh3_key(name):
-    from pipeline.gh3.formats import key
-    return key(name)
+    """GH3 checksum of a name (pipeline.gh3.formats.key, repeated here so the add-on bundle has no other dependency)."""
+    return ~zlib.crc32(name.lower().encode()) & 0xFFFFFFFF
 
 
 def load_profile(library, role):

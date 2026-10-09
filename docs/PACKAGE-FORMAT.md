@@ -472,7 +472,7 @@ MISE_QUIET=1 uv run --with numpy --with brotli python -m pipeline.package.valida
 ```
 
 - The validator reads a zip or a development folder. It checks the container, the paths, the manifest, the hashes, the schemas, the references, the GLB rules, and the extras. For a character, `--library` adds the profile rig check (section 9.3); the value is a library package (`gh3-band-v1.chlib`, the rig comes from `band/<role>/model.glb`) or the current library folder. For a library, it decodes all clips (needs the `brotli` module) and checks the library schemas and file references (section 10).
-- `pipeline/package/schema.py` evaluates the schemas without third-party packages, so the Blender add-on can bundle the validator. The tests compare it with the `jsonschema` reference implementation.
+- `pipeline/package/schema.py` evaluates the schemas without third-party packages, so the Blender add-on can bundle the validator (`blender/build.py` copies `pipeline/package` and `schemas/`). The tests compare it with the `jsonschema` reference implementation.
 - Dry conversion check of the current outputs: `python -m pipeline.package.sources --json report.json` (see [section 16](#16-mapping-of-the-current-pipeline-outputs)).
 
 ## 16. Mapping of the current pipeline outputs

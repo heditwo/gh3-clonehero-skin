@@ -9,7 +9,8 @@ import math
 import re
 from pathlib import Path
 
-SCHEMA_DIR = Path(__file__).resolve().parents[2] / "schemas"
+# The Blender add-on bundle keeps a copy of the schemas next to this file (blender/build.py).
+SCHEMA_DIR = next((p for p in (Path(__file__).resolve().parent / "schemas", Path(__file__).resolve().parents[2] / "schemas") if p.is_dir()), None)
 ANNOTATIONS = {"$schema", "$id", "$defs", "title", "description", "examples", "default", "$comment"}
 SUPPORTED = ANNOTATIONS | {
     "$ref", "type", "enum", "const", "properties", "required", "additionalProperties", "propertyNames", "minProperties",

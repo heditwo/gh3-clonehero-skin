@@ -103,7 +103,7 @@ index numbers in the extras stay the same, so they point at other images or past
 | Input | Result |
 | --- | --- |
 | Originals | pass (3/3) |
-| Every Blender output | **fail**: "Bake actor animation to joint translation/rotation" (Blender `scale` channels). With `keep`: "Invalid GH3 sampler texture" first |
+| Every Blender output | **fail**: "Bake actor animation to joint translation/rotation" (Blender `scale` channels). With `keep`: "Invalid GH3 sampler texture" first. **Fixed later:** `compile_actor` drops unit scale channels; the outputs now pass, except `posed-frame` (IBM check) and the `keep` texture-index extras |
 | Same, after `accept.py --tolerant` drops unit `scale` channels and texture-index extras | pass, except `posed-frame` (IBM check, correct) and singer `keep` (the tolerant step removed `gh3Shader`, so the cutout trim ran: an artifact of the probe) |
 | `temperance`, `fortune`, `flatten`, `zup` | pass the compiler; they are wrong for GH3 clips or orientation (see table above) |
 
@@ -181,9 +181,9 @@ PYTHONPATH=$PWD uv run --with pillow --with numpy --with 'shapely>=2.1' python t
 
 ## Open risks
 
-- Blender 4.2 (the plan minimum) is **not tested**; only 5.2.1 (glTF I/O v5.2.40) was available. The 4.2 importer
-  and exporter can differ (for example scale channels, attribute export, extras). Test 4.2 LTS before the add-on
-  sets the minimum.
+- Blender 4.2: tested later (4.2.23 LTS, see [BLENDER-ADDON.md section 2.4](../BLENDER-ADDON.md#24-blender-42-result)).
+  With the add-on's import fix, all variants give the same numbers as 5.2.1. Without it, the 4.2 importer fails on
+  GLBs with two or more `_GH3_*` attributes (39 of 40 imports).
 - Clip export depends on the scene frame rate. A creator who imports with the wrong rate gets slower or shorter clips
   without a warning. The add-on must set the rate.
 - The probe GLBs have rest pose = bind pose. A file where they differ (common in other tools) was not tested, so the
@@ -191,7 +191,7 @@ PYTHONPATH=$PWD uv run --with pillow --with numpy --with 'shapely>=2.1' python t
 
 ## Not tested
 
-- Blender 4.2, 4.x, or any version other than 5.2.1.
+- Blender versions other than 5.2.1 and 4.2.23.
 - Edits in Blender (weight paint, mesh edits, new meshes, modifiers, apply transforms, object scale on the armature).
 - Morph targets, multiple skins or meshes on one rig, more than 4 influences (`export_all_influences`).
 - The bassist and drummer, and venue actors other than `gh3.prison/actor-71546938` (the 125-joint

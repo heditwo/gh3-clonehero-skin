@@ -1,0 +1,20 @@
+schema_version = "1.0.0"
+
+id = "chstage_tools"
+version = "0.1.0"
+name = "CH Stage Tools"
+tagline = "Make venue packages (.chstage) for the Clone Hero stage mod"
+maintainer = "CH Stage Tools contributors"
+type = "add-on"
+tags = ["Import-Export", "Scene"]
+
+blender_version_min = "4.2.0"
+
+# Blender add-ons that use the bpy API must be GPL-compatible. The repository has no license file yet (open question).
+license = ["SPDX:GPL-3.0-or-later"]
+
+[permissions]
+files = "Write temporary files for package validation, read package files"
+
+[build]
+paths_exclude_pattern = ["__pycache__/", "*.pyc", "/.git/"]
