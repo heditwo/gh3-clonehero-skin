@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <MelonNet6 Condition="'$(MelonNet6)' == ''">$(HOME)/games/clonehero-gh3-melon/MelonLoader/net6</MelonNet6>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="$(MelonNet6)/Il2CppInterop.Generator.dll" />
+    <Reference Include="$(MelonNet6)/Il2CppInterop.Common.dll" />
+    <Reference Include="$(MelonNet6)/AsmResolver.dll" />
+    <Reference Include="$(MelonNet6)/AsmResolver.DotNet.dll" />
+    <Reference Include="$(MelonNet6)/AsmResolver.PE.dll" />
+    <Reference Include="$(MelonNet6)/AsmResolver.PE.File.dll" />
+    <Reference Include="$(MelonNet6)/Iced.dll" />
+    <Reference Include="$(MelonNet6)/Microsoft.Extensions.Logging.Abstractions.dll" />
+  </ItemGroup>
+</Project>
