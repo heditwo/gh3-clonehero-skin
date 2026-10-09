@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- net6.0 so the bench runs on the .NET 6 runtime that MelonLoader ships with Clone Hero. -->
+    <TargetFramework>net6.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Optimize>true</Optimize>
+    <RollForward>Major</RollForward>
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ZstdSharp.Port" Version="0.8.7" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../../src/Native/*.cs" Link="Native/%(Filename)%(Extension)" />
+    <Compile Include="../../src/Stage/Direction/StageTimeline.cs" Link="StageTimeline.cs" />
+    <Compile Include="../../src/Stage/Direction/StageCue.cs" Link="StageCue.cs" />
+    <Compile Include="../../src/Stage/Direction/StageGh3Events.cs" Link="StageGh3Events.cs" />
+    <Compile Include="../../src/Stage/Direction/StageCameraPath.cs" Link="StageCameraPath.cs" />
+    <Compile Include="../../src/Stage/Band/BandAnimation.cs" Link="BandAnimation.cs" />
+    <Compile Include="../../src/Stage/Band/StageDrummer.cs" Link="StageDrummer.cs" />
+    <Compile Include="../../src/Stage/Band/StageGuitarArms.cs" Link="StageGuitarArms.cs" />
+    <Compile Include="../../src/Stage/Band/StagePerformance.cs" Link="StagePerformance.cs" />
+  </ItemGroup>
+</Project>
