@@ -546,7 +546,7 @@ The current library does not map file for file. Each part has a conversion step 
 
 Question: does `System.IO.Compression.BrotliStream` work inside Clone Hero Linux, on a worker thread?
 
-Method: the probe `src/Spike/BrotliSpike.cs` runs only with `GH3_SKIN_SPIKE=brotli`. It starts one `Task.Run` when the gameplay scene loads. It decodes the 356 guitarist clips of the clip spike in q48 + Brotli 11 and in q48 + gzip 9, and compares the bytes. `GH3_SKIN_SPIKE_CLIPS` points to a folder with the subfolders `brotli11/` and `gzip9/` (copies of `/tmp/opencode/spike-clips/full/variants/q48-*/guitarist`). Game: `~/games/clonehero-gh3-format-v1`, gh3.dive, mycurse-native, started with `scripts/record-preview.sh`.
+Method: the probe `src/Spike/BrotliSpike.cs` (removed in step 6) runs only with `GH3_SKIN_SPIKE=brotli`. It starts one `Task.Run` when the gameplay scene loads. It decodes the 356 guitarist clips of the clip spike in q48 + Brotli 11 and in q48 + gzip 9, and compares the bytes. `GH3_SKIN_SPIKE_CLIPS` points to a folder with the subfolders `brotli11/` and `gzip9/` (copies of `/tmp/opencode/spike-clips/full/variants/q48-*/guitarist`). Game: `~/games/clonehero-gh3-format-v1`, gh3.dive, mycurse-native, started with `scripts/record-preview.sh`.
 
 | Pass | Clips | Byte mismatches | Brotli (all clips) | Brotli, one clip max | gzip 9 (all clips) | gzip 9, one clip max |
 |---|---:|---:|---:|---:|---:|---:|
@@ -664,7 +664,6 @@ flowchart LR
 - With two packages of one ID, the higher version wins; with equal versions, the first in scan order.
 - Characters (`.chchar`) import after the library ([section 20.6](#206-characters)).
 - A venue package in a song folder (`venue.chstage`, [PLAYER-GUIDE.md](PLAYER-GUIDE.md#stages-that-a-song-selects)) is found when the song starts, checked as above, and imported first. It does not take part in the ID and version rules: the song uses its own package.
-- `GH3_SKIN_PACKAGES=off` turns packages off (the older install only).
 
 ### 20.2 Import
 
@@ -676,7 +675,7 @@ flowchart LR
 
 ### 20.3 Loader
 
-- `GameplayStage` uses the cache folders when the stage package and its library are ready. While they import, the stage waits (up to 120 s, then the older install is used). Without a package, the older install (`assets/stages`, `assets/libraries`) is used.
+- `GameplayStage` uses only the cache folders. Before it selects the stage of a song, it waits for the library import (the library has the song index for the stage suggestion of GH3 career songs). Then it waits until the stage package, the library, and the selected characters are ready; there is no time limit. A stage without a package, or a package that did not import, gives no stage (one warning line); the older install (`Mods/GH3Skin/assets/stages`, `assets/libraries`) was removed in step 6.
 - `StageAssets` uploads `.tex` files with `LoadRawTextureData` and `Apply(false, true)` (no decode on the main thread). All uploads are in the stage load frame: 364 textures of gh3.dive take 140–200 ms.
 - Clip prefetch: `PerformancePlayer.Prepare` gives the song's clip set to `PerformanceClipCache`, which decodes it with `Parallel.ForEach` on worker threads. The main thread waits for it in the stage load (16–35 ms measured). A clip outside the set loads on the main thread with a warning (`clip … was not prefetched`), and the stage reset logs the count. The crowd prefetches all its performance clips (102).
 

@@ -19,10 +19,8 @@ flowchart LR
     Packs --> Packages[assets/packages<br/>.chstage and .chlib]
     Library --> Packages
     Events --> Packages
-    HudAssets --> Install[install.sh]
-    Library --> Install
-    Stages --> Install
-    Events --> Install
+    HudAssets --> Install[install.sh,<br/>scripts/build-release.sh]
+    Library -- shader bundles --> Install
     Packages --> Install
     Install --> Game[Clone Hero<br/>Mods/GH3Skin]
     Custom[Custom/Stages,<br/>Custom/Characters] --> Game
@@ -42,7 +40,7 @@ flowchart LR
 | `src/Native/` | GH3 data and script engine: `Gh3Pak`, `Gh3Qb`, `Gh3QbText` (typed QB values), `Gh3Checksum`, `Gh3Song` (native song PAK), `Gh3ScriptCode` and `Gh3ScriptRuntime` (QB bytecode interpreter), `Gh3CommandDispatch`, `Gh3PcCommands`, `Gh3ComponentWait`, `Gh3Random` (GH3's RNG), `Gh3ScriptEvent` |
 | `src/Packages/` | Package format v1 at runtime ([PACKAGE-FORMAT.md section 20](PACKAGE-FORMAT.md#20-c-importer)): `PackageManager` (scan, checks, cache keys, one import at a time on a background thread, song venue packages, cache clean-up), `PackageManifest`, `PackageSource` (zip or folder, SHA-256 checks), `GlbDocument`, `StageCompiler` and `StageGeometry` (port of `pipeline/stagepack`), `LibraryImporter`, `CharacterImporter` and `CharacterModel` (`.chchar` to a band model folder with GLB bind poses), `TextureCodec`, `Png`, `BlockCompression` (BC1/BC3), `PackageJson`, `PlayerChoices` (`UserData/GH3Skin/choices.json`), `StageSelection` and `NativeVenues` (stage of a song: player choice, song suggestion, GH3 career venue), and `PackageRuntime` (Unity glue: content folders, GPU formats, log lines, the saved choices). Only `PackageRuntime` uses Unity |
 | `src/Menu/` | `PickerOverlay`: the stage and band picker, an IMGUI window that F6 opens in the menus ([PLAYER-GUIDE.md](PLAYER-GUIDE.md)). `PickerTest`: picker steps without a mouse for captures (`GH3_SKIN_PICKER_TEST`) |
-| `src/Stage/` | `GameplayStage` (stage choice for each song, stage source: package cache or older install; band characters; stage camera, scene resources, per-frame update order), `StagePack` (compiled pack loader), `Shaders/` (GLSL sources for the bundles) |
+| `src/Stage/` | `GameplayStage` (stage choice for each song, stage source: the package cache; band characters; stage camera, scene resources, per-frame update order), `StagePack` (compiled pack loader), `Shaders/` (GLSL sources for the bundles) |
 | `src/Stage/Rendering/` | `StageAssets` (meshes, materials, translated GH3 templates, fallback surface model), `StageShader` (loads a bundle shader and stops the stage with an error when the graphics API has no program), `StageGh3Material` (template table and GH3 render state), `StageMaterialState`, `StageRenderControlState`, `StageTextureAnimation`, `StageUvWibble`, `StageTransparency`, `StageTriangleOrder`, `StageHighwayMask` |
 | `src/Stage/Direction/` | Song direction: `StageTimeline` (cue evaluation on the song clock), `StageCue`, `StageChartReader` (chart and MIDI tracks), `StageRockBandVenue` (Rock Band `VENUE` track to GH3 cues) and `StageGeneratedDirection` (cues from chart sections), `StageNativeSong`, `StageSongDirection` (version 2 channels), `StageGh3Events`, `StageShowFlow` (intro and win sequences), `StageCameraPath` (GH3 camera cuts), `StageNoteHits` |
 | `src/Stage/Band/` | `StageBand` (the library members or character packages on the role rigs), `StagePerformance`, `BandAnimation`, `StageGuitarArms` (DegenerateBlend tracks, Havok-style IK), `StageDrummer`, `StageHair`, `StageHandFire`, `StageLipSync` (singer mouth from the chart's vocals when the song has no GH3 facial clips) |
@@ -52,7 +50,6 @@ flowchart LR
 | `src/Stage/Effects/` | `StageEffects` (pyro, sparks, smoke, fireworks), Tesla, screen color, outlines, movies |
 | `src/Stage/Scripts/` | `StageScripts`, `StageScriptState` (QB runtime bindings), `StageScriptBank`, `StageObjectState`, `StageActors`, `StageActorState`, `StageScriptActorState` |
 | `src/Stage/Audio/` | `StageAudio`, `StageAudioState`, `StageAudioBackend` (Clone Hero's BASS library from `Application.dataPath/Plugins`, also `Plugins/x86_64` on Windows), `StageSoundBank` |
-| `src/Spike/` | Packaging probes, off by default (`GH3_SKIN_SPIKE=textures`, `skinned`, `brotli`); see [docs/spike/](spike/) and [PACKAGE-FORMAT.md](PACKAGE-FORMAT.md#18-in-game-check-of-brotli) |
 
 ### Update order
 
@@ -124,7 +121,7 @@ Native, converted, and authored commands share `Gh3CommandDispatch`. The Rock Ba
 | `assets/gems/`, `sustains/`, `highway/`, `hud/`, `hit-effects/` (`.png`, `.dds`) | Gem, sustain, highway, HUD, and hit-effect textures, one folder for each type ([assets/README.md](../assets/README.md)). The amp and multiplier `.dds` files in `hud/score/` are DXT5 blocks captured from GH3; `SkinAssets` uploads them without conversion. `SkinAssetPaths` has the folder of each file; `Mods/GH3Skin/assets/` has the same layout |
 | `assets/fonts/*-font.json` + `.png` | GH3 font atlas and glyph table (`num_a9`, `num_a7`, `text_a6`, `text_a10_large`, `text_a1`) |
 | `assets/hud/counter-tuning.json` | Measured streak-counter animation and placement values (`HudTuning`) |
-| `*.chstage`, `*.chlib`, `*.chchar` | Packages ([PACKAGE-FORMAT.md](PACKAGE-FORMAT.md)). The mod converts them to `UserData/GH3Skin/Cache/<sha256>-i<importer>/` with the runtime files below; `textures/*.tex` (BC1, BC3, or RGBA32 with mips), `*.q48.br` clips, and `audio/*.pcm` replace the PNG, `.bin.gz`, and `.pcm.gz` files of the older install |
+| `*.chstage`, `*.chlib`, `*.chchar` | Packages ([PACKAGE-FORMAT.md](PACKAGE-FORMAT.md)). The mod converts them to `UserData/GH3Skin/Cache/<sha256>-i<importer>/` with the runtime files below; `textures/*.tex` (BC1, BC3, or RGBA32 with mips), `*.q48.br` clips, and `audio/*.pcm` replace the PNG, `.bin.gz`, and `.pcm.gz` files of the compiled packs in `assets/stages` and `assets/libraries`. The mod reads only the cache; the compiled packs are pipeline outputs that the converter and the tests read |
 | `meshes.bin` | `GH3STG04` (static, 144-byte vertex: 60-byte stage vertex with lightmap, layer, and mask UVs, then GH3 UV sets 0–3, texcoord 4–5, binormal 0, position 1, binormal 1) or `GH3BND02` (skinned, 128-byte vertex: 56-byte vertex with four bone indices and weights, then UV sets 0–3, texcoord 4–5, binormal 0, tangent 0). Header: magic, mesh count; then per mesh: material ID, vertex count, index count, vertices, 32-bit indices |
 | `stage.json` | Materials (texture, blend, cutoff, shading, lightmap, layer, mask, UV wibble, and the GH3 record `gh3`: template, constant banks, samplers, addressing, flags, blend, alpha reference, draw order), light groups, visibility groups, object pivots |
 | `pack.json` | Compiled stage pack: ID, name, library, band placements, waypoints, effects, crowd, and SHA-256 of all source and compiled files |
@@ -132,7 +129,7 @@ Native, converted, and authored commands share `Gh3CommandDispatch`. The Rock Ba
 | `library.json`, `catalog.json` | Library file hashes; per-role bones, groups, layers, and clips |
 | `direction/<role>/*.bin.gz` | Sampled animation clips at 30 fps |
 | `movies/*.gh3video` | `GH3VID01` frame bank: width, height, frame count, rate, offsets, PNG frames |
-| `render/*.bundle` | Unity AssetBundles with one shader each (stage, particle, Tesla, outline, screen color). Each shader has an OpenGL Core program and a Direct3D 11 program; Unity selects the program for the active graphics API. The passes have the name `GH3`. `install.sh` also copies them to `Mods/GH3Skin/render/`, which the mod uses first (packages carry no shaders) |
+| `render/*.bundle` | Unity AssetBundles with one shader each (stage, particle, Tesla, outline, screen color). Each shader has an OpenGL Core program and a Direct3D 11 program; Unity selects the program for the active graphics API. The passes have the name `GH3`. `install.sh` copies them to `Mods/GH3Skin/render/`, where the mod reads them (packages carry no shaders) |
 | `render/stage-templates.json` | Index and engine-register use of each translated GH3 template in `stage.bundle`. Install it with the bundle |
 
 ### Stage materials
@@ -156,6 +153,8 @@ The GLSL sources have `#ifdef GH3_D3D11` blocks only where Direct3D 11 needs oth
 | `tests/test_*.py` | Python pipeline tests |
 | `schemas/*.schema.json` | JSON Schemas (draft 2020-12) of package format v1: manifest, venue sidecars, `character.json`, GLB extras. See [PACKAGE-FORMAT.md](PACKAGE-FORMAT.md) |
 | `scripts/test.sh` | Runs both suites and shell syntax checks |
+| `scripts/build-release.sh` | Builds the release zips (Linux, Windows) and the Blender add-on zip from a clean export of a commit ([VERIFICATION.md](VERIFICATION.md#release-build)) |
+| `install.sh`, `install-linux.sh`, `install-windows.ps1` | Development install (builds the mod), and the release installers for Linux and Windows |
 | `tools/Gh3SongTool/` | C# command-line tool: event export, song audit, chart export, QB dumps, one-field camera edit |
 | `tools/audit-materials.py` | Template or fallback for each used material (`--stages` and `--library` also take package cache folders) |
 | `tools/PackageImport/` | Runs the mod's package importer outside the game (`dotnet run --project tools/PackageImport -c Release -- PACKAGES CACHE [--rgba]`) |
@@ -166,3 +165,5 @@ The GLSL sources have `#ifdef GH3_D3D11` blocks only where Direct3D 11 needs oth
 | `tools/rtmidi-stub.c` | Stub `libRtMidi.so` for Linux test games without an ALSA sequencer seat |
 | `tools/InteropMap/` | Maps the interop names that the mod uses to obfuscated metadata names, field offsets, and method RVAs, for one or more game installs |
 | `tools/native-offsets.py` | Compares a Linux and a Windows native method by the object offsets that they read |
+| `tools/windows/` | `run-win.sh` and the `env.sh` template: run Windows Clone Hero under Wine for tests |
+| `tools/research/` | Offline tools of the packaging spike ([docs/spike/](spike/)), kept as history |

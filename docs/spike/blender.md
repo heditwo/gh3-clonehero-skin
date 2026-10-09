@@ -20,18 +20,18 @@ flowchart LR
     S --> C
 ```
 
-1. `tools/spike-blender/band_glb.py` writes the library guitarist (`axel_1`, 125 joints, 9 hair joints, fingers) and
+1. `tools/research/spike-blender/band_glb.py` writes the library guitarist (`axel_1`, 125 joints, 9 hair joints, fingers) and
    singer (`Singer_Male`, 121 joints, 15 hair joints) as skinned GLBs with the existing `GlbWriter.actor`. The rig comes
    from `animation.bin` (bind pose), the mesh from `meshes.bin`, the materials from `stage.json`. Each GLB has 2 s of
    the first library clip (30 fps). The venue actor is `gh3.prison/actor-71546938.glb` (75 joints, 3 clips at 60 fps).
    The script adds `extras.gh3Probe` to every node and `extras.gh3ProbeMesh` to the mesh.
-2. `tools/spike-blender/run.sh` runs 15 variants per model in `blender-clean --background --factory-startup`
+2. `tools/research/spike-blender/run.sh` runs 15 variants per model in `blender-clean --background --factory-startup`
    (one process for each variant, under the heavy lock). Export is always `export_format="GLB"`.
-3. `tools/spike-blender/compare.py` compares each output with its original. It matches joints by name and vertices
+3. `tools/research/spike-blender/compare.py` compares each output with its original. It matches joints by name and vertices
    by bind-pose skinned position, UV, and normal (Blender reorders and splits vertices). For the pose test it plays
    the original GH3 clip (joint local TRS by bone name, as the runtime does) on both rigs and skins the mesh. It also
    plays the clip that Blender exported. It samples 30 times along the clip.
-4. `tools/spike-blender/accept.py` runs the existing stage-pack actor compiler (`compile_actor`) on every output.
+4. `tools/research/spike-blender/accept.py` runs the existing stage-pack actor compiler (`compile_actor`) on every output.
 
 Variant names are `<import>-<export>`. Import: `default`, `temperance` / `fortune` (bone direction modes), `nobind`
 (`guess_original_bind_pose=False`), `merge` (`merge_vertices=True`), `fps30` / `fps60` (scene frame rate set
@@ -172,11 +172,11 @@ All under `/tmp/opencode/spike-blender/`:
 Reproduce (from the worktree, under `flock /tmp/opencode/gh3-heavy.lock`):
 
 ```sh
-PYTHONPATH=$PWD uv run --with pillow --with numpy python tools/spike-blender/band_glb.py assets/libraries/gh3-band-v1 guitarist /tmp/opencode/spike-blender/orig/guitarist.glb
-PYTHONPATH=$PWD uv run --with pillow --with numpy python tools/spike-blender/band_glb.py tag assets/stage-packs/gh3.prison/actor-71546938.glb /tmp/opencode/spike-blender/orig/venue-prison.glb
-bash tools/spike-blender/run.sh
-bash tools/spike-blender/compare_all.sh
-PYTHONPATH=$PWD uv run --with pillow --with numpy --with 'shapely>=2.1' python tools/spike-blender/accept.py [--tolerant] /tmp/opencode/spike-blender/out/*.glb
+PYTHONPATH=$PWD uv run --with pillow --with numpy python tools/research/spike-blender/band_glb.py assets/libraries/gh3-band-v1 guitarist /tmp/opencode/spike-blender/orig/guitarist.glb
+PYTHONPATH=$PWD uv run --with pillow --with numpy python tools/research/spike-blender/band_glb.py tag assets/stage-packs/gh3.prison/actor-71546938.glb /tmp/opencode/spike-blender/orig/venue-prison.glb
+bash tools/research/spike-blender/run.sh
+bash tools/research/spike-blender/compare_all.sh
+PYTHONPATH=$PWD uv run --with pillow --with numpy --with 'shapely>=2.1' python tools/research/spike-blender/accept.py [--tolerant] /tmp/opencode/spike-blender/out/*.glb
 ```
 
 ## Open risks

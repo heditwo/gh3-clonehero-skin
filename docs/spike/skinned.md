@@ -12,14 +12,14 @@ Yes. A 142-line GLB reader (`GlbFile`) and a 113-line mesh builder (`SkinnedGlbS
 
 ```mermaid
 flowchart LR
-    A[GH3BND02 + GH3ANM01 bind pose + stage.json] -->|pipeline/spike/character_glb.py| B[guitarist.glb]
+    A[GH3BND02 + GH3ANM01 bind pose + stage.json] -->|tools/research/spike-skinned/character_glb.py| B[guitarist.glb]
     B -->|GlbFile + SkinnedGlbSpike| C[Unity Mesh per primitive]
     C --> D[Second SkinnedMeshRenderer on the band bones]
     D -->|BakeMesh + Camera.Render| E[Same-frame comparison]
 ```
 
-1. Export: `uv run --with pillow --with numpy python -m pipeline.spike.character_glb --role guitarist --output /tmp/opencode/spike-skinned/guitarist.glb`. The script reads the library guitarist and writes the GLB with the existing `GlbWriter.actor` (skeleton nodes `bone-<checksum>`, inverse bind matrices, `JOINTS_0`/`WEIGHTS_0` with 4 influences, UVs, colors, the `_GH3_*` streams, and materials with embedded PNG textures). It then reads the file back with `GlbReader` and checks it.
-2. Probe (off by default): `GH3_SKIN_SPIKE=skinned GH3_SKIN_SPIKE_GLB=<file>`. Code: `src/Spike/GlbFile.cs` (GLB chunks, accessors with stride and normalized integers, embedded images) and `src/Spike/SkinnedGlbSpike.cs`. `StageBand.SetTimeline` attaches the probe to the guitarist. The probe maps joints to band bones by name. It builds one `Mesh` per primitive (z mirror, winding flip, bindposes from the inverse bind matrices, `InternalSetBoneWeights`). It adds a second `SkinnedMeshRenderer` per part on the same band bones and material. `GH3_SKIN_SPIKE_MODE=original` keeps GH3BND02 on screen; the default shows the GLB meshes.
+1. Export: `PYTHONPATH=. uv run --with pillow --with numpy python tools/research/spike-skinned/character_glb.py --role guitarist --output /tmp/opencode/spike-skinned/guitarist.glb`. The script reads the library guitarist and writes the GLB with the existing `GlbWriter.actor` (skeleton nodes `bone-<checksum>`, inverse bind matrices, `JOINTS_0`/`WEIGHTS_0` with 4 influences, UVs, colors, the `_GH3_*` streams, and materials with embedded PNG textures). It then reads the file back with `GlbReader` and checks it.
+2. Probe (off by default; removed in step 6, so the commands below no longer run on `main`): `GH3_SKIN_SPIKE=skinned GH3_SKIN_SPIKE_GLB=<file>`. Code: `src/Spike/GlbFile.cs` (GLB chunks, accessors with stride and normalized integers, embedded images) and `src/Spike/SkinnedGlbSpike.cs`. `StageBand.SetTimeline` attaches the probe to the guitarist. The probe maps joints to band bones by name. It builds one `Mesh` per primitive (z mirror, winding flip, bindposes from the inverse bind matrices, `InternalSetBoneWeights`). It adds a second `SkinnedMeshRenderer` per part on the same band bones and material. `GH3_SKIN_SPIKE_MODE=original` keeps GH3BND02 on screen; the default shows the GLB meshes.
 3. At song times 4, 8, 12, and 15 s, the probe bakes both renderers (`BakeMesh`) and compares the vertices. It renders the stage camera twice into a render texture (`forceRenderingOff` selects the source), then repeats both renders.
 4. Fixed close camera: `GH3_SKIN_DEBUG_VIEW=-0.58,1.3,-1.6,-0.58,1.0,1.31,45`, stage gh3.dive, chart mycurse-native, 1600×900.
 
@@ -135,7 +135,7 @@ Il2Cpp note: a `Dictionary` keyed by `Material` fails because each property read
 | `run-glb/`, `run-original/`, `run-bindcopy/`, `run-control/` | `Latest.log`, `compare-<t>-{gh3bnd02,glb}-{0,1}.png`, `diff-<t>-pass1-x16.png`, on-screen `frames/` |
 | `evidence-pair-t8.png` | GH3BND02, GLB, and diff ×16 at song time 8 s |
 | `evidence-onscreen-t9.png` | On-screen frames at 9 s from two game starts (GH3BND02 left, GLB right) |
-| `pixel-diff.txt`, `render-summary.txt` | Pixel statistics (`pipeline/spike/compare_renders.py`) |
+| `pixel-diff.txt`, `render-summary.txt` | Pixel statistics (`tools/research/spike-skinned/compare_renders.py`) |
 
 Recording command (one run; `GH3_SKIN_SPIKE_MODE=original`, `GH3_SKIN_SPIKE_CONTROL=1`, and `GH3_SKIN_SPIKE_BINDPOSES=gh3bnd02` select the other runs):
 

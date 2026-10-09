@@ -27,7 +27,7 @@ These optional variables add checks against real data to the C# tests:
 
 After a change to the venue export or the shaders, run `python3 tools/audit-materials.py`. All used materials must draw with their GH3 template.
 
-After a change to the shaders, also check Direct3D 11. The Windows build of Clone Hero runs under Wine with DXVK (see `tools/spike-d3d11/run-win.sh` and [the spike report](spike/d3d11.md)). Build the mod against the Windows interop assemblies (`GameRoot` of the Windows copy), and capture the same song times with `-force-d3d11` and `-force-glcore` (`GH3_SKIN_CAPTURE_CLOCK=song`). Compare the frames with the Linux frames. A stage with no program for the graphics API logs `GH3 stage is off: ... has no program for the <API> graphics API` and does not draw; `-force-vulkan` shows this message.
+After a change to the shaders, also check Direct3D 11. The Windows build of Clone Hero runs under Wine with DXVK (see `tools/windows/run-win.sh` and [the spike report](spike/d3d11.md)). Build the mod against the Windows interop assemblies (`GameRoot` of the Windows copy), and capture the same song times with `-force-d3d11` and `-force-glcore` (`GH3_SKIN_CAPTURE_CLOCK=song`). Compare the frames with the Linux frames. A stage with no program for the graphics API logs `GH3 stage is off: ... has no program for the <API> graphics API` and does not draw; `-force-vulkan` shows this message.
 
 After a change to `src/Packages/` or to the package converter, run the cache comparison in [PIPELINE.md](PIPELINE.md#check-the-result) (`pipeline.package.cachecheck`).
 
@@ -40,11 +40,12 @@ The log shows the package steps with the prefix `GH3 packages:`:
 | `found N usable package(s)` | The scan; one `skipped <path>: <reason>` warning for each bad package |
 | `imported <id> <version> in X s (…)` | Cold cache: the import time, the checked bytes, the textures, and the managed heap of one package |
 | `<id> ready from the cache` or `all packages ready from the cache in X ms` | Warm cache |
-| `GH3 stage source: package …` or `… (older install)` | Where the stage came from |
+| `GH3 stage waits for the import of <id>` | The song started before the import of the library or the stage ended; the stage loads when it ends |
+| `GH3 stage source: package …` | The stage and library packages that the stage came from |
 | `GH3 stage load time: X ms on the main thread (…)` | The stage load frame: cache texture uploads and the clip prefetch wait |
 | `GH3 clips: clip … was not prefetched` | A clip decoded on the main thread during play (a prefetch gap) |
 
-To test a cold import, delete `UserData/GH3Skin/Cache/` in the test game. To compare with the older install in the same build, set `GH3_SKIN_PACKAGES=off`.
+To test a cold import, delete `UserData/GH3Skin/Cache/` in the test game.
 
 ## Test game
 
@@ -100,26 +101,20 @@ One `Gh3Skin.dll` works on Linux and Windows Clone Hero `v1.1.0.6142-final` (see
 
 ### Install on Windows
 
-Players use `install-windows.bat` (it starts `install-windows.ps1`) from a release folder; see [PLAYER-GUIDE.md section 6](PLAYER-GUIDE.md#6-install-on-windows). Make the release folder on Linux:
+Players use `install-windows.bat` (it starts `install-windows.ps1`) from the Windows release zip; see [PLAYER-GUIDE.md section 6](PLAYER-GUIDE.md#6-install-the-mod) and [Release build](#release-build). `install-windows.ps1` removes `Mods\GH3Skin\assets`, `Packages`, `render`, and `counter-tuning.json` of an earlier install (also the older install in `assets\stages` and `assets\libraries`), then copies the release `Mods` folder. It installs MelonLoader 0.7.3 x64 (download or `-MelonLoaderZip <file>`, SHA-256 checked) and sets `force_offline_generation = true` after the first start (the first start needs the network for the assembly generator). The script also runs with PowerShell 7 on Linux (`pwsh -File install-windows.ps1 -GameDir <folder>`), which is how it was tested; PowerShell 7.4 for Windows does not start under this Wine.
 
-```bash
-MISE_QUIET=1 GH3_CLONE_HERO_DIR=<windows game folder> bash install.sh --release <release folder>
-```
-
-The release has `Mods/Gh3Skin.dll`, `Mods/GH3Skin/assets/<skin folders>` (the `skin_folders` list of `install.sh`, the only list), `Mods/GH3Skin/Packages/` (the venue and library packages), `Mods/GH3Skin/render/` (the shader bundles), and the two install scripts. It has no older install (`assets/stages`, `assets/libraries`) and no test charts. `install-windows.ps1` removes `Mods\GH3Skin\assets`, `Packages`, `render`, and `counter-tuning.json` of an earlier install, then copies the release `Mods` folder. It installs MelonLoader 0.7.3 x64 (download or `-MelonLoaderZip <file>`, SHA-256 checked) and sets `force_offline_generation = true` after the first start (the first start needs the network for the assembly generator). The script also runs with PowerShell 7 on Linux (`pwsh -File install-windows.ps1 -GameDir <folder>`), which is how it was tested; PowerShell 7.4 for Windows does not start under this Wine.
-
-`GH3_CLONE_HERO_DIR=<windows game folder> bash install.sh` installs into a Windows game folder directly (with the older install and the test charts, as on Linux). `--packages-only` removes and does not copy the older install. Both build against the interop assemblies of that folder; one DLL works on Linux and Windows.
+`GH3_CLONE_HERO_DIR=<windows game folder> bash install.sh` installs into a Windows game folder directly (with the test charts, as on Linux). It builds against the interop assemblies of that folder; one DLL works on Linux and Windows.
 
 The loader log is `<game>\MelonLoader\Latest.log`. A good start logs `Linux hook page guard: off (Linux only; this is Microsoft Windows …)`, `Loaded … GH3 skin gameplay sprites`, `GH3 packages: scanning …; textures BC1/BC3; WindowsPlayer Direct3D11`, and, in a song, `Stage audio uses BASS from …\Clone Hero_Data\Plugins\x86_64\bass.dll`. On another version or platform, the log shows `GH3 skin requires Clone Hero …` or `GH3 skin cannot bind to Clone Hero …` and the skin stays off.
 
 ### Test under Wine
 
-The template is `~/games/clonehero-win-spike/` (game, Wine prefix, DXVK 3.1.1, `env.sh`; Wine 11.17 from `~/games/gh3-test-tools/wine-root`). Make a reflink copy for each agent and change `WINEPREFIX` in its `env.sh`. `tools/spike-d3d11/run-win.sh` reads the copy from `GH3_WINDOWS_TEST_DIR`. Each run stops the Wine server of the prefix at the end; also stop leftover `Clone Hero.exe` processes, because they keep the record lock. Run under the record lock:
+The template is `~/games/clonehero-win-spike/` (game, Wine prefix, DXVK 3.1.1, `env.sh`; Wine 11.17 from `~/games/gh3-test-tools/wine-root`). Make a reflink copy for each agent and change `WINEPREFIX` in its `env.sh`. `tools/windows/run-win.sh` reads the copy from `GH3_WINDOWS_TEST_DIR`; `tools/windows/env.sh` is the template of `env.sh`. Each run stops the Wine server of the prefix at the end; also stop leftover `Clone Hero.exe` processes, because they keep the record lock. Run under the record lock:
 
 ```bash
 flock /tmp/opencode/gh3-record.lock env GH3_WINDOWS_TEST_DIR=$HOME/games/clonehero-win-<name> GH3_SKIN_STAGE=gh3.dive GH3_SKIN_TRACE=1 \
   GH3_SKIN_CAPTURE_CLOCK=song GH3_SKIN_CAPTURE_TIMES=2,10,20,30,45,60 'GH3_SKIN_CAPTURE_DIR=Z:\home\<user>\win\frames' \
-  bash tools/spike-d3d11/run-win.sh 240 ~/win/run.log \
+  bash tools/windows/run-win.sh 240 ~/win/run.log \
   --song 'Z:\home\hedi\.cache\gh3ref\charts\mycurse-native' --player Guitar,Expert \
   -screen-fullscreen 0 -screen-width 1600 -screen-height 900
 ```
@@ -127,6 +122,34 @@ flock /tmp/opencode/gh3-record.lock env GH3_WINDOWS_TEST_DIR=$HOME/games/clonehe
 Without a launch option the game uses Direct3D 11 (DXVK); `-force-glcore` selects OpenGL. Windows paths in variables need the `Z:` drive. Put the frames on a disk folder: `/tmp` here is a RAM disk with a quota, and a full `/tmp` also stops Xwayland (`Could not write pid to lock file`). Settings that the test copy needs: `analytics_opt = 3` in `PlayerData\settings.ini` (else the analytics consent dialog stays on top of the menus), and fonts with the name Arial in the prefix (`C:\windows\Fonts\arial.ttf`, for example Liberation Sans with the font name changed). Without Arial, Unity's IMGUI shows no text in the picker. The zip release of the game runs in portable mode: `Custom` and `Songs` are in `<game>\PlayerData`.
 
 Run the same chart on Linux with `scripts/capture-preview.sh` and the same `GH3_SKIN_TRACE` and capture variables. Then compare the frames (same song times) and the `[trace]` lines of the two loader logs.
+
+## Release build
+
+Nothing is published. The release artifacts stay on the local disk, outside the repository.
+
+```bash
+MISE_QUIET=1 GH3_RELEASE_OUT=~/.cache/gh3-skin-release GH3_CLONE_HERO_DIR=<game copy> bash scripts/build-release.sh [<git ref>]
+```
+
+The script exports the commit (default `HEAD`; uncommitted changes are not included) with `git archive`, adds the generated packages (`assets/packages/*.chstage`, `*.chlib`) and shader bundles (`assets/libraries/gh3-band-v1/render/*.bundle`, `stage-templates.json`), builds the mod against the MelonLoader assemblies of `GH3_CLONE_HERO_DIR` (`install.sh --release`), and writes:
+
+| File | Contents |
+| --- | --- |
+| `gh3-skin-<version>-linux.zip` | `gh3-skin-<version>-linux/`: `Mods/` (`Gh3Skin.dll`, `GH3Skin/assets/<skin folders>`, `GH3Skin/Packages/`, `GH3Skin/render/`), `install-linux.sh`, `PLAYER-GUIDE.md` with `images/`, `release.json` (version, platform, commit), `SHA256SUMS` (every file) |
+| `gh3-skin-<version>-windows.zip` | The same, with `install-windows.ps1` and `install-windows.bat` instead of `install-linux.sh` |
+| `chstage_tools-<add-on version>.zip` | The Blender add-on (`blender/build.py`) |
+| `SHA256SUMS-<version>` | SHA-256 of the three files |
+
+The version comes from `src/Packages/ModInfo.cs` (the only place). CREDITS, LICENSE, or COPYING files in the repository root go into the zips when they exist. The zips are reproducible: sorted entries, the commit time as the file time, fixed permissions, packages stored without a second compression. Two builds of one commit against the same game copy give the same bytes. A DLL built against another game copy (for example the Windows interop assemblies) has other bytes but works the same way.
+
+`install-linux.sh` checks the game version, installs MelonLoader 0.7.3 (download or `--melonloader-zip <file>`, SHA-256 checked; an installed 0.7.3 is found by the SHA-256 of `MelonLoader.Bootstrap.so`), sets `force_offline_generation = true` after the first start, removes the same old files as `install-windows.ps1`, copies `Mods/`, and writes the launcher `clonehero-melonloader.sh` into the game folder (MelonLoader on Linux loads through `LD_PRELOAD`).
+
+Verify a release from the zips only:
+
+1. In a test game copy, delete `Mods/GH3Skin`, `Mods/Gh3Skin.dll`, and `UserData/GH3Skin`.
+2. Unzip the platform zip to a folder outside the repository. Run `sha256sum -c SHA256SUMS` in it.
+3. Linux: `./install-linux.sh <game>`. Windows under Wine: `pwsh -NoProfile -File ./install-windows.ps1 -GameDir <game>` (PowerShell 7 for Linux).
+4. Cold start (the import of all packages), then a warm start, with `GH3_SKIN_CAPTURE_CLOCK=song` frames on gh3.dive with My Curse; compare them with frames of the current `main` install at the same song times. Open the picker (F6) with `GH3_SKIN_PICKER_TEST`.
 
 ## Compare two builds
 
@@ -152,10 +175,9 @@ These variables are for checks and captures. Normal play needs none of them.
 
 | Variable | Purpose |
 | --- | --- |
-| `GH3_SKIN_STAGE` | Stage ID (package or older pack), for example `gh3.hell` or `example.studio`; it overrides the picker and the song's stage. `random` or `song` act as the picker items. `off` shows the stock background. Without the variable, the picker choice (`UserData/GH3Skin/choices.json`, default `song`: the song's stage, else `gh3.budokan`) applies |
+| `GH3_SKIN_STAGE` | Stage ID of an installed package, for example `gh3.hell` or `example.studio`; it overrides the picker and the song's stage. `random` or `song` act as the picker items. `off` shows the stock background. Without the variable, the picker choice (`UserData/GH3Skin/choices.json`, default `song`: the song's stage, else `gh3.budokan`) applies |
 | `GH3_SKIN_CHARACTER_GUITARIST`, `_BASSIST`, `_DRUMMER`, `_SINGER` | Character package ID for a band role (or `default`); overrides the picker |
 | `GH3_SKIN_PICKER_TEST` | Picker steps in the menus without a mouse (`src/Menu/PickerTest.cs`), for `scripts/capture-menu.sh` |
-| `GH3_SKIN_PACKAGES=off` | Ignores packages; the stage loads from the older install (`assets/stages`, `assets/libraries`) |
 | `GH3_SKIN_CAMERA` | `auto` (default), `fixed`, or a shot group: `wide`, `singer`, `guitarist`, `bassist`, `drummer`, `orbit` |
 | `GH3_SKIN_CAMERA_SHOT` | Forces one shot name, to match a GH3 reference frame |
 | `GH3_SKIN_VENUE_TRACK=off` | Ignores Rock Band `VENUE` tracks. Overrides the picker option; another value turns the tracks on |

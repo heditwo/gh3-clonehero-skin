@@ -32,7 +32,7 @@ flowchart LR
 
 - Download: `CloneHero.v1.1.0.6142-final.dmg` from `github.com/clonehero-game/releases` (tag `v1.1.0.6142-final`). The page `clonehero.net/releases/v1.1.0.6142` links to this file. Size 1 015 313 127 bytes. SHA-256 `1b880f98…2a39`. It is the same as the GitHub asset digest.
 - The DMG holds one APFS volume. 7-Zip 25.01 (official Linux binary from 7-zip.org) extracts it without root. The app is in `~/games/clonehero-mac-research/dmg/Clone Hero.app`.
-- Offline interop generation: `tools/spike-macos/InteropGen` calls the same Il2CppInterop generator step as MelonLoader (`Packages/Il2CppInterop.cs`), with the DLLs of the installed MelonLoader 0.7.3. Cpp2IL is the Linux binary that MelonLoader downloaded (`2022.1.0-pre-release.21`).
+- Offline interop generation: `tools/research/spike-macos/InteropGen` calls the same Il2CppInterop generator step as MelonLoader (`Packages/Il2CppInterop.cs`), with the DLLs of the installed MelonLoader 0.7.3. Cpp2IL is the Linux binary that MelonLoader downloaded (`2022.1.0-pre-release.21`).
 - The xref scan input is the `GameAssembly` file (Linux: `GameAssembly.so`; macOS: see section 5).
 - **Tool check:** for the Linux build, the offline output is identical to the in-game `MelonLoader/Il2CppAssemblies`: 1317 of 1317 `Il2CppCloneHero` types and 608 of 608 `Il2CppStrikeCore` types have identical members [verified: `cmp-linux-validation.txt`]. Thus the tool gives the same names as MelonLoader on Linux.
 
@@ -46,10 +46,10 @@ flowchart LR
 | Unity version | **2022.3.62f3** (`96770f904ca7`). Linux is 2022.3.62f2. | verified: `Info.plist`, UnityPy |
 | Scripting backend | IL2CPP: `Contents/Frameworks/GameAssembly.dylib` and `Resources/Data/il2cpp_data/Metadata/global-metadata.dat` (metadata version 31.1) | verified: files, Cpp2IL log |
 | Architectures | Universal: x86_64 and arm64 for the executable, `UnityPlayer.dylib`, `GameAssembly.dylib`, and all plugins. BASS dylibs also have i386. | verified: Mach-O headers |
-| `GameAssembly.dylib` slices | x86_64 at file offset 0x4000 (172 278 672 B); arm64 at 0xa454000 (170 060 496 B) | verified: `tools/spike-macos/thin.py` |
+| `GameAssembly.dylib` slices | x86_64 at file offset 0x4000 (172 278 672 B); arm64 at 0xa454000 (170 060 496 B) | verified: `tools/research/spike-macos/thin.py` |
 | Minimum macOS | 10.13 | verified: `Info.plist` |
 | Graphics API | **Metal only.** 73 shaders in the build, all with the Metal platform only: 424 Metal vertex and 408 Metal fragment programs. `UnityPlayer.dylib` has `-force-glcore` strings, but no shader has an OpenGL program, so OpenGL is not a usable fallback. | verified: `shader-platforms-mac.txt` |
-| Code signature | Developer ID Application: Coda Digital LLC (YJ4Z9SZ37Q). **Hardened runtime** on the executable, `GameAssembly`, `UnityPlayer`, BASS, and RtMidi. The only entitlement is `com.apple.security.cs.disable-library-validation`. | verified: `codesign.txt` (`tools/spike-macos/codesign_info.py`) |
+| Code signature | Developer ID Application: Coda Digital LLC (YJ4Z9SZ37Q). **Hardened runtime** on the executable, `GameAssembly`, `UnityPlayer`, BASS, and RtMidi. The only entitlement is `com.apple.security.cs.disable-library-validation`. | verified: `codesign.txt` (`tools/research/spike-macos/codesign_info.py`) |
 | Notarization | `Contents/CodeResources` starts with the stapled-ticket magic `s8ch` | verified: file bytes; meaning from documentation |
 
 ### 2. MelonLoader on macOS
@@ -67,7 +67,7 @@ flowchart LR
 
 ### 3. Shaders
 
-Metal blob of `Hidden/BlitCopy` (macOS `unity_builtin_extra`, 2664 bytes, 4 entries) [verified: `metal-blitcopy.txt`, `tools/spike-macos/metal_blob.py`]:
+Metal blob of `Hidden/BlitCopy` (macOS `unity_builtin_extra`, 2664 bytes, 4 entries) [verified: `metal-blitcopy.txt`, `tools/research/spike-macos/metal_blob.py`]:
 
 | Entry | Content |
 | --- | --- |
@@ -205,20 +205,20 @@ Scratch folder `/tmp/opencode/mac-research/`:
 
 Large files: `~/games/clonehero-mac-research/` (`dl/` DMG and MelonLoader zip, `dmg/` extracted app, `thin/` slices, `generated/` Cpp2IL output, interop assemblies, mod build, InteropGen build).
 
-Scripts: `tools/spike-macos/`. Commands:
+Scripts: `tools/research/spike-macos/`. Commands:
 
 ```bash
-uv run --with UnityPy --with lz4 python tools/spike-macos/shader_platforms.py "<app>/Contents/Resources/Data"
-uv run --with UnityPy --with lz4 python tools/spike-macos/texture_formats.py "<app>/Contents/Resources/Data"
-uv run --with UnityPy --with lz4 python tools/spike-macos/metal_blob.py "<app>/Contents/Resources/Data/Resources/unity_builtin_extra" Hidden/BlitCopy
-python3 tools/spike-macos/codesign_info.py "<app>/Contents/MacOS/Clone Hero"
-python3 tools/spike-macos/thin.py "<app>/Contents/Frameworks/GameAssembly.dylib" x86_64 GameAssembly.x86_64.dylib
+uv run --with UnityPy --with lz4 python tools/research/spike-macos/shader_platforms.py "<app>/Contents/Resources/Data"
+uv run --with UnityPy --with lz4 python tools/research/spike-macos/texture_formats.py "<app>/Contents/Resources/Data"
+uv run --with UnityPy --with lz4 python tools/research/spike-macos/metal_blob.py "<app>/Contents/Resources/Data/Resources/unity_builtin_extra" Hidden/BlitCopy
+python3 tools/research/spike-macos/codesign_info.py "<app>/Contents/MacOS/Clone Hero"
+python3 tools/research/spike-macos/thin.py "<app>/Contents/Frameworks/GameAssembly.dylib" x86_64 GameAssembly.x86_64.dylib
 <melon>/Dependencies/Il2CppAssemblyGenerator/Cpp2IL/Cpp2IL --game-path "<app>" --exe-name "Clone Hero" --output-as dummydll --use-processor attributeanalyzer,attributeinjector --output-to cpp2il-mac
-dotnet build tools/spike-macos/InteropGen -c Release -o interopgen
+dotnet build tools/research/spike-macos/InteropGen -c Release -o interopgen
 dotnet interopgen/InteropGen.dll cpp2il-mac <melon>/Dependencies/Il2CppAssemblyGenerator/UnityDependencies interop-mac GameAssembly.x86_64.dylib
-uv run --with dnfile python tools/spike-macos/interop_compare.py Gh3Skin.dll <linux interop> interop-mac linux mac
-uv run --with dnfile python tools/spike-macos/signature_candidates.py Gh3Skin.dll <linux interop> interop-mac linux mac
-uv run --with dnfile python tools/spike-macos/mod_member_refs.py Gh3Skin.dll interop-mac
+uv run --with dnfile python tools/research/spike-macos/interop_compare.py Gh3Skin.dll <linux interop> interop-mac linux mac
+uv run --with dnfile python tools/research/spike-macos/signature_candidates.py Gh3Skin.dll <linux interop> interop-mac linux mac
+uv run --with dnfile python tools/research/spike-macos/mod_member_refs.py Gh3Skin.dll interop-mac
 ```
 
-`signature_candidates.py` imports `interop_compare.py`; run it from `tools/spike-macos/` or set `PYTHONPATH`.
+`signature_candidates.py` imports `interop_compare.py`; run it from `tools/research/spike-macos/` or set `PYTHONPATH`.

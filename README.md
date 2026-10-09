@@ -17,9 +17,9 @@ MISE_QUIET=1 scripts/regenerate.sh --clean     # once, and after a pipeline chan
 MISE_QUIET=1 bash install.sh
 ```
 
-`install.sh` builds the mod and copies it, the prepared assets, the venues, and the test charts into the game. Set `GH3_CLONE_HERO_DIR` if the game is not at `~/games/clonehero-gh3-melon`. Without the generated stage assets, the skin works with the stock background.
+`install.sh` builds the mod and copies it, the prepared assets, the stage and band packages, the shader bundles, and the test charts into the game. Set `GH3_CLONE_HERO_DIR` if the game is not at `~/games/clonehero-gh3-melon`. Without the generated packages, the skin works with the stock background.
 
-For Windows, `install.sh --release <folder>` writes a release folder with `install-windows.bat`. On Windows, the player runs that file. It installs MelonLoader 0.7.3 and the mod. See [PLAYER-GUIDE.md section 6](docs/PLAYER-GUIDE.md#6-install-on-windows).
+`scripts/build-release.sh` makes the release zips for Linux and Windows (with `install-linux.sh` or `install-windows.bat`) and the Blender add-on zip. Players install from these zips; see [PLAYER-GUIDE.md section 6](docs/PLAYER-GUIDE.md#6-install-the-mod) and [VERIFICATION.md](docs/VERIFICATION.md#release-build).
 
 ## Play
 

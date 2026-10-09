@@ -10,10 +10,10 @@ Spike agent: `textures`. Branch: `spike-textures`. Plan items: `docs/PACKAGING-P
 
 ## Method
 
-- Probe: `src/Spike/TextureSpike.cs` and `src/Spike/PngDecoder.cs`. The probe runs only when `GH3_SKIN_SPIKE=textures`. It starts on gameplay frame 30, runs all measurements in one frame, logs with the prefix `[spike-textures]`, and then shows the textures on a UI overlay.
+- Probe: `src/Spike/TextureSpike.cs` and `src/Spike/PngDecoder.cs` (removed in step 6; `tools/research/spike-textures/run-texture-spike.sh` needs them). The probe runs only when `GH3_SKIN_SPIKE=textures`. It starts on gameplay frame 30, runs all measurements in one frame, logs with the prefix `[spike-textures]`, and then shows the textures on a UI overlay.
 - Test image: `assets/stages/gh3.budokan/textures/ab079663.png` (2048 × 2048, 8-bit RGBA, 2.31 MB PNG, alpha is 255 everywhere). This texture came from GH3, where it was DXT-compressed.
-- Offline encoding: `scripts/spike/encode_textures.py` (Python, `etcpak` 0.9.15) writes a full mip chain (12 levels, box filter) as raw BCn blocks in a small `.gh3tex` file (24-byte header). `scripts/spike/csharp-encoder/` measures the managed encoder BCnEncoder.NET 2.2.1 on .NET 10.
-- Game runs: `scripts/spike/run-texture-spike.sh` under `flock /tmp/opencode/gh3-record.lock`, game copy `~/games/clonehero-gh3-spike-textures`, stage `gh3.dive`, chart `mycurse-native`, 1600 × 900. Run 2 is the normal run. Run 3 adds the test files to `Custom/` (question C).
+- Offline encoding: `tools/research/spike-textures/encode_textures.py` (Python, `etcpak` 0.9.15) writes a full mip chain (12 levels, box filter) as raw BCn blocks in a small `.gh3tex` file (24-byte header). `tools/research/spike-textures/csharp-encoder/` measures the managed encoder BCnEncoder.NET 2.2.1 on .NET 10.
+- Game runs: `tools/research/spike-textures/run-texture-spike.sh` under `flock /tmp/opencode/gh3-record.lock`, game copy `~/games/clonehero-gh3-spike-textures`, stage `gh3.dive`, chart `mycurse-native`, 1600 × 900. Run 2 is the normal run. Run 3 adds the test files to `Custom/` (question C).
 - Timing: `Stopwatch`. Each case has 1 warm-up run and 7 measured runs. "Main" stops when the Unity call returns. "Main + sync" also calls `GetNativeTexturePtr()`, which waits for the render thread (Unity uses a separate render thread here). The "main" times include the copy of the managed `byte[]` into an `Il2CppStructArray<byte>`.
 - Correctness: the probe draws each texture into a render texture (`Graphics.Blit`), reads it back, and compares it with the `LoadImage` texture at mip 0 (2048 × 2048) and mip 5 (64 × 64).
 - Machine: i7-11800H (16 threads), RTX 3060 Laptop GPU, NVIDIA 610.57.04, 15 GB RAM.

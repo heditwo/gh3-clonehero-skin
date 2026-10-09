@@ -29,7 +29,7 @@ This folder has one folder for each type of file. Do not put files directly in `
 | Folder | Contents | Written by |
 | --- | --- | --- |
 | `stage-packs/` | The public stage packs of the venues (the source form) | `venues` and `template` steps |
-| `stages/` | The compiled venues, and `stages/events/` (the GH3 song direction). `install.sh` copies them as the older install, which the mod uses when no package is available | `venues`, `events`, and `template` steps |
-| `libraries/` | The compiled band library (`gh3-band-v1`), with the shader bundles in `render/`. `install.sh` copies it as the older install, and copies the shader bundles to `Mods/GH3Skin/render/` | `library` and `render` steps |
+| `stages/` | The compiled venues, and `stages/events/` (the GH3 song direction). Intermediate output: the `packages` step and the tests read it; `install.sh` does not copy it | `venues`, `events`, and `template` steps |
+| `libraries/` | The compiled band library (`gh3-band-v1`), with the shader bundles in `render/`. Intermediate output: the `packages` step and the tests read it; `install.sh` copies only the shader bundles to `Mods/GH3Skin/render/` | `library` and `render` steps |
 | `packages/` | The `.chstage` and `.chlib` packages. `install.sh` copies them to `Mods/GH3Skin/Packages/` | `packages` step (`pipeline.package.build`) |
 | `event-audit/` | Local research tools and reports. Not in Git and not installed | Manual |

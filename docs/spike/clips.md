@@ -47,7 +47,7 @@ flowchart LR
   KEYS --> BENCH
 ```
 
-- `tools/spike-clips/analyze.py` runs `direction.convert` with a patched `write_clip`. Thus, it gets exactly the SKA bytes, rig, retarget rig, and masks of the pipeline for all 1138 clips. It reads the current `.bin.gz` and makes sure that the header and tracks are equal. Then it encodes, compresses, decodes, and measures each variant.
+- `tools/research/spike-clips/analyze.py` runs `direction.convert` with a patched `write_clip`. Thus, it gets exactly the SKA bytes, rig, retarget rig, and masks of the pipeline for all 1138 clips. It reads the current `.bin.gz` and makes sure that the header and tracks are equal. Then it encodes, compresses, decodes, and measures each variant.
 - **Ground truth (GH3):** the pipeline `sample_animation` (linear interpolation and normalization of the SKA keys, then retarget and z-flip) at each 1/60 s tick. The current clips and the variants are sampled with the runtime rule (`frame = t / duration × (frames − 1)`, lerp and slerp).
 - **Error:** the local rotation angle of each bone with a used rotation channel, and the world position error of the head, the palms, and the 5 fingertip bones of each hand (leaf bones under `Bone_Palm_L` and `Bone_Palm_R`). Forward kinematics uses the GH3 rig with bind values for bones that are not animated. The p99 values come from log histograms with 0.5% bin resolution.
 - **Variants** (each clip is compressed alone, as a package entry would be):
@@ -173,8 +173,8 @@ Commands:
 
 ```sh
 flock /tmp/opencode/gh3-heavy.lock env PYTHONPATH=. MISE_QUIET=1 uv run --with numpy --with brotli --with zstandard \
-  python tools/spike-clips/analyze.py ~/games/gh3-test-tools/game/DATA assets/libraries/gh3-band-v1/direction /tmp/opencode/spike-clips/full 4
-PYTHONPATH=. uv run --with numpy --with brotli --with zstandard python tools/spike-clips/summarize.py /tmp/opencode/spike-clips/full
+  python tools/research/spike-clips/analyze.py ~/games/gh3-test-tools/game/DATA assets/libraries/gh3-band-v1/direction /tmp/opencode/spike-clips/full 4
+PYTHONPATH=. uv run --with numpy --with brotli --with zstandard python tools/research/spike-clips/summarize.py /tmp/opencode/spike-clips/full
 dotnet build -c Release tools/ClipBench
 DOTNET_ROOT=<copy of MelonLoader/Dependencies/dotnet> <copy>/dotnet tools/ClipBench/bin/Release/net6.0/ClipBench.dll \
   assets/libraries/gh3-band-v1/direction /tmp/opencode/spike-clips/full mycurse 3
