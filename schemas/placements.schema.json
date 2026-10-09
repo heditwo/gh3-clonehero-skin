@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.gh3skin.invalid/v1/placements.schema.json",
+  "title": "Venue placements (placements.json)",
+  "description": "Performer placements, walking destinations, effect emitters, and crowd profiles. Unity runtime coordinates (metres, Y up, left-handed).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "band"],
+  "properties": {
+    "version": { "const": 1 },
+    "band": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "common.schema.json#/$defs/role" },
+      "additionalProperties": { "$ref": "common.schema.json#/$defs/transform" }
+    },
+    "waypoints": {
+      "type": "object",
+      "maxProperties": 1024,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_.-]{1,128}$",
+        "not": { "pattern": "^(guitarist|bassist|singer|drummer)_start$" }
+      },
+      "additionalProperties": { "$ref": "common.schema.json#/$defs/transform" }
+    },
+    "effects": {
+      "type": "object",
+      "propertyNames": { "enum": ["pyro", "sparks", "fireworks", "smoke"] },
+      "additionalProperties": {
+        "type": "array",
+        "maxItems": 64,
+        "items": { "$ref": "common.schema.json#/$defs/transform" }
+      }
+    },
+    "crowd": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "model", "yaw"],
+        "properties": {
+          "role": { "$ref": "common.schema.json#/$defs/crowdRole" },
+          "model": { "type": "string", "pattern": "^[a-zA-Z0-9_]{1,64}$" },
+          "yaw": { "type": "number", "minimum": -360, "maximum": 360 }
+        }
+      }
+    }
+  }
+}

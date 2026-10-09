@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.gh3skin.invalid/v1/manifest.schema.json",
+  "title": "Package manifest (manifest.json)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "id", "version", "name", "authors", "license", "permissions", "entry", "files"],
+  "properties": {
+    "format": {
+      "description": "Package kind and format version: <kind>/<major>.<minor>.",
+      "type": "string",
+      "pattern": "^(chstage|chchar|chlib)/1\\.(0|[1-9][0-9]{0,3})$"
+    },
+    "id": { "$ref": "common.schema.json#/$defs/packageId" },
+    "version": { "$ref": "common.schema.json#/$defs/semver" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S" },
+    "description": { "type": "string", "maxLength": 4000 },
+    "authors": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "role": { "type": "string", "maxLength": 128 },
+          "url": { "type": "string", "maxLength": 512, "pattern": "^(https?://|mailto:)" }
+        }
+      }
+    },
+    "license": {
+      "description": "SPDX license expression, for example 'CC-BY-4.0' or 'LicenseRef-GH3-Derived'.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9.+:() -]+$"
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["redistribute", "modify", "commercial"],
+      "properties": {
+        "redistribute": { "type": "boolean" },
+        "modify": { "type": "boolean" },
+        "commercial": { "type": "boolean" }
+      }
+    },
+    "credits": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+    },
+    "homepage": { "type": "string", "maxLength": 512, "pattern": "^https?://" },
+    "requires": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "version"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/packageId" },
+          "version": {
+            "description": "Lowest compatible version. A package with the same major version and a version that is not lower satisfies it.",
+            "$ref": "common.schema.json#/$defs/semver"
+          }
+        }
+      }
+    },
+    "entry": { "type": "object" },
+    "files": {
+      "description": "Every file of the package except manifest.json. An unpacked development folder can use an empty object.",
+      "type": "object",
+      "maxProperties": 100000,
+      "propertyNames": { "$ref": "common.schema.json#/$defs/path" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sha256", "size"],
+        "properties": {
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "size": { "type": "integer", "minimum": 0, "maximum": 4294967295 }
+        }
+      }
+    },
+    "minModVersion": { "$ref": "common.schema.json#/$defs/semver" },
+    "preview": { "$ref": "common.schema.json#/$defs/pngPath" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "format": { "pattern": "^chstage/" } } },
+      "then": {
+        "properties": {
+          "entry": {
+            "additionalProperties": false,
+            "required": ["model", "placements", "cameras"],
+            "properties": {
+              "model": { "$ref": "common.schema.json#/$defs/glbPath" },
+              "placements": { "$ref": "common.schema.json#/$defs/jsonPath" },
+              "cameras": { "$ref": "common.schema.json#/$defs/jsonPath" },
+              "lighting": { "$ref": "common.schema.json#/$defs/jsonPath" },
+              "scripts": { "$ref": "common.schema.json#/$defs/jsonPath" },
+              "actors": { "$ref": "common.schema.json#/$defs/jsonPath" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "format": { "pattern": "^chchar/" } } },
+      "then": {
+        "properties": {
+          "entry": {
+            "additionalProperties": false,
+            "required": ["model", "character"],
+            "properties": {
+              "model": { "$ref": "common.schema.json#/$defs/glbPath" },
+              "character": { "$ref": "common.schema.json#/$defs/jsonPath" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "format": { "pattern": "^chlib/" } } },
+      "then": {
+        "properties": {
+          "entry": {
+            "additionalProperties": false,
+            "required": ["catalog", "band", "performance"],
+            "properties": {
+              "catalog": { "$ref": "common.schema.json#/$defs/jsonPath" },
+              "band": { "$ref": "common.schema.json#/$defs/jsonPath" },
+              "hair": { "$ref": "common.schema.json#/$defs/jsonPath" },
+              "performance": { "$ref": "common.schema.json#/$defs/jsonPath" },
+              "crowd": { "$ref": "common.schema.json#/$defs/jsonPath" },
+              "handFire": { "$ref": "common.schema.json#/$defs/jsonPath" },
+              "audio": { "$ref": "common.schema.json#/$defs/jsonPath" },
+              "scripts": { "$ref": "common.schema.json#/$defs/jsonPath" },
+              "songs": { "$ref": "common.schema.json#/$defs/jsonPath" }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

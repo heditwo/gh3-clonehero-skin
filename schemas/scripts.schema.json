@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.gh3skin.invalid/v1/scripts.schema.json",
+  "title": "Typed script bank (scripts.json)",
+  "description": "GH3 script definitions as typed QB values, keyed by checksum. Used by venues and by the library.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "definitions"],
+  "properties": {
+    "version": { "const": 1 },
+    "definitions": {
+      "type": "object",
+      "maxProperties": 50000,
+      "propertyNames": { "type": "string", "pattern": "^[0-9a-f]{8}$" },
+      "additionalProperties": {
+        "description": "[QB type, value]. The value layout depends on the type (see Gh3QbText).",
+        "type": "array",
+        "prefixItems": [{ "type": "integer", "minimum": 0, "maximum": 255 }, true],
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+    "startup": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "type": "string", "maxLength": 256 }
+    },
+    "nodes": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "common.schema.json#/$defs/name" }
+    },
+    "performanceChanged": { "$ref": "common.schema.json#/$defs/optionalName" },
+    "prefixes": {
+      "type": "object",
+      "maxProperties": 100000,
+      "additionalProperties": {
+        "type": "array",
+        "items": { "$ref": "common.schema.json#/$defs/name" }
+      }
+    },
+    "lightVolumes": {
+      "type": "object",
+      "maxProperties": 1024,
+      "additionalProperties": { "$ref": "common.schema.json#/$defs/name" }
+    },
+    "textures": {
+      "description": "Script texture name to a PNG file in the package.",
+      "type": "object",
+      "maxProperties": 2048,
+      "propertyNames": { "$ref": "common.schema.json#/$defs/name" },
+      "additionalProperties": { "$ref": "common.schema.json#/$defs/pngPath" }
+    },
+    "movies": {
+      "description": "Movie name to a movie.json file in the package.",
+      "type": "object",
+      "maxProperties": 256,
+      "propertyNames": { "$ref": "common.schema.json#/$defs/name" },
+      "additionalProperties": { "$ref": "common.schema.json#/$defs/jsonPath" }
+    }
+  }
+}

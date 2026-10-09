@@ -1,6 +1,6 @@
 # Packaging and creator workflow plan
 
-Status: **step 2 (spike) done, step 3 next.** This document records the research and the decisions for the release format of this mod. Start a new work session from this file. The spike results are in [section 9](#9-spike-results).
+Status: **step 3 part 1 (format v1 frozen, [PACKAGE-FORMAT.md](PACKAGE-FORMAT.md)) done; step 3 part 2 (convert the venues and the library) next.** This document records the research and the decisions for the release format of this mod. Start a new work session from this file. The spike results are in [section 9](#9-spike-results).
 
 ## 1. Goal
 
@@ -130,6 +130,10 @@ Three research passes were made in October 2026 (rhythm-game ecosystem, asset fo
    - Stage shader bundle on D3D11 (Windows).
    - Whether Clone Hero accepts `Custom/Stages/`.
 3. **Freeze the package format v1** (manifest, schemas, file layout). Convert the ten GH3 venues and the library to packages.
+   - **Part 1, done:** [PACKAGE-FORMAT.md](PACKAGE-FORMAT.md) defines the zip layout, `manifest.json`, the three kinds (`.chstage`, `.chchar`, `.chlib`), the venue, character, and library contracts, the q48 clip encoding, the texture, GLB, and extras rules, versioning, the cache key, and the folders. JSON Schemas are in `schemas/`. `python -m pipeline.package.validate` checks a zip or a development folder; `tests/test_package_format.py` tests it. Brotli works in the game (q48 + Brotli stays; section 18 of the format document).
+   - **Dry check:** `python -m pipeline.package.sources` maps all ten venue source packs and `example.studio` to the venue layout. All sidecars, extras, and actors are valid. Only the texture references in GLB extras (glTF indices, 2,378 materials) do not map yet.
+   - **Part 2, next:** the converter. It writes the ten venues as `.chstage` (image names for texture references, `placements.json`, `actors.json`, `manifest.json` with hashes, `preview.png`) and the library as `gh3-band-v1.chlib` (band and crowd GLBs, q48 clips, audio, movie frames, effects data, song direction). Then validate all packages. Open questions: [PACKAGE-FORMAT.md section 17](PACKAGE-FORMAT.md#17-open-questions).
+   - **Remaining in the format:** JSON Schemas for the library JSON files, and the library profile check from `band/<role>/model.glb` (the validator reads the current library folder now).
 4. **Runtime:** C# GLB importer, cache, loader, clip prefetch, stage and character pickers, chart cue tracks.
 5. **Blender add-on:** venue MVP first (geometry, materials, band markers, wide and role cameras, lights with moods, validate, export, open package), then the full venue tool set, then characters on fixed rigs.
 6. **Release cleanup:** repository and documentation cleanup, install instructions, a short creator guide with an example stage, credits for BetterGH3 and FastGH3 gem art (or replacements). The owner records the showcase video and posts the release.
@@ -195,6 +199,7 @@ The spike ran on 2026-10-09. Each item has a report in [docs/spike/](spike/) wit
 - One song's clip set decodes in 0.24 s on one worker thread (today: about 1.3 s on the main thread at stage setup).
 - The library goes from about 1,000 MB to about 666 MB, not 150–300 MB. Movies (357 MB) and audio (108 MB) are the remainder.
 - **Decision:** q48 + Brotli for v1. Brotli was tested on the game's .NET 6 runtime but not inside the game. Check it in the game before the format freeze; gzip 9 is the fallback (+10 MB).
+- **In-game check (step 3):** `BrotliStream` decodes the 356 guitarist clips on a worker thread inside Clone Hero Linux, byte-equal to gzip, 134–176 ms for all clips (gzip 9: 107–138 ms). Brotli stays. See [PACKAGE-FORMAT.md section 18](PACKAGE-FORMAT.md#18-in-game-check-of-brotli).
 
 ### 9.5 Windows D3D11 ([report](spike/d3d11.md))
 

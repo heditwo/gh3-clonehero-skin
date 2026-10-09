@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.gh3skin.invalid/v1/actors.schema.json",
+  "title": "Venue animated scenery (actors.json)",
+  "description": "Named skinned scenery models with their own rig and clips. Unity runtime coordinates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "actors"],
+  "properties": {
+    "version": { "const": 1 },
+    "actors": {
+      "type": "object",
+      "maxProperties": 256,
+      "propertyNames": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,128}$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["model", "transform"],
+        "properties": {
+          "model": { "$ref": "common.schema.json#/$defs/glbPath" },
+          "transform": { "$ref": "common.schema.json#/$defs/transform" },
+          "clip": { "$ref": "common.schema.json#/$defs/name" },
+          "playback": { "enum": ["loop", "hold"] },
+          "lightGroup": { "$ref": "common.schema.json#/$defs/name" },
+          "role": { "type": "string", "maxLength": 128 },
+          "initiallyVisible": { "type": "boolean" },
+          "actions": {
+            "type": "object",
+            "maxProperties": 256,
+            "propertyNames": { "$ref": "common.schema.json#/$defs/name" },
+            "additionalProperties": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 256,
+              "items": { "$ref": "common.schema.json#/$defs/name" }
+            }
+          },
+          "object": { "$ref": "common.schema.json#/$defs/optionalName" },
+          "script": { "$ref": "common.schema.json#/$defs/optionalName" },
+          "created": { "type": "boolean" },
+          "scale": {
+            "type": "array",
+            "items": { "type": "number", "exclusiveMinimum": 0 },
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "animationEvents": { "$ref": "common.schema.json#/$defs/optionalName" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.gh3skin.invalid/v1/cameras.schema.json",
+  "title": "Venue camera bank (cameras.json)",
+  "description": "Shots and camera groups. Unity runtime coordinates. See docs/CUSTOM-CONTENT.md, camera bank.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "shots", "groups"],
+  "properties": {
+    "version": { "const": 1 },
+    "shots": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 4096,
+      "propertyNames": { "$ref": "#/$defs/shotName" },
+      "additionalProperties": { "$ref": "#/$defs/shot" }
+    },
+    "groups": {
+      "type": "object",
+      "required": ["wide"],
+      "propertyNames": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 4096,
+        "items": { "$ref": "#/$defs/shotName" }
+      }
+    },
+    "notes": {
+      "description": "GH3 camera note number (0-127) to a shot selector.",
+      "type": "object",
+      "propertyNames": { "type": "string", "pattern": "^(0|[1-9][0-9]?|1[01][0-9]|12[0-7])$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "group": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+          "tag": { "$ref": "common.schema.json#/$defs/optionalName" },
+          "type": { "type": "string", "maxLength": 64 },
+          "enable": { "type": "boolean" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "shotName": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,128}$" },
+    "anchor": {
+      "type": "string",
+      "pattern": "^(world|(guitarist|bassist|singer|drummer)\\.(root|head|hand_left|hand_right|bone\\.[A-Za-z0-9_]{1,128}))$"
+    },
+    "point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["position", "horizontalFov", "anchor"],
+      "properties": {
+        "position": { "$ref": "common.schema.json#/$defs/vec3" },
+        "rotation": { "$ref": "common.schema.json#/$defs/quaternion" },
+        "horizontalFov": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 170 },
+        "anchor": { "$ref": "#/$defs/anchor" },
+        "lookAt": { "$ref": "#/$defs/anchor" },
+        "screenOffset": { "$ref": "common.schema.json#/$defs/vec2" }
+      },
+      "anyOf": [{ "required": ["rotation"] }, { "required": ["lookAt"] }]
+    },
+    "shot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "control", "points"],
+      "properties": {
+        "type": { "enum": ["stage", "longshot", "mid", "closeup", "normal", "demonik"] },
+        "control": {
+          "enum": ["TwoCam", "HandCam", "Orbit", "OrbitAndMorphTwoCam", "OrbitContinuous", "Keyframes", "Pan", "ThreePos", "FourPos", "SpecialStepMove"]
+        },
+        "points": { "type": "array", "minItems": 1, "maxItems": 64, "items": { "$ref": "#/$defs/point" } },
+        "tag": { "$ref": "common.schema.json#/$defs/optionalName" },
+        "orbitAngle": { "type": "number", "minimum": -36000, "maximum": 36000 },
+        "stepTime": { "type": "number", "minimum": 0.001, "maximum": 86400 },
+        "stepCount": { "type": "number", "minimum": 0, "maximum": 10000 },
+        "stepDirection": { "$ref": "common.schema.json#/$defs/vec3" },
+        "handCam": { "type": "boolean" },
+        "disableOrbit1": { "type": "boolean" },
+        "disableOrbit2": { "type": "boolean" },
+        "waypoints": { "type": "array", "maxItems": 256, "items": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,128}$" } },
+        "angularSpeed": { "type": "number", "minimum": -3600, "maximum": 3600 },
+        "heightEase": {
+          "type": "array",
+          "prefixItems": [{ "type": "number" }, { "type": "number" }, { "type": "number", "minimum": 0, "maximum": 100 }],
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "times": { "type": "array", "minItems": 2, "maxItems": 64, "items": { "type": "number", "minimum": 0, "maximum": 86400 } },
+        "interpolation": { "enum": ["smooth", "linear"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "control": { "const": "ThreePos" } } },
+          "then": { "properties": { "points": { "minItems": 3, "maxItems": 3 } } }
+        },
+        {
+          "if": { "properties": { "control": { "const": "FourPos" } } },
+          "then": { "properties": { "points": { "minItems": 4, "maxItems": 4 } } }
+        },
+        {
+          "if": { "properties": { "control": { "const": "Keyframes" } } },
+          "then": { "required": ["times"], "properties": { "points": { "minItems": 2 } } },
+          "else": { "not": { "required": ["times"] } }
+        },
+        {
+          "if": { "properties": { "control": { "const": "OrbitContinuous" } } },
+          "then": { "properties": { "points": { "maxItems": 1, "items": { "required": ["lookAt"] } } } }
+        },
+        {
+          "if": { "properties": { "control": { "enum": ["TwoCam", "HandCam", "Orbit", "OrbitAndMorphTwoCam", "Pan", "SpecialStepMove"] } } },
+          "then": { "properties": { "points": { "maxItems": 2 } } }
+        }
+      ]
+    }
+  }
+}

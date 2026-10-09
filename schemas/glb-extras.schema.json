@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.gh3skin.invalid/v1/glb-extras.schema.json",
+  "title": "GH3 extras in package GLB files",
+  "description": "Keys that start with 'gh3' are reserved. Unknown 'gh3' keys are errors. Other keys (for example other Blender custom properties) are ignored.",
+  "$defs": {
+    "node": {
+      "type": "object",
+      "propertyNames": {
+        "if": { "pattern": "^gh3" },
+        "then": {
+          "enum": [
+            "gh3LightGroup", "gh3VisibilityGroup", "gh3InitiallyVisible",
+            "gh3FixtureId", "gh3FixtureFixedPosition", "gh3FixtureObject", "gh3FixtureCreated",
+            "gh3Object", "gh3ObjectPivot", "gh3ObjectRotation", "gh3ObjectCreated", "gh3ObjectScript"
+          ]
+        }
+      },
+      "properties": {
+        "gh3LightGroup": { "$ref": "common.schema.json#/$defs/name" },
+        "gh3VisibilityGroup": { "type": "string", "maxLength": 128 },
+        "gh3InitiallyVisible": { "type": "boolean" },
+        "gh3FixtureId": { "$ref": "common.schema.json#/$defs/name" },
+        "gh3FixtureFixedPosition": { "type": "boolean" },
+        "gh3FixtureObject": { "$ref": "common.schema.json#/$defs/name" },
+        "gh3FixtureCreated": { "type": "boolean" },
+        "gh3Object": { "type": "string", "maxLength": 128 },
+        "gh3ObjectPivot": { "$ref": "common.schema.json#/$defs/vec3" },
+        "gh3ObjectRotation": { "$ref": "common.schema.json#/$defs/quaternion" },
+        "gh3ObjectCreated": { "type": "boolean" },
+        "gh3ObjectScript": { "type": "string", "maxLength": 256 }
+      }
+    },
+    "material": {
+      "type": "object",
+      "propertyNames": {
+        "if": { "pattern": "^gh3" },
+        "then": {
+          "enum": [
+            "gh3Additive", "gh3AlphaCutoff", "gh3Billboard", "gh3ColorScale", "gh3CrowdAtlas", "gh3CrowdRole",
+            "gh3LayerColor", "gh3LayerTexture", "gh3MaskTexture", "gh3MovieSlot", "gh3Shader", "gh3Shading",
+            "gh3SourceMaterial", "gh3TextureAnimation", "gh3UvWibble", "gh3SortedTransparency"
+          ]
+        }
+      },
+      "properties": {
+        "gh3Additive": { "type": "boolean" },
+        "gh3AlphaCutoff": { "type": "number", "minimum": 0, "maximum": 1 },
+        "gh3Billboard": { "type": "boolean" },
+        "gh3ColorScale": { "type": "number", "minimum": 1, "maximum": 1000 },
+        "gh3CrowdAtlas": { "type": "boolean" },
+        "gh3CrowdRole": { "$ref": "common.schema.json#/$defs/crowdRole" },
+        "gh3LayerColor": {
+          "type": "array",
+          "items": { "type": "number", "minimum": 0, "maximum": 1000 },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "gh3LayerTexture": { "$ref": "common.schema.json#/$defs/textureRef" },
+        "gh3MaskTexture": { "$ref": "common.schema.json#/$defs/textureRef" },
+        "gh3MovieSlot": { "type": "integer", "minimum": -1, "maximum": 31 },
+        "gh3Shader": { "$ref": "#/$defs/shader" },
+        "gh3Shading": { "enum": ["lit", "ambient", "unlit"] },
+        "gh3SourceMaterial": { "$ref": "common.schema.json#/$defs/name" },
+        "gh3TextureAnimation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "rows", "fps", "offset"],
+          "properties": {
+            "columns": { "type": "integer", "minimum": 1, "maximum": 256 },
+            "rows": { "type": "integer", "minimum": 1, "maximum": 256 },
+            "fps": { "type": "number", "minimum": -100000, "maximum": 100000 },
+            "offset": { "type": "number", "minimum": -100000, "maximum": 100000 }
+          }
+        },
+        "gh3UvWibble": {
+          "type": "array",
+          "items": { "type": "number", "minimum": -1000, "maximum": 1000 },
+          "minItems": 11,
+          "maxItems": 11
+        },
+        "gh3SortedTransparency": { "type": "boolean" }
+      },
+      "dependentRequired": { "gh3LayerTexture": ["gh3LayerColor"] }
+    },
+    "shader": {
+      "description": "Original GH3 material record: template checksum, constant banks, sampler textures, and render state.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["template", "vertexConstants", "pixelConstants", "textures", "addressing", "flags", "blend", "alphaRef", "drawOrder"],
+      "properties": {
+        "template": { "type": "string", "pattern": "^[0-9a-f]{8}$" },
+        "vertexConstants": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/constant" } },
+        "pixelConstants": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/constant" } },
+        "textures": { "type": "array", "maxItems": 16, "items": { "$ref": "common.schema.json#/$defs/textureRef" } },
+        "addressing": { "type": "array", "maxItems": 16, "items": { "type": "integer", "minimum": 0, "maximum": 255 } },
+        "flags": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "blend": { "type": "integer", "minimum": 0, "maximum": 12 },
+        "alphaRef": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "drawOrder": { "type": "number", "minimum": -1000000, "maximum": 1000000 }
+      }
+    },
+    "constant": {
+      "type": "array",
+      "items": { "type": "number", "minimum": -1000000000, "maximum": 1000000000 },
+      "minItems": 4,
+      "maxItems": 4
+    }
+  }
+}

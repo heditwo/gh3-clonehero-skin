@@ -65,7 +65,10 @@ public sealed class SkinMod : MelonMod
         _stage?.Reset();
         Spike.TextureSpike.Reset();
         if (_gameplay)
+        {
             MelonLogger.Msg("GH3 gameplay scene loaded");
+            Spike.BrotliSpike.Start();
+        }
     }
 
     public override void OnLateUpdate()

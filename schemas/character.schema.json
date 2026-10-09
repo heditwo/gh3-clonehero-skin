@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.gh3skin.invalid/v1/character.schema.json",
+  "title": "Character description (character.json)",
+  "description": "Selects the fixed GH3 rig profile of the character GLB. The profile also selects the band role.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "library", "profile"],
+  "properties": {
+    "version": { "const": 1 },
+    "library": { "$ref": "common.schema.json#/$defs/packageId" },
+    "profile": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+      "examples": ["gh3-guitarist-axel-v1", "gh3-bassist-v1", "gh3-singer-male-v1", "gh3-drummer-v1"]
+    },
+    "hairMaterials": {
+      "description": "GLB material names whose triangles use sorted hair transparency.",
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/name" }
+    },
+    "attachments": {
+      "description": "Attachment slot to a library model ID. An absent slot uses the profile default.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "instrument": { "type": "string", "pattern": "^[A-Za-z0-9_]{1,64}$" }
+      }
+    }
+  }
+}
