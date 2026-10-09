@@ -25,6 +25,20 @@ internal sealed class PlayerChoices
 
     public string Character(string role) => Characters.TryGetValue(role, out var id) ? id : DefaultCharacter;
 
+    // The first ID of the next (or previous) character group: IDs that share the part before the second dot are one
+    // character in several outfits (gh3.judy.outfit1.style2), so that 70 GH3 variants do not need 70 clicks.
+    public static string Jump(IReadOnlyList<string> ids, int index, int direction)
+    {
+        static string Group(string id) => id.IndexOf('.', id.IndexOf('.') + 1) is var dot and > 0 ? id[..dot] : id;
+        var group = Group(ids[index]);
+        var i = index;
+        do i = (i + direction + ids.Count) % ids.Count;
+        while (i != index && Group(ids[i]) == group);
+        if (direction < 0)
+            while (Group(ids[(i - 1 + ids.Count) % ids.Count]) == Group(ids[i]) && (i - 1 + ids.Count) % ids.Count != index) i = (i - 1 + ids.Count) % ids.Count;
+        return ids[i];
+    }
+
     // An environment switch ("off" or "0" turns it off, another value on) wins over the player's choice.
     public static bool Switch(string? environment, bool choice) => environment == null ? choice : environment is not ("off" or "0");
 

@@ -86,8 +86,9 @@ internal sealed class StageBand : IDisposable
                 bones[i].SetParent(animation.Parents[i] < 0 ? performer.transform : bones[animation.Parents[i]], false);
                 Apply(bones[i], animation.BindPose[i]);
             }
+            HairDefinition? characterHair = null;
             var assets = characters != null && characters.TryGetValue(member.Role, out var character)
-                ? LoadCharacter(character, directory, member, performer, layer, bones, lighting, surfaceShader) : null;
+                ? LoadCharacter(character, directory, member, performer, layer, bones, lighting, surfaceShader, hair, out characterHair) : null;
             if (assets == null)
             {
                 var model = new StageAssets();
@@ -104,7 +105,8 @@ internal sealed class StageBand : IDisposable
             }
             var player = new Performer { Role = member.Role, Root = performer.transform, Bones = bones, Animation = animation, Model = assets[0],
                 Start = performer.transform.localPosition, Rotation = performer.transform.localRotation, Pose = new BandPose[bones.Length] };
-            if (hair != null && hair.Members.TryGetValue(member.Role, out var hairDefinition))
+            var hairDefinition = characterHair ?? (hair != null && hair.Members.TryGetValue(member.Role, out var roleHair) ? roleHair : null);
+            if (hairDefinition != null)
                 player.Hair = new StageHair(hairDefinition, animation.Parents, (time, pose) => SamplePose(player, time, pose));
             _players.Add(player);
         }
@@ -112,37 +114,52 @@ internal sealed class StageBand : IDisposable
         if (hair != null) MelonLogger.Msg($"GH3 hair physics: {hair.Members.Values.Sum(m => m.Joints.Length)} original joints");
     }
 
-    // A character package plays the role on the role's rig: its joints map to the rig bones by name, and its own inverse
-    // bind matrices skin the mesh. It draws through StageAssets as the library members do. Without an instrument of its own,
-    // the role's instrument comes from the library band model (BandAttachments). Null: use the venue default.
+    // A character package plays the role on the role's rig: its joints map to the rig bones by name (CharacterRig), and its
+    // own inverse bind matrices skin the mesh. It draws through StageAssets as the library members do. Its own instrument
+    // plays in the role of its profile; otherwise the role's instrument comes from the library band model (BandAttachments).
+    // In another role, `characterHair` is the hair of its profile on the role's rig. Null: use the venue default.
     private static List<StageAssets>? LoadCharacter(Packages.CharacterModel character, string directory, BandMember member, GameObject performer, int layer,
-        Transform[] bones, bool lighting, Shader? surfaceShader)
+        Transform[] bones, bool lighting, Shader? surfaceShader, HairBank? hair, out HairDefinition? characterHair)
     {
         var role = member.Role;
         var children = performer.transform.childCount;
+        characterHair = null;
         StageAssets? assets = null;
         try
         {
-            var (rig, parents, _) = Packages.CharacterImporter.Rig(Path.GetDirectoryName(Path.GetFullPath(directory))!, role);
-            var map = character.Map(rig) ?? throw new InvalidDataException($"its joints are not all in the {role} rig");
-            var bindposes = character.Bindposes.Select(m => new Matrix4x4
+            var library = Path.GetDirectoryName(Path.GetFullPath(directory))!;
+            var (rig, parents, _) = Packages.CharacterImporter.Rig(library, role);
+            var ownRole = character.Role == role;
+            var (profileBones, profileParents, _) = ownRole ? (rig, parents, Array.Empty<float[]>()) : Packages.CharacterImporter.Rig(library, character.Role);
+            HairDefinition? profileHair = null;
+            if (hair != null && hair.Members.TryGetValue(character.Role, out var found)) profileHair = found;
+            var hairJoints = profileHair?.Joints.Select(j => j.Bone).ToHashSet() ?? new HashSet<int>();
+            var (map, bind) = Packages.CharacterRig.Map(character.Joints, profileBones, profileParents, rig, hairJoints, ownRole)
+                ?? throw new InvalidDataException($"its joints are not all in the {role} rig");
+            if (!ownRole && profileHair != null)
+                characterHair = profileHair.Remap(bone => bone < profileBones.Length ? Array.IndexOf(rig, profileBones[bone]) : -1);
+            var bindposes = bind.Select(b => character.Bindposes[b]).Select(m => new Matrix4x4
             {
                 m00 = m[0], m01 = m[1], m02 = m[2], m03 = m[3], m10 = m[4], m11 = m[5], m12 = m[6], m13 = m[7],
                 m20 = m[8], m21 = m[9], m22 = m[10], m23 = m[11], m30 = m[12], m31 = m[13], m32 = m[14], m33 = m[15],
             }).ToArray();
-            assets = new StageAssets();
-            assets.Load(character.Folder, performer, layer, map.Select(i => bones[i]).ToArray(), lighting, surfaceShader: surfaceShader, bindposes: bindposes);
-            var result = new List<StageAssets> { assets };
             var body = Packages.BandAttachments.BodyJoints(rig, parents);
-            var own = Packages.BandAttachments.ReadParts(Path.Combine(character.Folder, "meshes.bin")).Any(p => Packages.BandAttachments.IsAttachment(p, body, map));
-            var (add, note) = Packages.BandAttachments.Choose(own, character.Instrument, member.Instrument, role);
+            var parts = Packages.BandAttachments.ReadParts(Path.Combine(character.Folder, "meshes.bin"));
+            var ownParts = Packages.BandAttachments.AttachmentParts(parts, body, map);
+            var (add, keepOwn, note) = Packages.BandAttachments.Choose(ownParts.Length > 0, ownRole, character.Instrument, member.Instrument, role);
+            assets = new StageAssets();
+            assets.Load(character.Folder, performer, layer, map.Select(i => bones[i]).ToArray(), lighting, surfaceShader: surfaceShader, bindposes: bindposes,
+                parts: keepOwn || ownParts.Length == 0 ? null : Enumerable.Range(0, parts.Length).Except(ownParts).ToArray());
+            var result = new List<StageAssets> { assets };
             if (add) note = LoadInstrument(Path.Combine(directory, role), body, performer, layer, bones, lighting, surfaceShader, result) ?? note;
-            MelonLogger.Msg($"GH3 band {role}: character {character.Id} ({character.Name}, {character.Role} profile) with {note}");
+            MelonLogger.Msg($"GH3 band {role}: character {character.Id} ({character.Name}, {character.Role} profile) with {note}" +
+                (characterHair != null ? $"; hair of the {character.Role} profile ({characterHair.Joints.Length} joints)" : ""));
             return result;
         }
         catch (Exception error) when (error is IOException or InvalidDataException or Packages.PackageException or UnauthorizedAccessException or InvalidOperationException)
         {
             assets?.Dispose();
+            characterHair = null;
             for (var i = performer.transform.childCount - 1; i >= children; i--)
                 UnityEngine.Object.Destroy(performer.transform.GetChild(i).gameObject);
             MelonLogger.Warning($"GH3 band {role}: character {character.Id} could not load ({error.Message}); the venue default plays");

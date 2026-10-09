@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Report how each compiled venue material is drawn: by its translated GH3 template or by the approximate surface model.
-Usage: audit-materials.py [--stages assets/stages] [--json out.json] [venue...]"""
+Usage: audit-materials.py [--stages assets/stages] [--characters assets/characters] [--json out.json] [venue...]"""
 
 import argparse
 import json
@@ -36,6 +36,7 @@ def main():
     parser.add_argument("--stages", type=Path, default=ROOT/"assets/stages")
     parser.add_argument("--templates", type=Path, default=ROOT/"assets/libraries/gh3-band-v1/render/stage-templates.json")
     parser.add_argument("--library", type=Path, default=ROOT/"assets/libraries/gh3-band-v1")
+    parser.add_argument("--characters", type=Path, default=ROOT/"assets/characters", help="GH3 characters (pipeline.characters)")
     parser.add_argument("--json", type=Path)
     parser.add_argument("venue", nargs="*")
     args = parser.parse_args()
@@ -56,13 +57,15 @@ def main():
     for path in sorted(args.library.glob("band/*/stage.json")): add("band", path.parent.name, path)
     for path in sorted(args.library.glob("crowd/*/stage.json")) + sorted(args.library.glob("crowd/hands/*/stage.json")):
         add("crowd-peds", path.parent.name, path)
+    # The GH3 characters of pipeline.characters (all outfits and styles).
+    for path in sorted(args.characters.glob("*/stage.json")): add("characters", path.parent.name, path)
     for venue in venues:
         folder = args.stages/f"gh3.{venue}"
         add(venue, "scenery", folder/"stage.json")
         for path in sorted(folder.glob("actors/*/stage.json")): add(venue, "actor " + path.parent.name, path)
     summary = defaultdict(Counter)
     for row in rows: summary[row["venue"]][row["path"]] += 1
-    for venue in ["band", "crowd-peds", *venues]:
+    for venue in ["band", "crowd-peds", "characters", *venues]:
         counts = summary[venue]
         print(f"{venue:11s} " + ", ".join(f"{n} {path}" for path, n in sorted(counts.items())))
     total = Counter(row["path"] for row in rows)

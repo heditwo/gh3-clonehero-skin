@@ -93,15 +93,18 @@ internal static class BandAttachments
     public static int[] AttachmentParts(Part[] parts, ISet<int> body, IReadOnlyList<int>? map = null) =>
         Enumerable.Range(0, parts.Length).Where(i => IsAttachment(parts[i], body, map)).ToArray();
 
-    // The instrument of a character that plays a band role (PACKAGE-FORMAT.md section 9.1). A GLB with its own attachment
-    // parts keeps them, and the library adds nothing. Otherwise the library adds the instrument of the role that the
-    // character plays: the v1 library has one instrument for each role, and the role's clips are made for that instrument.
-    public static (bool Add, string Note) Choose(bool ownInstrument, string named, string roleInstrument, string role)
+    // The instrument of a character that plays a band role (PACKAGE-FORMAT.md section 20.6). A GLB with its own attachment
+    // parts keeps them in the role of its profile, and the library adds nothing. In another role, and without own parts,
+    // the library adds the instrument of the role that the character plays: the v1 library has one instrument for each
+    // role, and the role's clips are made for that instrument.
+    public static (bool Add, bool KeepOwn, string Note) Choose(bool ownInstrument, bool ownRole, string named, string roleInstrument, string role)
     {
         roleInstrument = roleInstrument.Length > 0 ? roleInstrument : "of the " + role;
-        if (ownInstrument)
-            return (false, named.Length > 0 ? $"its own instrument (the GLB has one; attachments.instrument {named} is not used)" : "its own instrument");
-        if (named.Length == 0 || named == roleInstrument) return (true, $"instrument {roleInstrument} from the library");
-        return (true, $"instrument {roleInstrument} from the library (the {role} plays the instrument of the role; {named} is not used)");
+        if (ownInstrument && ownRole)
+            return (false, true, named.Length > 0 ? $"its own instrument (the GLB has one; attachments.instrument {named} is not used)" : "its own instrument");
+        var library = $"instrument {roleInstrument} from the library";
+        if (ownInstrument) return (true, false, $"{library} (its own instrument is for the role of its profile)");
+        if (named.Length == 0 || named == roleInstrument) return (true, false, library);
+        return (true, false, $"{library} (the {role} plays the instrument of the role; {named} is not used)");
     }
 }

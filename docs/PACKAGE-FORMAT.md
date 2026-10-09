@@ -726,7 +726,18 @@ Visual result: the dive recording from packages and from `main` agree (aligned v
 
 A GH3 band member exported as one GLB with its instrument gave a cache that is byte-equal to the library member (`meshes.bin`, `stage.json`, and all textures; checked for the four members on 2026-10-09 with an earlier exporter). `python -m pipeline.package.character` now writes the body and hair only (the instrument is an attachment).
 
-At load, `StageBand` maps the character joints to the rig of the band role by name. A character can play another role when that rig has all of its joints (the GH3 guitarist and bassist rigs have the same 125 bone names). The role's rig, clips, hair, IK, and hand fire drive the mesh; the GLB inverse bind matrices skin it (`StageAssets.Load(bindposes:)`), so the mesh follows the role's bone positions.
+At load, `StageBand` maps the character joints to the rig of the band role by name (`CharacterRig`). A character can play another role when that rig has all of its joints (the GH3 guitarist and bassist rigs have the same 125 bone names). The role's rig, clips, IK, and hand fire drive the mesh; the GLB inverse bind matrices skin it (`StageAssets.Load(bindposes:)`), so the mesh follows the role's bone positions.
+
+In another role (for example a guitarist character that plays the bassist), the face and accessory bones of the two GH3 rigs are at other places (the face bones of the bassist are 11–12 cm from Axel's, relative to the head). Thus, in another role only:
+
+| Joint of the profile rig | Follows |
+| --- | --- |
+| Hair joint of the profile (`band/hair.json` member of the profile's role) | The bone with the same name. The hair physics of the profile (its joint chains and limits) moves these bones, not the hair of the role |
+| Other joint below `bone_head` (face) | The role's head, with the inverse bind matrix of the character's head joint: the face keeps its shape and does not move by itself |
+| Other `Bone_ACC_*` joint | Its nearest body parent in the profile rig, with the bind matrix of that joint |
+| Other joint (body, instrument) | The bone with the same name |
+
+In the role of its profile, every joint follows the bone with the same name, and the role's hair physics moves the hair joints.
 
 **Attachments (instrument).** The library has no separate instrument models: `band/<role>/model.glb` contains the member and its instrument in one mesh. The loader (`StageBand`, `BandAttachments`) takes the instrument from that model with the rule of `pipeline/package/character.py` `split_model`, which the Blender add-on and `python -m pipeline.package.character` use to leave the instrument out:
 
@@ -736,7 +747,10 @@ At load, `StageBand` maps the character joints to the rig of the band role by na
 ```mermaid
 flowchart TD
     Load[Character plays a band role] --> Own{The character mesh has<br/>attachment parts?}
-    Own -- yes --> Keep[Its own instrument plays.<br/>The library adds nothing]
+    Own -- yes --> Role{The role is the role<br/>of its profile?}
+    Role -- yes --> Keep[Its own instrument plays.<br/>The library adds nothing]
+    Role -- no --> Drop[Its own attachment parts do not load]
+    Drop --> Add
     Own -- no --> Add[The library adds the attachment parts<br/>of the band model of the role that it plays]
 ```
 
@@ -745,7 +759,7 @@ flowchart TD
 | No `attachments`, or `instrument` is the instrument of the role that the character plays | The role's instrument from the library |
 | `instrument` names the instrument of another role (for example a guitarist character with `SG_Black` that plays the bassist) | The role's instrument (`tobB4`). The v1 clips of a role are made for the instrument of that role. The log tells which instrument plays |
 | `instrument` is not a library instrument | Warning at the import (and in the validator); the role's instrument |
-| The character GLB has its own instrument (an earlier export of a GH3 member) | Its own instrument, also in another role. A name in `instrument` is not used |
+| The character GLB has its own instrument (the GH3 characters of `pipeline.characters`, or an earlier export of a GH3 member) | In the role of its profile: its own instrument; a name in `instrument` is not used. In another role: the role's instrument (since 2026-10-09; before, its own instrument played in every role) |
 
 The instrument parts load with the library materials and textures of the role's band model (only the materials of these parts), on the role's bones with the library bind pose. The cache `character.json` keeps the `instrument` name; a cache that is older than this field reads as "no name". The format and the importer version did not change.
 
@@ -755,6 +769,8 @@ Checks (2026-10-09):
 - Cache: for each role, the parts of the body-and-hair character from `python -m pipeline.package.character` are byte-equal to the library parts without the attachment parts, and its materials are equal to the library rows. Thus character plus attachment gives the full library model.
 - Game (Linux, gh3.dive, mycurse-native, the role cameras at 20, 30, and 40 s): the four characters with their library instruments against the default members. PSNR of character against default 16.5–51.3 dB; PSNR of runs of the same kind (default against default, `main` against this build, character against character) 16.7–47.0 dB. The difference comes from frame timing (edges of moving parts and notes), not from the models.
 - The Blender add-on test character (`tester.blocky-guitarist`) plays with the library guitar. A copy that names `SG_Black` plays the bassist with the bass (`tobB4`).
+
+GH3 characters (2026-10-09): `python -m pipeline.characters` and the `packages` step write the 72 playable GH3 characters as `gh3.<name>[.outfit<n>[.style<m>]].chchar` (one package for each outfit and style; v1 has no variants in one package). They use the profiles `gh3-guitarist-axel-v1` (70 guitarists) and `gh3-singer-male-v1` (Bret Michaels, female singer), and keep their GH3 meshes, materials, textures, hair cards, and the default instrument of their GH3 profile ([PIPELINE.md](PIPELINE.md#gh3-characters)). The format did not change; the profiles and clips stay the v1 ones.
 
 ### 20.7 Cache clean-up
 

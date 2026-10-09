@@ -22,6 +22,18 @@ internal sealed class HairDefinition
     public int Head { get; set; }
     public HairJoint[] Joints { get; set; } = Array.Empty<HairJoint>();
     public HairCapsule Capsule { get; set; } = new();
+
+    // The same chains on another rig: `bone` gives the rig index of a bone of this definition's rig, or -1.
+    public HairDefinition? Remap(Func<int, int> bone)
+    {
+        var head = bone(Head);
+        var joints = Joints.Select(j => new HairJoint
+        {
+            Bone = bone(j.Bone), Parent = bone(j.Parent), Position = j.Position, Rotation = j.Rotation, Length = j.Length, Mass = j.Mass,
+            Friction = j.Friction, AngularDamping = j.AngularDamping, Limits = j.Limits,
+        }).ToArray();
+        return head < 0 || joints.Any(j => j.Bone < 0 || j.Parent < 0) ? null : new HairDefinition { Head = head, Joints = joints, Capsule = Capsule };
+    }
 }
 
 internal sealed class HairCapsule
@@ -169,9 +181,15 @@ internal sealed class StageHair
             _oldTails[i] = tick == 0 ? tail : _tails[i];
             _tails[i] = tail;
             _world[joint.Bone] = new(origin, rotation);
-            var actualParent = _parents[joint.Bone] < 0 ? _root : _world[_parents[joint.Bone]];
+        }
+        // The rig parent of a joint can be a later joint of the chains (the profile hair of a character on another
+        // role's rig), so the local poses use the final world poses of this step.
+        for (var i = 0; i < _pose.Length; i++)
+        {
+            var bone = _definition.Joints[i].Bone;
+            var actualParent = _parents[bone] < 0 ? _root : _world[_parents[bone]];
             var inverse = Quaternion.Inverse(actualParent.Rotation);
-            _pose[i] = new(Vector3.Transform(origin - actualParent.Position, inverse), Quaternion.Normalize(inverse * rotation));
+            _pose[i] = new(Vector3.Transform(_world[bone].Position - actualParent.Position, inverse), Quaternion.Normalize(inverse * _world[bone].Rotation));
         }
         _tick = tick;
         if (tick == 0) Array.Copy(_pose, _previous, _pose.Length);

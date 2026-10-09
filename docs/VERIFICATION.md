@@ -169,6 +169,16 @@ The tool aligns the two videos and writes full side-by-side frames, amplified di
 3. Align the videos on the music, or on camera cuts against the exported `gh3-camera` event times.
 4. GH3 selects shots at random. Set `GH3_SKIN_CAMERA_SHOT=<shot name>` to force the matching shot in the mod.
 
+### GH3 characters
+
+Each GH3 model PAK has the magazine photo of its variant (`Mag_Photo`, a 512 × 512 DDS image in the `.img` entry). Compare a close-up of each character with that photo:
+
+1. Select the characters with `GH3_SKIN_CHARACTER_GUITARIST`, `_BASSIST`, and `_SINGER`.
+2. Fix close-up cameras with `GH3_SKIN_DEBUG_VIEW` (one view for each role, `GH3_SKIN_DEBUG_VIEW_SECONDS=4`) and capture one frame in each view with `GH3_SKIN_CAPTURE_CLOCK=song` and `GH3_SKIN_CAPTURE_TIMES`.
+3. Check the log line `GH3 band <role>: character <id> (...) with <instrument>[; hair of the guitarist profile (9 joints)]`, and `python3 tools/audit-materials.py` (the `characters` line has no `FALLBACK`).
+
+On 2026-10-09 (38 runs on gh3.dive, two guitarist characters and one singer in each run) every variant had a close-up in one role, each character family as guitarist and as bassist, and the colors and outfits agreed with the photos.
+
 ## Runtime variables
 
 These variables are for checks and captures. Normal play needs none of them.

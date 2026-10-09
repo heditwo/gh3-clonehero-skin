@@ -19,6 +19,7 @@ internal static class PickerLogicTests
         try
         {
             CheckChoices(root);
+            CheckJump();
             CheckSelection(root);
             CheckSuggestions(root);
             CheckNativeVenues();
@@ -27,6 +28,17 @@ internal static class PickerLogicTests
             CheckCacheCleanUp(root);
         }
         finally { Directory.Delete(root, true); }
+    }
+
+    private static void CheckJump()
+    {
+        var ids = new[] { "default", "gh3.axel.outfit1.style1", "gh3.axel.outfit1.style2", "gh3.judy.outfit1.style1", "gh3.judy.outfit2.style1", "gh3.slash" };
+        Check(PlayerChoices.Jump(ids, 0, 1) == "gh3.axel.outfit1.style1", ">> from the default");
+        Check(PlayerChoices.Jump(ids, 1, 1) == "gh3.judy.outfit1.style1" && PlayerChoices.Jump(ids, 2, 1) == "gh3.judy.outfit1.style1", ">> skips the outfits of a character");
+        Check(PlayerChoices.Jump(ids, 4, 1) == "gh3.slash" && PlayerChoices.Jump(ids, 5, 1) == "default", ">> to a single variant and around the end");
+        Check(PlayerChoices.Jump(ids, 4, -1) == "gh3.axel.outfit1.style1" && PlayerChoices.Jump(ids, 3, -1) == "gh3.axel.outfit1.style1", "<< goes to the first outfit of the previous character");
+        Check(PlayerChoices.Jump(ids, 0, -1) == "gh3.slash", "<< around the start");
+        Check(PlayerChoices.Jump(new[] { "default" }, 0, 1) == "default", "one choice");
     }
 
     private static void CheckChoices(string root)

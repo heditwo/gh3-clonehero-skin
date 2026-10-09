@@ -19,7 +19,7 @@ Each zip has one folder with `Mods/`, the install script, this guide, `release.j
    - Removes the files of an earlier mod version (`Mods/GH3Skin/assets`, `Packages`, `render`, and `counter-tuning.json`). It keeps your choices and the cache in `UserData/GH3Skin`.
    - Copies `Mods/Gh3Skin.dll` and `Mods/GH3Skin/` into the game folder.
    - Writes `clonehero-melonloader.sh` into the game folder. MelonLoader on Linux loads only when you start the game with this file.
-5. Start the game with `clonehero-melonloader.sh`. The first start takes some minutes and needs the internet: MelonLoader prepares its files. Then the mod imports the stages (about 25 seconds). The game shows the menus while the mod imports.
+5. Start the game with `clonehero-melonloader.sh`. The first start takes some minutes and needs the internet: MelonLoader prepares its files. Then the mod imports the stages and the characters (about 45 seconds). The game shows the menus while the mod imports.
 6. Close the game, and do step 3 again. Now the script sets `force_offline_generation = true` in `UserData/Loader.cfg`. MelonLoader then does not connect to the internet at each start.
 7. Always start the game with `clonehero-melonloader.sh`.
 
@@ -32,7 +32,7 @@ Each zip has one folder with `Mods/`, the install script, this guide, `release.j
    - Downloads MelonLoader 0.7.3 (64-bit) from GitHub, checks its SHA-256 value, and extracts it into the game folder. If MelonLoader 0.7.3 is already installed, the script keeps it.
    - Removes the files of an earlier mod version (`Mods\GH3Skin\assets`, `Packages`, `render`, and `counter-tuning.json`). It keeps your choices and the cache in `UserData\GH3Skin`.
    - Copies `Mods\Gh3Skin.dll` and `Mods\GH3Skin\` into the game folder.
-4. Start Clone Hero one time. This first start takes some minutes and needs the internet: MelonLoader prepares its files. Then the mod imports the stages (about 25 seconds). The game shows the menus while the mod imports.
+4. Start Clone Hero one time. This first start takes some minutes and needs the internet: MelonLoader prepares its files. Then the mod imports the stages and the characters (about 45 seconds). The game shows the menus while the mod imports.
 5. Close the game, and do step 2 again. Now the script sets `force_offline_generation = true` in `UserData\Loader.cfg`. MelonLoader then does not connect to the internet at each start.
 6. Start Clone Hero. The mod uses Direct3D 11, the Windows default. You do not need a launch option.
 
@@ -44,8 +44,8 @@ The mod keeps its files here (Windows paths; Linux uses `/`):
 
 | Item | Folder |
 | --- | --- |
-| Mod, stages, and shaders (about 1.2 GB) | `<game>\Mods\Gh3Skin.dll`, `<game>\Mods\GH3Skin\` |
-| Cache of the imported packages (about 1.4 GB) | `<game>\UserData\GH3Skin\Cache\` |
+| Mod, stages, characters, and shaders (about 1.65 GB) | `<game>\Mods\Gh3Skin.dll`, `<game>\Mods\GH3Skin\` |
+| Cache of the imported packages (about 1.9 GB) | `<game>\UserData\GH3Skin\Cache\` |
 | Your choices in the picker | `<game>\UserData\GH3Skin\choices.json` |
 | Your stages and characters | `Custom\Stages\` and `Custom\Characters\` (see [section 6](#6-add-stages-and-characters)) |
 | Log | `<game>\MelonLoader\Latest.log` |
@@ -105,18 +105,35 @@ If a song selects a stage that is not installed, your choice plays, and the log 
 
 The **Band** section has one line for each band member: guitarist, bassist, drummer, and singer.
 
-1. Click **<** or **>** to go through the characters for this member.
-2. **Default (venue)** is the band member of the GH3 venue.
+1. Click **<** or **>** to go through the characters for this member, one outfit at a time.
+2. Click **<<** or **>>** to go to the previous or next character (the first outfit of that character).
+3. **Default (venue)** is the band member of the GH3 venue.
 
-A character plays with the animations of the member that it replaces. A character for one member can also play another member when the two GH3 skeletons have the same bones. In GH3, the guitarist and the bassist have the same bones; thus a guitarist character can play the bassist, and the reverse. The picker shows such a character with its original member in parentheses, for example "Axel Steel (GH3) (a guitarist)".
+### GH3 characters
+
+The mod has all the characters that GH3 lets you play, with all their outfits and styles (72 characters; [PARITY-NOTES.md](PARITY-NOTES.md#playable-characters) has the list):
+
+- Axel Steel, Casey Lynch, Izzy Sparks, Judy Nails, Johnny Napalm, Lars Umlaut, Midori, and Xavier Stone: two outfits with four styles each, for example "Judy Nails: Skool Grrl (Stripes)".
+- Slash, Tom Morello, Lou (also his outfit "Thick Izzy"), God of Rock, and Grim Ripper.
+- For the singer: Bret Michaels and the female singer of GH3.
+
+All characters are available. You do not unlock them as in GH3. A guitarist character can play the guitarist or the bassist.
+
+A character plays with the animations of the member that it replaces. A character for one member can also play another member when the two GH3 skeletons have the same bones. In GH3, the guitarist and the bassist have the same bones; thus a guitarist character can play the bassist, and the reverse. The picker shows such a character with its original member in parentheses, for example "Midori: Puffball (Aqua) (a guitarist)".
+
+Differences from GH3 (package format v1 has one skeleton and one set of animations for each band member):
+
+- All guitarist characters move with the animations of Axel (as guitarist) or of the GH3 bassist (as bassist). In GH3, each character has its own animations.
+- The body of a character takes the size of the skeleton of the member that it plays. Judy Nails is not smaller (GH3 shows her at 90 %).
+- The hair moves on the hair joints of Axel (guitarist characters) or of the male singer (singer characters). Hair far from these joints moves with the head.
 
 If a character cannot load, the venue default plays, and the log tells you why.
 
 ### Instruments
 
-Each band member plays the instrument of the member that it replaces: the guitarist plays the guitar, the bassist plays the bass, the drummer plays the drum kit, and the singer has the microphone and stand. The mod adds the instrument to the character. Thus a guitarist character that plays the bassist has the bass.
+Each GH3 guitarist character plays its GH3 guitar when it is the guitarist, for example the white Explorer for Axel Steel and Lars Umlaut, the worn red SG for Judy Nails, Johnny Napalm, and Midori, and the black Les Paul for Casey Lynch, Izzy Sparks, and Xavier Stone. The female singer has her GH3 microphone.
 
-A character that has an instrument in its own model keeps that instrument, also when it plays another member. The log line `GH3 band <member>: character <id> ... with <instrument>` tells you which instrument plays.
+When a character plays another member, it plays the instrument of that member: a guitarist character that plays the bassist has the bass of the GH3 bassist. A character without an instrument in its model gets the instrument of the member that it plays (the guitarist plays the guitar, the bassist the bass, the drummer the drum kit, and the singer has the microphone and stand). The log line `GH3 band <member>: character <id> ... with <instrument>` tells you which instrument plays. You cannot select another instrument yet.
 
 ## 5. Direction options
 

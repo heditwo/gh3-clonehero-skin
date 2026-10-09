@@ -164,6 +164,33 @@ Textures `079_1024x16_DXT5`, `090_…`, `100_…` from `global_gfx` (bar, beat, 
 - Hand fire: `GP_4X_FingerFlames01` and `GP_4X_FingerSparks01` (2 × 2 frames at 20 fps; 24 flames and 64 sparks per second per hand at `Bone_Hand_Middle_Mid_L/R`). GH3 starts it with `GuitarEvent_Multiplier4xOn`; the mod uses a 100-note streak.
 - Credits: `create_band` with `current_level = z_credits` destroys the bassist, vocalist, and drummer.
 
+## Playable characters
+
+Sources: `Musician_Profiles` (`guitar_band_profile.qb`: name, skeletons, ragdolls, `musician_body`, `musician_instrument`, `finger_anims`, `fret_anims`, `strum_anims`, `anim_set`, `outfits` with `styles`), `musician_body` and `musician_instrument` (`guitar_band_profile_data.qb`: model and instrument PAKs), `Secret_Characters`, `Bonus_Outfits`, `Bonus_Styles` (`store_data.qb`). `pipeline/characters.py` reads them and writes `assets/characters/inventory.json`.
+
+| Character (`name`) | Outfits (styles) | Skeleton | Model PAKs | Default instrument (PAK) | Animation set, strum, fret | GH3 offers it |
+| --- | --- | --- | --- | --- | --- | --- |
+| Axel Steel (`Axel`) | Jeans (Black 'N Blue, Black 'N Red, Stonewashed, Red Leather); Shorts (Black Vest, Brown Vest, White Vest, Stripes) | `GH3_Guitarist_Axel`, `_Axel_2` | `axel_1`, `Axel_1_color2`–`4`, `axel_2`, `Axel_2_color2`–`4` | `Instrument_Explorer_White` (`Explorer_White`) | `axel_animations`, `NormalAxel`, `fret_anims_lrg` | Start; outfit 2 and styles 2–4 in the store |
+| Casey Lynch (`Casey`) | Leather (Basic Black, Silver 'N Black, Crimson, Camo); Mo' Leather (Black 'N Red, Black 'N White, Vast Purple, Fiery) | `GH3_Guitarist_Casey`, `_Casey_2` | `Casey_1` … `Casey_2_color4` | `Instrument_Les_Paul_Black` (`les_paul_black`) | `Casey_animations`, `NormalCasey`, `fret_anims_sml` | Same |
+| Izzy Sparks (`Izzy`) | The Rockstar (Leopard, Lizard, Zebra, Menagerie); The Peacock (Fantasy, Florid, Starry Night, Neon Knight) | `GH3_Guitarist_Izzy`, `_Izzy_2` | `Izzy_1` … `Izzy_2_color4` | `Instrument_Les_Paul_Black` | `Izzy_animations`, `NormalIzzy`, `fret_anims_med` | Same |
+| Judy Nails (`Judy`) | Rocker Grrl (Shocking Pink, Tornado Blue, Jet Black, Flame Orange); Skool Grrl (Purple Plaid, Dirty Yellow, Stripes, Riot) | `GH3_Guitarist_Judy`, `_Judy_2` | `Judy_1` … `Judy_2_color4` | `Instrument_SG_Worn_Red` (`SG_WornRed`) | `judy_animations`, `NormalJudy`, `fret_anims_sml`; profile `scale` 0.9 | Same |
+| Johnny Napalm (`Johnny`) | Liberty Spikes (Bloodshot, Pea Soup, Spew, Skeleton); Mohawk (Spinach, Pumpkin, Two Tone, Eggplant) | `GH3_Guitarist_Johnny`, `_Johnny_2` | `Johnny_1` … `Johnny_2_color4` | `Instrument_SG_Worn_Red` | `Johnny_animations`, `NormalJohnny`, `fret_anims_med`; stance `stance_frontend` | Same |
+| Lars Umlaut (`Lars`) | Black Metal (Dyed Black, Bleach Blonde, Phantom, Thunda); Viking (Natural, Barbaric, Icy, Freedom) | `GH3_Guitarist_Lars`, `_Lars_2` | `Lars_1` … `Lars_2_color4` | `Instrument_Explorer_White` | `LARS_animations`, `NormalLars`, `fret_anims_lrg` | Same |
+| Midori (`Midori`) | J-Popster (Amethyst, Ruby, Candy, Jade); Puffball (Emerald, Aqua, Maroon, Cream) | `GH3_Guitarist_Midori`, `_Midori_2` | `Midori_1` … `Midori_2_color4` | `Instrument_SG_Worn_Red` | `Midori_animations`, `NormalMidori`, `fret_anims_sml` | Same |
+| Xavier Stone (`Xavier`) | Xavier Classic (Orchid, Tangerine, Azure, Emerald); Captain X (John, Paul, George, Larry) | `GH3_Guitarist_Xavier`, `_Xavier_2` | `Xavier_1` … `Xavier_2_color4` | `Instrument_Les_Paul_Black` | `Xavier_animations`, `NormalXavier`, `fret_anims_med` | Same |
+| Slash (`Slash`) | — | `GH3_Guitarist_Slash` | `Slash_1` | `Instrument_Guitar_Slash01` (`Slash01`) | `Slash_animations`, `NormalSlash`, `fret_anims_med` | Store (`Secret_Characters`) |
+| Tom Morello (`Morello`) | — | `GH3_Guitarist_Morello` | `Morello_1` | `Instrument_Morello` (`Morello`) | `Morello_animations`, `NormalMorello`, `fret_anims_med` | Store (`Secret_Characters`) |
+| Lou (`Satan`) | Lou; Thick Izzy | `GH3_Guitarist_Satan` | `Satan`, `Satan_2` | `Instrument_Guitar_Demonik` (`Demonik`) | `Satan_animations`, `NormalSatan`, `fret_anims_lrg` | Store (`Secret_Characters`; Thick Izzy in `Bonus_Outfits`) |
+| God of Rock (`RockGod`) | — | `GH3_Guitarist_Axel` | `RockGod_1` | `Instrument_Guitar_GodRock` (`godrock`) | `axel_animations`, `NormalAxel`, `fret_anims_lrg` | Store (`Secret_Characters`) |
+| Grim Ripper (`Ripper`) | — | `GH3_Guitarist_Ripper` | `Ripper_1` | `Instrument_Guitar_Ripper` (`ripper`) | `Morello_animations`, `normal`, `fret_anims_med` | Store (`Secret_Characters`) |
+| Singer (`Singer_Bret`) | — | `GH3_Singer_BretMichaels` | `Singer_Brett` | `Mic_AT_ATM610` (`Microphone001`) | `singer_male_animations` | Song-selected vocalist (Bret Michaels) |
+| Singer (`Singer_Female`) | — | `GH3_Singer_Female` | `Singer_Female` | `Mic_AT_ATM610_Fem` (`Microphone001Female`) | `singer_female_animations` | Song-selected vocalist |
+
+- Not exported: `Bassist`, `Drummer`, `Singer` (the library band members), `Singer_Alt`, `Singer_Bret_Alt`, `Singer_Female_Alt` (the same models with the `Mic_AT_AEW_6100` microphones), and the five `BoneMan_*` profiles (`debug_only`).
+- Each character has its own skeleton (125 bones with the same names and order as `GH3_Guitarist_Axel`, other rest positions: the hands up to 0.24 m, the face bones 3–12 cm from Axel's relative to the head), its own animation PAK (`<model>_anims`, for example 247 clips for Judy against 194 for Axel; only 4 of 523 action references of `judy_animations` equal `axel_animations`), and its own ragdoll (`ragdoll_<name>`, hair and accessory joints `Bone_ACC_01`–`15` with other parents; some use `hkPrismaticConstraintData` joints and other collision shapes than the library hair reader supports).
+- `musician_instrument`: 113 rows, 88 guitars and 20 basses (and the drum kit and four microphones). Store lists: `Free_Guitars` 3, `Bonus_Guitars` 23, `Bonus_Guitar_Finishes` 49, `Secret_Guitars` 13, `Free_Basses` 1, `Bonus_Basses` 5, `Bonus_Bass_Finishes` 6, `Secret_Basses` 8.
+- Each model PAK also has the magazine photo of the variant (`.img` `Mag_Photo`, 512 × 512 DDS), the startup script that loads the highway texture, and the intro and win clips.
+
 ## Crowd
 
 - `create_crowd_models`, `AddCrowdModelCam` (`0x433c20`, every frame): one 128 × 256 viewport per row (`imposter_rendering`), perspective camera, 20° horizontal FOV, far clip 20, 3.5 units back from the point 1 unit above the ped. It copies the `bg_viewport` orientation and turns about world Y by `25° × forward.x`; rows with `roty` do not turn. Peds are parked at `(-500, -200 - 100n, 0)` with `LightGroup = Crowd`.

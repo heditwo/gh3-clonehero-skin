@@ -3,8 +3,8 @@
 Each package is written two times: as an unpacked development folder (`<output>/unpacked/<name>`) and as a zip
 (`<output>/<name>`). The output is reproducible: sorted zip entries, fixed times and attributes, and stable JSON.
 
-Usage: python -m pipeline.package.build [--packs DIR] [--library DIR] [--events DIR] [--output DIR]
-                                        [--venue ID ...] [--no-venues] [--no-library] [--jobs N]
+Usage: python -m pipeline.package.build [--packs DIR] [--library DIR] [--events DIR] [--characters DIR] [--output DIR]
+                                        [--venue ID ...] [--no-venues] [--no-library] [--no-characters] [--jobs N]
 """
 
 import argparse
@@ -21,7 +21,7 @@ import numpy as np
 from pipeline.package import decisions, q48, runtime
 from pipeline.package.container import file_list, json_bytes, write_zip
 from pipeline.package.glb import Glb
-from pipeline.paths import LIBRARY, PACKAGES, STAGE_PACKS, STAGES
+from pipeline.paths import CHARACTERS, LIBRARY, PACKAGES, STAGE_PACKS, STAGES
 from pipeline.stagepack.gltf import GlbWriter
 
 OUTPUT = PACKAGES
@@ -245,6 +245,37 @@ def build_library(library, events, output, jobs=2):
     return publish(writer, output, name), sizes
 
 
+# GH3 characters (pipeline.characters).
+CHARACTER_ROLES = {"gh3-guitarist-axel-v1": "guitarist", "gh3-singer-male-v1": "singer"}
+
+
+def character_glb(folder, library, role, clips=False):
+    """The character GLB of an exported GH3 character on the library rig of its role. With clips, the GLB also has the
+    start clips of the library member (for previews; packages have no animations)."""
+    performance = json.loads((library/"direction/performance.json").read_text())
+    parents, bind, start = runtime.read_animation((library/"band"/role/"animation.bin").read_bytes())
+    member = next(m for m in json.loads((library/"band/band.json").read_text())["members"] if m["role"] == role)
+    names = member["clips"] if clips else ()
+    return skinned_model(folder, performance["members"][role]["bones"], names, (parents, bind, start if clips else []), name="character")
+
+
+def build_character(folder, library, output):
+    folder, library = Path(folder), Path(library)
+    info = json.loads((folder/"character.json").read_text())
+    role = CHARACTER_ROLES[info["profile"]]
+    name = info["id"] + ".chchar"
+    writer = PackageWriter(output/"unpacked"/("." + name + ".tmp"))
+    writer.add_bytes("character.glb", character_glb(folder, library, role))
+    writer.add_json("character.json", {"version": 1, "library": "gh3-band-v1", "profile": info["profile"]})
+    credits = [decisions.CONVERTER_CREDIT, f"GH3 model {info['model']}" + (f", instrument {info['instrumentModel']}" if info["instrumentInModel"] else "") + "."]
+    description = f"{info['name']}, as GH3 offers it ({info['unlock']})." + (f" Instrument: {info['instrumentName']}." if info["instrumentInModel"] else "")
+    writer.finish({"format": "chchar/1.0", "id": info["id"], "version": decisions.PACKAGE_VERSION, "name": info["name"], "description": description,
+                   "authors": decisions.GH3_CHARACTER_AUTHORS, "license": decisions.GH3_LICENSE, "permissions": decisions.GH3_PERMISSIONS,
+                   "credits": credits, "requires": [{"id": "gh3-band-v1", "version": decisions.LIBRARY_VERSION}],
+                   "entry": {"model": "character.glb", "character": "character.json"}})
+    return publish(writer, output, name)
+
+
 def tree_size(folder):
     return sum(p.stat().st_size for p in Path(folder).rglob("*") if p.is_file())
 
@@ -265,14 +296,16 @@ def main(argv=None):
     parser.add_argument("--packs", type=Path, default=STAGE_PACKS)
     parser.add_argument("--library", type=Path, default=LIBRARY)
     parser.add_argument("--events", type=Path, default=EVENTS)
+    parser.add_argument("--characters", type=Path, default=CHARACTERS)
     parser.add_argument("--output", type=Path, default=OUTPUT)
     parser.add_argument("--venue", action="append", help="Convert only this source pack ID (repeatable)")
     parser.add_argument("--no-venues", action="store_true")
     parser.add_argument("--no-library", action="store_true")
+    parser.add_argument("--no-characters", action="store_true")
     parser.add_argument("--jobs", type=int, default=2, help="Clip encoder processes (each uses about 0.1 GB)")
     args = parser.parse_args(argv)
     (args.output/"unpacked").mkdir(parents=True, exist_ok=True)
-    report = {"venues": {}, "library": None}
+    report = {"venues": {}, "library": None, "characters": {}}
     if not args.no_venues:
         for source in sorted(p.parent for p in args.packs.glob("*/stage-pack.json")):
             if args.venue and source.name not in args.venue: continue
@@ -284,6 +317,12 @@ def main(argv=None):
         report["library"] = {"folder": tree_size(folder), "zip": archive.stat().st_size, "parts": part_sizes(folder),
                              "clips": {"count": len(clips), "sourceBytes": sum(a for a, _ in clips), "packageBytes": sum(b for _, b in clips)}}
         print(f"{archive}: folder {tree_size(folder):,} bytes, zip {archive.stat().st_size:,} bytes")
+    if not args.no_characters:
+        for source in sorted(p.parent for p in args.characters.glob("*/character.json")):
+            folder, archive = build_character(source, args.library, args.output)
+            report["characters"][source.name] = {"folder": tree_size(folder), "zip": archive.stat().st_size}
+        total = sum(row["zip"] for row in report["characters"].values())
+        print(f"{len(report['characters'])} characters: zip {total:,} bytes")
     (args.output/"build-report.json").write_bytes(json_bytes(report))
 
 

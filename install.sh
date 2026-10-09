@@ -39,11 +39,11 @@ for folder in "${skin_folders[@]}"; do
   rm -rf "$target_dir/Mods/GH3Skin/assets/$folder"
   cp -r "$project_dir/assets/$folder" "$target_dir/Mods/GH3Skin/assets/"
 done
-# Packages (docs/PACKAGE-FORMAT.md): the venues and the band library. The mod imports them into its cache.
+# Packages (docs/PACKAGE-FORMAT.md): the venues, the band library, and the GH3 characters. The mod imports them into its cache.
 shopt -s nullglob
-packages=("$project_dir/assets/packages/"*.chstage "$project_dir/assets/packages/"*.chlib)
+packages=("$project_dir/assets/packages/"*.chstage "$project_dir/assets/packages/"*.chlib "$project_dir/assets/packages/"gh3.*.chchar)
 mkdir -p "$target_dir/Mods/GH3Skin/Packages"
-rm -f "$target_dir/Mods/GH3Skin/Packages/"*.chstage "$target_dir/Mods/GH3Skin/Packages/"*.chlib
+rm -f "$target_dir/Mods/GH3Skin/Packages/"*.chstage "$target_dir/Mods/GH3Skin/Packages/"*.chlib "$target_dir/Mods/GH3Skin/Packages/"*.chchar
 if (( ${#packages[@]} )); then
   cp --reflink=auto --preserve=timestamps "${packages[@]}" "$target_dir/Mods/GH3Skin/Packages/"
 else

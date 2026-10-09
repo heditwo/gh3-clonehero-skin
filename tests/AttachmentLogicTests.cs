@@ -21,6 +21,7 @@ internal static class AttachmentLogicTests
     {
         CheckSplit();
         CheckChoice();
+        CheckCharacterRig();
         var library = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../assets/libraries/gh3-band-v1"));
         if (File.Exists(Path.Combine(library, "catalog.json"))) CheckLibrary(library);
     }
@@ -69,12 +70,37 @@ internal static class AttachmentLogicTests
 
     private static void CheckChoice()
     {
-        Check(BandAttachments.Choose(false, "", "SG_Black", "guitarist") is (true, var a) && a.Contains("SG_Black"), "no name: the role's instrument");
-        Check(BandAttachments.Choose(false, "SG_Black", "SG_Black", "guitarist").Add, "the named instrument of the role");
-        Check(BandAttachments.Choose(false, "SG_Black", "tobB4", "bassist") is (true, var b) && b.Contains("tobB4") && b.Contains("SG_Black is not used"),
+        Check(BandAttachments.Choose(false, true, "", "SG_Black", "guitarist") is (true, false, var a) && a.Contains("SG_Black"), "no name: the role's instrument");
+        Check(BandAttachments.Choose(false, true, "SG_Black", "SG_Black", "guitarist").Add, "the named instrument of the role");
+        Check(BandAttachments.Choose(false, false, "SG_Black", "tobB4", "bassist") is (true, false, var b) && b.Contains("tobB4") && b.Contains("SG_Black is not used"),
             "a guitarist character that plays the bassist gets the bass");
-        Check(BandAttachments.Choose(true, "", "SG_Black", "guitarist") is (false, var c) && c.Contains("own"), "a GLB with its own instrument keeps it");
-        Check(!BandAttachments.Choose(true, "tobB4", "tobB4", "bassist").Add, "an own instrument wins over a name");
+        Check(BandAttachments.Choose(true, true, "", "SG_Black", "guitarist") is (false, true, var c) && c.Contains("own"), "a GLB with its own instrument keeps it in its role");
+        Check(BandAttachments.Choose(true, true, "tobB4", "tobB4", "bassist") is (false, true, _), "an own instrument wins over a name");
+        Check(BandAttachments.Choose(true, false, "", "tobB4", "bassist") is (true, false, var d) && d.Contains("tobB4"),
+            "in another role, the role's instrument replaces the own instrument");
+    }
+
+    // Joints of a character on another role's rig (CharacterRig.Map): 0 root, 1 body, 2 head, 3 face (under the head),
+    // 4 and 5 a hair chain under the head, 6 an accessory on the body, 7 an instrument bone under the root.
+    private static void CheckCharacterRig()
+    {
+        string Acc(int i) => Gh3Checksum.Of($"Bone_ACC_{i:00}");
+        var profile = new[] { "r", "b", CharacterRig.Head, "f", Acc(1), Acc(2), Acc(3), "g" };
+        var parents = new[] { -1, 0, 1, 2, 2, 4, 1, 0 };
+        var role = new[] { "g", "r", "b", CharacterRig.Head, "f", Acc(1), Acc(2), Acc(3), "x" };
+        var joints = new[] { "g", "r", "b", CharacterRig.Head, "f", Acc(1), Acc(2), Acc(3) };
+        var hair = new HashSet<int> { 4, 5 };
+        var own = CharacterRig.Map(joints, profile, parents, role, hair, ownRole: true)!.Value;
+        Check(own.Bones.SequenceEqual(new[] { 0, 1, 2, 3, 4, 5, 6, 7 }) && own.Bind.SequenceEqual(Enumerable.Range(0, 8)), "own role: joints by name, own bind poses");
+        var other = CharacterRig.Map(joints, profile, parents, role, hair, ownRole: false)!.Value;
+        Check(other.Bones.SequenceEqual(new[] { 0, 1, 2, 3, 3, 5, 6, 2 }), "another role: face on the head, accessory on its body bone, hair and body by name");
+        Check(other.Bind.SequenceEqual(new[] { 0, 1, 2, 3, 3, 5, 6, 2 }), "another role: moved joints use the bind pose of the joint that they follow");
+        Check(CharacterRig.Map(joints.Append("missing").ToArray(), profile, parents, role, hair, ownRole: true) == null, "a joint outside the role rig");
+        var definition = new HairDefinition { Head = 2, Joints = new[] { new HairJoint { Bone = 4, Parent = 2 }, new HairJoint { Bone = 5, Parent = 4 } } };
+        var remapped = definition.Remap(bone => Array.IndexOf(role, profile[bone]))!;
+        Check(remapped.Head == 3 && remapped.Joints[0].Bone == 5 && remapped.Joints[0].Parent == 3 && remapped.Joints[1].Bone == 6 && remapped.Joints[1].Parent == 5,
+            "the profile hair chains on the role rig");
+        Check(definition.Remap(bone => bone == 5 ? -1 : bone) == null, "a hair joint outside the role rig");
     }
 
     private static void CheckLibrary(string library)
