@@ -54,7 +54,7 @@ internal sealed class StageAssets : IDisposable
     // LightAt overrides the lighting sample position (stage-local) for meshes rendered away from where they appear.
     internal sealed record ShadedSurface(Renderer Renderer, int Mode, string Group, bool Dynamic, System.Numerics.Vector3? LightAt = null);
     [StructLayout(LayoutKind.Sequential)]
-    private struct SkinWeight
+    internal struct SkinWeight
     {
         public float Weight;
         public int Bone;
@@ -514,7 +514,8 @@ internal sealed class StageAssets : IDisposable
                 surfaceShader != null ? Definition.Materials[materialId.ToString("x8")].ShadingMode : -1;
             var dynamicColors = lighting && shadedMode < 0 && (bones != null || Definition.LightGroups.Length > 0);
             if (dynamicColors || sorted) mesh.MarkDynamic();
-            mesh.UploadMeshData(!dynamicColors && !sorted);
+            // The skinned GLB spike compares baked poses, so it keeps band meshes readable.
+            mesh.UploadMeshData(!dynamicColors && !sorted && !(bones != null && SkinnedGlbSpike.Enabled));
             var item = new GameObject(mesh.name) { layer = layer };
             item.transform.SetParent(root.transform, false);
             var objectId = Definition.ObjectIds.Length == 0 ? "" : Definition.ObjectIds[part];
@@ -573,7 +574,7 @@ internal sealed class StageAssets : IDisposable
         return float.IsFinite(value) ? value : throw new InvalidDataException("Invalid stage vertex");
     }
 
-    private static void SetSkinWeights(Mesh mesh, byte[] counts, SkinWeight[] weights)
+    internal static void SetSkinWeights(Mesh mesh, byte[] counts, SkinWeight[] weights)
     {
         // Clone Hero strips BoneWeight1; its native mesh entry point remains available.
         var countsHandle = GCHandle.Alloc(counts, GCHandleType.Pinned);

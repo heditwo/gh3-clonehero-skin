@@ -153,6 +153,7 @@ internal sealed class GameplayStage
                 if (_camera != null && _assets != null)
                     foreach (var mesh in _assets.TransparentMeshes) mesh.Update(_camera);
             });
+            if (_camera != null) _band?.SpikeUpdate(time, _camera);
         }
         catch (Exception error)
         {

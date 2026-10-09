@@ -37,6 +37,7 @@ internal sealed class StageBand : IDisposable
     private readonly List<StageAssets> _assets = new();
     private readonly List<Performer> _players = new();
     private StagePerformance? _performance;
+    private SkinnedGlbSpike? _spike;
     private double _start;
     public Dictionary<string, Vector3> Positions { get; } = new();
 
@@ -114,6 +115,8 @@ internal sealed class StageBand : IDisposable
         {
             if (!_performance.Members.TryGetValue(player.Role, out var definition)) continue;
             player.Definition = definition;
+            if (SkinnedGlbSpike.Enabled && player.Role == "guitarist")
+                _spike = SkinnedGlbSpike.Attach(player.Root, player.Bones, definition.Bones, _assets[_players.IndexOf(player)]);
             player.Performance = new PerformancePlayer(player.Role, directory, definition, player.Animation.BindPose, timeline,
                 player.Animation.Parents, _performance.Constants);
             player.Performance.Prepare();
@@ -168,6 +171,8 @@ internal sealed class StageBand : IDisposable
         }
     }
 
+    public void SpikeUpdate(double time, Camera camera) => _spike?.Update(time, camera);
+
     private static BandPose SamplePose(Performer player, double time, BandPose[] pose)
     {
         var position = player.Start;
@@ -210,6 +215,8 @@ internal sealed class StageBand : IDisposable
 
     public void Dispose()
     {
+        _spike?.Dispose();
+        _spike = null;
         foreach (var assets in _assets) assets.Dispose();
         _assets.Clear();
         _players.Clear();
