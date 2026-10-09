@@ -56,6 +56,11 @@ internal sealed partial class GameplaySpriteRenderer
         _speedSet = 0;
         _noteRenderersSet = false;
         _neckRenderer = null;
+        _activeBeatlines.Clear();
+        _thinBeatlines.Clear();
+        _thinBeatlineRoot = null;
+        _trackFade = null;
+        _beatlineLimitLogged = false;
         _starParticles = null;
         _childCount = -1;
     }
@@ -129,8 +134,7 @@ internal sealed partial class GameplaySpriteRenderer
                 if (note.Object != null && note.Object.activeSelf)
                     ReplaceGem(note, starPowerActive, gemFrame);
         }
-        foreach (var line in _beatlines)
-            line.Update(player.mainCamera);
+        UpdateBeatlines(player.mainCamera);
         foreach (var note in _notes)
             if (note.Object != null && note.Object.activeSelf)
                 _highwayEndZ = Math.Max(_highwayEndZ, note.Transform.position.z);

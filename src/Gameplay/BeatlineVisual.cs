@@ -27,41 +27,53 @@ internal sealed class BeatlineVisual
         _beat = assets.GetSprite("beatline-beat");
         _halfBeat = assets.GetSprite("beatline-half");
         var existing = transform.Find("GH3 Beat Line");
-        if (existing != null)
-            _display = existing.GetComponent<SpriteRenderer>();
-        else
-        {
-            var display = new GameObject("GH3 Beat Line");
-            display.layer = _object.layer;
-            display.transform.SetParent(transform, false);
-            _display = display.AddComponent<SpriteRenderer>();
-            _display.sharedMaterial = assets.BeatlineMaterial;
-            _display.sortingLayerID = SortingLayer.NameToID("HighwayOverlay");
-            _display.sortingOrder = -201;
-        }
+        _display = existing != null ? existing.GetComponent<SpriteRenderer>() : CreateDisplay(transform, "GH3 Beat Line", assets);
         _displayTransform = _display.transform;
+    }
+
+    public bool Active => _object != null && _object.activeInHierarchy;
+    public Transform Transform => _transform;
+
+    public static SpriteRenderer CreateDisplay(Transform parent, string name, SkinAssets assets)
+    {
+        var display = new GameObject(name);
+        display.layer = parent.gameObject.layer;
+        display.transform.SetParent(parent, false);
+        var renderer = display.AddComponent<SpriteRenderer>();
+        renderer.sharedMaterial = assets.BeatlineMaterial;
+        renderer.sortingLayerID = SortingLayer.NameToID("HighwayOverlay");
+        renderer.sortingOrder = -201;
+        return renderer;
     }
 
     public void Update(Camera camera)
     {
-        if (_object == null || !_object.activeInHierarchy)
+        if (!Active)
             return;
         _source.enabled = false;
         var scale = _transform.localScale;
         _display.sprite = scale.y > 1.5f ? _bar : scale.y < 0.8f ? _halfBeat : _beat;
-        var position = camera.WorldToScreenPoint(_transform.position);
+        Place(camera, _display, _displayTransform, _transform.position, _transform.parent.right, 0, 0, 0, scale.x, scale.y);
+    }
+
+    // Places a line sprite at a highway point: GH3 width and distance fade, centered on the highway. local is the point in
+    // the display's parent space, and scaleX, scaleY are the scale of that parent relative to the highway.
+    public static void Place(Camera camera, SpriteRenderer display, Transform displayTransform, Vector3 world, Vector3 highwayRight,
+        float localX, float localY, float localZ, float scaleX, float scaleY)
+    {
+        var position = camera.WorldToScreenPoint(world);
         var rect = camera.pixelRect;
         var viewport = HudViewport.ForHighway(Screen.height, rect.x, rect.y, rect.width, rect.height, camera.fieldOfView);
         var referenceScale = viewport.Scale * 1.2f;
         var referenceY = (Screen.height - position.y - viewport.CenterOffsetY) / referenceScale;
-        _display.color = new Color(1, 1, 1,
+        display.color = new Color(1, 1, 1,
             Mathf.SmoothStep(0, 1, (referenceY - ReferenceFadeStartY) / ReferenceFadeLength));
         var width = Math.Max(0, referenceY - HighwayView.VanishingY) * ReferenceWidthPerY * referenceScale;
-        var right = camera.WorldToScreenPoint(_transform.position + _transform.parent.right);
+        var right = camera.WorldToScreenPoint(world + highwayRight);
         var pixelsPerUnit = right.x - position.x;
         var worldWidth = width / Math.Abs(pixelsPerUnit);
         var center = viewport.OffsetX + ReferenceCenterX * referenceScale;
-        _displayTransform.localPosition = new Vector3((center - position.x) / pixelsPerUnit / scale.x, 0, 0);
-        _displayTransform.localScale = new Vector3(worldWidth / scale.x, worldWidth / scale.y, 1);
+        displayTransform.localPosition = new Vector3(localX + (center - position.x) / pixelsPerUnit / scaleX, localY, localZ);
+        displayTransform.localScale = new Vector3(worldWidth / scaleX, worldWidth / scaleY, 1);
     }
 }

@@ -50,6 +50,7 @@ The evidence is from `tools/InteropMap` (interop name → metadata name and RVA,
 | Whammy column, tick | `ObjectPublicAbstractSealedInBoInObDoInSiDoInDoUnique.field_Private_Static_Int32_0`, `field_Private_Static_Double_2` | `ʿʴˀʴʹʷʺʻʸʳʽ`, `ʻʳʷʶˀʻʻʳʶʻʹ` | static | Whammy texture |
 | Song clock start | `GameManager.sync` `.field_Private_Double_2`, `_3` | `ʲʻʺʹʺʲʷʾʻʺʹ`, `ˁʵˁʺʳʻʸʶʼʽʺ` | `0x38`, `0x40` | Lead-in starts at −8 s on both |
 | Note spawn time | `BaseNoteRenderer.field_Protected_Double_0` | `ʲʾʴʾʹʵʴʺʶʿʸ` | generic type | `noteZPosFarLimit / noteSpeed` |
+| Track fade receivers, limits | `TrackFadeManager.field_Private_List_1_InterfacePublicAbstract18Vo2818Unique_0`, `field_Private_List_1_ValueTypePublicSealedSiSiSiSiUnique_0`; limit x `ValueTypePublicSealedSiSiSiSiUnique.field_Public_Single_0` | `ʹʻʵʴʸʲʲʾʿˀʴ`, `ʹʶʿʴʾʿʹʹʹʾʶ`; `ˁʸʷʵʲʺʼʲʷʲʼ` | `0x28`, `0x30`; `0x0` (Linux; Windows binds and shows the same lines) | Limits (7.87, 2, −1, 0.25) = far z, far fade, near z, near fade; `BeatRenderer` copies x and z to its spawn limits (`+0x50`, `+0x58`) every frame |
 
 Named members (`GameManager.songTime`, `BasePlayer.engine`, `SongEntry.ChartPath`, and others) are not obfuscated.
 
@@ -89,7 +90,7 @@ Measured in the original GH3 recording at 1600 × 900 (FastGH3 has a different p
 - The board starts at y 381 (1280 × 720 layout: `highway_top_width1` 160 at y 305, `highway_playline1` 655 − `highway_height1` 350). It fades in between y 384 and y 406.
 - The board texture is 0.987 of the rail width, repeats every 1 / 0.987 s of gem travel, and scrolls 1021–1027 texture rows per second (1024 rows per repeat).
 
-`HighwayView` uses: field of view 15.33°, pitch 4.56°, height 0.921, z −4.894, neck 0.970 × 6.10, scroll speed 6 at note speed 7, lanes 0.1935 apart, `DepthScale` 442.8 (calibrated so that beat lines and gems agree). Gems spawn up to the highway top (Clone Hero stops at z 7.87).
+`HighwayView` uses: field of view 15.33°, pitch 4.56°, height 0.921, z −4.894, neck 0.970 × 6.10, scroll speed 6 at note speed 7, lanes 0.1935 apart, `DepthScale` 442.8 (calibrated so that beat lines and gems agree). Gems and beat lines spawn up to the highway top (Clone Hero stops both at z 7.87, y 425).
 
 ## Gems
 
@@ -109,7 +110,11 @@ Measured in the original GH3 recording at 1600 × 900 (FastGH3 has a different p
 
 ## Beat lines
 
-Textures `079_1024x16_DXT5`, `090_…`, `100_…` from `global_gfx` (bar, beat, half beat). The sprite bottom is at the native line position. Lines draw above the highway and below strings, notes, and frets, with their own distance fade.
+Textures `079_1024x16_DXT5`, `090_…`, `100_…` from `global_gfx` (thick: bar, medium: beat, thin: half beat). The sprite bottom is at the native line position. Lines draw above the highway and below strings, notes, and frets, with their own distance fade.
+
+- `guitar_fretbar.qb`: `thin_fretbar_timesigs` gives x/4 signatures `thin_fretbar_8note_params` (1 to 180 BPM) and x/8 signatures `thin_fretbar_16note_params` (1 to 120 BPM). GH3 draws a thin fretbar between two beats when the tempo is in that range. My Curse (172.9 BPM, 6/4) has a line every 0.173 s.
+- Clone Hero draws measure and beat lines only, and stops them at z 7.87. The skin adds the thin line halfway to the next Clone Hero line when the beat is 180 BPM or slower (`HighwayView.HasThinFretbar`; the x/8 rule is not used), and moves the `BeatRenderer` limit in `TrackFadeManager` to the highway top.
+- Measured on My Curse at song times 20, 25.3, and 30 s: GH3 shows 8 to 9 lines 0.174 s apart, the top line at y 402–407; the skin now shows the same (top line y 390–410). Before the fix: 3 to 4 lines 0.347 s apart, none above y 425, and half of the gems (on half beats) between lines.
 
 ## HUD
 

@@ -7,6 +7,7 @@ using Engine = Il2Cpp.ObjectPublicAbstractDoBoDoInBoObDoInSiBoUnique;
 using Note = Il2Cpp.ObjectPublicObInObDoSiDoUIInBoInUnique;
 using NoteList = Il2CppSystem.Collections.Generic.List<Il2Cpp.ObjectPublicObInObDoSiDoUIInBoInUnique>;
 using SongClock = Il2Cpp.ObjectPublicDoSiBoSiDoBoSiDoSiDoUnique;
+using TrackFadeLimits = Il2Cpp.ValueTypePublicSealedSiSiSiSiUnique;
 using WhammyManager = Il2Cpp.ObjectPublicAbstractSealedInBoInObDoInSiDoInDoUnique;
 
 namespace Gh3Skin;
@@ -45,6 +46,9 @@ internal static class CloneHeroBindings
         (typeof(SongClock), nameof(SongClock.field_Private_Double_2), "ʲʻʺʹʺʲʷʾʻʺʹ"),
         (typeof(SongClock), nameof(SongClock.field_Private_Double_3), "ˁʵˁʺʳʻʸʶʼʽʺ"),
         (typeof(GuitarNoteRenderer), nameof(GuitarNoteRenderer.field_Protected_Double_0), "ʲʾʴʾʹʵʴʺʶʿʸ"),
+        (typeof(TrackFadeManager), nameof(TrackFadeManager.field_Private_List_1_InterfacePublicAbstract18Vo2818Unique_0), "ʹʻʵʴʸʲʲʾʿˀʴ"),
+        (typeof(TrackFadeManager), nameof(TrackFadeManager.field_Private_List_1_ValueTypePublicSealedSiSiSiSiUnique_0), "ʹʶʿʴʾʿʹʹʹʾʶ"),
+        (typeof(TrackFadeLimits), nameof(TrackFadeLimits.field_Public_Single_0), "ˁʸʷʵʲʺʼʲʷʲʼ"),
     };
 
     public static string? Bind()

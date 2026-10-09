@@ -13,6 +13,11 @@ internal sealed partial class GameplaySpriteRenderer
     private float _speedSet;
     private bool _noteRenderersSet;
     private SpriteRenderer? _neckRenderer;
+    private readonly List<BeatlineVisual> _activeBeatlines = new();
+    private readonly List<SpriteRenderer> _thinBeatlines = new();
+    private Transform? _thinBeatlineRoot;
+    private TrackFadeManager? _trackFade;
+    private bool _beatlineLimitLogged;
     private static readonly int FadeParams = Shader.PropertyToID("_FadeParams");
 
     // Clone Hero's own custom-highway path: HighwayScroll sizes the scroll to the texture, so the board moves with the notes.
@@ -49,11 +54,94 @@ internal sealed partial class GameplaySpriteRenderer
         if (_noteRenderersSet) return;
         foreach (var renderer in UnityEngine.Object.FindObjectsOfType<GuitarNoteRenderer>())
         {
-            renderer.noteZPosFarLimit = HighwayView.NeckStartZ + HighwayView.NeckLength * HighwayView.NeckSpriteLength;
+            renderer.noteZPosFarLimit = HighwayView.NeckEndZ;
             renderer.field_Protected_Double_0 = renderer.noteZPosFarLimit / renderer.noteSpeed;
             _noteRenderer = renderer;
             _noteRenderersSet = true;
         }
+    }
+
+    // TrackFadeManager sends each fade receiver its far and near limits (x and z of its entry) every frame; the beat line
+    // spawner stops at x (7.87). The skin moves the beat line entry to the highway top, as for the gems.
+    private void ShowBeatlinesToHighwayTop()
+    {
+        if (_trackFade == null) _trackFade = _player?.GetComponentInChildren<TrackFadeManager>() ?? UnityEngine.Object.FindObjectOfType<TrackFadeManager>();
+        if (_trackFade == null) return;
+        var receivers = _trackFade.field_Private_List_1_InterfacePublicAbstract18Vo2818Unique_0;
+        var limits = _trackFade.field_Private_List_1_ValueTypePublicSealedSiSiSiSiUnique_0;
+        if (receivers == null || limits == null) return;
+        var found = false;
+        for (var index = 0; index < receivers.Count && index < limits.Count; index++)
+        {
+            if (receivers[index]?.TryCast<BeatRenderer>() == null) continue;
+            found = true;
+            var limit = limits[index];
+            if (limit.field_Public_Single_0 == HighwayView.NeckEndZ) continue;
+            if (!_beatlineLimitLogged)
+                MelonLogger.Msg($"GH3 beat lines: spawn limit {limit.field_Public_Single_0:0.##} -> {HighwayView.NeckEndZ:0.##} (highway top)");
+            _beatlineLimitLogged = true;
+            limit.field_Public_Single_0 = HighwayView.NeckEndZ;
+            limits[index] = limit;
+        }
+        if (!found && !_beatlineLimitLogged && receivers.Count > 0)
+        {
+            MelonLogger.Warning("GH3 beat lines: Clone Hero's track fade has no beat line entry; beat lines stop below the highway top");
+            _beatlineLimitLogged = true;
+        }
+    }
+
+    // GH3 adds a thin fretbar halfway to the next beat (HighwayView.HasThinFretbar). Clone Hero has beat lines only, so the
+    // skin takes the beat length from the next active line, or from the previous beat for the farthest line.
+    private void UpdateBeatlines(Camera camera)
+    {
+        ShowBeatlinesToHighwayTop();
+        _activeBeatlines.Clear();
+        foreach (var line in _beatlines)
+        {
+            line.Update(camera);
+            if (line.Active)
+                _activeBeatlines.Add(line);
+        }
+        _activeBeatlines.Sort((a, b) => a.Transform.localPosition.z.CompareTo(b.Transform.localPosition.z));
+        var noteSpeed = _noteRenderer != null && _noteRenderer.noteSpeed > 0 ? _noteRenderer.noteSpeed : HighwayView.NoteSpeed;
+        var beatLength = 0f;
+        var used = 0;
+        for (var index = 0; index < _activeBeatlines.Count; index++)
+        {
+            var line = _activeBeatlines[index].Transform;
+            var position = line.localPosition;
+            if (index + 1 < _activeBeatlines.Count)
+                beatLength = _activeBeatlines[index + 1].Transform.localPosition.z - position.z;
+            if (!HighwayView.HasThinFretbar(beatLength / noteSpeed))
+                continue;
+            var thin = ThinBeatline(line.parent, used++);
+            var z = position.z + beatLength / 2;
+            var parent = line.parent;
+            BeatlineVisual.Place(camera, thin, thin.transform, parent.TransformPoint(new Vector3(position.x, position.y, z)), parent.right,
+                position.x, position.y, z, 1, 1);
+            thin.enabled = true;
+        }
+        for (var index = used; index < _thinBeatlines.Count; index++)
+            if (_thinBeatlines[index] != null)
+                _thinBeatlines[index].enabled = false;
+    }
+
+    private SpriteRenderer ThinBeatline(Transform highway, int index)
+    {
+        if (_thinBeatlineRoot == null) _thinBeatlines.Clear();
+        while (_thinBeatlines.Count <= index)
+        {
+            if (_thinBeatlineRoot == null)
+            {
+                _thinBeatlineRoot = new GameObject("GH3 Thin Beat Lines").transform;
+                _thinBeatlineRoot.gameObject.layer = highway.gameObject.layer;
+                _thinBeatlineRoot.SetParent(highway, false);
+            }
+            var line = BeatlineVisual.CreateDisplay(_thinBeatlineRoot, "GH3 Thin Beat Line", _assets);
+            line.sprite = _assets.GetSprite("beatline-half");
+            _thinBeatlines.Add(line);
+        }
+        return _thinBeatlines[index];
     }
 
     // The track shader fades between two viewport heights (_FadeParams z and w, from the top in OpenGL). Clone Hero's

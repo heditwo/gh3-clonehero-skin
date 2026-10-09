@@ -39,6 +39,9 @@ internal static class HighwayView
     public static readonly float NeckWidth = TextureWidth * RailSlope * (StrikeY - VanishingY) / LaneSpacing * LaneWidth / NeckSpriteHalfWidth;
     public static readonly float TopTime = TimeAt(TopY);
     public static readonly float NeckLength = (StrikeZ + NoteSpeed * TopTime - NeckStartZ) / NeckSpriteLength;
+    public static readonly float NeckEndZ = NeckStartZ + NeckLength * NeckSpriteLength;
+    // guitar_fretbar.qb: thin_fretbar_8note_params (1 to 180 BPM) for the x/4 time signatures that GH3 songs use.
+    public const float ThinFretbarMaxBpm = 180;
     // GH3's board repeats every 1 / 0.987 s of gem travel and scrolls by one repeat per second.
     public const float RepeatsPerUnit = 0.987f / NoteSpeed;
     public const float RepeatsPerSecond = 1;
@@ -48,6 +51,9 @@ internal static class HighwayView
         var t = Math.Clamp((ScreenY((z - StrikeZ) / NoteSpeed) - FadeStartY) / FadeLength, 0, 1);
         return t * t * (3 - 2 * t);
     }
+
+    // GH3 draws a thin fretbar halfway between two beats when the beat is at most ThinFretbarMaxBpm.
+    public static bool HasThinFretbar(float beatSeconds) => beatSeconds > 0 && 60 / beatSeconds <= ThinFretbarMaxBpm + 1e-3f;
 
     public static float TimeAt(float screenY) => DepthScale / (screenY - VanishingY) - LeadTime;
 

@@ -250,8 +250,17 @@ var (strikeLeft, strikeY) = ProjectHighway(-2 * HighwayView.LaneWidth, HighwayVi
 var (strikeRight, _) = ProjectHighway(2 * HighwayView.LaneWidth, HighwayView.StrikeZ);
 if (Math.Abs(strikeY - HighwayView.StrikeY) > 0.05f || Math.Abs((strikeRight - strikeLeft) / 4 - HighwayView.LaneSpacing) > 0.05f)
     throw new Exception($"GH3 frets are at y {HighwayView.StrikeY}, {HighwayView.LaneSpacing} px apart; camera gives {strikeY}, {(strikeRight - strikeLeft) / 4}");
-var (_, topY) = ProjectHighway(0, HighwayView.NeckStartZ + HighwayView.NeckLength * HighwayView.NeckSpriteLength);
+var (_, topY) = ProjectHighway(0, HighwayView.NeckEndZ);
 Equal(MathF.Round(HighwayView.TopY, 1), MathF.Round(topY, 1), "the board ends at GH3's highway top");
+// Clone Hero stops gems and beat lines at z 7.87 (y 425); GH3 shows both up to the board top (y 381).
+const float CloneHeroSpawnLimit = 7.87f;
+if (ProjectHighway(0, CloneHeroSpawnLimit).Y - HighwayView.TopY < 30 || HighwayView.NeckEndZ <= CloneHeroSpawnLimit)
+    throw new Exception("Clone Hero's spawn limit is expected below the GH3 highway top; the skin moves it to NeckEndZ");
+// guitar_fretbar.qb: a thin 8th-note fretbar up to 180 BPM (x/4). My Curse is 172.9 BPM and has them; 200 BPM has none.
+Equal(true, HighwayView.HasThinFretbar(60f / 172.9f), "GH3 draws thin fretbars at 172.9 BPM");
+Equal(true, HighwayView.HasThinFretbar(60f / 180f), "GH3 draws thin fretbars at 180 BPM");
+Equal(false, HighwayView.HasThinFretbar(60f / 181f), "GH3 draws no thin fretbars above 180 BPM");
+Equal(false, HighwayView.HasThinFretbar(0), "no thin fretbar without a beat length");
 Equal(6f, MathF.Round(HighwayView.ScrollSpeed(7), 4), "GH3's board moves one repeat per second at the default note speed");
 
 foreach (var active in new[] { false, true })
