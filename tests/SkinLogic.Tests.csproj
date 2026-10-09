@@ -76,6 +76,7 @@
     <Compile Include="../src/Stage/Rendering/StageTriangleOrder.cs" Link="StageTriangleOrder.cs" />
     <Compile Include="../src/Stage/Band/StagePerformance.cs" Link="StagePerformance.cs" />
     <Compile Include="../src/Stage/Band/StageGuitarArms.cs" Link="StageGuitarArms.cs" />
+    <Compile Include="../src/Stage/Band/StageLipSync.cs" Link="StageLipSync.cs" />
     <Compile Include="../src/Stage/Lighting/StageLighting.cs" Link="StageLighting.cs" />
     <Compile Include="../src/Stage/Lighting/StageLightShowState.cs" Link="StageLightShowState.cs" />
     <Compile Include="../src/Stage/Lighting/StageBeamMotion.cs" Link="StageBeamMotion.cs" />

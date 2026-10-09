@@ -16,6 +16,7 @@ internal static class StageSongDirection
         "vocal" or "crowd" or "gh3-scripts-note" or "gh3-triggers-note" => cue.Type,
         "stance" or "perform" or "clip" => "body/" + cue.Role,
         "walk" or "face" or "arms" or "strum-style" or "strum" => cue.Type + "/" + cue.Role,
+        "sing" => "sing/" + cue.Role,
         "fret" when int.TryParse(cue.Value, out var note) => note switch
         {
             >= 118 and <= 127 => "fret/guitarist",
@@ -141,6 +142,7 @@ internal static class StageSongDirection
         Select(authored.Cues, authored.Source);
         Select(chart.Direction, chart.Timeline.Source, validate: true);
         Select(chart.Strums, chart.Timeline.Source + " Expert notes");
+        Select(chart.Vocals, chart.Timeline.Source + " vocals");
         if (original != null) Select(original.Cues, original.Source);
         if (StageChartReader.UseVenueTrack) Select(chart.Venue, chart.Timeline.Source + " VENUE", validate: true);
         if (StageChartReader.UseGeneratedDirection) Select(chart.Generated, "generated");

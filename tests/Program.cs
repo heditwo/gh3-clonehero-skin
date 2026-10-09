@@ -49,6 +49,7 @@ StageScriptAssetTests.Run();
 SongDirectionLogicTests.Run();
 VenueTrackLogicTests.Run();
 BandLogicTests.Run();
+LipSyncLogicTests.Run();
 HairLogicTests.Run();
 DirectionLogicTests.Run();
 ShowFlowLogicTests.Run();

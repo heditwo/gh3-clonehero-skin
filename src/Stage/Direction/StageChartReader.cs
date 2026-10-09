@@ -21,6 +21,7 @@ internal sealed record StageChartData(StageTimeline Timeline, StageCue[] Directi
 {
     public StageCue[] Venue { get; init; } = Array.Empty<StageCue>();
     public StageCue[] Generated { get; init; } = Array.Empty<StageCue>();
+    public StageCue[] Vocals { get; init; } = Array.Empty<StageCue>();
     public string[] Diagnostics { get; init; } = Array.Empty<string>();
 }
 
@@ -187,6 +188,7 @@ internal static class StageChartReader
         var tempos = new List<Tempo>();
         var cues = new List<TickCue>();
         var sections = new List<(long Tick, string Name)>();
+        var lyrics = new List<(long Tick, string Text)>();
         long end = 0;
         foreach (var raw in text.Split('\n'))
         {
@@ -214,6 +216,8 @@ internal static class StageChartReader
                 var value = right[2..].Trim();
                 if (value.StartsWith('"') && value.EndsWith('"') && value.Length >= 2) value = value[1..^1];
                 if (section == "Events" && StageGeneratedDirection.Section(value) is { } name) sections.Add((tick, name));
+                if (section == "Events" && (value.StartsWith("lyric ", StringComparison.Ordinal) || value is "phrase_start" or "phrase_end"))
+                    lyrics.Add((tick, value));
                 if (section == "Events" || DirectionTrack(section).Length > 0 || Gh3Text(value)) cues.Add(new TickCue(tick, value));
             }
             else if (DirectionTrack(section) is { Length: > 0 } direction && right.StartsWith("N "))
@@ -236,6 +240,7 @@ internal static class StageChartReader
             }
         }
         var generated = StageGeneratedDirection.FromSections(sections, resolution, end);
+        cues.AddRange(ChartLyrics(lyrics, resolution));
         return ConvertTicks(cues, tempos, resolution, offset, "notes.chart", generated: generated);
     }
 
@@ -276,6 +281,7 @@ internal static class StageChartReader
         var sections = new List<(long Tick, string Name)>();
         var venueNotes = new List<(long Tick, int Note, long Length)>();
         var venueTexts = new List<(long Tick, string Text)>();
+        var vocals = new Dictionary<string, List<TickCue>>();
         long end = 0;
         for (var track = 0; track < trackCount; track++)
         {
@@ -305,6 +311,7 @@ internal static class StageChartReader
                     var payload = reader.Bytes(reader.Variable());
                     if (type == 0x03) trackName = Encoding.UTF8.GetString(payload).Trim().ToUpperInvariant();
                     else if (type is 0x01 or 0x06) trackCues.Add(new TickCue(tick, Encoding.UTF8.GetString(payload)));
+                    else if (type == 0x05 && trackName is ("PART VOCALS" or "HARM1")) trackCues.Add(new TickCue(tick, Encoding.UTF8.GetString(payload), Type: "lyric"));
                     else if (type == 0x51)
                     {
                         if (payload.Length != 3) throw new InvalidDataException("Invalid MIDI tempo");
@@ -356,6 +363,7 @@ internal static class StageChartReader
             var direction = DirectionTrack(trackName);
             if (direction.Length > 0) cues.AddRange(trackCues.Select(c => c with { Type = direction }));
             else if (trackName is not ("VENUE" or "EVENTS")) cues.AddRange(trackCues.Where(c => c.Note < 0 && Gh3Text(c.Text)));
+            if (trackName is "PART VOCALS" or "HARM1") vocals[trackName] = MidiVocals(trackCues, resolution).ToList();
             if (trackName is "PART GUITAR" or "PART BASS" or "PART RHYTHM")
                 cues.AddRange(trackCues.Where(c => c.Note is >= 96 and <= 100).Select(c => c with
                 {
@@ -365,7 +373,37 @@ internal static class StageChartReader
         var venue = StageRockBandVenue.Decode(venueNotes, venueTexts, resolution, end, out var diagnostic, out var custom);
         cues.AddRange(custom.Select(text => new TickCue(text.Tick, text.Text)));
         var generated = StageGeneratedDirection.FromSections(sections, resolution, end);
+        cues.AddRange(vocals.GetValueOrDefault("PART VOCALS") is { Count: > 0 } lead ? lead : vocals.GetValueOrDefault("HARM1") ?? new());
         return ConvertTicks(cues, tempos, resolution, 0, "notes.mid", venue, generated, diagnostic);
+    }
+
+    // Sung syllables for the singer's lip sync (StageLipSync). PART VOCALS pitched notes 36-84 give the times and
+    // lengths; the lyric at the same tick gives the text. A note without a lyric continues the previous syllable.
+    // A vocal track with lyrics but no pitched notes uses the .chart rule with the phrase markers 105 and 106.
+    private static IEnumerable<TickCue> MidiVocals(List<TickCue> track, int resolution)
+    {
+        var lyrics = track.Where(cue => cue.Note < 0 && (cue.Type == "lyric" || !cue.Text.TrimStart().StartsWith('['))).ToArray();
+        var notes = track.Where(cue => cue.Note is >= 36 and <= 84).OrderBy(cue => cue.Tick).ToArray();
+        if (notes.Length == 0)
+        {
+            var phrases = track.Where(cue => cue.Note is 105 or 106).SelectMany(cue => new[] { (cue.Tick, "phrase_start"), (cue.Tick + cue.Length, "phrase_end") });
+            return ChartLyrics(lyrics.Select(cue => (cue.Tick, "lyric " + cue.Text)).Concat(phrases).ToList(), resolution);
+        }
+        var text = lyrics.GroupBy(cue => cue.Tick).ToDictionary(group => group.Key, group => group.First().Text.Trim());
+        return notes.Select(note => new TickCue(note.Tick, text.GetValueOrDefault(note.Tick, "+"), 0, "sing", "singer", Math.Max(1, note.Length)));
+    }
+
+    // .chart lyrics have no length: a syllable lasts until the next lyric or the phrase end, at most two beats.
+    private static IEnumerable<TickCue> ChartLyrics(List<(long Tick, string Text)> events, int resolution)
+    {
+        var ordered = events.OrderBy(e => e.Tick).ThenBy(e => e.Text.StartsWith("lyric ", StringComparison.Ordinal) ? 1 : 0).ToArray();
+        for (var i = 0; i < ordered.Length; i++)
+        {
+            if (!ordered[i].Text.StartsWith("lyric ", StringComparison.Ordinal)) continue;
+            var next = Array.FindIndex(ordered, i + 1, e => e.Tick > ordered[i].Tick && e.Text != "phrase_start");
+            var stop = next < 0 ? ordered[i].Tick + resolution : ordered[next].Tick;
+            yield return new TickCue(ordered[i].Tick, ordered[i].Text[6..].Trim(), 0, "sing", "singer", Math.Clamp(stop - ordered[i].Tick, 1, 2L * resolution));
+        }
     }
 
     private static bool Gh3Text(string text) => text.Trim().TrimStart('[').TrimStart().StartsWith("gh3 ", StringComparison.OrdinalIgnoreCase);
@@ -382,6 +420,7 @@ internal static class StageChartReader
         var rate = 500000.0;
         var output = new List<StageCue>();
         var noteStrums = new List<StageCue>();
+        var sung = new List<StageCue>();
         double Seconds(long tick)
         {
             long previous = 0;
@@ -408,6 +447,11 @@ internal static class StageChartReader
                 rate = change.Microseconds;
             }
             var time = seconds + (cue.Tick - lastTick) * rate / (resolution * 1000000.0);
+            if (cue.Type == "sing")
+            {
+                sung.Add(new StageCue(time, "sing", cue.Text, Seconds(checked(cue.Tick + cue.Length)) - time, "singer"));
+                continue;
+            }
             var converted = cue.Type.Length > 0 && cue.Note >= 0 ? new StageCue(time, cue.Type, cue.Note.ToString(CultureInfo.InvariantCulture),
                 Seconds(checked(cue.Tick + cue.Length)) - time, cue.Role, Velocity: cue.Velocity) :
                 cue.Note >= 0 ? StageTimeline.FromGh3Note(time, cue.Note) : StageTimeline.FromText(time, cue.Text);
@@ -415,7 +459,7 @@ internal static class StageChartReader
         }
         var chords = noteStrums.GroupBy(c => (c.Time, c.Role)).Select(g =>
             new StageCue(g.Key.Time, "strum", g.Aggregate(0, (mask, c) => mask | int.Parse(c.Value)).ToString(), g.Max(c => c.Duration), g.Key.Role)).ToArray();
-        var timeline = new StageTimeline(timing.Concat(output).Concat(chords), source);
+        var timeline = new StageTimeline(timing.Concat(output).Concat(chords).Concat(sung), source);
         if (changes.Length > 0 && changes[0].Tick > 0)
             timing = new[] { new StageCue(offset, "tempo", "120") }.Concat(timing).ToArray();
         StageCue[] Convert(List<StageTickCue>? ticks) => (ticks ?? new()).OrderBy(c => c.Tick).Select(c =>
@@ -428,7 +472,7 @@ internal static class StageChartReader
         var mapped = Convert(venue);
         var diagnostics = diagnostic == null ? Array.Empty<string>() : new[] { diagnostic, "Rock Band VENUE cues (first 16): " +
             string.Join(", ", mapped.Take(16).Select(c => $"{c.Time.ToString("0.000", CultureInfo.InvariantCulture)} {c.Type} {c.Value}")) };
-        return new(timeline, output.ToArray(), chords, timing) { Venue = mapped, Generated = Convert(generated), Diagnostics = diagnostics };
+        return new(timeline, output.ToArray(), chords, timing) { Venue = mapped, Generated = Convert(generated), Diagnostics = diagnostics, Vocals = sung.ToArray() };
     }
 
     private sealed class MidiCursor

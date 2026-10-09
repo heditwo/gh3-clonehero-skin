@@ -195,7 +195,7 @@ Crowd roles are `crowd1` through `crowd8`; they are separate from band roles. Cr
 
 The library supplies a catalog of valid stances, actions, styles, and clip IDs for each profile. The initial profiles have different capabilities: for example, the drummer has idle groups rather than guitarist jump groups. A cue must select an action from the target role's catalog. If the current stance has no variation for a valid action, the shared GH3 fallback rules select an idle. The importer reports unresolved original clip references.
 
-`immediate` interrupts the current body clip when true. Otherwise body commands wait for the current clip boundary. `loop` repeats an action until a later body command changes it; `count` supplies a repeat count when `loop` is false. `disableArms` uses the same `0`/`1`/`2` meanings as the `arms` event and belongs to the selected body action. Face, drum, and hand layers use their own GH3 timing rules. Lyrics alone do not provide facial animation.
+`immediate` interrupts the current body clip when true. Otherwise body commands wait for the current clip boundary. `loop` repeats an action until a later body command changes it; `count` supplies a repeat count when `loop` is false. `disableArms` uses the same `0`/`1`/`2` meanings as the `arms` event and belongs to the selected body action. Face, drum, and hand layers use their own GH3 timing rules. Without `face` cues for the singer, the chart's vocals move the singer's mouth ([Lip sync from vocals](#lip-sync-from-vocals)).
 
 ### Channel selection and fallback
 
@@ -233,7 +233,7 @@ Two channels have source rules that preserve the playable chart:
 - **Strums:** explicit song-file cues, then explicit chart direction cues, then gestures derived from the chart's Expert guitar/bass notes, then the original-song library. A camera-only file therefore keeps note-driven playing gestures.
 - **Timing:** use the playable chart's tempo map when available. File timing is a fallback for charts without timing data, followed by original-song timing and the shared default tempo. `timing` cannot appear in `clearChannels`.
 
-Missing body cues use GH3 idle groups at the song tempo. Missing camera cues use automatic selection from the stage's camera bank. Missing lighting cues keep the initial lighting state (the venue's `intro` mood). Missing effects produce no bursts. Missing face or drum direction adds no song-specific facial or drum-hit layers. Clearing a channel selects these same defaults, without the cues of steps 4 and 5; it does not hide the performer or disable the stage.
+Missing body cues use GH3 idle groups at the song tempo. Missing camera cues use automatic selection from the stage's camera bank. Missing lighting cues keep the initial lighting state (the venue's `intro` mood). Missing effects produce no bursts. Missing drum direction adds no drum-hit layers. Missing face direction adds no GH3 facial clips; the singer then gets lip sync from the chart's vocals, if the chart has them. Clearing a channel selects these same defaults, without the cues of steps 4 and 5; it does not hide the performer or disable the stage.
 
 Version 1 files keep their complete-timeline replacement behavior. Migrating a full original export to version 2 must check the new channel boundaries, especially the combined body and lighting channels. Raw legacy `vocal` and `crowd` note tracks remain import metadata until a playback rule is implemented; they are not advertised as version 2 authored features.
 
@@ -511,6 +511,22 @@ A chart with no camera or lighting source (no GH track, no VENUE track, no song 
 - A chart without sections gets the `verse` mood at time 0 and the bar steps. The camera keeps GH3's random cuts.
 
 Before this, such a chart stayed in the `intro` mood for the whole song. Set `GH3_SKIN_GENERATED_DIRECTION=off` to get that behavior (for example, for older reference captures).
+
+### Lip sync from vocals
+
+In GH3, the singer's face moves only with facial clips for each song (`Band_PlayFacialAnim` rows in the song's `_performance` array, for example five clips of 20 to 65 seconds in My Curse). A custom chart has none. When the singer has no `face` cue from any source, the mod moves the singer's mouth from the sung syllables of the chart:
+
+| Source | Syllables |
+| --- | --- |
+| MIDI `PART VOCALS` (else `HARM1`) | Each pitched note (36 to 84) is one syllable, with its MIDI length. The lyric at the same tick gives the text. A note without a lyric, or with the lyric `+`, continues the previous syllable. Percussion notes (96, 97) and text events in brackets are ignored |
+| MIDI vocal track with lyrics but no pitched notes | Each lyric lasts until the next lyric or the end of its phrase (notes 105 and 106), at most two beats |
+| `.chart` `[Events]` | `lyric TEXT` events, with the same rule and `phrase_start` and `phrase_end` |
+
+For each syllable the mouth opens 0.05 s before the note over 0.1 s, holds for the note (a long vowel relaxes to 75 %), and closes over 0.12 s after it. Between two syllables the mouth closes for a short time, as for a consonant. The first vowel of the text sets the shape: `a` opens the most, `o` and `u` round the lips, `e` and `i` widen them. Spoken notes (`#`, `^`) open less. The jaw opens at most 30 degrees.
+
+The mouth shapes come from the 570 GH3 singer facial clips (`tools/lipsync-shapes.py`): the motion of 18 jaw, lip, cheek, and tongue bones per degree of jaw opening, and the main mouth-width motion. The mod adds them to the body clip in the bone's own axes, as GH3's `applydifference` does. From the first to the last sung syllable, the eyes blink at random intervals of 2 to 18 seconds (fixed for each song). The mod does not move the brows: the brow motion of the GH3 clips has no relation to the jaw.
+
+GH3 facial clips always have priority: a native song, an original song from the library, or a `face` cue keeps the GH3 face exactly. The guitarist does not get lip sync. Set `GH3_SKIN_LIPSYNC=off` to keep the face still (a later F6 picker option can set `StageLipSync.Enabled`). The mod does not analyze audio: the four tested Rock Band charts with a `vocals` stem also have `PART VOCALS`, and the song mix cannot isolate the voice.
 
 ### GH3 script calls in charts
 

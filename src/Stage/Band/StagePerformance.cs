@@ -260,6 +260,7 @@ internal sealed class PerformancePlayer
     private readonly StageDrummer? _drummer;
     private readonly StageBlendTrack[] _armTracks = Array.Empty<StageBlendTrack>();
     private readonly StageGuitarRig? _rig;
+    private readonly StageLipSync? _lipSync;
     private readonly BandPose[] _armDelta;
     private readonly bool[] _armTouched;
     private const double ArmsBlendTime = 0.25;
@@ -297,6 +298,7 @@ internal sealed class PerformancePlayer
             _armTracks = new[] { StrumTrack(constants), FretTrack(constants), FingerTrack(constants) };
         }
         if (role == "drummer") _drummer = new StageDrummer(member, timeline, constants ?? new Dictionary<string, float>());
+        _lipSync = StageLipSync.Create(timeline, role, member.Bones);
     }
 
     public Segment At(double time)
@@ -318,6 +320,7 @@ internal sealed class PerformancePlayer
     }
 
     public PerformanceClipCache Clips => _clips;
+    public StageLipSync? LipSync => _lipSync;
 
     public void Sample(double time, double walkAge = -1, float walkWeight = 1)
     {
@@ -358,6 +361,7 @@ internal sealed class PerformancePlayer
         var face = Last(_timeline.Track("face", _role), time);
         if (face != null && _member.Clips.TryGetValue(face.Value, out var info) && time < face.Time + info.Duration)
             Clip(face.Value).Apply(Pose, _bind, time - face.Time, weight: (float)Math.Clamp((time - face.Time) / 0.1, 0, 1));
+        _lipSync?.Apply(Pose, time);
         var next = _segments[Math.Min(index + 1, _segments.Count - 1)];
         _ = Clip(next.Clip);
     }

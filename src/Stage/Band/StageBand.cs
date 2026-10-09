@@ -189,7 +189,16 @@ internal sealed class StageBand : IDisposable
             }
         }
         MelonLogger.Msg($"GH3 original performance: {timeline.Track("stance", "guitarist").Length} guitar stance cues; " +
-            $"{timeline.Track("drum").Length} drum cues; {timeline.Track("face", "singer").Length} singer facial cues");
+            $"{timeline.Track("drum").Length} drum cues; {timeline.Track("face", "singer").Length} singer facial cues; " +
+            LipSyncSummary(timeline));
+    }
+
+    private string LipSyncSummary(StageTimeline timeline)
+    {
+        var sung = timeline.Track("sing", "singer").Length;
+        var lipSync = _players.FirstOrDefault(p => p.Role == "singer")?.Performance?.LipSync;
+        if (lipSync != null) return $"lip sync from {sung} sung notes ({lipSync.Syllables.Length} syllables)";
+        return sung == 0 ? "no sung notes" : $"lip sync off ({sung} sung notes; {(StageLipSync.Enabled ? "GH3 facial clips or no singer jaw" : "GH3_SKIN_LIPSYNC=off")})";
     }
 
     public BandPose? Anchor(string role, string bone)
