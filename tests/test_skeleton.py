@@ -11,9 +11,10 @@ from pathlib import Path
 
 import numpy as np
 
-from pipeline.package import skeleton
+from pipeline.package import humanoid as humanoid_finder, skeleton
 
 FIXTURE = Path(__file__).resolve().parent/"fixtures"/"retarget-case.json"
+FIXTURE_ANY = Path(__file__).resolve().parent/"fixtures"/"retarget-any-rig.json"
 SIDES = (("l", "left", 1), ("r", "right", -1))
 
 
@@ -80,6 +81,40 @@ def target_rig(seed=3, scale=0.85):
     return names, parents, bind, humanoid, followers
 
 
+def any_rig(seed=5, scale=1.1):
+    """A skeleton that the automatic map can give for other rigs: five spine bones (three with a role, the others
+    between them), a neck of two bones, hands without a middle finger, two-joint thumbs, no shoulders, no toes, an A-pose,
+    bone rolls, and another size."""
+    random = np.random.default_rng(seed)
+    rows = [("root", None, (0, 0, 0)), ("pelvis", "root", (0, 1.0, 0)), ("spine_01", "pelvis", (0, 1.07, 0)), ("spine_02", "spine_01", (0, 1.14, 0.01)),
+            ("spine_03", "spine_02", (0, 1.21, 0.02)), ("spine_04", "spine_03", (0, 1.28, 0.03)), ("spine_05", "spine_04", (0, 1.35, 0.03)),
+            ("neck_01", "spine_05", (0, 1.45, 0.03)), ("neck_02", "neck_01", (0, 1.49, 0.03)), ("head", "neck_02", (0, 1.53, 0.02))]
+    humanoid = {"hips": "pelvis", "spine": "spine_01", "chest": "spine_03", "upperChest": "spine_05", "neck": "neck_01", "head": "head"}
+    for s, side, sign in SIDES:
+        rows += [(f"upperarm_{s}", "spine_05", (sign * 0.17, 1.4, 0.03)), (f"lowerarm_{s}", f"upperarm_{s}", (sign * 0.36, 1.21, 0.03)),
+                 (f"hand_{s}", f"lowerarm_{s}", (sign * 0.53, 1.04, 0.03)), (f"index_01_{s}", f"hand_{s}", (sign * 0.6, 0.98, 0.0)),
+                 (f"index_02_{s}", f"index_01_{s}", (sign * 0.63, 0.95, 0.0)), (f"ring_01_{s}", f"hand_{s}", (sign * 0.6, 0.98, 0.04)),
+                 (f"pinky_01_{s}", f"hand_{s}", (sign * 0.59, 0.99, 0.06)), (f"thumb_01_{s}", f"hand_{s}", (sign * 0.55, 1.02, -0.035)),
+                 (f"thumb_02_{s}", f"thumb_01_{s}", (sign * 0.57, 1.0, -0.075)),
+                 (f"thigh_{s}", "pelvis", (sign * 0.1, 0.95, 0.0)), (f"calf_{s}", f"thigh_{s}", (sign * 0.1, 0.52, 0.01)), (f"foot_{s}", f"calf_{s}", (sign * 0.1, 0.08, 0.0))]
+        humanoid.update({f"{side}UpperArm": f"upperarm_{s}", f"{side}LowerArm": f"lowerarm_{s}", f"{side}Hand": f"hand_{s}",
+                         f"{side}IndexProximal": f"index_01_{s}", f"{side}IndexIntermediate": f"index_02_{s}", f"{side}RingProximal": f"ring_01_{s}",
+                         f"{side}LittleProximal": f"pinky_01_{s}", f"{side}ThumbMetacarpal": f"thumb_01_{s}", f"{side}ThumbProximal": f"thumb_02_{s}",
+                         f"{side}UpperLeg": f"thigh_{s}", f"{side}LowerLeg": f"calf_{s}", f"{side}Foot": f"foot_{s}"})
+    names = [r[0] for r in rows]
+    parents = [names.index(r[1]) if r[1] else -1 for r in rows]
+    world = np.array([r[2] for r in rows], dtype=float) * scale
+    rotation = random.normal(size=(len(rows), 4))
+    rotation[:, 3] = np.abs(rotation[:, 3]) + 0.3
+    rotation /= np.linalg.norm(rotation, axis=1, keepdims=True)
+    bind = []
+    for i, p in enumerate(parents):
+        if p < 0: bind.append([*world[i], *rotation[i]]); continue
+        inverse = skeleton.qinv(rotation[p])
+        bind.append([*skeleton.qrotate(inverse, world[i] - world[p]), *skeleton.qnorm(skeleton.qmul(inverse, rotation[i]))])
+    return names, parents, bind, humanoid, []
+
+
 def poses(source_parents, source_bind, frames=6, seed=11):
     random = np.random.default_rng(seed)
     count = len(source_parents)
@@ -95,9 +130,9 @@ def poses(source_parents, source_bind, frames=6, seed=11):
     return t, q, gains
 
 
-def run_case():
+def run_case(rig=target_rig):
     names, bones, source_parents, source_bind = gh3_rig()
-    target_names, parents, bind, humanoid, followers = target_rig()
+    target_names, parents, bind, humanoid, followers = rig()
     index = {n: i for i, n in enumerate(target_names)}
     t, q, gains = poses(source_parents, source_bind)
     retarget = skeleton.Retarget(bones, source_parents, source_bind, target_names, parents, bind, {r: index[b] for r, b in humanoid.items()},
@@ -159,6 +194,50 @@ class AutoMapTest(unittest.TestCase):
         self.assertEqual(skeleton.auto_face(["Fcl_EYE_Close", "Fcl_MTH_A", "Fcl_MTH_O"]), {"blink": "Fcl_EYE_Close", "a": "Fcl_MTH_A", "o": "Fcl_MTH_O"})
 
 
+class FindTest(unittest.TestCase):
+    """The automatic map from the skeleton alone (pipeline/package/humanoid.py): names that say nothing, a turned model, a
+    mirrored model, helper bones without weights."""
+
+    def world(self, rig=any_rig):
+        """Joint positions in glTF coordinates (right-handed: +Y up, the model looks toward +Z, its left side on +X)."""
+        names, parents, bind, humanoid, _ = rig()
+        position, _ = skeleton.world_positions(parents, bind)
+        return names, parents, position * [1, 1, -1], humanoid
+
+    def check(self, names, parents, heads, humanoid, weights=None, **expect):
+        found = humanoid_finder.find(names, parents, heads, weights=weights)
+        self.assertTrue(found["found"], found["notes"])
+        got = {role: names[bone] for role, bone in found["roles"].items()}
+        for role in skeleton.REQUIRED: self.assertEqual(got.get(role), humanoid[role], role)
+        for key, value in expect.items(): self.assertEqual(found[key], value, key)
+        return found
+
+    def test_names_say_nothing(self):
+        names, parents, heads, humanoid = self.world()
+        anonymous = [f"joint{i}" for i in range(len(names))]
+        self.check(anonymous, parents, heads, {r: f"joint{names.index(b)}" for r, b in humanoid.items()})
+
+    def test_turned_and_scaled(self):
+        names, parents, heads, humanoid = self.world()
+        # glTF (+Y up, +Z front) to a Z-up model that looks toward +X, in centimetres.
+        turned = np.stack([heads[:, 2], heads[:, 0], heads[:, 1]], 1) * 100
+        found = self.check(names, parents, turned, humanoid)
+        np.testing.assert_allclose(found["frame"]["up"], [0, 0, 1], atol=1e-6)
+        np.testing.assert_allclose(found["frame"]["forward"], [1, 0, 0], atol=1e-6)
+
+    def test_mirrored_names(self):
+        names, parents, heads, humanoid = self.world()
+        mirrored = heads * [-1, 1, 1]
+        swap = {r: humanoid[("right" + r[4:]) if r.startswith("left") else ("left" + r[5:]) if r.startswith("right") else r] for r in humanoid}
+        self.check(names, parents, mirrored, swap, mirrored=True)
+
+    def test_helpers_without_weights(self):
+        names, parents, heads, humanoid = self.world()
+        names, parents, heads = names + ["ik_hand_l", "pole_l"], parents + [0, 0], np.vstack([heads, heads[names.index("hand_l")], [0.3, 0.5, 0.6]])
+        weights = [0 if n in ("root", "ik_hand_l", "pole_l") else 10 for n in names]
+        self.check(names, parents, heads, humanoid, weights)
+
+
 class CheckTest(unittest.TestCase):
     def test_target_rig_is_valid_and_errors(self):
         names, parents, bind, humanoid, followers = target_rig()
@@ -185,6 +264,20 @@ class RetargetFixtureTest(unittest.TestCase):
             np.testing.assert_allclose(ours["targetPositions"], theirs["targetPositions"], atol=1e-6)
             np.testing.assert_allclose(np.abs(np.sum(np.array(ours["targetRotations"]) * theirs["targetRotations"], -1)), 1, atol=1e-6)
         self.assertLess(abs(retarget.hip_scale - 0.85), 0.05)
+
+    def test_any_rig_fixture(self):
+        case, retarget = run_case(any_rig)
+        if os.environ.get("RETARGET_FIXTURE_WRITE") == "1": FIXTURE_ANY.write_text(json.dumps(case, separators=(",", ":")) + "\n")
+        stored = json.loads(FIXTURE_ANY.read_text())
+        for ours, theirs in zip(case["frames"], stored["frames"]):
+            np.testing.assert_allclose(ours["targetPositions"], theirs["targetPositions"], atol=1e-6)
+            np.testing.assert_allclose(np.abs(np.sum(np.array(ours["targetRotations"]) * theirs["targetRotations"], -1)), 1, atol=1e-6)
+        names = case["names"]
+        # The spine bones without a role turn part of the way between their role neighbours.
+        self.assertEqual({names[b]: round(float(f), 1) for b, (_, _, f) in retarget.between.items()}, {"spine_02": 0.5, "spine_04": 0.5, "neck_02": 0.5})
+        # The hand points to the ring finger (no middle finger), and the arm IK uses its base.
+        self.assertEqual(skeleton.next_role("leftHand", lambda r: r in case["humanoid"]), "leftRingProximal")
+        self.assertTrue(all(arm[4] >= 0 for arm in retarget.arms))
 
 
 if __name__ == "__main__":
