@@ -74,3 +74,85 @@ Do not write a number with a meaning in a function. Give it a name at the top of
 
 - Run the commands as modules: `python -m pipeline.<module>`. Parse the arguments in `main()` with `argparse`, and use `description=__doc__.splitlines()[0]`.
 - Use the same argument names: `--data` (the GH3 `DATA` folder), `--output`, `--library`, `--character-library`, `--only`, `--json`.
+
+## C#
+
+The C# code is the mod (`src/`), the logic tests (`tests/*.cs`), and the C# tools (`tools/PackageImport` and `tools/Gh3SongTool` link mod files).
+
+### Files and modules
+
+- One main type for each file. The file has the name of the type. Small records and enums that only this type uses can stay in its file.
+- A large type is split into partial files along its parts: `<Type>.<Part>.cs`, for example `Gh3ScriptRuntime.Builtins.cs` and `StageCompiler.Materials.cs`. A file of more than about 500 lines is a candidate for a split.
+- Each file starts with a comment of one or two lines that says what the file is for.
+- The modules and their boundaries are in [ARCHITECTURE.md](ARCHITECTURE.md#runtime-modules). Keep these boundaries:
+  - `src/Native` and `src/Packages` (except `PackageRuntime`) do not use Unity. The tests and the tools link them.
+  - The state classes of `src/Stage` and `src/Hud` that the tests link (see `tests/SkinLogic.Tests.csproj`) do not use Unity.
+  - Only `CloneHeroBindings` calls obfuscated Clone Hero members.
+- When you add a file that a linked file needs, add it to `tests/SkinLogic.Tests.csproj` and, for `src/Packages`, `src/Stage/Band/StageHair*.cs`, and their helpers, to `tools/PackageImport/PackageImport.csproj`.
+
+### Names
+
+- Types, methods, properties, and constants: PascalCase. Private fields: `_camelCase`. Locals and parameters: camelCase.
+- Write words in full: `Maximum`, `Minimum`, `Position`, `Rotation`. Common short forms are permitted: `Id`, `Uv`, `Fps`, `Ik`.
+- Prefix GH3 names with `Gh3` when a plain name is not clear (`Gh3QbType`, `Gh3ScriptOp`, `Gh3Keys`). Stage parts start with `Stage`.
+- A name says what the value is, not where it comes from: `PulseSeconds`, not `Value27`.
+
+### C# constants
+
+Do not write a number with a meaning directly in the code. Give it a name, or put a source note on it. The literal guard (`tests/LiteralGuardTests.cs`) checks this rule in `src/Stage`, `src/Hud`, `src/Gameplay`, and `src/Native`.
+
+- A number is trivial and needs no name when it is an integer from 0 to 16, a half or a quarter, a power of two to 256, 24, 60, 90, 100, 180, 255, 360, 1000, or `1e-6`, and also `0xff`, `0xffff`, `0xffffffff`.
+- Put a constant in a `const` or `static readonly` field near its use. Put constants that several files use in a constants file (`*Constants.cs`, for example `Gh3QbConstants.cs`, `Gh3NoteConstants.cs`, `StageParticleConstants.cs`, `Gh3GameConstants.cs`) or in a shared class (`StageLimits`, `StageTolerance`, `HudCanvas`, `RenderQueue`).
+- Keep the type of the literal. A `const int` replaces an integer literal, a `const float` a `float` literal (`2f`), a `const double` a `double` literal. A changed type can change the arithmetic.
+- Classify each constant with a marker at the start of its comment:
+
+| Class | Marker | Use |
+| --- | --- | --- |
+| (a) GH3 data | `GH3:` | A value from the GH3 binary, a QB script, or GH3 data files. Give the source: a GH3.exe address (`GH3.exe 0x477120`), a script and field (`guitar_hud_2d.qb, num_a9 at (222, 70)`), or a section of [PARITY-NOTES.md](PARITY-NOTES.md) |
+| (b) Measured | `Measured:` | A value measured from GH3: recordings, memory, or extracted data. Give the method or the tool (`tools/lipsync-shapes.py`) |
+| (c) Tuned | `Tuned:` | A value that we chose or calibrated by eye. Say what it controls. If a GH3 source can exist, say "GH3 source not found" |
+| (d) Engineering | none | Limits against corrupt data, file layouts of our own formats, tolerances, capacities. Give a name that says what it is |
+
+- A marker covers its statement: the comment on the same line, or the comment block directly above the statement. A comment above a group of constants covers the group.
+- Name GH3 checksums. `Gh3Keys` holds checksums of known names as constants (a test checks each one against its name). A checksum without a known name stays as a hex literal with a `GH3:` note, for example `0x1e2ee0ec`.
+- Data tables of measured or GH3 values stay in `static readonly` arrays with their source note above the table. Large tables go to their own partial file (`StageLipSync.Shapes.cs`).
+
+To see the literals that the guard rejects, or to check other folders:
+
+```bash
+MISE_QUIET=1 dotnet build tests/SkinLogic.Tests.csproj -c Release --nologo
+GH3_LITERAL_REPORT=1 dotnet tests/bin/Release/net10.0/SkinLogic.Tests.dll
+GH3_LITERAL_REPORT=1 GH3_LITERAL_FOLDERS=src/Packages,src/Menu,src dotnet tests/bin/Release/net10.0/SkinLogic.Tests.dll
+```
+
+`tests/fixtures/literal-allowlist.txt` lists the literals that the guard accepts without a name or a marker. Keep it empty if possible.
+
+### Comments
+
+- Write a comment only for the reason ("why") or for a source. Do not write a comment that tells what the next line does.
+- Keep the GH3 source citations, and make them exact (address, script, field).
+- Write comments in ASD-STE100 Simplified Technical English: short sentences, active voice, one meaning for each word.
+- Do not leave commented-out code, old TODO notes, or the history of a change in comments. The Git history keeps them.
+
+### Environment variables
+
+`SkinEnvironment` lists every environment variable that the mod reads, with a name for each one. Read variables only through `SkinEnvironment.Get`, `IsOne` ("1" turns a test switch on), and `IsNotOff` ("off" or "0" turns a feature off). Document a new variable in [VERIFICATION.md](VERIFICATION.md#runtime-variables).
+
+### Il2Cpp rules
+
+The rules of [ARCHITECTURE.md](ARCHITECTURE.md#il2cpp-constraints) apply. Code that follows them can look unusual; do not "simplify" it:
+
+- In per-frame code, do not use Unity struct constructors or operators. Use `System.Numerics` and field initializers (`new Vector4 { x = ... }`). A comment at the place says so where it is not clear.
+- Do not allocate in per-frame code. Keep work arrays in fields; use `static readonly` tables, not `new[] { ... }` in a method that runs each frame.
+- A `static readonly` field of a Unity struct type (for example `Vector2`, `Rect`) runs Unity code when the type initializes. Use `const float` fields for the components instead.
+- Background threads use only managed code: no Unity and no Il2Cpp calls.
+
+### Random numbers
+
+- GH3's own generator is `Gh3Random` (GH3.exe `Rnd`); use it where GH3 draws a value.
+- For the mod's own repeatable choices use `XorShift32` (stateful) or `PcgHash` (stateless). Do not copy the algorithms into other files.
+
+### Tests and checks
+
+- `bash scripts/test.sh` runs all checks. The C# build has no warnings (`dotnet build src/Gh3Skin.csproj -c Release`).
+- A refactor does not change behavior. To show it, compare the method IL of the old and the new `Gh3Skin.dll` (an IL disassembler such as ICSharpCode.Decompiler), the hair bench output (`GH3_HAIR_BENCH`), the package cache of `tools/PackageImport`, and captures of the same song times ([VERIFICATION.md](VERIFICATION.md#compare-two-builds)).

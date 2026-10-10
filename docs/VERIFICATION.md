@@ -6,7 +6,7 @@
 MISE_QUIET=1 scripts/test.sh
 ```
 
-The script runs the C# logic tests (`tests/SkinLogic.Tests.csproj`, .NET 10 SDK), `ruff check`, `ruff format --check`, and `mypy` on the Python code ([CODE-STYLE.md](CODE-STYLE.md#python)), the Python tests (`tests/test_*.py`), and a syntax check of the shell scripts. `tests/test_docs_links.py` checks that every relative link and anchor in the Markdown files resolves and that each Mermaid diagram is small (at most 16 nodes). Also build the mod with zero warnings:
+The script runs the C# logic tests (`tests/SkinLogic.Tests.csproj`, .NET 10 SDK; they include the literal guard of [CODE-STYLE.md](CODE-STYLE.md#c-constants)), `ruff check`, `ruff format --check`, and `mypy` on the Python code ([CODE-STYLE.md](CODE-STYLE.md#python)), the Python tests (`tests/test_*.py`), and a syntax check of the shell scripts. `tests/test_docs_links.py` checks that every relative link and anchor in the Markdown files resolves and that each Mermaid diagram is small (at most 16 nodes). Also build the mod with zero warnings:
 
 ```bash
 MISE_QUIET=1 dotnet build src/Gh3Skin.csproj -c Release --nologo
