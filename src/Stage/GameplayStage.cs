@@ -1,3 +1,4 @@
+using System.Runtime;
 using Il2Cpp;
 using MelonLoader;
 using UnityEngine;
@@ -664,6 +665,11 @@ internal sealed class GameplayStage
             _handFire = StageHandFire.Load(Path.Combine(library, "hand-fire"), _assets, _root, _camera, Layer, _band);
             StageModelPrefetch.Clear();
             steps.Step("crowd clips, effects, hand fire");
+            // The read-ahead buffers (meshes, JSON, clips) are garbage now; a compacting collection gives the memory back
+            // before the song instead of at a random frame during it.
+            GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+            GC.Collect();
+            steps.Step("collection");
             steps.Finish("stage loaded");
             LoadTiming.FlushSections("stage load");
             MelonLogger.Msg($"GH3 stage loaded: {_assets.Definition.Name}");
