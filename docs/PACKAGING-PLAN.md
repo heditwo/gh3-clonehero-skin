@@ -27,6 +27,7 @@ Prepare the mod for a public release to the Clone Hero community:
 | 10 | Direction | Charts without direction get generated cues by default (an option turns them off). The Rock Band `VENUE` mapping choices in [CUSTOM-CONTENT.md](CUSTOM-CONTENT.md#rock-band-venue-track) are accepted. |
 | 11 | Upstream | No upstream report of the MelonLoader Dobby hook-page bug. |
 | 12 | Format versions | Before the first release, the format has no compatibility rules. Format 1.1 goes into 1.0, and new features (for example custom hair chains) change 1.0 directly. There are no `minModVersion` gates for our own packages. The format becomes frozen at the first release. |
+| 13 | Custom skeletons | Custom characters keep their own skeleton. The mod retargets the GH3 clips to it (bone map, rest-pose correction, rotations only, arm IK with the character's arm lengths, own shape keys for blink and lip sync). GH3 characters keep their original clips. This work starts after the custom hair chains. |
 
 ## 3. Research summary
 
