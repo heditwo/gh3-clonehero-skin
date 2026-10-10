@@ -19,7 +19,7 @@ Each zip has one folder with `Mods/`, the install script, this guide, `release.j
    - Removes the files of an earlier mod version (`Mods/GH3Skin/assets`, `Packages`, `render`, and `counter-tuning.json`). It keeps your choices and the cache in `UserData/GH3Skin`.
    - Copies `Mods/Gh3Skin.dll` and `Mods/GH3Skin/` into the game folder.
    - Writes `clonehero-melonloader.sh` into the game folder. MelonLoader on Linux loads only when you start the game with this file.
-5. Start the game with `clonehero-melonloader.sh`. The first start takes some minutes and needs the internet: MelonLoader prepares its files. Then the mod imports the stages and the characters (about 45 seconds). The game shows the menus while the mod imports.
+5. Start the game with `clonehero-melonloader.sh`. The first start takes some minutes and needs the internet: MelonLoader prepares its files. Then the mod imports the stages, the characters, and the instruments (about 30 seconds on a PC with 8 cores). The game shows the menus while the mod imports.
 6. Close the game, and do step 3 again. Now the script sets `force_offline_generation = true` in `UserData/Loader.cfg`. MelonLoader then does not connect to the internet at each start.
 7. Always start the game with `clonehero-melonloader.sh`.
 
@@ -32,7 +32,7 @@ Each zip has one folder with `Mods/`, the install script, this guide, `release.j
    - Downloads MelonLoader 0.7.3 (64-bit) from GitHub, checks its SHA-256 value, and extracts it into the game folder. If MelonLoader 0.7.3 is already installed, the script keeps it.
    - Removes the files of an earlier mod version (`Mods\GH3Skin\assets`, `Packages`, `render`, and `counter-tuning.json`). It keeps your choices and the cache in `UserData\GH3Skin`.
    - Copies `Mods\Gh3Skin.dll` and `Mods\GH3Skin\` into the game folder.
-4. Start Clone Hero one time. This first start takes some minutes and needs the internet: MelonLoader prepares its files. Then the mod imports the stages and the characters (about 45 seconds). The game shows the menus while the mod imports.
+4. Start Clone Hero one time. This first start takes some minutes and needs the internet: MelonLoader prepares its files. Then the mod imports the stages, the characters, and the instruments (about 30 seconds on a PC with 8 cores). The game shows the menus while the mod imports.
 5. Close the game, and do step 2 again. Now the script sets `force_offline_generation = true` in `UserData\Loader.cfg`. MelonLoader then does not connect to the internet at each start.
 6. Start Clone Hero. The mod uses Direct3D 11, the Windows default. You do not need a launch option.
 

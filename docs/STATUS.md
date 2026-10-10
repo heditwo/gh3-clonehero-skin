@@ -193,6 +193,52 @@ Records of the step 6 checks (2026-10-09). Nothing is published.
 - Release zips: `scripts/build-release.sh` builds `gh3-skin-0.9.8-linux.zip` and `gh3-skin-0.9.8-windows.zip` (1,228.78 MB each), and `chstage_tools-0.1.0.zip` (219,576 bytes) from a clean export of one commit; two builds gave the same bytes. The tests used the zips of 8b45c86. Installed size: `Mods/GH3Skin` 1,228,837,531 bytes and `Gh3Skin.dll` 1,269,248 bytes; the cache after the first start is 1.42 GB on Linux and 1.43 GB on Windows (one more test character). Verified from the zips only, in game copies without `Mods/GH3Skin` and `UserData/GH3Skin`: Linux with `install-linux.sh` and its launcher, and Windows under Wine 11.17 + DXVK 3.1.1 with `install-windows.ps1` (PowerShell 7 for Linux). Cold start: all 12 packages import in 22.0 s (Linux) and 23.8 s (Wine); the stage waits 6.1 s (Linux) and 6.6 s (Wine) for the library and gh3.dive. Warm start: cache check 97–103 ms, stage load 1.7–1.8 s. On gh3.dive with My Curse, the mean RGB difference against the `main` install at song times 2–60 s is 0.3–3.3 on Linux (two `main` runs: 0.5–1.5) and 0.8–7.1 under Wine (two `main` runs: 1.0–5.5); no magenta pixels. `[trace]` values agree in 135/138 (Linux) and 269/274 (Wine) samples, against 136/139 and 271/274 between two `main` runs. The F6 picker shows the 11 stages on both. The MelonLoader download, SHA-256 check, and extraction of both install scripts were tested on folders with only the game's `globalgamemanagers` (the test games had MelonLoader 0.7.3 already). Not tested: real Windows, a first start of a game without MelonLoader assemblies, `install-windows.bat`.
 - Windows (Wine 11.17 + DXVK 3.1.1 on Linux, **not real Windows**): a fresh zip install of Clone Hero 1.1.0.6142 with `install-windows.ps1` (MelonLoader 0.7.3, the mod, the shader bundles, the HUD folders, and the 12 packages; no older install) plays from packages only. Measured: cold import of all packages 24.3–26.6 s (the stage waits 7 s for the library and gh3.dive); warm scan and cache check 95–107 ms; scene to stage loaded 1.4–3.2 s (median 2.2 s, 14 starts); textures BC1/BC3 on Direct3D 11 (364 textures of gh3.dive uploaded in 157 ms); stage audio through `Clone Hero_Data\Plugins\x86_64\bass.dll`. The F6 picker, a stage change, a custom character (`.chchar` in a Unicode group folder), `gh3_stage` in a CRLF `song.ini`, a song `venue.chstage`, a synthetic Rock Band VENUE chart, and the cache clean-up work. Frames at the same song times as Linux: mean RGB difference per frame 0.4–3.1 on dive, 0.5–5.3 on the venue chart, 1.6–8.3 on prison, and 3.1–16.3 on hell (fire, flames, and bot timing); no magenta pixels. Two Linux runs (before and after this change) differ by 0.5–2.6. `[trace]` values (score, streak, multiplier, rock, power, notes, lanes, stage events, audio) agree in 118–120 of 121–122 samples at the same song times (two runs); the others are at a note hit or a sound start between the two sample times. Not tested: real Windows hardware and drivers, the typical installation (`Documents\Clone Hero`), paths longer than 260 characters, `install-windows.bat` and the script under Windows PowerShell 5.1.
 
+## Load times
+
+Measured on 2026-10-10 with `scripts/measure-load.sh` ([VERIFICATION.md](VERIFICATION.md#load-times)) on a Linux game copy with the full package set: 11 stages, 2 libraries, 74 characters (72 GH3 and 2 creator characters), and 108 instruments (195 files, 1.7 GB). Song: My Curse (native chart) on gh3.dive, with a creator character (`custom.miku-sekai`) as the guitarist, Axel Steel as the bassist, and the ES-400 guitar. Values are the median of 3 runs (random stages: 1 run). "Before" is `main` 3313bed with only the timing lines added (e46d027). The PC (16 threads, 15 GB) had about 11 GB of memory in use by other work. At this memory load, the .NET runtime makes every garbage collection a full collection.
+
+| Flow | Measure | Before | After |
+| --- | --- | --- | --- |
+| Warm start | Process start to the first main menu frame | 7.09 s | 6.59 s |
+| | Mod work on the main thread before the first scene | 656 ms | 40 ms |
+| | Package scan and cache check on the main thread | 157 ms | 2 ms (now on a background thread) |
+| Cold start (empty cache) | Process start to the first main menu frame | 7.28 s | 6.61 s |
+| | Package imports (all 195), total | 50.9 s | 25.8 s |
+| | Process start to all packages imported | 58.3 s | 32.6 s |
+| First song after a cold start | Gameplay scene to stage loaded | 9.18 s | 6.97 s |
+| Song start, warm | Gameplay scene to stage loaded | 2.21 s | 1.47 s |
+| | Stage load on the main thread | 1.90 s | 1.11 s |
+| | Gameplay scene to the running song clock | 3.07 s | 2.32 s |
+| Next song, same stage | Stage load on the main thread | 1.13 s | 0.46 s |
+| | Gameplay scene to the running song clock | 1.93 s | 1.26 s |
+| Next songs, random stages | Stage load on the main thread | 0.90 s | 0.45 s |
+| F6 picker | Lists, first preview image | 73 ms, 92 ms | 56 ms, 77 ms |
+| Memory | Peak resident, warm start to the menu | 963 MB | 1,050 MB |
+| | Peak resident, warm song start | 1,188 MB | 1,216 MB |
+| | Resident at song time 0 of the 5th song on the same stage | 1,335 MB | 1,229 MB |
+| | Resident at the 9th song on random stages; peak | 1,515 MB; 1,620 MB | 1,214 MB; 1,394 MB |
+| | Peak resident, cold start with all imports | 1,403 MB | 1,454 MB |
+
+Windows under Wine 11.17 and DXVK (3 warm runs; cold: 1 run before, 2 runs after): mod work at start 675 ms to 44 ms, scan 246 ms to 3 ms, gameplay scene to stage loaded 2.26 s to 1.57 s, stage load 1.95 s to 1.08 s, gameplay scene to the running song clock 3.13 s to 2.45 s; cold start: all imports 61.4 s to 31.1 s, first song stage 11.0 s to 8.2 s after the gameplay scene.
+
+Changes:
+
+- The package scan and the cache check run on a background thread. Two import workers import packages at the same time (at most one library or stage). The cache key of a zip is the SHA-256 of its manifest, not of the zip file ([PACKAGE-FORMAT.md section 14](PACKAGE-FORMAT.md#14-cache)). A faster PNG decoder, the BC error from the encoder, and a faster actor clip sampler: the cache files are byte-equal to `main` (9,787 files of 194 packages).
+- Worker threads decode the skin images; the main thread uploads them a few milliseconds in each frame of the loading screen and the menu (it ends at 6.5–6.7 s, before the first menu frame in the measured starts).
+- The stage load reads the model folders, the actor clips, and the script banks on worker threads while the main thread builds the scene, parses `meshes.bin` without Unity calls, uploads textures from the pinned file bytes, uses one JSON options object, and runs a compacting collection at its end (50 ms; the memory of the next songs is lower than before).
+- Checked: textures (547 skin images) equal to `LoadImage`, all meshes of gh3.dive and gh3.hell with the band, crowd, characters, and instrument equal to the old reader, screenshots of the default band and of the characters with an instrument within the run-to-run differences of `main`, a changed package imports again, a touched package does not, a removed package's cache folder is deleted, and a package in a `Custom/Stages` group folder imports.
+
+What is left:
+
+- MelonLoader and Clone Hero: with a mod that only writes the timing lines, the first main menu frame comes at 6.38–6.73 s (median 6.63 s, 3 runs). MelonLoader takes about 1.5 s before the first code of a mod and about 1 s more for its Il2Cpp support module. The skin adds no measured time before the menu now.
+- JIT: the first song compiles code for about 0.6 s during its stage load (later songs almost none). A ReadyToRun build of `Gh3Skin.dll` (crossgen2 6.0.36) made the first stage load 0.89 s in one run, but most compiled methods are generic and interop code that ReadyToRun does not compile, the image decoder ran 2 times slower, and each platform needs its own DLL: not used.
+- Clone Hero starts the song clock about 0.8 s after the stage load ends (without the stage: 0.97 s after the gameplay scene).
+- Cold start: the band library (3.6 s, all other packages need it) and the song's stage import before the stage can load; the song starts without the stage, and the stage appears when it is ready (as before). The texture steps (PNG decode, mip chain, BC1/BC3) are 77% of the summed import time of the packages (29 of 38 s; two packages import at the same time, so the wall time is 26 s). BC textures in the packages would remove most of it but change the package format, the pipeline, and the add-on.
+- The stage objects are not kept between songs (the next stage load is 0.46 s).
+- The menus were not driven by keys: in the nested Xwayland display, Clone Hero took only the first key. Song starts use `--song`, and song changes use `GH3_SKIN_TIMING_RELOADS`.
+
+Evidence: `~/.cache/load-speed/` (`before/`, `final/`, `win/`, `shots2/`, `full-base/` and `full-final/` for the byte comparison); small images in `/tmp/opencode/load-speed/`.
+
 ## Stability
 
 - Root cause of the random crashes on Linux (found 2026-10-09): MelonLoader 0.7.3 hooks six Il2Cpp functions with Dobby (LavaGang/Dobby `0651926`; the bug is also in its `master`). For each hook, Dobby maps one page with `MAP_FIXED` at (hook target − 2 GB), or (target − 1 GB) for relocated code, and does not check what is mapped there (`search_near_blank_page` in `NearMemoryArena.cc`). In every measured run without the guard, that address was memory in use: CoreCLR's executable reservation (loader heaps, JIT code), ReadyToRun code of framework assemblies (`System.Private.CoreLib.dll`, `System.Text.Json.dll`, `System.Net.Sockets.dll`), or other reservations. Dobby erases that memory, or the owner later writes over the jump address of the hook. The result depends on the address layout of each start, so the crash point changes from run to run.

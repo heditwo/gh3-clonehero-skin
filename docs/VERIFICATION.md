@@ -60,6 +60,30 @@ The log shows the package steps with the prefix `GH3 packages:`:
 
 To test a cold import, delete `UserData/GH3Skin/Cache/` in the test game.
 
+### Load times
+
+`GH3_SKIN_TIMING=1` writes `[timing]` lines: the time since the process start, the managed heap, the resident memory, the garbage collections, and the JIT time of each load phase (mod start, scenes, package scan, skin texture upload, each step of the stage load, the first frame with a running song clock, song time 0, the picker). It also writes `[timing] … long frame N ms` for each main-thread frame longer than 50 ms. `GH3_SKIN_TIMING_RELOADS=<n>` loads the gameplay scene again 4 s after song time 0, *n* times: a song change without the menus, for the stage load of the next song and the memory after each song.
+
+Measure the user flows, three runs each, under the record lock:
+
+```bash
+GH3_CLONE_HERO_DIR=<copy> scripts/measure-load.sh ~/.cache/<name>/before 3
+GH3_CLONE_HERO_DIR=<copy> scripts/measure-load.sh ~/.cache/<name>/after 3
+uv run python tools/summarize-load.py ~/.cache/<name>/before ~/.cache/<name>/after
+```
+
+| Flow | Run |
+| --- | --- |
+| `warm-menu` | Start to the main menu with a warm cache |
+| `cold-menu` | The same after the script deletes `UserData/GH3Skin/Cache`; it waits for the end of all imports |
+| `warm-song`, `cold-song` | `--song` start (`GH3_SKIN_PREVIEW_SONG`, default the native My Curse chart; `GH3_SKIN_STAGE`, default `gh3.dive`) to the stage and the song clock |
+| `picker` | The F6 picker in the menus (`GH3_SKIN_PICKER_TEST`) |
+| `reload`, `reload-random` | Five songs on the same stage, nine songs on random stages (`GH3_SKIN_TIMING_RELOADS`) |
+
+`tools/measure-load.py` starts the game in a nested Xwayland display, waits for log lines, and samples the resident memory, the read calls, and the open files of the game process (`samples.csv`). Its `key:` step sends synthetic key events to the game window; Clone Hero took the first key (join) but not the profile choice, so the flows start songs with `--song`, not through the menus. The flows use the picker choices of the game copy (`UserData/GH3Skin/choices.json`): set the characters and instruments that you want to measure.
+
+To measure the cost of MelonLoader and the game without the mod, put a mod that only writes the same `[timing]` lines in `Mods/` instead of `Gh3Skin.dll`. Under Wine, run `tools/windows/run-win.sh` with `GH3_SKIN_TIMING=1` and copy `MelonLoader/Latest.log` to a folder `<flow>-<n>`; `tools/summarize-load.py` reads it the same way.
+
 ## Test game
 
 Use an isolated Clone Hero copy, not the copy that you play with. Set `GH3_CLONE_HERO_DIR` for `install.sh`, `run-gh3-skin.sh`, and the capture scripts. The default is `~/games/clonehero-gh3-melon`.
@@ -271,6 +295,8 @@ These variables are for checks and captures. Normal play needs none of them.
 | `GH3_SKIN_DEBUG_VIEW="x,y,z,tx,ty,tz,fov[;...]"` | Fixes the stage camera and hides the highway; `GH3_SKIN_DEBUG_VIEW_SECONDS` cycles the views. With `GH3_SKIN_DEBUG_VIEW_HEAD=1` the camera stays at the view position and looks at the guitarist's head (close-ups of hair and face). With `GH3_SKIN_DEBUG_VIEW_HEAD=local` the position and the target are in the frame of the guitarist's head bone, and the head's +X axis is the up direction: the camera follows the head and shows the face at a fixed angle (for example `0.07,3,0,0.07,0,0,4.5` is front-on from 3 m, with a 4.5° field of view). `GH3_SKIN_DEBUG_VIEW_ROLE` selects the band member of the head views (default `guitarist`; for example `singer` for lip sync). With `GH3_SKIN_DEBUG_VIEW_HEAD=through` the camera is `x` metres behind the guitarist's head on the line from the bassist's head, `y` metres higher and `z` metres to the side, and looks at the bassist's head (draw order between band members) |
 | `GH3_SKIN_DEBUG_HAIR_LAYER=mark` | Draws the `overHair` features of characters in one flat color for each character (magenta, green, yellow) without lighting, so a script can count their pixels. `off` does the same and ignores the hair layers (the depth test only) |
 | `GH3_SKIN_DEBUG_SHOW=<id,...>` | Keeps these GH3 objects created |
+| `GH3_SKIN_TIMING=1` | Logs the load phases (`[timing]`, [Load times](#load-times)); `tools/summarize-load.py` reads the logs |
+| `GH3_SKIN_TIMING_RELOADS=<n>` | With `GH3_SKIN_TIMING`: loads the gameplay scene again 4 s after song time 0, *n* times |
 | `GH3_SKIN_PROFILE=1` | Logs milliseconds, managed kilobytes, and gen-0 collections per subsystem each second; `tools/summarize-profile.py` reads the logs |
 | `GH3_SKIN_KEEP_BHAPTICS=1` | Keeps MelonLoader's bHaptics client |
 | `GH3_SKIN_HOOK_GUARD=off` | Turns off the Linux hook page guard ([STATUS.md](STATUS.md#stability)). Only for crash tests |

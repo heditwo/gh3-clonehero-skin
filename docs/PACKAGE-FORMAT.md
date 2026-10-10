@@ -682,12 +682,12 @@ Measured error (spike): 0.0072° maximum rotation error, 0.03 cm maximum fingert
 The importer converts a package one time and writes a per-machine cache.
 
 - Location: `<MelonLoader UserData>/GH3Skin/Cache/<key>/`.
-- Key: `<sha256>-i<importerVersion>`. `<sha256>` is the SHA-256 of the package zip file. For a development folder, it is the SHA-256 of the sorted lines `<path> <sha256 of file>\n` of all files.
+- Key: `<sha256>-i<importerVersion>`. For a zip, `<sha256>` is the SHA-256 of its `manifest.json`: the manifest has the SHA-256 and the size of each file, and the import checks each file against them, so the manifest identifies the content. A zip that is packed again with the same files keeps its cache. (Before 2026-10-10 the key was the SHA-256 of the zip file; such cache folders stay in use through `index.json` until the package changes.) For a development folder, it is the SHA-256 of the sorted lines `<path> <sha256 of file>\n` of all files.
 - A new importer version gives a new key. The old cache folder becomes unused.
 - **Cache content is platform-specific.** It can contain the GPU texture formats that this machine supports, compiled meshes (`GH3STG04`, `GH3BND02`), decoded or re-encoded clips, PCM audio, and compiled JSON. No package contains cache files.
 - `cache.json` in each cache folder records the key, the platform, the graphics API, and the texture formats. The loader rebuilds the cache when they differ from the running game (for example a copied user folder or `-force-glcore` on Windows).
 - The importer writes into a temporary folder and renames it when it is complete. A crash does not leave a partial cache.
-- `index.json` in the cache root keeps the SHA-256 of each package with its size and time (zip) or with a signature of its file list (folder). A warm start reads only this index; it does not read the packages again.
+- `index.json` in the cache root keeps the key of each package with its size and time (zip) or with a signature of its file list (folder). A warm start reads the manifests (the scan) and this index; it does not hash the packages. When the size or the time of a zip changes, the importer reads its manifest again; the same manifest gives the same cache folder without an import.
 - Cache layout (importer version 1): the runtime folders that the mod loaded before packages. A venue cache is a compiled stage folder (`pack.json`, `stage.json`, `meshes.bin` `GH3STG04`, `cameras.json`, `lighting.json`, `scripts.json`, `actors/`, `fixtures/`). A library cache is a library folder (`band/<role>/` and `crowd/…/` with `GH3BND02` meshes, `GH3ANM01` rigs, and `stage.json`; JSON files; `songs/`; `render/` with the effect files). Differences from the older install:
 
 | Item | Cache file | Older install |
@@ -877,9 +877,9 @@ Step 4 of the plan, core part. The mod finds packages, checks them, converts eac
 
 ```mermaid
 flowchart LR
-    Scan[Scan and check manifests<br/>main thread, about 0.1 s] --> Hit{Cache entry<br/>for this package?}
+    Scan[Scan and check manifests<br/>scan thread, about 0.15 s] --> Hit{Cache entry<br/>for this package?}
     Hit -- yes --> Ready[Ready]
-    Hit -- no --> Worker[Worker thread:<br/>check SHA-256, compile,<br/>encode BC1/BC3]
+    Hit -- no --> Worker[Two import workers:<br/>check SHA-256, compile,<br/>encode BC1/BC3]
     Worker --> Ready
     Ready --> Stage[GameplayStage loads<br/>from the cache]
 ```
@@ -894,7 +894,8 @@ flowchart LR
 
 ### 20.2 Import
 
-- One package at a time, on one background thread (`GH3 package importer`), the library first, then the stage and the characters that a song waits for, then the player's stage (`GH3_SKIN_STAGE` or the picker choice), then the characters, then the others. The thread starts again when a song adds its venue package. Texture encoding uses up to 4 threads (half the cores). A warm start runs no import thread: the scan and the cache check run on the main thread.
+- The scan and the cache check run on a background thread (`GH3 package scan`), so the first menu frame does not wait for them. A warm start starts no import worker.
+- Up to two packages import at the same time (`GH3 package importer`, a quarter of the cores, at most 2): the libraries first and alone (the other packages need their caches), then the stage and the characters that a song waits for, then the player's stage (`GH3_SKIN_STAGE` or the picker choice), then the characters, then the instruments, then the other stages. At most one library or stage imports at a time (they need the most memory). The workers start again when a song adds its venue package. Texture encoding uses up to 4 threads (half the cores) for each package. After a library or a stage, or when the managed heap is larger than 256 MB, a compacting collection gives the import memory back.
 - Venues: a C# port of `compile_stage` and `compile_actor` (`StageCompiler`, `StageGeometry`). Library: the C# side of `roundtrip.py` (`LibraryImporter`).
 - Textures: PNG decode (all colour types, `tRNS`), box-filter mip chain, then BC1 (opaque) or BC3 (alpha) with a managed encoder written for this project (`BlockCompression`: principal axis, least-squares refinement, exact single colours). A size that is not a multiple of 4, a GPU without DXT1/DXT5 (`SystemInfo.SupportsTextureFormat`), or a first level under 36 dB PSNR (art that GH3 did not store as DXT) gives RGBA32.
 - Not ported: the alpha-mask mesh trimming of `pipeline/gh3/mesh_cutout.py`. It applies only to unshaded materials without a GH3 record; no GH3 venue has one. The importer logs a warning for such a material and keeps the full mesh (the shader discards the same pixels).
@@ -903,7 +904,8 @@ flowchart LR
 ### 20.3 Loader
 
 - `GameplayStage` uses only the cache folders. Before it selects the stage of a song, it waits for the library import (the library has the song index for the stage suggestion of GH3 career songs). Then it waits until the stage package, the library, and the selected characters are ready; there is no time limit. A stage without a package, or a package that did not import, gives no stage (one warning line); the older install (`Mods/GH3Skin/assets/stages`, `assets/libraries`) was removed in step 6.
-- `StageAssets` uploads `.tex` files with `LoadRawTextureData` and `Apply(false, true)` (no decode on the main thread). All uploads are in the stage load frame: 364 textures of gh3.dive take 140–200 ms.
+- At the start of the stage load, worker threads read the files that the load will need and that have no Unity objects (`StageModelPrefetch`): `stage.json` and `meshes.bin` of the stage, its fixtures and actors, the band, the crowd, and the selected characters and instruments (`StageModelData`), the actor clips (`animation.bin`), and the stage and library script banks (`scripts.json`). The main thread builds the Unity objects in the same order and waits for a file only when it is not read yet.
+- `StageAssets` uploads `.tex` files with `LoadRawTextureDataImpl` from the pinned file bytes and `Apply(false, true)` (no decode and no second copy on the main thread). All uploads are in the stage load frame: 367 textures of gh3.dive take 37–70 ms.
 - Clip prefetch: `PerformancePlayer.Prepare` gives the song's clip set to `PerformanceClipCache`, which decodes it with `Parallel.ForEach` on worker threads. The main thread waits for it in the stage load (16–35 ms measured). A clip outside the set loads on the main thread with a warning (`clip … was not prefetched`), and the stage reset logs the count. The crowd prefetches all its performance clips (102).
 
 - The importer copies the manifest `preview` image to `preview.png` in the cache folder of a venue or a character, for the picker.
@@ -936,6 +938,8 @@ Game copy `~/games/clonehero-gh3-importer`, gh3.dive, mycurse-native, 1600 × 90
 | Peak RSS during the cold import of all packages, with the stage loaded | 1,472 MB (the import thread alone: 495 MB peak working set in `tools/PackageImport`) | — |
 
 Visual result: the dive recording from packages and from `main` agree (aligned videos: mean RGB difference 2.3–2.9 in 8 of 10 samples, up to 7.7 when the frame times differ). Screenshot pairs at the same song times differ as much as two `main` runs differ from each other (21–41 dB in both cases, from timing). `tools/audit-materials.py` on the cache gives the same 921 template materials as on `assets/stages`.
+
+Import speed on 2026-10-10 (195 packages: 11 stages, 2 libraries, 74 characters, 108 instruments; `tools/PackageImport` on the game's .NET 6.0.25 runtime, the same 16-thread PC): `main` 3313bed imports all packages in 46.5 s (peak working set 595 MB), this importer in 24.6 s with two workers (621 MB; one worker 34.1 s, three workers 22.1 s and 744 MB). The faster PNG decoder, the BC error from the encoder (the first level is not decoded again for the quality limit), and the faster actor clip sampler give the same bytes: all 9,787 cache files of the 194 imported packages are byte-equal to the cache of `main`. The game measurements are in [STATUS.md](STATUS.md#load-times).
 
 ### 20.6 Characters
 
