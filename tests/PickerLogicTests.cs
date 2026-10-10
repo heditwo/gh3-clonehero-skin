@@ -236,7 +236,7 @@ internal static class PickerLogicTests
         return library;
     }
 
-    private static byte[] CharacterGlb(float jointOffset = 0, float bindOffset = 0, JsonObject? extras = null)
+    private static byte[] CharacterGlb(float jointOffset = 0, float bindOffset = 0, JsonObject? extras = null, bool tail = false)
     {
         var glb = new GlbBuilder();
         var position = glb.Floats(new float[] { 0, 0, 0, 1, 0, 0, 0, 2, 0 }, "VEC3", 3);
@@ -246,7 +246,8 @@ internal static class PickerLogicTests
         var weights = glb.Floats(new float[] { 1, 0, 0, 0, 0.5f, 0.5f, 0, 0, 1, 0, 0, 0 }, "VEC4", 3);
         var indices = glb.Indices(new[] { 0, 1, 2 });
         // Column-major inverse bind matrices: identity, and a translation by -(1 + bindOffset) on y.
-        var ibm = glb.Floats(new float[] { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -1 - bindOffset, 0, 1 }, "MAT4", 2);
+        var ibm = glb.Floats(new float[] { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -1 - bindOffset, 0, 1 }
+            .Concat(tail ? new float[] { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -1.3f, 0, 1 } : Array.Empty<float>()).ToArray(), "MAT4", tail ? 3 : 2);
         glb.Image("skin", Png4());
         glb.Json["textures"] = new JsonArray(new JsonObject { ["source"] = 0 });
         glb.Json["materials"] = new JsonArray(new JsonObject
@@ -267,12 +268,17 @@ internal static class PickerLogicTests
             new JsonObject { ["name"] = "bone-0000000a", ["children"] = new JsonArray(2) },
             new JsonObject { ["name"] = "bone-0000000b", ["translation"] = new JsonArray(0, 1 + jointOffset, 0) },
             new JsonObject { ["name"] = "body", ["mesh"] = 0, ["skin"] = 0 });
-        glb.Json["skins"] = new JsonArray(new JsonObject { ["joints"] = new JsonArray(1, 2), ["inverseBindMatrices"] = ibm });
+        if (tail)
+        {
+            ((JsonObject)glb.Json["nodes"]![2]!)["children"] = new JsonArray(4);
+            ((JsonArray)glb.Json["nodes"]!).Add(new JsonObject { ["name"] = "tail_01", ["translation"] = new JsonArray(0, 0.3, 0) });
+        }
+        glb.Json["skins"] = new JsonArray(new JsonObject { ["joints"] = tail ? new JsonArray(1, 2, 4) : new JsonArray(1, 2), ["inverseBindMatrices"] = ibm });
         glb.Json["scenes"] = new JsonArray(new JsonObject { ["nodes"] = new JsonArray(0) });
         return glb.Build();
     }
 
-    private static string CharacterPackage(string root, string name, byte[] glb, string attachments = "")
+    private static string CharacterPackage(string root, string name, byte[] glb, string attachments = "", string fields = "")
     {
         var folder = Path.Combine(root, name + ".chchar");
         Directory.CreateDirectory(folder);
@@ -280,7 +286,7 @@ internal static class PickerLogicTests
         File.WriteAllBytes(Path.Combine(folder, "textures", "shade.png"), Png4());
         File.WriteAllBytes(Path.Combine(folder, "character.glb"), glb);
         File.WriteAllText(Path.Combine(folder, "character.json"), "{\"version\":1,\"library\":\"gh3-band-v1\",\"profile\":\"gh3-singer-male-v1\",\"hairMaterials\":[\"body\"]" +
-            (attachments.Length > 0 ? ",\"attachments\":" + attachments : "") + "}");
+            (attachments.Length > 0 ? ",\"attachments\":" + attachments : "") + fields + "}");
         File.WriteAllText(Path.Combine(folder, "manifest.json"), Manifest("chchar/1.0", "test." + name, "{\"model\":\"character.glb\",\"character\":\"character.json\"}"));
         return folder;
     }
@@ -335,6 +341,7 @@ internal static class PickerLogicTests
         error = ImportCharacter(CharacterPackage(root, "badslot", CharacterGlb(), "{\"hat\":\"x\"}"), library, Path.Combine(root, "badslot-cache"));
         Check(error.Contains("hat"), "an unknown attachment slot is rejected: " + error);
         CheckToon(root, library);
+        CheckChains(root, library);
     }
 
     private static void CheckToon(string root, string library)
@@ -375,6 +382,34 @@ internal static class PickerLogicTests
     {
         try { action(); return false; }
         catch (InvalidDataException) { return true; }
+    }
+
+    // character.json bones, colliders, and chains (PACKAGE-FORMAT.md section 9.5).
+    private static void CheckChains(string root, string library)
+    {
+        const string bones = ",\"bones\":[{\"name\":\"tail_01\",\"parent\":\"bone-0000000b\",\"bind\":[0,0.3,0,0,0,0,1]}]";
+        const string colliders = ",\"colliders\":[{\"name\":\"body\",\"bone\":\"bone-0000000a\",\"radius\":0.1,\"a\":[0,0,0],\"b\":[0,1,0]}]";
+        const string joint = "{\"bone\":\"tail_01\",\"length\":0.2,\"mass\":1,\"friction\":0.1,\"angularDamping\":0.5,\"limits\":{\"coneLimit\":[-1,0.7]}}";
+        string Import(string name, string fields, bool tail = true) =>
+            ImportCharacter(CharacterPackage(root, name, CharacterGlb(tail: tail), fields: fields), library, Path.Combine(root, name + "-cache"));
+        var error = Import("chain", bones + colliders + ",\"chains\":[{\"name\":\"tail\",\"joints\":[" + joint + "]}]");
+        Check(error == "", "a character with an added bone and a chain imports: " + error);
+        var model = CharacterModel.Load(Path.Combine(root, "chain-cache"));
+        var tail = Gh3Checksum.Of("tail_01");
+        Check(model.Joints.Contains(tail) && model.AddedBones.Single().Name == tail && model.AddedBones[0].Parent == "0000000b" &&
+            Math.Abs(model.AddedBones[0].Bind[1] - 0.3f) < 1e-6, "the added bone goes to the cache with its parent and bind pose");
+        var chain = model.ChainJoints.Single();
+        Check(chain.Bone == tail && chain.Parent == "0000000b" && chain.ColliderMask == 1 && chain.Joint.Direction.SequenceEqual(new[] { 0f, 1, 0 }) &&
+            Math.Abs(chain.Joint.Limits["coneLimit"][1] - 0.7f) < 1e-6 && model.Colliders.Single().Bone == "0000000a", "the chain joint and the collider go to the cache");
+        Check(Import("chain-extra", "").Contains("not in profile"), "an added joint needs character.json bones");
+        Check(Import("chain-missing", bones, tail: false).Contains("missing"), "a bone of character.json needs a GLB joint");
+        Check(Import("chain-joint", bones + ",\"chains\":[{\"name\":\"tail\",\"joints\":[" + joint.Replace("tail_01", "bone-0000000b") + "]}]").Contains("must be a bone of 'bones'"),
+            "a chain joint must be an added bone");
+        Check(Import("chain-collider", bones + ",\"chains\":[{\"name\":\"tail\",\"colliders\":[\"legs\"],\"joints\":[" + joint + "]}]").Contains("no collider 'legs'"),
+            "a chain names existing colliders");
+        Check(Import("chain-cone", bones + ",\"chains\":[{\"name\":\"tail\",\"joints\":[" + joint.Replace("0.7", "2.5") + "]}]").Contains("cone limit"),
+            "the cone limit is at most pi/2");
+        Check(Import("chain-parent", bones.Replace("bone-0000000b", "bone-0000000c")).Contains("parent is not a bone"), "an added bone hangs from a rig bone");
     }
 
     private static void CheckSamplerOnlyImage(string root)

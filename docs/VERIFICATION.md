@@ -20,7 +20,7 @@ These optional variables add checks against real data to the C# tests:
 | `GH3_NATIVE_DATA=<GH3 DATA>` | Reads all native song PAKs; exact My Curse camera-edit round trip |
 | `GH3_EXPORTED_EVENTS=<events folder>` | Compares exported song direction with native playback |
 | `GH3_DIRECTION_ASSETS`, `GH3_CROWD_ASSETS`, `GH3_HAIR_ASSETS`, `GH3_LIGHTING_ASSETS`, `GH3_AUDIO_ASSETS` | Library parts |
-| `GH3_HAIR_BENCH=<profile>` | Hair motion bench (no checks), see [Hair motion](#hair-motion) |
+| `GH3_HAIR_BENCH=<profile>` | Hair motion bench (no checks), see [Hair motion](#hair-motion). `GH3_HAIR_BENCH=character:<.chchar>` runs the profile hair and the custom chains of a character package, see [Custom chains](#custom-chains) |
 | `GH3_CHARACTER_HAIR_ASSETS=<assets>` | Plays My Curse (240 s) with each profile of `<assets>/libraries/gh3-characters-v1` (with `<assets>/libraries/gh3-band-v1` and `<assets>/stages/events`). It prints the fastest hair joint and the largest mean turn from the rest pose for each profile, and fails at 30 m/s (`StageHair.WarningSpeed`). 2026-10-09: 3.0–11.7 m/s, 14–36° |
 | `GH3_SCRIPT_SOURCE`, `GH3_STAGE_SCRIPT_REPORT` | Decoded GH3 scripts and a report path |
 | `GH3_NATIVE_*_ORACLE` | Reference JSON from the native emulation tools in the local `assets/event-audit/behavior-work/` folder (not in Git) |
@@ -190,6 +190,18 @@ Compare the hair motion with the original GH3 for the same head motion ([PARITY-
 1. Record the original GH3 with a sampler of the live Havok bodies: `tools/research/hair-motion/gh3_session.py <character> <out> <seconds>` under `flock /tmp/opencode/gh3-original.lock flock /tmp/opencode/gh3-record.lock` (environment: `SONG=mycurse` puts My Curse first in the quickplay setlist, `SAVE_IN` a save made with the same patch, `ZONES=z_party:x,y,z` and `FOV` the head camera, `UNLOCK=1` the God of Rock). It writes `gh3.mp4`, `bodies.json`, and `bodies.npz`, and restores the patched files and the save byte-equal.
 2. `replay.py <out> <profile> <x> <z> head` writes the head path (`head.bin`). Run the mod solver on it: `GH3_HAIR_BENCH=<profile> GH3_HAIR_BENCH_HEAD=<out>/head.bin GH3_HAIR_BENCH_OUT=<file> dotnet run --project tests/SkinLogic.Tests.csproj -c Release`. Without `GH3_HAIR_BENCH_HEAD` the profile plays My Curse as in the game; `GH3_HAIR_BENCH=band:<role>` runs a band library member; `GH3_HAIR_BENCH_FPS` sets the render rate.
 3. `replay.py`, `ring.py`, and `evidence.py` compare the tips of the hair joints in the head frame: movement, speed by frequency band, ringing, and the distance from the GH3 tips. `fam.py` compares two solver builds on all profiles.
+4. Body collision: `body_path.py <out> <profile> <x> <z> <file>` writes the paths of all recorded body bones; `GH3_HAIR_BENCH_BODIES=<file>` makes the bench play them (not only the head). `body_colliders.py <profile> <file>` writes the GH3 ragdoll body capsules; `GH3_HAIR_BENCH_BODY=<file>` adds them as colliders of the hair joints (the experiment of [PARITY-NOTES.md](PARITY-NOTES.md#hair-dynamics)).
+
+### Custom chains
+
+Check the custom chains of a character package (PACKAGE-FORMAT section 9.5) before a game run:
+
+```sh
+GH3_CHARACTER_HAIR_ASSETS=$PWD/assets GH3_HAIR_BENCH=character:<package.chchar> GH3_HAIR_BENCH_FPS=60 GH3_HAIR_BENCH_SECONDS=120 \
+  GH3_HAIR_BENCH_OUT=<file> dotnet tests/bin/Release/net10.0/SkinLogic.Tests.dll
+```
+
+The bench imports the package, plays My Curse with the animation set of its profile, and prints: finite poses, the fastest joint end (m/s), the solver time for each frame, and the depth of the joint ends in their colliders (p50, p99, maximum). `GH3_HAIR_BENCH_DETAIL=1` prints each joint; `GH3_HAIR_BENCH_MIDDLE=1` also measures the joint middles. The output file has, for each frame, the time and the start and the end of each custom joint (float32). Run it at 60 and at 144 fps: the poses at common times must be equal. In the game, `GH3_SKIN_PROFILE=1` logs `band.hair`, the time of the hair solver of all performers.
 
 ### GH3 characters
 

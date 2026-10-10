@@ -22,6 +22,9 @@ internal sealed class HairDefinition
     public int Head { get; set; }
     public HairJoint[] Joints { get; set; } = Array.Empty<HairJoint>();
     public HairCapsule Capsule { get; set; } = new();
+    // The body colliders of the custom chains of a character package (character.json `colliders`); the GH3 hair collides
+    // with the head capsule only.
+    public HairCollider[] Colliders { get; set; } = Array.Empty<HairCollider>();
 
     // The same chains on another rig: `bone` gives the rig index of a bone of this definition's rig, or -1.
     public HairDefinition? Remap(Func<int, int> bone)
@@ -32,9 +35,33 @@ internal sealed class HairDefinition
             Bone = bone(j.Bone), Parent = bone(j.Parent), Position = j.Position, Rotation = j.Rotation, Length = j.Length, Mass = j.Mass,
             Friction = j.Friction, AngularDamping = j.AngularDamping, LinearDamping = j.LinearDamping, Limits = j.Limits, Type = j.Type, Axis = j.Axis, Range = j.Range,
             TwistAxis = j.TwistAxis, ConeAxis = j.ConeAxis, PlaneAxis = j.PlaneAxis, MaxAngularVelocity = j.MaxAngularVelocity,
+            Direction = j.Direction, Radius = j.Radius, ColliderMask = j.ColliderMask, HeadCapsule = j.HeadCapsule,
         }).ToArray();
-        return head < 0 || joints.Any(j => j.Bone < 0 || j.Parent < 0) ? null : new HairDefinition { Head = head, Joints = joints, Capsule = Capsule };
+        var colliders = Colliders.Select(c => new HairCollider { Bone = bone(c.Bone), A = c.A, B = c.B, Radius = c.Radius }).ToArray();
+        return head < 0 || joints.Any(j => j.Bone < 0 || j.Parent < 0) || colliders.Any(c => c.Bone < 0) ? null :
+            new HairDefinition { Head = head, Joints = joints, Capsule = Capsule, Colliders = colliders };
     }
+
+    // The profile hair (or none) with the custom chains of a character package after it. Without profile hair the
+    // definition has no head capsule (Head -1): the custom joints collide with their own colliders only.
+    public static HairDefinition? Merge(HairDefinition? profile, HairJoint[] joints, HairCollider[] colliders)
+    {
+        if (joints.Length == 0) return profile;
+        return new HairDefinition
+        {
+            Head = profile?.Head ?? -1, Capsule = profile?.Capsule ?? new HairCapsule(),
+            Joints = (profile?.Joints ?? Array.Empty<HairJoint>()).Concat(joints).ToArray(), Colliders = colliders,
+        };
+    }
+}
+
+// A capsule (or a sphere: A equal to B) on a bone, in the bone's bind frame (runtime coordinates).
+internal sealed class HairCollider
+{
+    public int Bone { get; set; }
+    public float[] A { get; set; } = Array.Empty<float>();
+    public float[] B { get; set; } = Array.Empty<float>();
+    public float Radius { get; set; }
 }
 
 internal sealed class HairCapsule
@@ -70,6 +97,13 @@ internal sealed class HairJoint
     public float[] PlaneAxis { get; set; } = Array.Empty<float>();
     // Optional: the Havok speed limit of the body in radians per second; 0 is no limit.
     public float MaxAngularVelocity { get; set; }
+    // Custom chains (character.json): the bone axis that the joint points along (GH3 joints point along +X), the
+    // collision radius of the joint, the colliders that it touches (bit i: HairDefinition.Colliders[i]), and whether it
+    // touches the head capsule (the GH3 hair does).
+    public float[] Direction { get; set; } = Array.Empty<float>();
+    public float Radius { get; set; }
+    public long ColliderMask { get; set; }
+    public bool HeadCapsule { get; set; } = true;
 }
 
 internal sealed class StageHair
@@ -115,6 +149,23 @@ internal sealed class StageHair
     private readonly bool[] _planes;
     private readonly float[] _planeLow;
     private readonly float[] _planeHigh;
+    // The turn from the +X frame of the solver to the bone frame of a joint that points along another axis.
+    private readonly Quaternion[] _align;
+    private readonly bool[] _aligned;
+    private readonly float[] _radius;
+    private readonly bool[] _headCapsule;
+    private readonly HairCollider[] _colliders;
+    private readonly Vector3[] _colliderA;
+    private readonly Vector3[] _colliderB;
+    private readonly Vector3[] _colliderLocalA;
+    private readonly Vector3[] _colliderLocalB;
+    private readonly bool _hasCapsule;
+    private readonly int[] _jointOf;
+    // The custom joints that the collider pass moves: joints with colliders and the joints that hang from them.
+    private readonly bool[] _projected;
+    private readonly int _projectCount;
+    public const int MaxJoints = 96;
+    public const int MaxColliders = 32;
     private const int Ragdoll = 0, Hinge = 1, Prismatic = 2;
     private readonly SortedDictionary<int, Checkpoint> _checkpoints = new();
     private int _tick = -1;
@@ -133,26 +184,52 @@ internal sealed class StageHair
         _definition = definition;
         _parents = parents;
         _sample = sample;
-        if (definition.Head < 0 || definition.Head >= parents.Length || definition.Joints.Length is < 1 or > 32)
+        _hasCapsule = definition.Head >= 0;
+        if (definition.Head >= parents.Length || definition.Joints.Length is < 1 or > MaxJoints || definition.Colliders.Length > MaxColliders)
             throw new InvalidDataException("Invalid hair skeleton");
-        _capsuleA = Vector(definition.Capsule.A);
-        _capsuleB = Vector(definition.Capsule.B);
-        if (!float.IsFinite(definition.Capsule.Radius) || definition.Capsule.Radius is <= 0 or > 1)
-            throw new InvalidDataException("Invalid hair collider");
+        if (_hasCapsule)
+        {
+            _capsuleA = Vector(definition.Capsule.A);
+            _capsuleB = Vector(definition.Capsule.B);
+            if (!float.IsFinite(definition.Capsule.Radius) || definition.Capsule.Radius is <= 0 or > 1)
+                throw new InvalidDataException("Invalid hair collider");
+        }
         var count = definition.Joints.Length;
         // A chain starts at a bone that is not a hair joint (the head; on the character library profiles also the chest,
         // pelvis, arms, or legs); a joint after it can hang from an earlier joint.
         var seen = Enumerable.Range(0, parents.Length).Except(definition.Joints.Select(j => j.Bone)).ToHashSet();
-        if (!seen.Contains(definition.Head)) throw new InvalidDataException("Invalid hair skeleton");
+        if (_hasCapsule && !seen.Contains(definition.Head)) throw new InvalidDataException("Invalid hair skeleton");
+        _colliders = definition.Colliders;
+        _colliderA = new Vector3[_colliders.Length]; _colliderB = new Vector3[_colliders.Length];
+        _colliderLocalA = new Vector3[_colliders.Length]; _colliderLocalB = new Vector3[_colliders.Length];
+        for (var c = 0; c < _colliders.Length; c++)
+        {
+            var collider = _colliders[c];
+            if (!seen.Contains(collider.Bone) || !float.IsFinite(collider.Radius) || collider.Radius is <= 0 or > 5) throw new InvalidDataException("Invalid hair collider");
+            _colliderLocalA[c] = Vector(collider.A);
+            _colliderLocalB[c] = collider.B.Length == 0 ? _colliderLocalA[c] : Vector(collider.B);
+        }
         _local = new BandPose[count]; _pose = new BandPose[count]; _previous = new BandPose[count];
         _tails = new Vector3[count]; _oldTails = new Vector3[count]; _origins = new Vector3[count]; _frames = new Quaternion[count];
         _retention = new float[count]; _brake = new float[count]; _maxTurn = new float[count]; _inverseInertia = new float[count]; _chain = new int[count];
         _types = new int[count]; _axes = new Vector3[count]; _low = new float[count]; _high = new float[count];
         _twist = new Vector3[count]; _cone = new Vector3[count]; _plane = new Vector3[count]; _coneCos = new float[count]; _coneSin = new float[count];
         _planes = new bool[count]; _planeLow = new float[count]; _planeHigh = new float[count];
+        _align = new Quaternion[count]; _aligned = new bool[count]; _radius = new float[count]; _headCapsule = new bool[count];
         for (var i = 0; i < count; i++)
         {
             var joint = definition.Joints[i];
+            _align[i] = Quaternion.Identity;
+            if (joint.Direction.Length > 0)
+            {
+                var direction = Unit(joint.Direction);
+                _aligned[i] = Vector3.Dot(direction, Vector3.UnitX) < 0.999999f;
+                if (_aligned[i]) _align[i] = FromTo(Vector3.UnitX, direction);
+            }
+            if (!float.IsFinite(joint.Radius) || joint.Radius is < 0 or > 0.5f || (joint.ColliderMask >> _colliders.Length) != 0)
+                throw new InvalidDataException("Invalid hair joint");
+            _radius[i] = joint.Radius;
+            _headCapsule[i] = joint.HeadCapsule && _hasCapsule;
             if (joint.Bone < 0 || joint.Bone >= parents.Length || !seen.Contains(joint.Parent) || !seen.Add(joint.Bone) ||
                 !float.IsFinite(joint.Length) || joint.Length is < 0.005f or > 1 || !float.IsFinite(joint.Mass) || joint.Mass is <= 0 or > 100 ||
                 !float.IsFinite(joint.Friction) || joint.Friction is < 0 or > 100 || !float.IsFinite(joint.AngularDamping) || joint.AngularDamping is < 0 or > 100 ||
@@ -162,6 +239,8 @@ internal sealed class StageHair
             var q = new Quaternion(joint.Rotation[0], joint.Rotation[1], joint.Rotation[2], joint.Rotation[3]);
             if (Math.Abs(q.LengthSquared() - 1) > 0.01) throw new InvalidDataException("Invalid hair bind rotation");
             _local[i] = new(Vector(joint.Position), Quaternion.Normalize(q));
+            // The joint frame of the solver: +X along the joint.
+            if (_aligned[i]) _local[i] = new(_local[i].Position, Quaternion.Normalize(_local[i].Rotation * _align[i]));
             _types[i] = joint.Type switch { "ragdoll" or "" => Ragdoll, "hinge" => Hinge, "prismatic" => Prismatic, _ => throw new InvalidDataException("Invalid hair joint type") };
             // Havok angular damping, the constraint friction torque over the inertia of a point mass at the joint end (a
             // distance per step), and the speed limit of the body.
@@ -180,9 +259,9 @@ internal sealed class StageHair
                 if (!joint.Limits.TryGetValue("planesLimit", out var planes) || planes.Length != 2 || !planes.All(float.IsFinite) || planes[0] > planes[1] ||
                     planes[0] < -MathF.PI / 2 || planes[1] > MathF.PI / 2)
                     throw new InvalidDataException("Invalid hair joint");
-                _twist[i] = Unit(joint.TwistAxis);
-                _cone[i] = Unit(joint.ConeAxis);
-                _plane[i] = Unit(joint.PlaneAxis);
+                _twist[i] = Solver(i, Unit(joint.TwistAxis));
+                _cone[i] = Solver(i, Unit(joint.ConeAxis));
+                _plane[i] = Solver(i, Unit(joint.PlaneAxis));
                 _planes[i] = true;
                 _planeLow[i] = MathF.Sin(planes[0]);
                 _planeHigh[i] = MathF.Sin(planes[1]);
@@ -194,9 +273,19 @@ internal sealed class StageHair
                 joint.Range[0] > joint.Range[1] || joint.Range[0] < -limit || joint.Range[1] > limit)
                 throw new InvalidDataException("Invalid hair joint axis or range");
             _axes[i] = Vector3.Normalize(axis);
+            if (_types[i] == Hinge) _axes[i] = Solver(i, _axes[i]);
+            else if (_aligned[i]) throw new InvalidDataException("Invalid hair joint direction");
             _low[i] = joint.Range[0];
             _high[i] = joint.Range[1];
             if (_types[i] == Prismatic) _retention[i] = MathF.Exp(-Step * (joint.LinearDamping + joint.Friction / joint.Mass));
+        }
+        // The positions and frames of the joints that hang from an aligned joint are relative to its solver frame.
+        for (var i = 0; i < count; i++)
+        {
+            var j = Array.FindIndex(definition.Joints, 0, i, p => p.Bone == definition.Joints[i].Parent);
+            if (j < 0 || !_aligned[j]) continue;
+            var inverse = Quaternion.Inverse(_align[j]);
+            _local[i] = new(Vector3.Transform(_local[i].Position, inverse), Quaternion.Normalize(inverse * _local[i].Rotation));
         }
         // A joint that starts at the end of its parent joint shares the chain with it: the two bodies pull on each other.
         for (var i = 0; i < count; i++)
@@ -207,6 +296,15 @@ internal sealed class StageHair
                 Vector3.Distance(_local[i].Position, new Vector3(definition.Joints[j].Length, 0, 0)) < 0.002f ? j : -1;
         }
         _animated = new BandPose[parents.Length]; _world = new BandPose[parents.Length]; _visited = new bool[parents.Length];
+        _jointOf = Enumerable.Repeat(-1, parents.Length).ToArray();
+        for (var i = 0; i < count; i++) _jointOf[definition.Joints[i].Bone] = i;
+        _projected = new bool[count];
+        for (var i = 0; i < count; i++)
+        {
+            var parentJoint = _jointOf[definition.Joints[i].Parent];
+            _projected[i] = _types[i] != Prismatic && (definition.Joints[i].ColliderMask != 0 || parentJoint >= 0 && parentJoint < i && _projected[parentJoint]);
+            if (_projected[i]) _projectCount++;
+        }
     }
 
     public void Sample(double time)
@@ -242,9 +340,15 @@ internal sealed class StageHair
         _root = _sample((double)tick / Rate, _animated);
         Array.Clear(_visited, 0, _visited.Length);
         for (var i = 0; i < _world.Length; i++) World(i);
-        var head = _world[_definition.Head];
+        var head = _hasCapsule ? _world[_definition.Head] : _root;
         var ca = head.Position + Vector3.Transform(_capsuleA, head.Rotation);
         var cb = head.Position + Vector3.Transform(_capsuleB, head.Rotation);
+        for (var c = 0; c < _colliders.Length; c++)
+        {
+            var bone = _world[_colliders[c].Bone];
+            _colliderA[c] = bone.Position + Vector3.Transform(_colliderLocalA[c], bone.Rotation);
+            _colliderB[c] = bone.Position + Vector3.Transform(_colliderLocalB[c], bone.Rotation);
+        }
         Array.Copy(_pose, _previous, _pose.Length);
         for (var i = 0; i < _pose.Length; i++)
         {
@@ -296,6 +400,7 @@ internal sealed class StageHair
         // and, in a chain, on its parent joint by their masses and inertias, so a heavy chain end slows the joints above
         // it instead of whipping on a parent that only the head moves. The last pass gives the limits to the joint only.
         for (var pass = 0; pass < (tick == 0 ? 1 : Iterations); pass++)
+        {
             for (var i = 0; i < _pose.Length; i++)
             {
                 if (_types[i] == Prismatic) continue;
@@ -337,20 +442,30 @@ internal sealed class StageHair
                 _frames[i] = rotation;
                 _world[joint.Bone] = new(origin, Quaternion.Normalize(FromTo(Vector3.Transform(Vector3.UnitX, rotation), Vector3.Normalize(tail - origin)) * rotation));
             }
+            if (_projectCount > 0) Project();
+        }
         for (var i = 0; i < _pose.Length; i++) Measure(i, tick);
         // The rig parent of a joint can be a later joint of the chains (the profile hair of a character on another
         // role's rig), so the local poses use the final world poses of this step.
         for (var i = 0; i < _pose.Length; i++)
         {
             var bone = _definition.Joints[i].Bone;
-            var actualParent = _parents[bone] < 0 ? _root : _world[_parents[bone]];
+            var actualParent = _parents[bone] < 0 ? _root : Bone(_parents[bone]);
+            var world = Bone(bone);
             var inverse = Quaternion.Inverse(actualParent.Rotation);
-            _pose[i] = new(Vector3.Transform(_world[bone].Position - actualParent.Position, inverse), Quaternion.Normalize(inverse * _world[bone].Rotation));
+            _pose[i] = new(Vector3.Transform(world.Position - actualParent.Position, inverse), Quaternion.Normalize(inverse * world.Rotation));
         }
         _tick = tick;
         if (tick == 0) Array.Copy(_pose, _previous, _pose.Length);
         if (tick % Rate == 0 && !_checkpoints.ContainsKey(tick))
             _checkpoints.Add(tick, new(_tails.ToArray(), _oldTails.ToArray(), _origins.ToArray(), _frames.ToArray(), _pose.ToArray(), _previous.ToArray()));
+    }
+
+    // The world pose of a rig bone in its own bone frame (the solver keeps the frames of the joints with +X along them).
+    private BandPose Bone(int bone)
+    {
+        var joint = _jointOf[bone];
+        return joint >= 0 && _aligned[joint] ? new(_world[bone].Position, Quaternion.Normalize(_world[bone].Rotation * Quaternion.Inverse(_align[joint]))) : _world[bone];
     }
 
     // Turns joint `i` about its origin by `turn` (world).
@@ -372,11 +487,14 @@ internal sealed class StageHair
         var plane = Vector3.Transform(_plane[i], rotation);
         for (var pass = 0; pass < Passes; pass++)
         {
-            var axis = cb - ca;
-            var closest = ca + axis * Math.Clamp(Vector3.Dot(tail - ca, axis) / Math.Max(axis.LengthSquared(), 1e-8f), 0, 1);
-            var outward = tail - closest;
-            if (outward.LengthSquared() < _definition.Capsule.Radius * _definition.Capsule.Radius && outward.LengthSquared() > 1e-10f)
-                tail = closest + Vector3.Normalize(outward) * _definition.Capsule.Radius;
+            if (_headCapsule[i])
+            {
+                var axis = cb - ca;
+                var closest = ca + axis * Math.Clamp(Vector3.Dot(tail - ca, axis) / Math.Max(axis.LengthSquared(), 1e-8f), 0, 1);
+                var outward = tail - closest;
+                if (outward.LengthSquared() < _definition.Capsule.Radius * _definition.Capsule.Radius && outward.LengthSquared() > 1e-10f)
+                    tail = closest + Vector3.Normalize(outward) * _definition.Capsule.Radius;
+            }
             var proposed = tail - origin;
             proposed = proposed.LengthSquared() < 1e-10f ? direction : Vector3.Normalize(proposed);
             if (_types[i] == Hinge)
@@ -393,6 +511,72 @@ internal sealed class StageHair
             tail = origin + proposed * joint.Length;
         }
         return tail;
+    }
+
+    // The body colliders, after each solver iteration: in chain order, a custom joint follows the end of its parent
+    // joint, keeps its direction, and leaves the colliders that it touches. A push is not limited by the cone; the next
+    // iteration brings the joint back toward its limits and turns the joints above it, so the chain lifts off a leg.
+    private void Project()
+    {
+        for (var i = 0; i < _pose.Length; i++)
+        {
+            if (!_projected[i]) continue;
+            var joint = _definition.Joints[i];
+            var parent = _world[joint.Parent];
+            var origin = parent.Position + Vector3.Transform(_local[i].Position, parent.Rotation);
+            var rotation = Quaternion.Normalize(parent.Rotation * _local[i].Rotation);
+            var along = _tails[i] - _origins[i];
+            var tail = origin + (along.LengthSquared() < 1e-10f ? Vector3.Transform(Vector3.UnitX, rotation) : Vector3.Normalize(along)) * joint.Length;
+            if (joint.ColliderMask != 0) tail = Collide(i, origin, tail, joint.Length);
+            _tails[i] = tail;
+            _origins[i] = origin;
+            _frames[i] = rotation;
+            _world[joint.Bone] = new(origin, Quaternion.Normalize(FromTo(Vector3.Transform(Vector3.UnitX, rotation), Vector3.Normalize(tail - origin)) * rotation));
+        }
+    }
+
+    // The body colliders of a custom joint: the joint segment leaves each capsule that it enters; it turns about its
+    // origin, so a joint that starts inside a collider (a skirt joint on the pelvis) is pushed out at its end only.
+    private Vector3 Collide(int i, Vector3 origin, Vector3 tail, float length)
+    {
+        var mask = _definition.Joints[i].ColliderMask;
+        for (var c = 0; c < _colliders.Length; c++)
+        {
+            if ((mask & (1L << c)) == 0) continue;
+            var radius = _colliders[c].Radius + _radius[i];
+            var (s, t) = Closest(origin, tail, _colliderA[c], _colliderB[c]);
+            if (s < 0.1f) (s, t) = (1, Closest(tail, tail, _colliderA[c], _colliderB[c]).T);
+            var point = origin + (tail - origin) * s;
+            var away = point - (_colliderA[c] + (_colliderB[c] - _colliderA[c]) * t);
+            var distance = away.LengthSquared();
+            if (distance >= radius * radius) continue;
+            distance = MathF.Sqrt(distance);
+            if (distance < 1e-5f) continue;
+            tail += away / distance * ((radius - distance) / s);
+            var turned = tail - origin;
+            if (turned.LengthSquared() > 1e-10f) tail = origin + Vector3.Normalize(turned) * length;
+        }
+        return tail;
+    }
+
+    // The parameters (s on p0-p1, t on q0-q1) of the closest points of two segments.
+    private static (float S, float T) Closest(Vector3 p0, Vector3 p1, Vector3 q0, Vector3 q1)
+    {
+        var d1 = p1 - p0;
+        var d2 = q1 - q0;
+        var r = p0 - q0;
+        var a = Vector3.Dot(d1, d1);
+        var e = Vector3.Dot(d2, d2);
+        var f = Vector3.Dot(d2, r);
+        if (e < 1e-10f) return (a < 1e-10f ? 0 : Math.Clamp(-Vector3.Dot(d1, r) / a, 0, 1), 0);
+        var c = Vector3.Dot(d1, r);
+        var b = Vector3.Dot(d1, d2);
+        var denominator = a * e - b * b;
+        var s = denominator > 1e-10f ? Math.Clamp((b * f - c * e) / denominator, 0, 1) : 0;
+        var t = (b * s + f) / e;
+        if (t < 0) { t = 0; s = a < 1e-10f ? 0 : Math.Clamp(-c / a, 0, 1); }
+        else if (t > 1) { t = 1; s = a < 1e-10f ? 0 : Math.Clamp((b - c) / a, 0, 1); }
+        return (s, t);
     }
 
     // The Havok ragdoll limits on the twist axis of the joint: the cone around the parent's cone axis, and the angle to
@@ -443,6 +627,9 @@ internal sealed class StageHair
         var cross = Vector3.Cross(a, b);
         return Quaternion.Normalize(new Quaternion(cross, 1 + dot));
     }
+
+    // An axis of the joint's bone frame in the solver frame of the joint.
+    private Vector3 Solver(int i, Vector3 axis) => _aligned[i] ? Vector3.Transform(axis, Quaternion.Inverse(_align[i])) : axis;
 
     private static Vector3 Unit(float[] v)
     {

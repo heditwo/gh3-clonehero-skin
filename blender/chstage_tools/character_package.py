@@ -15,7 +15,7 @@ from pathlib import Path
 import bpy
 import numpy as np
 
-from . import character_tools, collect, glb_tools, gltf_io, materials, package_export, package_open, sidecars, toon
+from . import chain_tools, character_tools, collect, glb_tools, gltf_io, materials, package_export, package_open, sidecars, toon
 from .vendor.package_format import character, container
 from .vendor.package_format.validate import Report, Source, Validator
 
@@ -86,9 +86,9 @@ def check_scene(scene, issues):
             rig_data = character_tools.scene_rig_data(scene)
             bones = set(rig.data.bones.keys())
             missing = [n for n in rig_data.names if n not in bones]
-            extra = sorted(bones - set(rig_data.names))
             if missing: issues.error(f"the rig has no bone {missing[0]} ({character.bone_label(missing[0])}) of the profile {profile} ({len(missing)} missing)", rig.name)
-            if extra: issues.error(f"the rig has bones that are not in the profile, for example {extra[0]}: remove them", rig.name)
+            # Bones that are not in the profile are added bones (character.json bones), for the custom chains.
+            chain_tools.check(scene, issues)
         except (OSError, ValueError, KeyError) as error:
             issues.warn(f"no rig of the profile {profile} to check: {error}")
     meshes = character_tools.character_meshes(scene)
@@ -172,11 +172,16 @@ def finish_glb(data, blender_materials, issues):
     return data
 
 
-def character_row(scene, blender_materials):
+def character_row(scene, blender_materials, glb_data=None):
     p = scene.chstage.character
     by_material = {material: name for name, material in blender_materials.items()}
     names = [by_material.get(material, collect.package_name(material)) for material in hair_materials(scene)]
-    return character.character_json(character_tools.profile_id(scene), names, p.instrument.strip(), p.library_id or character.LIBRARY_ID, p.animations.strip())
+    row = character.character_json(character_tools.profile_id(scene), names, p.instrument.strip(), p.library_id or character.LIBRARY_ID, p.animations.strip())
+    if glb_data is not None:
+        bones, colliders, chains = chain_tools.export_rows(scene, glb_data)
+        for key, value in (("bones", bones), ("colliders", colliders), ("chains", chains)):
+            if value: row[key] = value
+    return row
 
 
 def build_files(scene, folder, issues, keeper=None, render_preview_image=True):
@@ -192,7 +197,7 @@ def build_files(scene, folder, issues, keeper=None, render_preview_image=True):
         blender_materials = export_glb(scene, path, rig, meshes, keeper, issues)
         data = finish_glb(path.read_bytes(), blender_materials, issues)
     (folder/character.MODEL_FILE).write_bytes(data)
-    (folder/character.CHARACTER_FILE).write_bytes(container.json_bytes(character_row(scene, blender_materials)))
+    (folder/character.CHARACTER_FILE).write_bytes(container.json_bytes(character_row(scene, blender_materials, data)))
     paths = {character.MODEL_FILE, character.CHARACTER_FILE}
     entry = {"model": character.MODEL_FILE, "character": character.CHARACTER_FILE}
     sources = {}
@@ -319,7 +324,8 @@ def open_package(path, library=None):
     for key in ("model", "character"):
         if entry.get(key) not in source.set: raise ValueError(f"{path}: the package has no {key} file")
     library = character_tools.library_path(None, path) if library is None else library
-    description = character.open_character_json(json.loads(source.read(entry["character"])))
+    raw_character = json.loads(source.read(entry["character"]))
+    description = character.open_character_json(raw_character)
     characters = ""
     if description["profile"] in character.PROFILES:
         role = character_tools.role_of(description["profile"])
@@ -352,6 +358,7 @@ def open_package(path, library=None):
     rigs = [obj for obj in new if obj.type == "ARMATURE"]
     if len(rigs) != 1: issues.error(f"the character GLB has {len(rigs)} armatures; the format needs one skin")
     if rigs: p.rig = rigs[0]
+    if rigs: chain_tools.open_rows(scene, raw_character, source.read(entry["model"]))
     by_name = character_tools.mats_by_name(gltf, mats)
     for name in description["hairMaterials"]:
         found = by_name.get(name)

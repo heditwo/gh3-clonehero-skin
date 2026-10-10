@@ -17,7 +17,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 ADDON = HERE / "chstage_tools"
 VENDOR = ADDON / "vendor"
-VALIDATOR_FILES = ("__init__.py", "character.py", "container.py", "decisions.py", "glb.py", "q48.py", "schema.py", "validate.py")
+VALIDATOR_FILES = ("__init__.py", "chains.py", "character.py", "container.py", "decisions.py", "glb.py", "q48.py", "schema.py", "validate.py")
 DATE = (2026, 1, 1, 0, 0, 0)
 
 

@@ -445,6 +445,109 @@ props.reference.hide_render = True
 character_tools.clear_pose(scene)
 check("bind pose after clear", rig.animation_data is None or rig.animation_data.action is None)
 
+# 8. Custom chains and colliders: a twin tail along a strand, fitted body colliders, export, open, MMD physics.
+chain_tools = sys.modules[module + ".chain_tools"]
+chain_format = sys.modules[module + ".vendor.package_format.chains"]
+tail_mesh = bpy.data.meshes.new("TestTwinTail")
+bm = bmesh.new()
+tail_root, tail_end = head + Vector((0.14, 0.06, 0.12)), head + Vector((0.24, 0.14, -0.62))
+limb(bm, tail_root, tail_end, 0.035, 0.012, segments=8)
+bmesh.ops.subdivide_edges(bm, edges=[e for e in bm.edges if abs((e.verts[0].co - e.verts[1].co).normalized().dot((tail_end - tail_root).normalized())) > 0.9], cuts=10)
+bm.to_mesh(tail_mesh)
+bm.free()
+tail_mesh.uv_layers.new(name="UVMap")
+tail = bpy.data.objects.new("TestTwinTail", tail_mesh)
+scene.collection.objects.link(tail)
+tail.data.materials.append(hair_material)
+for vertex in tail.data.vertices: vertex.select = True
+for obj in scene.objects: obj.select_set(False, view_layer=view_layer)
+tail.select_set(True, view_layer=view_layer)
+view_layer.objects.active = tail
+head_bone = f"bone-{character_format.gh3_key('bone_head'):08x}"
+with bpy.context.temp_override(scene=scene, view_layer=view_layer, object=tail, active_object=tail, selected_objects=[tail]):
+    status = bpy.ops.chstage.chain_from_strand(name="twin_tail_l", joints=4, parent=head_bone, preset="long_hair")
+chain_bones = chain_tools.chain_bones(rig, "twin_tail_l")
+tail_weights = character_tools.vertex_weights(tail, character_tools.profile_groups(rig))
+check("chain along a strand: bones, joints, and weights", status == {"FINISHED"} and len(chain_bones) == 4 and chain_bones[0].parent.name == head_bone
+      and all(b.chstage_joint.enabled and abs(b.chstage_joint.cone - 22) < 1e-4 for b in chain_bones) and np.abs(tail_weights.sum(1) - 1).max() < 1e-5
+      and tail_weights[:, [character_tools.profile_groups(rig).index(b.name) for b in chain_bones]].sum() > 0.8 * len(tail_weights),
+      [(b.name, b.parent.name if b.parent else None) for b in chain_bones])
+with bpy.context.temp_override(scene=scene, view_layer=view_layer):
+    status = bpy.ops.chstage.fit_colliders(guitar=True)
+fitted = chain_tools.colliders(scene)
+by_name = {chain_tools.collider_name(o): o for o in fitted}
+check("fit body colliders", status == {"FINISHED"} and {"hips", "chest", "thigh_l", "shin_r", "head", "guitar"} <= set(by_name)
+      and 0.04 < by_name["thigh_l"].chstage_collider.radius < 0.13 and 0.05 < by_name["head"].chstage_collider.radius < 0.151,
+      {n: round(o.chstage_collider.radius, 3) for n, o in by_name.items()})
+scene.chstage_chains[0].all_colliders = False
+scene.chstage_chains[0].colliders = "chest, head, guitar, missing"
+chain_target = output / "test-chains" / "tester.chains.chchar"
+package.package_id = "tester.chains"
+status = operator_scene(scene, bpy.ops.chstage.export_character, filepath=str(chain_target))
+chain_report = validator.Validator(chain_target, library).run() if chain_target.is_file() else None
+with zipfile.ZipFile(chain_target) if chain_target.is_file() else zipfile.ZipFile(target) as package_zip:
+    chain_json = json.loads(package_zip.read("character.json"))
+    chain_glb = package_zip.read("character.glb")
+summary["chains"] = {"export": [(i.severity, i.message) for i in scene.chstage.issues], "validator": (chain_report.errors + chain_report.warnings) if chain_report else None,
+                     "bones": chain_json.get("bones"), "chains": chain_json.get("chains"), "colliders": len(chain_json.get("colliders", []))}
+joints = chain_json.get("chains", [{}])[0].get("joints", [])
+check("export chains: valid package with bones, chain, and colliders", status == {"FINISHED"} and chain_report is not None and chain_report.ok
+      and [b["name"] for b in chain_json.get("bones", [])] == [b.name for b in chain_bones] and len(joints) == 4
+      and chain_json["chains"][0]["colliders"] == ["chest", "head", "guitar"] and len(chain_json.get("colliders", [])) == len(fitted)
+      and all(abs(np.linalg.norm(j["direction"]) - 1) < 1e-4 for j in joints) and b"chstage" not in chain_glb,
+      {k: summary["chains"][k] for k in ("export", "validator", "colliders")} | {"fitted": len(fitted), "chstage": chain_glb.count(b"chstage"),
+                                                                                 "chainColliders": chain_json.get("chains", [{}])[0].get("colliders")})
+# The joint direction points to the next joint, in the runtime frame of the bone (glTF z negated).
+bind = {b["name"]: b["bind"] for b in chain_json.get("bones", [])}
+aligned = [np.linalg.norm(np.array(bind[joints[i + 1]["bone"]][:3]) - np.array(joints[i]["direction"]) * joints[i]["length"]) for i in range(len(joints) - 1)] if len(joints) == 4 else [1]
+check("export chains: each joint ends at the next joint", max(aligned) < 1e-4 and not any("does not start" in w for w in (chain_report.warnings if chain_report else [])), aligned)
+with bpy.context.temp_override(scene=scene):
+    bpy.ops.chstage.open_character(filepath=str(chain_target))
+chain_opened = next((s for s in bpy.data.scenes if s.chstage.source_package == str(chain_target.resolve())), None)
+chain_copy = output / "test-chains-reopened" / chain_target.name
+status = operator_scene(chain_opened, bpy.ops.chstage.export_character, filepath=str(chain_copy)) if chain_opened else None
+with zipfile.ZipFile(chain_copy) if chain_copy.is_file() else zipfile.ZipFile(target) as package_zip:
+    copy_json = json.loads(package_zip.read("character.json"))
+
+
+def close(a, b, tolerance=2e-4):
+    if isinstance(a, dict): return isinstance(b, dict) and a.keys() == b.keys() and all(close(a[k], b[k], tolerance) for k in a)
+    if isinstance(a, list): return isinstance(b, list) and len(a) == len(b) and all(close(x, y, tolerance) for x, y in zip(a, b))
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)): return abs(a - b) <= tolerance * max(1, abs(a))
+    return a == b
+
+
+check("open and export chains again", status == {"FINISHED"} and all(close(chain_json.get(k), copy_json.get(k)) for k in ("bones", "colliders", "chains")),
+      {"colliders": [len(chain_json.get("colliders", [])), len(copy_json.get("colliders", []))], **{k: copy_json.get(k) for k in ("chains",)}})
+# MMD physics: an MMD-like armature (a static root and two dynamic bodies), as MMD Tools gives it.
+from types import SimpleNamespace  # noqa: E402
+mmd = bpy.data.objects.new("MMDArm", bpy.data.armatures.new("MMDArm"))
+scene.collection.objects.link(mmd)
+for obj in scene.objects: obj.select_set(False, view_layer=view_layer)
+mmd.select_set(True, view_layer=view_layer)
+view_layer.objects.active = mmd
+with bpy.context.temp_override(scene=scene, view_layer=view_layer, active_object=mmd, object=mmd, selected_objects=[mmd], selected_editable_objects=[mmd]):
+    bpy.ops.object.mode_set(mode="EDIT")
+    previous = None
+    for index, (top, bottom) in enumerate(((0.0, -0.1), (-0.1, -0.35), (-0.35, -0.6))):
+        bone = mmd.data.edit_bones.new(f"hair{index + 1}")
+        bone.head, bone.tail = head + Vector((-0.15, 0.05, 0.1 + top)), head + Vector((-0.15, 0.05, 0.1 + bottom))
+        bone.parent = previous
+        previous = bone
+    bpy.ops.object.mode_set(mode="OBJECT")
+bodies = [SimpleNamespace(name=f"rb{i}", matrix_world=Matrix.Translation(head + Vector((-0.15, 0.05, 0.1 - 0.1 * i))),
+                          mmd_rigid=SimpleNamespace(bone=f"hair{i + 1}", type=str(0 if i == 0 else 1), shape="CAPSULE", size=(0.03, 0.2, 0)),
+                          rigid_body=SimpleNamespace(mass=0.5, angular_damping=0.9)) for i in range(3)]
+limits = SimpleNamespace(limit_ang_x_lower=-0.5, limit_ang_x_upper=0.5, limit_ang_y_lower=-0.1, limit_ang_y_upper=0.2, limit_ang_z_lower=-0.05, limit_ang_z_upper=0.05)
+mmd_joints = [SimpleNamespace(name=f"j{i}", matrix_world=Matrix.Identity(4), rigid_body_constraint=SimpleNamespace(object1=bodies[i - 1], object2=bodies[i], **vars(limits)))
+              for i in (1, 2)]
+made, _ = chain_tools.import_mmd(scene, mmd, bodies, mmd_joints, parent=head_bone)
+mmd_bones = [rig.data.bones[made[n]] for n in ("hair2", "hair3") if n in made]
+check("chains from MMD physics", len(made) == 2 and len(mmd_bones) == 2 and mmd_bones[0].parent.name == head_bone and mmd_bones[1].parent == mmd_bones[0]
+      and all(b.chstage_joint.enabled for b in mmd_bones) and abs(mmd_bones[0].chstage_joint.cone - math.degrees(0.5)) < 1e-3
+      and abs(mmd_bones[0].chstage_joint.damping - chain_format.mmd_damping(0.9)) < 1e-4 and abs(mmd_bones[0].chstage_joint.mass - 0.5) < 1e-6,
+      {n: (b.parent.name, round(b.chstage_joint.cone, 3), round(b.chstage_joint.planes, 3)) for n, b in zip(("hair2", "hair3"), mmd_bones)})
+
 # 7. A character library profile: Midori of gh3-characters-v1, with the GH3 character packages next to it.
 character_library = library.parent / "gh3-characters-v1.chlib"
 midori_package = library.parent / "gh3.midori.outfit1.style1.chchar"

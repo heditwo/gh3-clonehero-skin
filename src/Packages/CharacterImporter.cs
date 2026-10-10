@@ -44,8 +44,8 @@ internal sealed class CharacterImporter
     {
         var entry = _package.Manifest.Entry;
         var character = Object(_package.Read(entry["character"]));
-        Fields(character, "character.json", new[] { "version", "library", "profile", "animations", "hairMaterials", "attachments", "highway" },
-            "version", "library", "profile");
+        Fields(character, "character.json", new[] { "version", "library", "profile", "animations", "hairMaterials", "attachments", "highway",
+            "bones", "colliders", "chains" }, "version", "library", "profile");
         if (Number(character["version"], "version") != 1) throw new PackageException("character.json version must be 1");
         var profile = Text(character["profile"]) ?? "";
         var libraryId = Text(character["library"]) ?? "";
@@ -71,6 +71,9 @@ internal sealed class CharacterImporter
                 throw new PackageException($"library {libraryId} has no animation set '{animations}'");
             (role, rigBones, rigParents, rigBind) = (own.Role, own.Bones, own.Parents, own.Bind);
         }
+        // Custom chains (section 9.5): the added bones join the rig for the GLB check.
+        var chains = CharacterChains.Read(character, rigBones, rigParents, rigBind);
+        (rigBones, rigParents, rigBind) = (chains.Bones, chains.Parents, chains.Bind);
         var hair = (character["hairMaterials"] as JsonArray ?? new JsonArray()).Select(n => Text(n) ?? throw new PackageException("invalid hair material")).ToHashSet();
         var instrument = Instrument(character["attachments"]);
         var highway = Highway(character["highway"], folder);
@@ -80,6 +83,7 @@ internal sealed class CharacterImporter
             ["version"] = 1, ["id"] = _package.Manifest.Id, ["name"] = _package.Manifest.Name, ["profile"] = profile, ["role"] = role,
             ["instrument"] = instrument, ["joints"] = new JsonArray(names.Select(n => (JsonNode?)n).ToArray()),
             ["library"] = libraryId, ["animations"] = animations, ["highway"] = highway,
+            ["bones"] = chains.AddedBones, ["colliders"] = chains.Colliders, ["chains"] = chains.Joints,
         });
         return (role, names.Length, parts.Count, parts.Sum(p => p.Count));
     }

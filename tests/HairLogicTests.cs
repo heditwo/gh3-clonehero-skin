@@ -39,9 +39,10 @@ internal static class HairLogicTests
             Check(pose[1] == expected, "hair is independent of render frame rate");
         }
         CheckHavokLimits();
+        CheckCustomChains();
         if (Environment.GetEnvironmentVariable("GH3_HAIR_ASSETS") is { } assets) CheckAssets(assets);
         if (Environment.GetEnvironmentVariable("GH3_CHARACTER_HAIR_ASSETS") is { } characters) CheckCharacterAssets(characters);
-        Console.WriteLine("Hair inertia, attachment, limits, Havok limit frames, speed limit, chains, frame rates, pause, and seek checks passed.");
+        Console.WriteLine("Hair inertia, attachment, limits, Havok limit frames, speed limit, chains, custom chain axes and colliders, frame rates, pause, and seek checks passed.");
     }
 
     // A still head: the joints hang from their limits under gravity (no spring to the bind pose), the cone is centred on
@@ -110,6 +111,105 @@ internal static class HairLogicTests
         {
             chained.Sample(tick / 120.0); Still(tick / 120.0, chainPose); chained.Apply(chainPose);
             Check(Vector3.Distance(chainPose[2].Position, new(0.2f, 0, 0)) < 1e-5f, "a chain stays connected");
+        }
+    }
+
+    // Custom chains (character.json): a joint that points along its bone's +Y moves as the same joint along +X, and the
+    // body colliders keep the joint segments out of their capsules, also when a collider moves through the chain.
+    private static void CheckCustomChains()
+    {
+        var toX = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, -MathF.PI / 2);
+        var cone = new Vector3(MathF.Cos(0.3f), -MathF.Sin(0.3f), 0);
+        HairJoint Joint(int bone, int parent, float x, bool aligned) => new()
+        {
+            Bone = bone, Parent = parent, Position = aligned && parent > 0 ? new[] { 0f, x, 0f } : new[] { x, 0f, 0f },
+            Rotation = aligned && parent == 0 ? new[] { toX.X, toX.Y, toX.Z, toX.W } : new[] { 0f, 0f, 0f, 1f },
+            Direction = aligned ? new[] { 0f, 1f, 0f } : Array.Empty<float>(), Length = 0.2f, Mass = 2, Friction = 0.1f, AngularDamping = 0.5f,
+            Limits = new() { ["coneLimit"] = new[] { -1f, 0.6f }, ["planesLimit"] = new[] { -0.5f, 0.4f } },
+            TwistAxis = Axis(Vector3.UnitX, aligned), ConeAxis = Axis(cone, aligned), PlaneAxis = Axis(Vector3.UnitZ, aligned), HeadCapsule = false,
+        };
+        // An axis of the +X joint frame in the frame of the +Y bone (the bone frame turned by toX).
+        float[] Axis(Vector3 v, bool aligned)
+        {
+            var a = aligned ? Vector3.Transform(v, Quaternion.Inverse(toX)) : v;
+            return new[] { a.X, a.Y, a.Z };
+        }
+        BandPose Moving(double t, BandPose[] pose, bool aligned)
+        {
+            pose[0] = new(new((float)Math.Sin(t * 5) * 0.3f, 2, (float)Math.Cos(t * 3) * 0.1f), Quaternion.CreateFromAxisAngle(Vector3.UnitY, (float)Math.Sin(t * 2)));
+            pose[1] = new(new(0.1f, 0, 0), aligned ? toX : Quaternion.Identity);
+            pose[2] = new(aligned ? new(0, 0.2f, 0) : new(0.2f, 0, 0), Quaternion.Identity);
+            return new(Vector3.Zero, Quaternion.Identity);
+        }
+        var parents = new[] { -1, 0, 1 };
+        var poses = new[] { false, true }.Select(aligned =>
+        {
+            var definition = new HairDefinition { Head = -1, Joints = new[] { Joint(1, 0, 0.1f, aligned), Joint(2, 1, 0.2f, aligned) } };
+            var hair = new StageHair(definition, parents, (t, pose) => Moving(t, pose, aligned));
+            var pose = new BandPose[3];
+            var tips = new List<Vector3>();
+            for (var tick = 0; tick <= 360; tick += 3)
+            {
+                hair.Sample(tick / 120.0); Moving(tick / 120.0, pose, aligned); hair.Apply(pose);
+                var world = new BandPose(Vector3.Zero, Quaternion.Identity);
+                for (var b = 0; b < 3; b++) world = new(world.Position + Vector3.Transform(pose[b].Position, world.Rotation), world.Rotation * pose[b].Rotation);
+                tips.Add(world.Position + Vector3.Transform(aligned ? Vector3.UnitY : Vector3.UnitX, world.Rotation) * 0.2f);
+            }
+            return tips;
+        }).ToArray();
+        Check(poses[0].Zip(poses[1]).All(p => Vector3.Distance(p.First, p.Second) < 1e-4f), "a +Y chain moves as the same +X chain");
+        Check(poses[0].Max(p => p.Y) < 1.95f || poses[0].Any(p => p.Y < 1.9f), "the custom chain moves");
+
+        // A sphere on a moving bone (bone 3, not a joint) sweeps through a hanging chain of three joints.
+        var down = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, -MathF.PI / 2);
+        HairJoint Hanging(int bone, int parent) => new()
+        {
+            Bone = bone, Parent = parent, Position = parent == 0 ? new[] { 0.1f, 0f, 0f } : new[] { 0.12f, 0f, 0f },
+            Rotation = parent == 0 ? new[] { down.X, down.Y, down.Z, down.W } : new[] { 0f, 0f, 0f, 1f }, Length = 0.12f, Mass = 1, Friction = 0.05f,
+            AngularDamping = 0.3f, Limits = new() { ["coneLimit"] = new[] { -1f, 1.2f } }, Radius = 0.01f, ColliderMask = 1, HeadCapsule = false,
+        };
+        var sweep = new HairDefinition
+        {
+            Head = -1, Joints = new[] { Hanging(1, 0), Hanging(2, 1), Hanging(3, 2) },
+            Colliders = new[] { new HairCollider { Bone = 4, A = new[] { 0f, 0, -0.1f }, B = new[] { 0f, 0, 0.1f }, Radius = 0.05f } },
+        };
+        BandPose Sweep(double t, BandPose[] pose)
+        {
+            pose[0] = new(new(0, 2, 0), Quaternion.Identity);
+            pose[1] = new(new(0.1f, 0, 0), down);
+            pose[2] = new(new(0.12f, 0, 0), Quaternion.Identity);
+            pose[3] = new(new(0.12f, 0, 0), Quaternion.Identity);
+            pose[4] = new(new(0.1f + 0.25f * (float)Math.Cos(t * 4), -0.2f, 0), Quaternion.Identity);
+            return new(Vector3.Zero, Quaternion.Identity);
+        }
+        var sweepParents = new[] { -1, 0, 1, 2, 0 };
+        foreach (var fps in new[] { 60, 144 })
+        {
+            var hair = new StageHair(sweep, sweepParents, Sweep);
+            var frame = new BandPose[5];
+            var deepest = 0f;
+            for (var i = 0; i / (double)fps < 6; i++)
+            {
+                var time = i / (double)fps;
+                hair.Sample(time); Sweep(time, frame); hair.Apply(frame);
+                var world = new BandPose[5];
+                for (var b = 0; b < 5; b++)
+                {
+                    var parent = sweepParents[b] < 0 ? new BandPose(Vector3.Zero, Quaternion.Identity) : world[sweepParents[b]];
+                    world[b] = new(parent.Position + Vector3.Transform(frame[b].Position, parent.Rotation), parent.Rotation * frame[b].Rotation);
+                }
+                var centre = world[4].Position;
+                for (var b = 1; b <= 3; b++)
+                {
+                    var a = world[b].Position;
+                    var tip = a + Vector3.Transform(Vector3.UnitX, world[b].Rotation) * 0.12f;
+                    var along = Math.Clamp(Vector3.Dot(centre - a, tip - a) / (tip - a).LengthSquared(), 0, 1);
+                    var distance = Vector3.Distance(centre, a + (tip - a) * along);
+                    if (Math.Abs(centre.Z - (a + (tip - a) * along).Z) < 0.1f) deepest = Math.Max(deepest, 0.06f - distance);
+                }
+                Check(world.All(p => float.IsFinite(p.Position.X) && float.IsFinite(p.Rotation.W)), "colliding chains stay finite");
+            }
+            Check(deepest < 0.005f, FormattableString.Invariant($"a moving collider does not pass through the chain at {fps} fps (depth {deepest:F3} m)"));
         }
     }
 

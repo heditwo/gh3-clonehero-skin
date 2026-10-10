@@ -250,16 +250,21 @@ class ExportExtras:
         self.Extension = None
 
     def gather_scene_hook(self, gltf2_scene, blender_scene, export_settings):
-        extras = {k: v for k, v in (gltf2_scene.extras or {}).items() if k != "chstage"}
+        extras = {k: v for k, v in (gltf2_scene.extras or {}).items() if not k.startswith("chstage")}
         gltf2_scene.extras = extras or None
 
     def gather_node_hook(self, gltf2_node, blender_object, export_settings):
         # The add-on settings are never extras, also in other glTF exports.
-        extras = {k: v for k, v in (gltf2_node.extras or {}).items() if k != "chstage"}
+        extras = {k: v for k, v in (gltf2_node.extras or {}).items() if not k.startswith("chstage")}
         if _EXPORT["active"] and blender_object is not None and hasattr(blender_object, "chstage"):
             extras = {k: v for k, v in extras.items() if not k.startswith("gh3")}
             extras.update(_EXPORT["keeper"](node_row(blender_object), blender_object.chstage, "node"))
             gltf2_node.name = package_name(blender_object)
+        gltf2_node.extras = extras or None
+
+    def gather_joint_hook(self, gltf2_node, blender_bone, export_settings):
+        # The chain settings of a bone (chain_tools) are never extras.
+        extras = {k: v for k, v in (gltf2_node.extras or {}).items() if k != "chstage_joint"}
         gltf2_node.extras = extras or None
 
     def gather_material_hook(self, gltf2_material, blender_material, export_settings):

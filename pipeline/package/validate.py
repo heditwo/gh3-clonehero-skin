@@ -27,6 +27,10 @@ from .schema import Schemas
 # Every kind is format 1.0 (PACKAGING-PLAN decision 12). A higher minor comes from a newer mod.
 FORMAT_MINOR = 0
 HAIR_FRAME_FIELDS = ("twistAxis", "coneAxis", "planeAxis")
+# Custom chains of a character (PACKAGE-FORMAT.md section 9.5): the runtime solver steps every joint 120 times a second.
+MAX_CHAIN_JOINTS = 64
+CHAIN_JOINTS_WARNING = 32
+CHAIN_ALIGNMENT = 0.002
 EXTENSIONS = {".chstage": "chstage", ".chchar": "chchar", ".chinst": "chinst", ".chlib": "chlib"}
 STORED = {".glb", ".png", ".br", ".ogg", ".mp3", ".opus"}
 DEFLATED = {".json", ".wav"}
@@ -566,23 +570,109 @@ class Validator:
                 above = glb.world(parents[joint], parents, cache)
                 if np.abs(above - np.eye(4)).max() > JOINT_POSITION:
                     self.report.error(entry["model"], "nodes above the root joint must have the identity transform")
-        if own is not None:
-            self.check_profile(entry["model"], glb, joints, names, joint_parents, own)
-        elif character["profile"] not in PROFILES or self.library is None:
-            self.report.warn(entry["model"], "joints are not checked against the profile (no --library or --character-library)")
-            return
-        else:
+        if own is None and character["profile"] in PROFILES and self.library is not None:
             try:
-                profile = load_profile(self.library, PROFILES[character["profile"]])
+                own = load_profile(self.library, PROFILES[character["profile"]])
             except (OSError, ValueError) as error:
                 self.report.error("--library", f"cannot read the profile rig: {error}"); return
-            self.check_profile(entry["model"], glb, joints, names, joint_parents, profile)
+        if own is None:
+            added = [bone_key(b["name"]) for b in character.get("bones", [])]
+            unknown = [n for n in names if n not in added]
+            self.check_chains(entry["character"], character, (unknown, None, None, None))
+            self.report.warn(entry["model"], "joints are not checked against the profile (no --library or --character-library)")
+            return
+        rig = self.check_chains(entry["character"], character, own)
+        if rig is None: return
+        self.check_profile(entry["model"], glb, joints, names, joint_parents, rig)
         if self.library is None: return
         instrument = character.get("attachments", {}).get("instrument")
         known = library_instruments(self.library)
         if instrument and known and instrument not in known:
             self.report.warn(entry["character"], f"attachments.instrument '{instrument}' is not a library instrument ({', '.join(sorted(known))}); "
                              "the game uses the instrument of the band role")
+
+    def check_chains(self, where, character, profile):
+        """character.json bones, colliders, and chains (PACKAGE-FORMAT.md section 9.5). Returns the profile rig with the
+        added bones (load_profile layout), or None after an error. Without profile parents (no library), only the
+        references are checked."""
+        profile_names, profile_parents, translations, rotations = profile
+        error_count = len(self.report.errors)
+        names, parents = list(profile_names), list(profile_parents or [0] * len(profile_names))
+        index = {n: i for i, n in enumerate(names)}
+        added = []
+        for bone in character.get("bones", []):
+            key, parent = bone_key(bone["name"]), bone_key(bone["parent"])
+            if key in index: self.report.error(where, f"bone '{bone['name']}' has the name of a profile bone or of another bone"); continue
+            if parent not in index: self.report.error(where, f"bone '{bone['name']}': the parent '{bone['parent']}' is not a bone of the rig (an added parent comes first)"); continue
+            bind = bone["bind"]
+            if not all(math.isfinite(v) for v in bind) or abs(math.sqrt(sum(v * v for v in bind[3:])) - 1) > 0.001:
+                self.report.error(where, f"bone '{bone['name']}': the bind rotation must have unit length")
+            if math.sqrt(sum(v * v for v in bind[:3])) > 5: self.report.error(where, f"bone '{bone['name']}' is more than 5 m from its parent")
+            index[key] = len(names); names.append(key); parents.append(index[parent]); added.append(bone)
+        added_keys = {bone_key(b["name"]) for b in added}
+        joint_bones = [bone_key(j["bone"]) for chain in character.get("chains", []) for j in chain["joints"]]
+        colliders = {}
+        for collider in character.get("colliders", []):
+            key = bone_key(collider["bone"])
+            if collider["name"] in colliders: self.report.error(where, f"two colliders have the name '{collider['name']}'")
+            colliders[collider["name"]] = collider
+            if key not in index: self.report.error(where, f"collider '{collider['name']}': '{collider['bone']}' is not a bone of the rig")
+            elif key in joint_bones: self.report.error(where, f"collider '{collider['name']}' is on the chain bone '{collider['bone']}'; put colliders on body bones")
+            if any(math.sqrt(sum(v * v for v in collider.get(f, [0, 0, 0]))) > 10 for f in ("a", "b")):
+                self.report.error(where, f"collider '{collider['name']}' is more than 10 m from its bone")
+        if len(joint_bones) > MAX_CHAIN_JOINTS: self.report.error(where, f"the chains have {len(joint_bones)} joints (limit {MAX_CHAIN_JOINTS})")
+        elif len(joint_bones) > CHAIN_JOINTS_WARNING:
+            self.report.warn(where, f"the chains have {len(joint_bones)} joints; more than {CHAIN_JOINTS_WARNING} cost frame time on slow computers")
+        seen, chain_names, rows = set(), set(), {}
+        for chain in character.get("chains", []):
+            if chain["name"] in chain_names: self.report.error(where, f"two chains have the name '{chain['name']}'")
+            chain_names.add(chain["name"])
+            for name in chain.get("colliders", []):
+                if name not in colliders: self.report.error(where, f"chain '{chain['name']}': no collider '{name}'")
+            for joint in chain["joints"]:
+                label = f"chain '{chain['name']}' joint '{joint['bone']}'"
+                key = bone_key(joint["bone"])
+                if key not in added_keys: self.report.error(where, f"{label}: the joint bone must be a bone of 'bones'"); continue
+                if key in seen: self.report.error(where, f"{label}: the bone is a joint of an earlier chain or joint"); continue
+                parent = bone_key(joint["parent"]) if "parent" in joint else names[parents[index[key]]]
+                if parent not in index or parent == key: self.report.error(where, f"{label}: the parent '{joint.get('parent')}' is not another bone of the rig")
+                elif parent in joint_bones and parent not in seen: self.report.error(where, f"{label}: the parent joint must come before it")
+                seen.add(key)
+                rows[key] = (joint, parent)
+                self.check_chain_joint(where, label, joint)
+        bind = {bone_key(b["name"]): b["bind"] for b in added}
+        for key, (joint, parent) in rows.items():
+            if parent not in rows: continue
+            upper = rows[parent][0]
+            direction = np.array(upper.get("direction", [0, 1, 0]), dtype=float)
+            if np.linalg.norm(np.array(bind[key][:3]) - direction / max(np.linalg.norm(direction), 1e-9) * upper["length"]) > CHAIN_ALIGNMENT and parent in bind \
+                    and parents[index[key]] == index[parent]:
+                self.report.warn(where, f"joint '{joint['bone']}' does not start at the end of joint '{upper['bone']}' (length and direction): the two joints do not pull on each other")
+        if len(self.report.errors) > error_count or profile_parents is None: return None
+        if not added: return profile
+        # The bind is in runtime coordinates; the GLB check uses glTF coordinates (negate z, and x and y of the rotation).
+        bind = np.array([b["bind"] for b in added], dtype=np.float64)
+        return names, parents, np.vstack([translations, bind[:, :3] * [1, 1, -1]]), np.vstack([rotations, bind[:, 3:] * [-1, -1, 1, 1]])
+
+    def check_chain_joint(self, where, label, joint):
+        def unit(field):
+            vector = joint.get(field)
+            if vector is not None and abs(math.sqrt(sum(v * v for v in vector)) - 1) > 0.01: self.report.error(where, f"{label}: '{field}' must have unit length")
+        for field in ("direction", "axis", *HAIR_FRAME_FIELDS): unit(field)
+        frames = [field for field in HAIR_FRAME_FIELDS if field in joint]
+        if joint.get("type", "ragdoll") == "hinge":
+            if frames or "limits" in joint: self.report.error(where, f"{label}: a hinge has 'axis' and 'range', not the ragdoll limits")
+            low, high = joint["range"]
+            if not -math.pi <= low <= high <= math.pi: self.report.error(where, f"{label}: the hinge range must be in -pi to pi, minimum first")
+            return
+        if "axis" in joint or "range" in joint: self.report.error(where, f"{label}: 'axis' and 'range' are for hinge joints")
+        if frames and len(frames) != len(HAIR_FRAME_FIELDS): self.report.error(where, f"{label}: twistAxis, coneAxis, and planeAxis come together")
+        cone = joint["limits"]["coneLimit"][1]
+        if not 0 < cone <= math.pi / 2: self.report.error(where, f"{label}: the cone limit (coneLimit maximum) must be more than 0 and at most pi/2")
+        planes = joint["limits"].get("planesLimit")
+        if frames and planes is None: self.report.error(where, f"{label}: the limit axes need planesLimit")
+        if planes is not None and not -math.pi / 2 <= planes[0] <= planes[1] <= math.pi / 2:
+            self.report.error(where, f"{label}: planesLimit must be in -pi/2 to pi/2, minimum first")
 
     def check_highway(self, where, name):
         if name not in self.source.set: self.report.error(where, f"highway file is missing: {name}"); return
@@ -644,7 +734,7 @@ class Validator:
         missing = [n for n in profile_names if n not in index]
         extra = [n for n in names if n not in profile_names]
         if missing: self.report.error(name, f"{len(missing)} profile joints are missing, for example bone-{missing[0]}")
-        if extra: self.report.error(name, f"{len(extra)} joints are not in the profile, for example bone-{extra[0]}")
+        if extra: self.report.error(name, f"{len(extra)} joints are not in the profile or in character.json bones, for example bone-{extra[0]}")
         if missing or extra: return
         worst = [0.0, 0.0, 0.0]
         for p, bone in enumerate(profile_names):
@@ -776,6 +866,12 @@ class Validator:
                 if name.startswith(song_folder) and name.endswith(".json") and name != entry["songs"] and "/" not in name[len(song_folder):]:
                     value = load_json(self.source, name, self.report)
                     if value is not None: check_schema(self.schemas, value, "song.schema.json", name, self.report)
+
+
+def bone_key(name):
+    """The rig key of a bone name of character.json: the checksum of 'bone-<checksum>', else the GH3 checksum of the name."""
+    match = re.fullmatch(r"bone-([0-9a-f]{8})", name)
+    return match.group(1) if match else f"{gh3_key(name):08x}"
 
 
 def gh3_key(name):

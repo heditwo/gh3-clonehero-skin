@@ -96,6 +96,32 @@ def skinned_glb(offset=0.0, ibm_offset=0.0, scale_key=1.0, material=None):
     return glb.bytes()
 
 
+def chain_glb(offset=0.0):
+    """skinned_glb with two added chain bones under bone-00000002 (tail_01 and tail_02, 0.2 m apart along +Y)."""
+    glb = GlbBuilder()
+    glb.node({"name": "bone-00000001", "translation": [0, 1, 0], "children": [1]})
+    glb.node({"name": "bone-00000002", "translation": [0, 0.5, 0], "children": [2]}, root=False)
+    glb.node({"name": "tail_01", "translation": [0, 0.2 + offset, 0], "children": [3]}, root=False)
+    glb.node({"name": "tail_02", "translation": [0, 0.2, 0]}, root=False)
+    heights = [1, 1.5, 1.7 + offset, 1.9 + offset]
+    ibm = [np.linalg.inv(np.array([[1, 0, 0, 0], [0, 1, 0, h], [0, 0, 1, 0], [0, 0, 0, 1.0]])).T.reshape(-1) for h in heights]
+    glb.json["skins"] = [{"joints": [0, 1, 2, 3], "inverseBindMatrices": glb.accessor(ibm, "MAT4")}]
+    glb.json["materials"].append({"name": "skin"})
+    glb.node({"name": "model", "mesh": glb.triangle(0, skinned=True), "skin": 0})
+    return glb.bytes()
+
+
+def chain_json(**changes):
+    joint = {"length": 0.2, "mass": 1, "friction": 0.05, "angularDamping": 0.5, "maxAngularVelocity": 20, "radius": 0.02,
+             "limits": {"coneLimit": [-0.6, 0.6], "planesLimit": [-0.5, 0.5]}}
+    value = {"bones": [{"name": "tail_01", "parent": "bone-00000002", "bind": [0, 0.2, 0, 0, 0, 0, 1]},
+                       {"name": "tail_02", "parent": "tail_01", "bind": [0, 0.2, 0, 0, 0, 0, 1]}],
+             "colliders": [{"name": "body", "bone": "bone-00000001", "radius": 0.1, "a": [0, 0, 0], "b": [0, 0.4, 0]}],
+             "chains": [{"name": "tail", "colliders": ["body"], "joints": [{"bone": "tail_01", **joint}, {"bone": "tail_02", **joint}]}]}
+    value.update(changes)
+    return value
+
+
 IDENTITY = [0, 0, 0, 1]
 
 
@@ -307,8 +333,9 @@ class CharacterPackageTests(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def character(self, glb, profile="gh3-drummer-v1", hair=()):
-        files = {"character.glb": glb, "character.json": json.dumps({"version": 1, "library": "gh3-band-v1", "profile": profile, "hairMaterials": list(hair)}).encode()}
+    def character(self, glb, profile="gh3-drummer-v1", hair=(), **fields):
+        files = {"character.glb": glb, "character.json": json.dumps({"version": 1, "library": "gh3-band-v1", "profile": profile, "hairMaterials": list(hair),
+                                                                     **fields}).encode()}
         return package(self.folder, files, name="c.chchar", kind="chchar", entry={"model": "character.glb", "character": "character.json"}, preview=None)
 
     def test_valid_character(self):
@@ -340,6 +367,39 @@ class CharacterPackageTests(unittest.TestCase):
         glb.json["materials"].append({"name": "floor", "extras": {"gh3Shading": "toon"}})
         glb.node({"name": "floor", "mesh": glb.triangle(0)})
         self.assertTrue(any("only for characters" in e for e in errors_of(package(self.folder, stage_files(**{"stage.glb": glb.bytes()})))))
+
+
+    def test_custom_chains(self):
+        report = validate(self.character(chain_glb(), **chain_json()), library=self.library)
+        self.assertEqual((report.errors, report.warnings), ([], []))
+        self.assertTrue(any("not in the profile or in character.json bones" in e for e in errors_of(self.character(chain_glb()), library=self.library)))
+        self.assertTrue(any("joint positions differ" in e for e in errors_of(self.character(chain_glb(offset=0.001), **chain_json()), library=self.library)))
+        def errors(**changes): return "\n".join(errors_of(self.character(chain_glb(), **chain_json(**changes)), library=self.library))
+        value = chain_json()
+        bones = value["bones"]
+        self.assertIn("has the name of a profile bone", errors(bones=[*bones, {"name": "bone-00000001", "parent": "tail_02", "bind": [0, 0, 0, 0, 0, 0, 1]}]))
+        self.assertIn("is not a bone of the rig", errors(bones=[{**bones[0], "parent": "missing"}, bones[1]]))
+        self.assertIn("is not a bone of the rig", errors(bones=[bones[1], bones[0]]))
+        self.assertIn("unit length", errors(bones=[{**bones[0], "bind": [0, 0.2, 0, 0, 0, 0, 2]}, bones[1]]))
+        chain = value["chains"][0]
+        joints = chain["joints"]
+        self.assertIn("must be a bone of 'bones'", errors(chains=[{**chain, "joints": [{**joints[0], "bone": "bone-00000002"}]}]))
+        self.assertIn("joint of an earlier chain", errors(chains=[chain, {**chain, "name": "again"}]))
+        self.assertIn("two chains have the name", errors(chains=[{**chain, "joints": [joints[0]]}, {**chain, "joints": [joints[1]]}]))
+        self.assertIn("parent joint must come before it", errors(chains=[{**chain, "joints": [joints[1], joints[0]]}]))
+        self.assertIn("no collider 'legs'", errors(chains=[{**chain, "colliders": ["legs"]}]))
+        self.assertIn("cone limit", errors(chains=[{**chain, "joints": [{**joints[0], "limits": {"coneLimit": [0, 2.0]}}]}]))
+        self.assertIn("planesLimit must be", errors(chains=[{**chain, "joints": [{**joints[0], "limits": {"coneLimit": [0, 1], "planesLimit": [0.5, -0.5]}}]}]))
+        self.assertIn("come together", errors(chains=[{**chain, "joints": [{**joints[0], "twistAxis": [0, 1, 0]}]}]))
+        self.assertIn("'direction' must have unit length", errors(chains=[{**chain, "joints": [{**joints[0], "direction": [0, 2, 0]}]}]))
+        self.assertIn("is on the chain bone", errors(colliders=[{**value["colliders"][0], "bone": "tail_01"}]))
+        self.assertIn("'axis' and 'range'", errors(chains=[{**chain, "joints": [{**joints[0], "type": "hinge", "axis": [1, 0, 0], "range": [-1, 1]}]}]))
+        hinge = {key: item for key, item in joints[0].items() if key != "limits"}
+        self.assertNotIn("tail_01", errors(chains=[{**chain, "joints": [{**hinge, "type": "hinge", "axis": [1, 0, 0], "range": [-1, 1]}]}]))
+        report = validate(self.character(chain_glb(), **chain_json(chains=[{**chain, "joints": [{**joints[0], "length": 0.1}, joints[1]]}])), library=self.library)
+        self.assertTrue(any("does not start at the end" in w for w in report.warnings), report.warnings)
+        many = [{"name": f"b{i}", "parent": "bone-00000002" if i == 0 else f"b{i - 1}", "bind": [0, 0.01, 0, 0, 0, 0, 1]} for i in range(65)]
+        self.assertIn("too many items", "\n".join(errors_of(self.character(chain_glb(), bones=many), library=self.library)))
 
 
 class ClipTests(unittest.TestCase):

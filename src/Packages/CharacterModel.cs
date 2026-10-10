@@ -20,6 +20,11 @@ internal sealed class CharacterModel
     // The highway image of the character (cache highway.png), or "" when the package has none.
     public string Highway { get; private init; } = "";
     public string[] Joints { get; private init; } = Array.Empty<string>();
+    // character.json bones, colliders, and chains (PACKAGE-FORMAT.md section 9.5), bone names as checksums; empty in
+    // caches that are older than the fields.
+    public AddedBone[] AddedBones { get; private init; } = Array.Empty<AddedBone>();
+    public ChainCollider[] Colliders { get; private init; } = Array.Empty<ChainCollider>();
+    public ChainJoint[] ChainJoints { get; private init; } = Array.Empty<ChainJoint>();
     public float[][] Bindposes { get; private init; } = Array.Empty<float[]>();
 
     public static CharacterModel Load(string folder)
@@ -38,9 +43,29 @@ internal sealed class CharacterModel
             Instrument = PackageJson.Text(info["instrument"]) ?? "", Library = PackageJson.Text(info["library"]) ?? "",
             Profile = PackageJson.Text(info["profile"]) ?? "", Animations = PackageJson.Text(info["animations"]) ?? "",
             Joints = joints, Bindposes = bindposes,
+            AddedBones = Rows(info["bones"], n => new AddedBone(PackageJson.Text(n["name"]) ?? "", PackageJson.Text(n["parent"]) ?? "",
+                PackageJson.Vector(n["bind"], 7, "bone bind").Select(v => (float)v).ToArray())),
+            Colliders = Rows(info["colliders"], n => new ChainCollider(PackageJson.Text(n["bone"]) ?? "", (float)PackageJson.Number(n["radius"], "radius"),
+                Floats(n["a"]), Floats(n["b"]))),
+            ChainJoints = Rows(info["chains"], n => new ChainJoint(PackageJson.Text(n["bone"]) ?? "", PackageJson.Text(n["parent"]) ?? "",
+                (long)PackageJson.Number(n["colliderMask"], "colliderMask"), Joint(n))),
             Highway = PackageJson.Text(info["highway"]) is { Length: > 0 } highway ? Path.Combine(folder, highway) : "",
         };
     }
+
+    private static readonly System.Text.Json.JsonSerializerOptions JointOptions = new() { PropertyNameCaseInsensitive = true };
+
+    private static T[] Rows<T>(System.Text.Json.Nodes.JsonNode? node, Func<System.Text.Json.Nodes.JsonNode, T> read) =>
+        node is System.Text.Json.Nodes.JsonArray rows ? rows.Select(n => read(n ?? throw new PackageException("invalid character chain row"))).ToArray() : Array.Empty<T>();
+
+    private static HairJoint Joint(System.Text.Json.Nodes.JsonNode row)
+    {
+        var physics = (System.Text.Json.Nodes.JsonObject)PackageJson.Clone(row)!;
+        physics.Remove("bone"); physics.Remove("parent"); physics.Remove("colliderMask");
+        return System.Text.Json.JsonSerializer.Deserialize<HairJoint>(physics.ToJsonString(), JointOptions) ?? throw new PackageException("invalid chain joint");
+    }
+
+    private static float[] Floats(System.Text.Json.Nodes.JsonNode? node) => PackageJson.Vector(node, 3, "vector").Select(v => (float)v).ToArray();
 
     // For each character joint, the index of the bone with the same name in a band role's rig. A joint that the rig does
     // not have gives null: the character cannot play that role.
@@ -55,3 +80,8 @@ internal sealed class CharacterModel
         return result;
     }
 }
+
+internal sealed record AddedBone(string Name, string Parent, float[] Bind);
+internal sealed record ChainCollider(string Bone, float Radius, float[] A, float[] B);
+// A joint of a custom chain; Joint holds the physics fields (its Bone and Parent indices are set on the rig that plays it).
+internal sealed record ChainJoint(string Bone, string Parent, long ColliderMask, HairJoint Joint);

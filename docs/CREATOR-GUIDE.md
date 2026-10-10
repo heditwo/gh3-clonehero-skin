@@ -167,7 +167,7 @@ A character is a mesh on one GH3 rig. The game plays the GH3 animations of the b
 4. Model your character over the reference body, or import a mesh and move it onto the reference body. Use PNG images.
 5. Select your meshes, and click **Transfer Weights from the GH3 Body** in **Weights and Hair**. Each vertex gets the weights of the nearest point on the GH3 body (4 bones at most).
 6. Change the weights with Weight Paint if necessary. Then click **Limit and Normalize**.
-7. Hair: select the hair cards, select a chain in **Hair bones of the profile**, and click **Assign to Hair Bones**. Make the hair material active and click **+** under **Hair materials**.
+7. Hair: select the hair cards, select a chain in **Hair bones of the profile**, and click **Assign to Hair Bones**. Make the hair material active and click **+** under **Hair materials**. For long hair, a skirt, or a tail that the profile does not have, make your own chains (section 5.3).
 8. Optional: click a clip in **Clip Preview** and click **Play** to see your character move.
 
 ![Weight Paint after Transfer Weights, with the GH3 body and the guitar helpers](images/creator/character-weights.png)
@@ -193,12 +193,12 @@ You can use a model that has its own skeleton, for example an MMD model (`.pmx`)
    - The face and the hair on the head: full weight on `bone_head`. The face bones of the GH3 body are at other places than the eyes and the mouth of your character; with their weights, the face changes shape when the GH3 face moves.
    - The hands: Transfer Weights can give a finger the weight of the next finger. When the model has good finger weights, keep them: rename the finger vertex groups to the GH3 finger bones (the add-on shows the bone names), then remove the other vertex groups.
    - Parts far from the body (a long tail, cables): they get the weights of the nearest body part (for example the heels). Paint them to `bone_pelvis`.
-7. **Long hair.** Select the vertices of each pigtail and assign them to a hair chain (**Assign to Hair Bones**). Midori has two pigtail chains (chain 1 and chain 2). The vertices below the end of the chain go to the last bone: the hair physics then moves them as one part. Add the hair materials to **Hair materials**.
+7. **Long hair, skirt, tail.** Make your own chains (section 5.3). With MMD Tools, **Chains from MMD Physics** makes them from the MMD rigid bodies of the model. Or use the hair chains of the profile: select the vertices of each pigtail and click **Assign to Hair Bones** (Midori has two pigtail chains; the vertices below the end of a chain go to the last bone and move as one part). Add the hair materials to **Hair materials**.
 8. Click **Limit and Normalize**, look at some clips in **Clip Preview**, then Validate and export.
 
 Compare the face of your export with the source model: render both front-on in Blender (the export with **File > Import > glTF**). The eyes must be at the same places. Measure a ratio, for example the distance between the eyes divided by the width of the face at the height of the eyes: it must be the same in the source and in the export. To see the face in the game at a fixed angle, use `GH3_SKIN_DEBUG_VIEW_HEAD=local` ([VERIFICATION.md](VERIFICATION.md)). The game shows the face as Blender does with the same camera. Thus, if the eyes look too far apart in the game but the ratios are correct, the cause is the design of the model or the camera angle, not the export. (In a test on gh3.dive, half of the frames that show the guitarist's face are 12° to 42° to the side of the face.)
 
-Known limits: the character does not blink and does not move its mouth (the face is on the head bone). Long hair can go into the body or the guitar for a short time, because the hair physics knows only the bodies of the GH3 profile.
+Known limits: the character does not blink and does not move its mouth (the face is on the head bone). The hair chains of the profile collide only with the head; use your own chains with colliders for long hair.
 
 ### 5.2 Toon look and eyebrows over the hair
 
@@ -221,7 +221,37 @@ Anime models look flat with the **Lit**, **Ambient**, or **Unlit** shading. Use 
 - The feature shows only where its faces turn to the camera, so it never shows through the back of the head. Other parts (the hands, the instrument, other band members) still cover it.
 - To check it in the game, use `GH3_SKIN_DEBUG_HAIR_LAYER=mark` ([VERIFICATION.md](VERIFICATION.md#runtime-variables)): the features then show in a flat color.
 
-### 5.3 Play the character
+### 5.3 Make hair, skirt, and tail chains
+
+A chain is a line of bones that you add to the rig. The game moves the chain with gravity and the motion of the body, as GH3 moves its hair. Colliders are capsules on the body: the chain does not go into them.
+
+1. Open **Chains and Colliders** in the tab **CH Character**.
+2. Select your mesh, go to Edit Mode, and select the vertices of one strand: one twin tail, one skirt panel, or a tail.
+3. Click **Chain along Strand**. Set:
+   - **Chain name**, for example `twin_tail_l`.
+   - **Joints**: the number of bones. Use 5 to 8 for a long twin tail, 2 for a skirt panel, 6 to 13 for a tail.
+   - **Parent bone**: the bone that holds the chain (for a twin tail the head, for a skirt the pelvis). Empty: the nearest body bone.
+   - **Preset**: **Long hair or twin tail**, **Skirt**, **Tail or cable**, **Hair**, or **Stiff accessory**.
+
+   The tool adds the bones and gives the selected vertices weights on them.
+4. Do steps 2 and 3 again for each strand.
+5. Click **Fit Body Colliders**. The tool adds capsules on the hips, the body, the legs, the arms, a sphere on the head, and a capsule on the guitar. Look at them in the viewport. Move a capsule or change its radius if necessary.
+6. For each chain, clear **All colliders** and type the colliders near it. Example: a twin tail touches `head, chest, waist, stomach, hips, thigh_l, thigh_r, guitar`; a skirt touches `thigh_l, thigh_r, shin_l, shin_r`.
+7. To change the motion, make a joint bone active in Pose Mode and change its values: **Swing limit** (how far it swings), **Damping** (how fast it stops), **Speed limit** (how fast it can turn).
+8. Click **Validate**, then **Export .chchar**.
+
+![A twin tail chain (blue) and the Chains and Colliders panel](images/creator/character-chains.png)
+
+With an MMD model: import the model with MMD Tools with physics, move the MMD model onto the rig (the same fit as the mesh), and click **Chains from MMD Physics**. The tool makes a bone for each moving rigid body, with the MMD mass, damping, and limits. Then remove the MMD model.
+
+Hints:
+
+- Make the swing limit small for a long chain: each joint adds its swing.
+- A chain that touches a collider at rest pushes away from it all the time. Give each chain only the colliders near it.
+- A long tail can hit the floor: add a large sphere under the floor on the root bone (**Add Collider** on the root bone, radius 3 m, 3 m under the floor).
+- At most 64 joints. Each joint costs time in the game; 40 joints of the test character take 0.13–0.36 ms of each frame on the test computer.
+
+### 5.4 Play the character
 
 To use the character:
 

@@ -199,7 +199,7 @@ Rules to know:
 | Check (Validate) | Fix |
 | --- | --- |
 | The rig has another transform than the origin | Clear the rig transform (Object > Clear) |
-| A rig bone is missing, or a bone is not in the profile | Start again from **New**; do not add or delete bones |
+| A rig bone is missing | Start again from **New**; do not delete bones. You can add bones for chains (section 1.16) |
 | A mesh has its own transform | Click **Transfer Weights**, or apply the transform (Object > Apply > All Transforms) |
 | A mesh has no Armature modifier for the rig | Click **Transfer Weights** |
 | Vertices without weight, more than 4 influences, weight sum not 1 | **Transfer Weights**, Weight Paint, then **Limit and Normalize** |
@@ -207,6 +207,41 @@ Rules to know:
 | The glTF export does not read the surface node of a material (warning) | The material uses a node group or another shader (for example the toon shader of an MMD or VRM importer). Connect a **Principled BSDF** with the image on **Base Color** to the material output. Else the package has the material without its texture |
 | A hair material is not on a character mesh | Remove it from **Hair materials** |
 | Joint positions or rotations differ from the profile (validator) | The rig changed: start again from **New** |
+
+### 1.16 Chains and colliders
+
+A character can have its own hair, skirt, tail, and cable chains: bones that you add to the rig, with physics (PACKAGE-FORMAT section 9.5). The game moves them with the solver of the GH3 hair. Colliders are capsules on body bones: the chains do not go into them (for example a skirt into the legs, or a twin tail into the chest or the guitar). The tools are in the panel **Chains and Colliders** of the tab **CH Character**.
+
+![The Chains and Colliders panel](images/creator/character-chains.png)
+
+| Tool | What it does |
+| --- | --- |
+| **Chain along Strand** | Select the vertices of a strand in Edit Mode (a twin tail, a skirt panel, a tail), or select a curve. The tool puts the given number of **Joints** along the centre line of the points, from the end nearest to the **Parent bone** (empty: the nearest body bone), as new rig bones. It makes a chain with the **Preset**, and gives the selected vertices weights on the new bones (blended near the joints) |
+| **Chain from Selected Bones** | Makes a chain of bones that you added to the rig yourself (Edit Mode of the rig, then select them in Pose Mode). The bones of the profile cannot be joints |
+| **Chains from MMD Physics** | For an MMD model that you imported with MMD Tools (with physics) and moved onto the rig: a new bone for each dynamic rigid body, at its MMD bone, with the MMD mass, the damping, and the rotation limits of its joint, and a chain for each root. **MMD bones** selects bodies (empty: all). **Colliders** also makes colliders from the static bodies |
+| Chain list | The chains. **Preset** and **Apply** set the values of a preset on all joints of the chain. **All colliders**, or the names of the colliders that the chain touches. **Assign to Chain** gives the selected vertices weights on the chain. **X** removes the chain (its bones stay and follow their parents) |
+| Joint values | Make a joint bone active (Pose Mode) to edit **Swing limit**, **Side limit**, **Mass**, **Friction**, **Damping**, **Speed limit**, and **Radius** |
+| **Fit Body Colliders** | Capsules on the hips, stomach, waist, chest, thighs, shins, upper arms, forearms, a sphere on the head, and a capsule on the guitar body (from the attachment preview). The radius comes from the vertices of your meshes near each part |
+| **Add Collider** | A capsule on the active body bone. Move and turn the capsule in the viewport; set **Name**, **Radius**, and **Length** in the panel |
+
+Presets (values for each joint; the speed limits keep the chain ends near the speeds of the GH3 hair):
+
+| Preset | Swing limit | Side limit | Damping (/s) | Speed limit (rad/s) | Radius |
+| --- | --- | --- | --- | --- | --- |
+| Hair | 20° | — | 1 | 10 | 1 cm |
+| Long hair or twin tail | 22° | — | 3 | 6 | 3 cm |
+| Skirt | 35° | 15° | 3 | 10 | 1 cm |
+| Tail or cable | 10° | — | 2 | 8 | 2 cm |
+| Stiff accessory | 5° | — | 3 | 5 | — |
+
+Rules:
+
+- The swing limit is for each joint. A chain of 7 joints with 22° each can swing far; a chain of 2 joints swings less.
+- Give a chain only the colliders near it. A twin tail touches the head, the chest, the waist, the hips, the thighs, and the guitar; a skirt touches the thighs and the shins. A collider that a chain touches at rest pushes the chain away all the time.
+- A long tail can touch the floor: add a large sphere under the floor on the root bone (for example a radius of 3 m, 3 m under the floor).
+- At most 64 joints and 32 colliders. More than 32 joints gives a warning: each joint costs solver time.
+- MMD joints have springs that hold the shape inside wide limits. The chains have no spring, so the import uses the smaller of the MMD limit and the preset swing limit, and the larger damping, when the MMD joint has a spring.
+- Export writes `character.json` `bones`, `colliders`, and `chains`. Open makes the chains and the colliders again. The colliders are helpers: the GLB export does not write them.
 
 ## 2. For developers
 
@@ -234,6 +269,7 @@ Rules to know:
 | `blender/chstage_tools/template.py` | The template scene, snapshot capture and apply |
 | `blender/chstage_tools/operators.py`, `panels.py` | Operators and panels |
 | `blender/chstage_tools/character_tools.py` | Characters: new character scene (fixed profiles and character library profiles), helpers from the library or the GH3 character package of the profile, weight transfer, limit and normalize, hair bones, clip preview (q48 to actions) |
+| `blender/chstage_tools/chain_tools.py` | Custom chains and colliders: chain along a strand, from bones, from MMD physics; presets; colliders (fit, add); export and open of `bones`, `colliders`, `chains` (section 2.12) |
 | `blender/chstage_tools/character_package.py` | Export .chchar, Validate, Open .chchar: add-on checks (also the material surface nodes that the glTF export does not read), GLB export of the rig and its meshes, character.json, manifest (format 1.0), zip, validator with the library and the character library |
 | `blender/chstage_tools/character_ui.py` | Operators and panels of the tab CH Character |
 | `blender/chstage_tools/toon.py` | Toon materials: the EEVEE preview node tree (on, off, off during export) and **Toon from MMD**. The ramp conversion (`toon_ramp_settings`), `gh3Toon` write and read, and the toon texture references are in `sidecars.py` |
@@ -403,7 +439,7 @@ python3 blender/build.py                      # writes blender/dist/chstage_tool
 flock /tmp/opencode/gh3-heavy.lock bash blender/test.sh ~/.cache/chstage-test blender-clean ~/.cache/blender/blender-4.2-clean
 ```
 
-With `assets/packages/gh3-band-v1.chlib` present (or `CHSTAGE_TEST_LIBRARY`), `blender/test.sh` also runs the character test (`blender/tests/character_test.py`, section 2.11) in a second Blender process. Result on 2026-10-09: 60 of 60 venue checks and 39 of 39 character checks pass on Blender 5.2.1 and on Blender 4.2.23. On 2026-10-10 the character test has 41 checks (toon preview, toon extras in the GLB, toon round trip); 41 of 41 pass on Blender 5.2.1 (4.2.23 not run again).
+With `assets/packages/gh3-band-v1.chlib` present (or `CHSTAGE_TEST_LIBRARY`), `blender/test.sh` also runs the character test (`blender/tests/character_test.py`, section 2.11) in a second Blender process. Result on 2026-10-10: 60 of 60 venue checks and 47 of 47 character checks (with the toon and chain checks) pass on Blender 5.2.1 and on Blender 4.2.23.
 
 `blender/test.sh` installs the zip into a temporary Blender user folder (`BLENDER_USER_RESOURCES`), so it does not change the Blender setup of the user. It also opens, exports, and compares `assets/packages/gh3.credits.chstage` when it exists (`CHSTAGE_TEST_VENUE` selects another package; an empty value turns it off), and then tests the venue tools (`tools_test.py`; `CHSTAGE_TEST_SKIP=actors,scripts,lighting,cameras,groups` skips parts). Set `CHSTAGE_TEST_RIG` to a GH3 rig GLB (for example a spike file from `tools/research/spike-blender/band_glb.py`) to also test the import fix. Result on 2026-10-09: 60 of 60 checks pass on Blender 5.2.1 and on Blender 4.2.23:
 
@@ -519,3 +555,23 @@ The character test checks (Blender 5.2.1 and 4.2.23): New Character on `gh3-guit
 **Creator test with a third-party model (2026-10-09).** An MMD model (Tda式初音ミク・アペンド Ver1.10, 25,164 vertices, 17 materials) went onto `gh3-guitarist-midori-v1` with the add-on: fit to the bind pose with a script (the add-on has no retarget tool), Transfer Weights, head, finger, and tail weights from the MMD weights, Assign to Hair Bones for the twin tails, Validate, and Export (7.2 MB, valid with both libraries). The mod imported it in 0.42 s and played it as guitarist and bassist on gh3.dive and gh3.prison. Problems that this test found and that are now fixed: the add-on had no character library profiles; Open stopped on packages on a character library profile ("unknown profile"); MMD toon materials exported without a texture and without a message (now a warning). The model and the package are not in the repository (third-party terms). Steps: [CREATOR-GUIDE.md section 5.1](CREATOR-GUIDE.md#51-use-a-rigged-model-mmd-vrm-fbx).
 
 Python tests without Blender (`tests/test_blender_addon_characters.py`): the Brotli decoder against the `brotli` module (texts at 4 qualities, 2 modes, 3 windows; every 60th library clip; a damaged stream), weight limits, quaternions, character.json, the model split of the four roles, the four members as valid and reproducible packages, the hair chains, the clip list, bind pose of channels that a clip does not animate, the game IK (the strum hand on its target in all frames), the comparison with another joint order, the bundle, character.json and the manifest requirements of both kinds of profile, and the character library (the rig from `characters.json` against the GH3 package GLB, the hair chains, the split of a GH3 character, the GH3 package before a custom character, the clip offsets).
+
+### 2.12 Chains
+
+`chain_tools.py` holds the chain tools; `pipeline/package/chains.py` (bundled) holds the presets, the rows of `character.json` from the exported GLB (`character_rows`: the added bones parents first, the bind poses from the GLB joint nodes in runtime coordinates, the joint direction and the collider ends in the runtime frame of their bone), the strand centre line (`strand_points`), the collider fits (`segment_radius`, `flat_capsule`), and the MMD mapping (`mmd_damping`: Havok damping −ln(1 − d) of an MMD damping fraction d; `mmd_limits`: the cone is the largest of the two swing ranges about the axes across the bone, and the planes come from the narrow range when it is less than 0.8 of the wide range).
+
+- The joint settings are `bone.chstage_joint`; the chains are `scene.chstage_chains`; a collider is a mesh with `object.chstage_collider`, the marker `PROXY`, and a bone parent. The export hooks remove `chstage*` properties from the node, joint, and scene extras.
+- Blender bones point along +Y, so the joints have `direction` `[0, 1, 0]`; the solver turns each joint frame so that +X points along the joint (`StageHair` `_align`).
+- Open sets the bone length of each joint to its `length` (the glTF import gives an end bone another length), and puts each collider at its ends in the GLB joint frame.
+
+The character test (`blender/tests/character_test.py`, section 8) makes a twin tail along a strand (4 joints on the head), fits the colliders (14), exports a valid package (the joints end at the next joint), opens and exports it again (bones, colliders, and chains equal within 2e-4), and makes chains from MMD-like physics data (an armature, three bodies, two joints). `tests/test_chains.py` tests the rows, the strand, the fits, and the MMD mapping without Blender.
+
+
+**Creator test with chains (2026-10-10).** The two Miku test characters of section 2.11 (not in the repository) were made again with chains, by scripts that call the add-on as a creator does (`~/.cache/custom-hair/scripts/build_*_chains.py`):
+
+| Character | Chains | Joints | Colliders | Bench, My Curse 120 s (`GH3_HAIR_BENCH=character:`) |
+| --- | --- | --- | --- | --- |
+| Tda Miku Append (MMD) | **Chains from MMD Physics**: 2 twin tails (7 joints each), the cable tail (13), 6 waist wings (8), the necktie (5) | 40 | 15: **Fit Body Colliders** and a floor sphere | Peak joint end 16.3 m/s; solver 0.36 ms per frame at 60 fps, 0.13 ms at 144 fps; joint ends in their colliders p99 6.5 mm, maximum 17.1 mm (a waist wing in the thigh) |
+| Project SEKAI Miku (FBX) | **Chain along Strand** at the source bones: 2 twin tails (8 joints each), 8 skirt panels (2 each) | 32 | 14: **Fit Body Colliders** | Peak 4.3 m/s; solver 0.28 / 0.11 ms; maximum depth 0.1 mm |
+
+The poses at common times at 60 and 144 fps are equal (0.0 difference). The values of the MMD import that hold the shape in MMD (springs) gave twin tails that whipped up to 60–90° from vertical; the preset limits (22°, damping 3, speed limit 6 rad/s) keep 95% of the frames within 30–35° of vertical. Each chain touches only the colliders near it: with the arm colliders, a twin tail rested on the upper arm and flicked over it.

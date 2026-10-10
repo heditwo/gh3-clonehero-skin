@@ -1,6 +1,8 @@
 """Screenshots of the character panels. Run Blender with a window, as blender/tests/screenshots_tools.py:
 
 blender --window-geometry 0 0 1920 1080 --python blender/tests/screenshots_character.py -- ZIP OUTPUT_DIR CHARACTER LIBRARY
+
+A CHARACTER with chains (the package test-chains/tester.chains.chchar of the character test) gives the chains panel only.
 """
 
 import sys
@@ -29,7 +31,7 @@ def view3d():
 
 def panels(*names):
     """Show only these character panels, open, in the Item tab (the API cannot select a sidebar tab; screenshots only)."""
-    classes = [c for c in sys.modules[module + ".character_ui"].CLASSES if issubclass(c, bpy.types.Panel)]
+    classes = [c for c in sys.modules[module + ".character_ui"].CLASSES + sys.modules[module + ".chain_tools"].CLASSES if issubclass(c, bpy.types.Panel)]
     for cls in list(bpy.types.Panel.__subclasses__()):
         if getattr(cls, "bl_space_type", "") == "VIEW_3D" and getattr(cls, "bl_region_type", "") == "UI" and getattr(cls, "is_registered", False):
             bpy.utils.unregister_class(cls)
@@ -124,6 +126,27 @@ def clips():
     select([])
 
 
+def chains():
+    props = scene().chstage.character
+    rig = props.rig
+    panels("CHSTAGE_PT_character_chains")
+    joint = next(b for b in rig.data.bones if b.chstage_joint.enabled)
+    rig.data.bones.active = joint
+    for obj in scene().objects:
+        if obj.chstage_collider.enabled: obj.hide_set(False)
+    rig.show_in_front = True
+    rig.data.display_type = "STICK"
+    for bone in rig.data.bones: bone.hide = not (bone.chstage_joint.enabled or bone.name == joint.parent.name)
+    tail = next(o for o in scene().objects if o.name.startswith("TestTwinTail"))
+    frame([tail])
+    area, region = view3d()
+    region_3d = area.spaces.active.region_3d
+    region_3d.view_rotation = __import__("mathutils").Euler((1.35, 0, 0.5)).to_quaternion()
+    region_3d.view_distance *= 2.6
+    select([rig])
+    bpy.ops.object.mode_set(mode="POSE")
+
+
 steps = [setup, lambda: None, package_panel, lambda: shot("panel-character"), issues, lambda: shot("panel-character-issues"),
          weights, lambda: shot("panel-character-weights"), clips, lambda: None, lambda: shot("panel-character-clips"), lambda: bpy.ops.wm.quit_blender()]
 
@@ -138,4 +161,6 @@ def tick():
     return 3.0 if steps else None
 
 
+if "chains" in package.name:
+    steps = [setup, lambda: None, chains, lambda: None, lambda: shot("panel-character-chains"), lambda: bpy.ops.wm.quit_blender()]
 bpy.app.timers.register(tick, first_interval=2.0)
