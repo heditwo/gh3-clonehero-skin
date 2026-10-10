@@ -4,7 +4,7 @@ namespace Gh3Skin;
 // in DATA/PAK/qb.pab.xen and the QB readers of the community tools (QueenBee item types, NXTools script tokens); the
 // names follow those tools where they agree with the GH3 behaviour that the runtime reproduces.
 
-// The type byte of a QB value (Gh3QbValue.Type).
+// GH3: the type byte of a QB value (Gh3QbValue.Type).
 internal static class Gh3QbType
 {
     // Not a GH3 type: the runtime's missing or deleted value.
@@ -27,7 +27,7 @@ internal static class Gh3QbType
     public const uint StringChecksum = 28;
 }
 
-// Binary layout of a GH3 PC QB file (big-endian words).
+// GH3: the binary layout of a GH3 PC QB file (big-endian words).
 internal static class Gh3QbLayout
 {
     public const int FileHeaderSize = 28;
@@ -52,7 +52,7 @@ internal static class Gh3QbLayout
     public const int ScriptHeaderSize = 12;
 }
 
-// LZSS of compiled QB scripts: a 4096-byte ring buffer that starts filled with spaces, written from offset 4078
+// GH3: the LZSS of compiled QB scripts: a 4096-byte ring buffer that starts filled with spaces, written from offset 4078
 // (the classic LZSS of Okumura with N = 4096, F = 18, THRESHOLD = 2).
 internal static class Gh3QbCompression
 {
@@ -64,7 +64,7 @@ internal static class Gh3QbCompression
     public const int MatchOffsetHighMask = 0xf0;
 }
 
-// Opcodes of the compiled QB script tokens.
+// GH3: the opcodes of the compiled QB script tokens.
 internal static class Gh3ScriptOp
 {
     public const byte EndOfFile = 0x00;

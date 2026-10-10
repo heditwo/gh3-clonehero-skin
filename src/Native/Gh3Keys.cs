@@ -1,6 +1,6 @@
 namespace Gh3Skin;
 
-// Checksums of GH3 names that the code needs as compile-time constants (switch labels, field keys). Each value is
+// GH3: checksums of GH3 names that the code needs as compile-time constants (switch labels, field keys). Each value is
 // Gh3Checksum.Value of the name in its comment; tests/ScriptLogicTests.cs checks them. Checksums whose names are not
 // known stay as hex literals with a GH3: note where they are used.
 internal static class Gh3Keys
@@ -35,7 +35,7 @@ internal static class Gh3Keys
     };
 }
 
-// GH3 bone checksums as the string keys of the band rigs (Gh3Checksum.Of of the bone name).
+// GH3: bone checksums as the string keys of the band rigs (Gh3Checksum.Of of the bone name).
 internal static class Gh3Bones
 {
     public const string Head = "ddec28af"; // Bone_Head

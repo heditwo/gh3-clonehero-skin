@@ -1,6 +1,6 @@
 namespace Gh3Skin;
 
-// GH3 camera notes: the camera group of each note in CameraCuts_NoteMapping (guitar_cameras.qb, the same in all ten
+// GH3: camera notes, the camera group of each note in CameraCuts_NoteMapping (guitar_cameras.qb, the same in all ten
 // venues). docs/CUSTOM-CONTENT.md#camera-cuts has the full table.
 internal static class Gh3CameraNote
 {
@@ -30,7 +30,7 @@ internal static class Gh3CameraNote
     public const int StageDive = 117;
 }
 
-// GH3 lightshow notes (LightShow_NoteMapping, scripts\fx\lightshow.qb; PARITY-NOTES.md#lighting-and-node-flags).
+// GH3: lightshow notes (LightShow_NoteMapping, scripts\fx\lightshow.qb; PARITY-NOTES.md#lighting-and-node-flags).
 internal static class Gh3LightshowNote
 {
     // 39-53: blend times (BlendTimes).
@@ -50,7 +50,7 @@ internal static class Gh3LightshowNote
     public static readonly string[] Moods = { "strobe", "flare", "blackout", "solo", "chorus", "verse", "intro" };
 }
 
-// GH3 notes of the drums, crowd, and fret-hand tracks (<song>_drums_notes, _crowd_notes, and the anim notes).
+// GH3: notes of the drums, crowd, and fret-hand tracks (<song>_drums_notes, _crowd_notes, and the anim notes).
 internal static class Gh3TrackNote
 {
     // drums: 36-45 left hand (37-45 animated), 48 kick, 49-57 right hand, 70 the count-off.
