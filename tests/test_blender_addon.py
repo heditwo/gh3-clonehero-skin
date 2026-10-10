@@ -140,6 +140,29 @@ class SidecarTests(unittest.TestCase):
                                   "gh3TextureAnimation": {"columns": 4, "rows": 2, "fps": 8, "offset": 0}})
         self.assertEqual(gltf, {"alphaMode": "BLEND", "doubleSided": False, "occlusionTexture": {"image": "lightmap.png", "texCoord": 1}})
 
+    def test_toon_settings_map_to_extras_and_back(self):
+        toon = {"threshold": 0.4, "softness": 0.07, "shadeColor": [0.8, 0.79, 0.86], "shadeTexture": "shade", "shadeMaskTexture": None,
+                "rimColor": [0, 0, 0], "rimWidth": 0, "sphereTexture": "sphere.png", "sphereMode": "add",
+                "outline": {"width": 0.0015, "color": [0.3, 0.2, 0.4], "textured": False}}
+        extras, _ = sidecars.material_fields({"shading": "toon", "blend": "OPAQUE", "alphaCutoff": 0.5, "toon": toon, "hairLayer": "hair"})
+        self.assertEqual(extras, {"gh3Shading": "toon", "gh3HairLayer": "hair", "gh3Toon": {
+            "threshold": 0.4, "softness": 0.07, "shadeColor": [0.8, 0.79, 0.86], "shadeTexture": "#shade", "sphereTexture": "#sphere.png",
+            "sphereMode": "add", "outline": {"width": 0.0015, "color": [0.3, 0.2, 0.4], "textured": False}}})
+        props, other = sidecars.open_material({"extras": extras})
+        self.assertEqual(other, {})
+        self.assertEqual((props["shading"], props["hair_layer"], props["toon_threshold"], props["use_outline"], props["outline_color"]),
+                         ("toon", "hair", 0.4, True, [0.3, 0.2, 0.4]))
+        self.assertEqual(sidecars.toon_references(extras), {"toon_shade_image": "#shade", "toon_sphere_image": "#sphere.png"})
+
+    def test_mmd_toon_ramp(self):
+        # toon_defo.bmp of the Tda model: 8 white rows, a 3-row blend, then the shade color.
+        rows = [[255] * 3] * 8 + [[241, 240, 244], [221, 218, 230], [206, 202, 220]] + [[206, 202, 220]] * 5
+        threshold, softness, shade = sidecars.toon_ramp_settings(np.repeat(np.array(rows, dtype=float)[:, None, :] / 255, 16, axis=1))
+        self.assertAlmostEqual(threshold, 0.436, delta=0.01)
+        self.assertAlmostEqual(softness, 0.072, delta=0.01)
+        self.assertEqual([round(c, 3) for c in shade], [0.808, 0.792, 0.863])
+        self.assertEqual(sidecars.toon_ramp_settings(np.ones((4, 4, 3)))[:2], (0.0, 0.001))
+
     def test_node_extras(self):
         node = {"lightGroup": "Band", "visibilityGroup": "crowd-lighters", "initiallyVisible": False, "fixtureId": "beam-1",
                 "fixtureFixedPosition": True, "fixtureObject": "housing", "fixtureCreated": False, "object": "door", "pivot": "ORIGIN",

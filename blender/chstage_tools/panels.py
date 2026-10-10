@@ -556,6 +556,8 @@ class CHSTAGE_PT_material(Panel):
         props = context.material.chstage
         layout.use_property_split = True
         layout.prop(props, "shading")
+        if props.shading != "toon" and getattr(context.material, "mmd_material", None) is not None:
+            layout.operator("chstage.toon_from_mmd", icon="IMPORT").scope = "ACTIVE"
         layout.prop(props, "blend")
         if props.blend == "CUTOUT": layout.prop(props, "alpha_cutoff")
         elif props.blend in ("BLEND", "ADDITIVE"):
@@ -569,6 +571,8 @@ class CHSTAGE_PT_material(Panel):
             obj = context.object
             if obj is not None and obj.type == "MESH": layout.prop_search(props, "lightmap_uv", obj.data, "uv_layers")
             else: layout.prop(props, "lightmap_uv")
+        if props.shading == "toon": self.draw_toon(layout, props)
+        layout.prop(props, "hair_layer")
         layout.prop(props, "movie_slot")
         layout.prop(props, "sorted_transparency")
         if props.kept_extras:
@@ -579,6 +583,25 @@ class CHSTAGE_PT_material(Panel):
         layout.prop(props, "use_flipbook")
         if props.use_flipbook:
             for name in ("flipbook_columns", "flipbook_rows", "flipbook_fps", "flipbook_offset"): layout.prop(props, name)
+
+    @staticmethod
+    def draw_toon(layout, props):
+        box = layout.box()
+        box.label(text="Toon", icon="SHADING_RENDERED")
+        for name in ("toon_threshold", "toon_softness", "toon_shade_image", "toon_shade_color", "toon_mask_image", "toon_sphere_image"):
+            box.prop(props, name)
+        if props.toon_sphere_image: box.prop(props, "toon_sphere_mode")
+        box.prop(props, "toon_rim_width")
+        if props.toon_rim_width > 0: box.prop(props, "toon_rim_color")
+        box.prop(props, "use_outline")
+        if props.use_outline:
+            for name in ("outline_width", "outline_color", "outline_textured"): box.prop(props, name)
+        row = box.row(align=True)
+        on = row.operator("chstage.toon_preview", text="Preview", icon="HIDE_OFF")
+        on.enable, on.scope = True, "ACTIVE"
+        off = row.operator("chstage.toon_preview", text="glTF material", icon="HIDE_ON")
+        off.enable, off.scope = False, "ACTIVE"
+        box.operator("chstage.toon_from_mmd", icon="IMPORT").scope = "ACTIVE"
 
 
 CLASSES = (CHSTAGE_UL_rows, CHSTAGE_UL_issues, CHSTAGE_UL_kept_files, CHSTAGE_UL_scripts, CHSTAGE_UL_shots,

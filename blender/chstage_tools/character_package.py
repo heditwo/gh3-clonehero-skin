@@ -15,7 +15,7 @@ from pathlib import Path
 import bpy
 import numpy as np
 
-from . import character_tools, collect, glb_tools, gltf_io, materials, package_export, package_open, sidecars
+from . import character_tools, collect, glb_tools, gltf_io, materials, package_export, package_open, sidecars, toon
 from .vendor.package_format import character, container
 from .vendor.package_format.validate import Report, Source, Validator
 
@@ -53,7 +53,8 @@ def unsupported_surface(material):
     """The surface node of a material that the glTF exporter does not read (for example the node group of an imported
     MMD or VRM toon shader), or None."""
     if material is None or not material.use_nodes or material.node_tree is None: return None
-    outputs = [n for n in material.node_tree.nodes if n.type == "OUTPUT_MATERIAL" and n.target in ("ALL", "EEVEE")]
+    # The toon preview output (toon.py) is off while the exporter runs.
+    outputs = [n for n in material.node_tree.nodes if n.type == "OUTPUT_MATERIAL" and n.target in ("ALL", "EEVEE") and not n.get(toon.PREVIEW)]
     output = next((n for n in outputs if n.is_active_output), outputs[0] if outputs else None)
     if output is None or not output.inputs["Surface"].is_linked: return None
     link = output.inputs["Surface"].links[0]
@@ -136,7 +137,9 @@ def export_glb(scene, path, rig, meshes, keeper, issues):
         with collect.actor_tools.shown(objects, view_layer):
             for obj in scene.objects: obj.select_set(obj in objects, view_layer=view_layer)
             collect._EXPORT.update(active=True, keeper=keeper, materials={})
-            with bpy.context.temp_override(scene=scene, view_layer=view_layer), materials.vertex_alpha_for_export(collect.exported_materials(meshes)):
+            exported = collect.exported_materials(meshes)
+            with bpy.context.temp_override(scene=scene, view_layer=view_layer), materials.vertex_alpha_for_export(exported), \
+                    toon.preview_off_for_export(exported):
                 gltf_io.export_glb(path, use_selection=True, export_animations=False, export_cameras=False, export_lights=False,
                                    export_apply=True, export_vertex_color="ACTIVE", export_skins=True)
     finally:
@@ -161,6 +164,9 @@ def finish_glb(data, blender_materials, issues):
     for material in blender_materials.values():
         for ref in material.chstage.kept_images:
             if ref.name in needed and ref.image is not None: images[ref.name] = materials.image_png_bytes(ref.image)
+        for prop in sidecars.TOON_TEXTURES.values():
+            image = getattr(material.chstage, prop)
+            if image is not None and image.name in needed: images[image.name] = materials.image_png_bytes(image)
     data = glb_tools.add_images(data, images)
     for name in sorted(needed - set(images)): issues.error(f"no image for the texture reference #{name}")
     return data

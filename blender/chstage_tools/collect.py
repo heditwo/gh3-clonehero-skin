@@ -6,7 +6,7 @@ import re
 
 import bpy
 
-from . import actor_tools, gltf_io, materials, sidecars
+from . import actor_tools, gltf_io, materials, sidecars, toon
 
 
 def matrix(obj):
@@ -161,7 +161,20 @@ def material_description(material):
             "flipbook": {"columns": props.flipbook_columns, "rows": props.flipbook_rows, "fps": props.flipbook_fps,
                          "offset": props.flipbook_offset} if props.use_flipbook else None,
             "otherExtras": json.loads(props.kept_extras) if props.kept_extras else None, "opaqueAlpha": props.opaque_alpha,
-            "lightmap": props.lightmap.name if props.lightmap else None}
+            "lightmap": props.lightmap.name if props.lightmap else None, "toon": toon_description(props),
+            "hairLayer": None if props.hair_layer == "NONE" else props.hair_layer}
+
+
+def toon_description(props):
+    """The toon settings of a material (sidecars.material_fields writes gh3Toon), or None for other shading."""
+    if props.shading != "toon": return None
+    return {"threshold": props.toon_threshold, "softness": props.toon_softness, "shadeColor": list(props.toon_shade_color),
+            "shadeTexture": props.toon_shade_image.name if props.toon_shade_image else None,
+            "shadeMaskTexture": props.toon_mask_image.name if props.toon_mask_image else None,
+            "rimColor": list(props.toon_rim_color), "rimWidth": props.toon_rim_width,
+            "sphereTexture": props.toon_sphere_image.name if props.toon_sphere_image else None, "sphereMode": props.toon_sphere_mode,
+            "outline": {"width": props.outline_width, "color": list(props.outline_color), "textured": props.outline_textured}
+            if props.use_outline else None}
 
 
 def sidecar_files(scene, issues, keeper=None):
@@ -286,7 +299,9 @@ def export_stage_glb(scene, path, keeper=None, issues=None):
         with actor_tools.shown(objects, view_layer):
             for obj in scene.objects: obj.select_set(obj in objects, view_layer=view_layer)
             _EXPORT.update(active=True, keeper=keeper or sidecars.Keeper(), materials={})
-            with bpy.context.temp_override(scene=scene, view_layer=view_layer), materials.vertex_alpha_for_export(exported_materials(objects)):
+            exported = exported_materials(objects)
+            with bpy.context.temp_override(scene=scene, view_layer=view_layer), materials.vertex_alpha_for_export(exported), \
+                    toon.preview_off_for_export(exported):
                 gltf_io.export_glb(path, fps=scene.render.fps, use_selection=True, export_cameras=False, export_lights=False,
                                    export_apply=True, export_vertex_color="ACTIVE")
     finally:

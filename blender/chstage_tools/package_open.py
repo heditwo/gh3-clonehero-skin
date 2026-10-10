@@ -124,18 +124,30 @@ def open_materials(gltf, binary, mats, images, source, issues):
         material = gltf["materials"][index]
         props, other = sidecars.open_material(material)
         refs = {}
-        for container, key in sidecars.texture_references(other):
-            ref = container[key]
-            if not ref: continue
+
+        def resolve(ref):
             if ref.startswith("#"): image = by_name.get(ref[1:])
             elif ref in source.set: image = bpy.data.images.get(ref) or packed_image(ref, source.read(ref))
             else: image = None
             if image is None: issues.warn(f"material '{material.get('name')}': texture reference {ref} has no image")
-            else: refs[ref[1:] if ref.startswith("#") else ref] = image
+            return image
+
+        for container, key in sidecars.texture_references(other):
+            ref = container[key]
+            if not ref: continue
+            image = resolve(ref)
+            if image is not None: refs[ref[1:] if ref.startswith("#") else ref] = image
+        toon_images = {}
+        for prop, ref in sidecars.toon_references(material.get("extras", {})).items():
+            image = resolve(ref)
+            toon_images[prop] = image
+            # An unchanged material keeps its source reference (sidecars.Keeper), which can differ from the Blender image name.
+            if image is not None: refs[ref[1:] if ref.startswith("#") else ref] = image
         occlusion = material.get("occlusionTexture")
         lightmap = images.get(textures[occlusion["index"]].get("source")) if occlusion else None
         for blender_material in variants:
             set_properties(blender_material.chstage, props)
+            for prop, image in toon_images.items(): setattr(blender_material.chstage, prop, image)
             blender_material.chstage.kept_extras = json.dumps(other, separators=(",", ":")) if other else ""
             for key, image in refs.items():
                 item = blender_material.chstage.kept_images.add()

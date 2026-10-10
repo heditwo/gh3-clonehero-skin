@@ -34,7 +34,9 @@ OPTIONAL_PLACEMENTS = ("waypoints", "effects", "crowd")
 # Material extras that the material panel edits. The add-on keeps the other gh3* keys (for example the GH3 shader
 # record) without a change.
 PANEL_MATERIAL_EXTRAS = {"gh3Shading", "gh3Additive", "gh3AlphaCutoff", "gh3ColorScale", "gh3CrowdAtlas", "gh3CrowdRole",
-                         "gh3Billboard", "gh3MovieSlot", "gh3SortedTransparency", "gh3TextureAnimation"}
+                         "gh3Billboard", "gh3MovieSlot", "gh3SortedTransparency", "gh3TextureAnimation", "gh3Toon", "gh3HairLayer"}
+# gh3Toon texture references and their Blender material settings.
+TOON_TEXTURES = {"shadeTexture": "toon_shade_image", "shadeMaskTexture": "toon_mask_image", "sphereTexture": "toon_sphere_image"}
 # A camera point without a rotation looks at its target. The preview aims at this height above the performer root.
 LOOK_HEIGHT = 1.5
 
@@ -648,10 +650,68 @@ def material_fields(material):
     if material.get("movieSlot", -1) >= 0: extras["gh3MovieSlot"] = int(material["movieSlot"])
     if material.get("sortedTransparency"): extras["gh3SortedTransparency"] = True
     if material.get("flipbook"): extras["gh3TextureAnimation"] = {k: clean(v, 4) for k, v in material["flipbook"].items()}
+    if material.get("toon"): extras["gh3Toon"] = toon_extras(material["toon"])
+    if material.get("hairLayer"): extras["gh3HairLayer"] = material["hairLayer"]
     for key, value in (material.get("otherExtras") or {}).items():
         if key not in PANEL_MATERIAL_EXTRAS: extras[key] = value
     if material.get("lightmap"): gltf["occlusionTexture"] = {"image": material["lightmap"], "texCoord": 1}
     return extras, gltf
+
+
+def toon_extras(toon):
+    """gh3Toon of the toon settings of a material description (PACKAGE-FORMAT 6.5). Images are '#<image name>' references."""
+    def color(value): return [clean(v, 4) for v in value]
+    extras = {"threshold": clean(toon["threshold"], 4), "softness": clean(toon["softness"], 4), "shadeColor": color(toon["shadeColor"])}
+    for key in TOON_TEXTURES:
+        if toon.get(key): extras[key] = "#" + toon[key]
+    if toon.get("rimWidth"): extras.update(rimColor=color(toon["rimColor"]), rimWidth=clean(toon["rimWidth"], 4))
+    if toon.get("sphereTexture"): extras["sphereMode"] = toon["sphereMode"]
+    if toon.get("outline"):
+        line = toon["outline"]
+        extras["outline"] = {"width": clean(line["width"], 6), "color": color(line["color"]), "textured": bool(line["textured"])}
+    return extras
+
+
+def open_toon(extras):
+    """Blender material settings of gh3Toon and gh3HairLayer (the texture references stay in toon_references)."""
+    toon = extras.get("gh3Toon") if isinstance(extras.get("gh3Toon"), dict) else {}
+    props = {"hair_layer": extras.get("gh3HairLayer", "NONE"), "toon_threshold": toon.get("threshold", 0.5),
+             "toon_softness": toon.get("softness", 0.05), "toon_shade_color": toon.get("shadeColor", [1, 1, 1]),
+             "toon_rim_color": toon.get("rimColor", [0, 0, 0]), "toon_rim_width": toon.get("rimWidth", 0),
+             "toon_sphere_mode": toon.get("sphereMode", "add"), "use_outline": "outline" in toon}
+    if "outline" in toon:
+        line = toon["outline"]
+        props.update(outline_width=line.get("width", 0.0015), outline_color=line.get("color", [0, 0, 0]), outline_textured=bool(line.get("textured")))
+    return props
+
+
+def toon_ramp_settings(pixels):
+    """(threshold, softness, shade color) of an MMD toon ramp (rows top to bottom, RGB 0-1). MMD reads the ramp at
+    v = 0.5 - 0.5 N.L from the top: the half-Lambert light amount is 1 - v."""
+    column = np.asarray(pixels, dtype=float)[:, pixels.shape[1] // 2, :3]
+    lit, shade = column[0], column[-1]
+    luminance = column @ np.array([0.299, 0.587, 0.114])
+    span = luminance[0] - luminance[-1]
+    if span < 1e-3: return 0.0, 0.001, tuple(float(v) for v in lit)
+    amount = np.clip((luminance - luminance[-1]) / span, 0, 1)
+    rows = len(amount)
+    v = (np.arange(rows) + 0.5) / rows
+
+    def crossing(level):
+        index = int(np.argmax(amount < level))
+        if index == 0: return v[0]
+        a, b = amount[index - 1], amount[index]
+        return v[index - 1] + (v[index] - v[index - 1]) * (a - level) / max(a - b, 1e-6)
+
+    middle, start, end = crossing(0.5), crossing(0.9), crossing(0.1)
+    shade_color = tuple(float(s / max(l, 1e-3)) for s, l in zip(shade, lit))
+    return float(np.clip(1 - middle, 0, 1)), float(np.clip((end - start) / 2, 0.001, 0.5)), tuple(min(c, 4.0) for c in shade_color)
+
+
+def toon_references(extras):
+    """Blender setting name to texture reference of the gh3Toon textures."""
+    toon = extras.get("gh3Toon") if isinstance(extras.get("gh3Toon"), dict) else {}
+    return {prop: toon[key] for key, prop in TOON_TEXTURES.items() if isinstance(toon.get(key), str) and toon[key]}
 
 
 def material_row(material):
@@ -691,6 +751,7 @@ def open_material(material):
     if flipbook:
         props.update(flipbook_columns=flipbook.get("columns", 1), flipbook_rows=flipbook.get("rows", 1),
                      flipbook_fps=flipbook.get("fps", 10), flipbook_offset=flipbook.get("offset", 0))
+    props.update(open_toon(extras))
     other = {key: value for key, value in extras.items() if key.startswith("gh3") and key not in PANEL_MATERIAL_EXTRAS}
     return props, other
 

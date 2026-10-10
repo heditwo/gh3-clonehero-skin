@@ -7,7 +7,7 @@ from bpy.types import Operator
 from bpy_extras.io_utils import ExportHelper, ImportHelper
 from mathutils import Vector
 
-from . import actor_tools, camera_tools, groups, lighting_tools, package_export, package_open, scripts_ui, sidecars, template
+from . import actor_tools, camera_tools, groups, lighting_tools, package_export, package_open, scripts_ui, sidecars, template, toon
 
 OWNERS = {"SCENE": lambda c: c.scene, "OBJECT": lambda c: c.object, "MATERIAL": lambda c: c.material}
 
@@ -538,10 +538,61 @@ class CHSTAGE_OT_start_state(Operator):
         return {"FINISHED"}
 
 
+def chosen_materials(context, scope):
+    if scope == "ACTIVE": return [context.material] if context.material is not None else []
+    found = {}
+    for obj in context.selected_objects:
+        for slot in obj.material_slots:
+            if slot.material is not None: found[slot.material.name] = slot.material
+    return list(found.values())
+
+
+SCOPES = [("SELECTED", "Selected objects", "All materials of the selected objects"), ("ACTIVE", "Active material", "")]
+
+
+class CHSTAGE_OT_toon_preview(Operator):
+    """Show the toon settings in the viewport (Material Preview or Rendered, EEVEE), or show the glTF material again.
+    Export always writes the glTF material"""
+    bl_idname = "chstage.toon_preview"
+    bl_label = "Toon Preview"
+    bl_options = {"REGISTER", "UNDO"}
+
+    enable: BoolProperty(default=True)
+    scope: EnumProperty(items=SCOPES, default="SELECTED")
+
+    def execute(self, context):
+        count = toon.set_preview(chosen_materials(context, self.scope), self.enable)
+        self.report({"INFO"}, f"toon preview {'on' if self.enable else 'off'}: {count} materials")
+        return {"FINISHED"}
+
+
+class CHSTAGE_OT_toon_from_mmd(Operator):
+    """Make toon materials from the MMD Tools data: the toon texture gives the threshold, softness, and shade color; the
+    sphere map and the edge (color, size) carry over"""
+    bl_idname = "chstage.toon_from_mmd"
+    bl_label = "Toon from MMD"
+    bl_options = {"REGISTER", "UNDO"}
+
+    scope: EnumProperty(items=SCOPES, default="SELECTED")
+
+    def execute(self, context):
+        converted, skipped = 0, []
+        for material in chosen_materials(context, self.scope):
+            notes = toon.from_mmd(material)
+            if notes is None: skipped.append(material.name); continue
+            converted += 1
+            for note in notes: self.report({"INFO"}, f"{material.name}: {note}")
+            toon.refresh(material)
+        if skipped: self.report({"WARNING"}, f"no MMD data (MMD Tools): {', '.join(skipped[:5])}")
+        self.report({"INFO"}, f"{converted} toon materials from MMD")
+        return {"FINISHED"} if converted else {"CANCELLED"}
+
+
 CLASSES = (CHSTAGE_OT_list_edit, CHSTAGE_OT_new_stage, CHSTAGE_OT_add_marker, CHSTAGE_OT_validate, CHSTAGE_OT_export, CHSTAGE_OT_open,
            CHSTAGE_OT_select_issue, CHSTAGE_OT_snapshot, CHSTAGE_OT_add_shot_point, CHSTAGE_OT_make_actor, CHSTAGE_OT_actor_clips,
            CHSTAGE_OT_actor_play_clip, CHSTAGE_OT_select_actor, CHSTAGE_OT_scripts, CHSTAGE_OT_script_jump, CHSTAGE_OT_script_set,
-           CHSTAGE_OT_preview_shot, CHSTAGE_OT_shot_group, CHSTAGE_OT_preview_point, CHSTAGE_OT_rigs, CHSTAGE_OT_preview_step, CHSTAGE_OT_group, CHSTAGE_OT_start_state)
+           CHSTAGE_OT_preview_shot, CHSTAGE_OT_shot_group, CHSTAGE_OT_preview_point, CHSTAGE_OT_rigs, CHSTAGE_OT_preview_step, CHSTAGE_OT_group, CHSTAGE_OT_start_state,
+           CHSTAGE_OT_toon_preview, CHSTAGE_OT_toon_from_mmd)
 
 
 def register():

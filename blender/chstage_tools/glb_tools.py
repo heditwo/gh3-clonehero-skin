@@ -367,7 +367,8 @@ def texture_reference_names(gltf):
             for item in value: visit(item)
         elif isinstance(value, dict):
             for key, item in value.items():
-                if key in ("gh3MaskTexture", "gh3LayerTexture", "gh3Shader", "textures"): visit(item)
+                if key in ("gh3MaskTexture", "gh3LayerTexture", "gh3Shader", "textures", "gh3Toon", "shadeTexture", "shadeMaskTexture",
+                           "sphereTexture"): visit(item)
 
     for material in gltf.get("materials", []): visit(material.get("extras", {}))
     return names

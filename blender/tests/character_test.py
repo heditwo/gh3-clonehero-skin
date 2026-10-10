@@ -228,6 +228,21 @@ check("assign to hair bones", status == {"FINISHED"} and set(np.flatnonzero(hair
       and len(set(np.flatnonzero(hair_weights.any(0)))) >= 3 and [m.material for m in props.hair_materials] == [hair_material],
       sorted(names[i] for i in np.flatnonzero(hair_weights.any(0))))
 
+# Toon settings on the hair: a shade texture, an outline, and the hair layer. The EEVEE preview is on during the export.
+toon_tools = sys.modules[module + ".toon"]
+hair_props = hair_material.chstage
+hair_props.shading, hair_props.hair_layer = "toon", "hair"
+hair_props.toon_threshold, hair_props.toon_shade_image = 0.4, test_texture("test_hair_shade")
+hair_props.use_outline, hair_props.outline_width = True, 0.002
+hair.select_set(True, view_layer=view_layer)
+view_layer.objects.active = hair
+with bpy.context.temp_override(scene=scene, view_layer=view_layer, selected_objects=[hair], active_object=hair, object=hair, material=hair_material):
+    preview = bpy.ops.chstage.toon_preview(enable=True, scope="ACTIVE")
+    from_mmd = bpy.ops.chstage.toon_from_mmd(scope="ACTIVE")
+preview_outputs = [n for n in hair_material.node_tree.nodes if n.type == "OUTPUT_MATERIAL" and n.get(toon_tools.PREVIEW)]
+check("toon preview makes an active EEVEE output; Toon from MMD needs MMD data",
+      preview == {"FINISHED"} and len(preview_outputs) == 1 and preview_outputs[0].is_active_output and from_mmd == {"CANCELLED"}, (preview, from_mmd))
+
 package = scene.chstage.package
 package.package_id, package.name, package.license = "tester.blocky-guitarist", "Blocky Guitarist", "CC0-1.0"
 package.authors[0].name = "CH Stage Tools test"
@@ -252,6 +267,12 @@ check("test character package files", names_in_zip[0] == "manifest.json" and {"c
       and character_json == {"version": 1, "library": "gh3-band-v1", "profile": "gh3-guitarist-axel-v1", "hairMaterials": ["test_hair"]}
       and len(glb.list("skins")[0]["joints"]) == 125 and all(i.get("mimeType") == "image/png" for i in glb.list("images")) and not glb.list("animations"),
       (names_in_zip, character_json))
+hair_row = next(m for m in glb.list("materials") if m.get("name") == "test_hair")
+images = {i.get("name") for i in glb.list("images")}
+toon_row = hair_row.get("extras", {}).get("gh3Toon", {})
+check("toon extras in the GLB, the glTF base color stays", hair_row["extras"].get("gh3Shading") == "toon" and hair_row["extras"].get("gh3HairLayer") == "hair"
+      and toon_row.get("threshold") == 0.4 and toon_row.get("outline", {}).get("width") == 0.002 and toon_row.get("shadeTexture") == "#test_hair_shade"
+      and "test_hair_shade" in images and "baseColorTexture" in hair_row.get("pbrMetallicRoughness", {}) and preview_outputs[0].is_active_output, hair_row)
 again = output / "test-character-again" / target.name
 operator_scene(scene, bpy.ops.chstage.export_character, filepath=str(again))
 check("test character export is reproducible", again.is_file() and again.read_bytes() == target.read_bytes())
@@ -262,8 +283,10 @@ copy = output / "test-character-reopened" / target.name
 operator_scene(reopened, bpy.ops.chstage.export_character, filepath=str(copy))
 differences = compare.compare_packages(target, copy) if copy.is_file() else {"failures": ["not written"], "stage": {"max": {}}}
 summary["testCharacter"]["reopened"] = {"failures": differences["failures"], "max": differences["stage"]["max"]}
-check("test character round trip", not differences["failures"] and [m.material.name for m in reopened.chstage.character.hair_materials if m.material][:1] != [],
-      differences["failures"])
+reopened_hair = next(m for m in bpy.data.materials if m.chstage.source_name == "test_hair" and m != hair_material)
+check("test character round trip", not differences["failures"] and [m.material.name for m in reopened.chstage.character.hair_materials if m.material][:1] != []
+      and reopened_hair.chstage.shading == "toon" and reopened_hair.chstage.toon_shade_image is not None and reopened_hair.chstage.use_outline,
+      (differences["failures"], [(i.severity, i.message) for i in reopened.chstage.issues]))
 
 # 4. Clip preview.
 clips = {item.clip: item.label for item in props.clips}

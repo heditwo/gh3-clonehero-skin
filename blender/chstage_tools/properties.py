@@ -52,6 +52,11 @@ def live_lighting(self, context):
     lighting_tools.refresh(self.id_data)
 
 
+def toon_preview(self, context):
+    from . import toon
+    toon.refresh(self.id_data)
+
+
 def preview_selected_shot(self, context):
     from . import camera_tools
     camera_tools.preview_index(context, self.id_data)
@@ -291,6 +296,7 @@ class CHSTAGE_PG_material(PropertyGroup):
         ("lit", "Lit", "Stage lights light the surface"),
         ("ambient", "Ambient", "Ambient light only"),
         ("unlit", "Unlit", "Full brightness"),
+        ("toon", "Toon", "Cel shading that the stage lights color (characters and instruments only)"),
         ("NONE", "Not set", "No gh3Shading: the mod draws the material without the stage surface model (as some GH3 materials)"),
     ], default="lit")
     blend: EnumProperty(name="Transparency", items=[
@@ -317,6 +323,33 @@ class CHSTAGE_PG_material(PropertyGroup):
     flipbook_rows: IntProperty(name="Rows", default=1, min=1, max=256)
     flipbook_fps: FloatProperty(name="FPS", default=10, min=-100000, max=100000)
     flipbook_offset: FloatProperty(name="Offset", default=0, min=-100000, max=100000)
+    toon_threshold: FloatProperty(name="Threshold", default=0.5, min=0, max=1, update=toon_preview,
+                                  description="Light amount (half Lambert, 0-1) where the shade starts")
+    toon_softness: FloatProperty(name="Softness", default=0.05, min=0, max=0.5, update=toon_preview,
+                                 description="Half width of the blend between the lit and the shade colors")
+    toon_shade_image: PointerProperty(name="Shade texture", type=bpy.types.Image, update=toon_preview,
+                                      description="Color of the shaded side (first UV map). Empty: the base color")
+    toon_shade_color: FloatVectorProperty(name="Shade color", subtype="COLOR", size=3, default=(1, 1, 1), min=0, max=4, soft_max=1,
+                                          update=toon_preview, description="Multiplier for the shade texture or the base color")
+    toon_mask_image: PointerProperty(name="Shade mask", type=bpy.types.Image, update=toon_preview,
+                                     description="Red channel: 0 always shaded, 0.5 by the light, 1 always lit")
+    toon_rim_color: FloatVectorProperty(name="Rim color", subtype="COLOR", size=3, default=(0, 0, 0), min=0, max=4, soft_max=1,
+                                        update=toon_preview, description="Rim light color (the key light color multiplies it)")
+    toon_rim_width: FloatProperty(name="Rim width", default=0, min=0, max=1, update=toon_preview, description="0: no rim light")
+    toon_sphere_image: PointerProperty(name="Sphere map", type=bpy.types.Image, update=toon_preview,
+                                       description="Sphere map (matcap) on the view-space normal, as MMD .sph and .spa files")
+    toon_sphere_mode: EnumProperty(name="Sphere mode", items=[("add", "Add", "MMD .spa"), ("multiply", "Multiply", "MMD .sph")],
+                                   default="add", update=toon_preview)
+    use_outline: BoolProperty(name="Outline", description="Inverted-hull outline")
+    outline_width: FloatProperty(name="Width", default=0.0015, min=0, max=0.05, precision=4, subtype="DISTANCE",
+                                 description="Width in metres at 1 m from the camera (from 0.5 m to 4 m the line keeps its screen width)")
+    outline_color: FloatVectorProperty(name="Color", subtype="COLOR", size=3, default=(0, 0, 0), min=0, max=4, soft_max=1)
+    outline_textured: BoolProperty(name="Textured", description="Multiply the outline color by the base texture")
+    hair_layer: EnumProperty(name="Hair layer", items=[
+        ("NONE", "None", ""),
+        ("overHair", "Over hair", "Eyebrows and eyelashes: draw over the hair of the same character, as Project SEKAI does"),
+        ("hair", "Hair", "Hair that the over-hair features show through"),
+    ], default="NONE")
     kept: StringProperty(name="Kept rows")
     source_name: StringProperty(name="Package name", description="Material name in the opened package")
     kept_extras: StringProperty(name="Other GH3 data", description="gh3* extras that the panel does not edit (JSON), for example the GH3 shader record")

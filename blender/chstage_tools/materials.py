@@ -124,6 +124,9 @@ def image_png_bytes(image):
         target = os.path.join(folder, "image.png")
         copy = image.copy()
         try:
+            # Load the pixels from the source file before the new path: an image that Blender did not load yet (for
+            # example a BMP sphere map of an MMD model) gives a copy without pixels.
+            if not copy.has_data and copy.size[0] > 0: copy.pixels[0]
             copy.filepath_raw = target
             copy.file_format = "PNG"
             copy.save()
