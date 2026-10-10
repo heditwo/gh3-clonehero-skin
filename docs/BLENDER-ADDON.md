@@ -61,7 +61,7 @@ The `.blend` file holds all package data: the JSON files are text blocks, and th
 | | Script Bank | Objects, events, and values of `scripts.json`; jump to object; set a simple value |
 | | Groups and Flags | Visibility groups, node flags, light groups (show, hide, select, show only), start state, color by light group |
 | | Crowd and Camera Notes | Crowd roles and models, GH3 camera note selectors |
-| Properties editor, tab **Material** | CH Stage Material | Shading (lit, ambient, unlit, not set), transparency (opaque, cutout, blend, additive), alpha cutoff, two-sided, color alpha (opaque GH3 materials), color scale, lightmap and its UV map, movie slot, sorted transparency, crowd atlas, crowd role, billboard, flipbook. "Kept GH3 data" lists the GH3 shader data that export keeps |
+| Properties editor, tab **Material** | CH Stage Material | Shading (lit, ambient, unlit, toon, not set); with toon: threshold, softness, shade texture and color, shade mask, sphere map, rim, outline, **Preview**, **glTF material**, **Toon from MMD**; hair layer (characters); transparency (opaque, cutout, blend, additive), alpha cutoff, two-sided, color alpha (opaque GH3 materials), color scale, lightmap and its UV map, movie slot, sorted transparency, crowd atlas, crowd role, billboard, flipbook. "Kept GH3 data" lists the GH3 shader data that export keeps |
 
 ### 1.6 Actors (animated scenery)
 
@@ -145,7 +145,7 @@ Export gives the same bytes for the same scene and Blender version (fixed zip ti
 
 ### 1.14 Not available yet
 
-- Material preview node trees (GH3 shading in the viewport).
+- Material preview node trees for GH3 shading in the viewport (toon materials have a preview, section 1.15).
 - GH3 script code: the script bank browser shows and sets values only.
 - Characters on other rigs (retargeting, VRM). A character must use a GH3 rig: a fixed profile or a profile of the character library (PACKAGING-PLAN decision 2). The add-on has no tool that moves a rigged model (for example an MMD or VRM model) onto the GH3 bind pose; see [CREATOR-GUIDE.md section 5.1](CREATOR-GUIDE.md#51-use-a-rigged-model-mmd-vrm-fbx).
 
@@ -185,6 +185,12 @@ Steps:
 7. Set the package information (ID, name, version, authors, license) in **Character Package > Package Information**. **Instrument** (empty: the profile default) is the character.json attachment. The game uses the instrument of the role that the character plays.
 8. Click **Validate**. The list shows the errors and warnings of the add-on checks and of the package validator of the mod (with the library: the bind pose check). Click the arrow of an issue to select its object.
 9. Click **Export .chchar**. Options: **Development folder**, **Copy to Custom/Characters**, **Preview** (Render: a 512 × 288 image from the scene camera). The add-on writes the package only when there is no error. Put the file into `Custom/Characters`, and select the character in the F6 picker ([PLAYER-GUIDE.md section 4](PLAYER-GUIDE.md#4-select-the-band-members)).
+
+**Toon materials.** Set **Shading** to **Toon** in **CH Stage Material** for cel shading in the game ([CREATOR-GUIDE.md section 5.2](CREATOR-GUIDE.md#52-toon-look-and-eyebrows-over-the-hair), PACKAGE-FORMAT 6.5.1). The toon images (shade texture, shade mask, sphere map) go into the GLB as images with `#<name>` references.
+
+- **Preview** (`chstage.toon_preview`) adds an EEVEE node tree to the material and makes its output active: the shade from a diffuse light (Shader to RGB), the threshold and softness, the shade texture and color, the mask, the sphere map on the camera-space normal, and the rim. It is an approximation of the game shader (the game uses the key light of the venue). **glTF material** removes it. Export always reads the Principled BSDF: the preview output is off while the glTF exporter runs.
+- **Toon from MMD** (`chstage.toon_from_mmd`, the active material or all materials of the selected objects) reads the MMD Tools data of a material (`mmd_material`, the `mmd_toon_tex` and `mmd_sphere_tex` image nodes). The toon texture gives the threshold, the softness, and the shade color: the add-on reads the middle column of the ramp, finds the rows where the brightness passes 90 %, 50 %, and 10 % between the top and the bottom row, and divides the bottom color by the top color. MMD reads the ramp at `v = 0.5 − 0.5 N·L` from the top. The sphere map (`.sph` multiply, `.spa` add), the edge (on, color, size × 0.0025 m), and two-sided carry over. Without a toon texture the material is always lit, as in MMD. The per-vertex edge scale (`mmd_edge_scale`) is not used. Run it before you replace the MMD node groups with a Principled BSDF: the material copy keeps the settings (`material.copy()`).
+- **Hair layer**: **Over hair** on eyebrow and eyelash materials, **Hair** on the hair materials of the same character (`gh3HairLayer`).
 
 **Open .chchar** (**File > Import > CH Character Package (.chchar)**) makes a new scene from a package: the rig and the meshes of `character.glb`, the material settings, the hair materials, the package information, and (with the library) the helpers and the clip list. A package of format 1.1 (for example a GH3 guitarist of the mod) needs the character library. Before 2026-10-09, Open stopped with "unknown profile" on these packages.
 
@@ -230,6 +236,7 @@ Rules to know:
 | `blender/chstage_tools/character_tools.py` | Characters: new character scene (fixed profiles and character library profiles), helpers from the library or the GH3 character package of the profile, weight transfer, limit and normalize, hair bones, clip preview (q48 to actions) |
 | `blender/chstage_tools/character_package.py` | Export .chchar, Validate, Open .chchar: add-on checks (also the material surface nodes that the glTF export does not read), GLB export of the rig and its meshes, character.json, manifest (format 1.0 or 1.1), zip, validator with the library and the character library |
 | `blender/chstage_tools/character_ui.py` | Operators and panels of the tab CH Character |
+| `blender/chstage_tools/toon.py` | Toon materials: the EEVEE preview node tree (on, off, off during export) and **Toon from MMD**. The ramp conversion (`toon_ramp_settings`), `gh3Toon` write and read, and the toon texture references are in `sidecars.py` |
 | `blender/chstage_tools/brotli_decode.py`, `brotli_dictionary.bin` | Brotli decoder in pure Python (RFC 7932) for the library clips; the official Blender builds have no `brotli` module. The add-on uses the module when Blender has it |
 | `pipeline/package/character.py` | Shared with the add-on (bundled): profile rigs, the character library (`CharacterLibrary`: profiles, rigs from `characters.json`, hair chains, clips with the rest offsets, the GH3 character package of a profile), split of a library band model into body and attachment, hair chains, clip poses with the game IK (`GuitarRig`, a port of `src/Stage/Band/StageGuitarArms.cs`), weight limits, character.json, and `python -m pipeline.package.character` (library band members as `.chchar`) |
 | `blender/build.py` | Copies `pipeline/package` (validator, container, decisions, character) and `schemas/` into `chstage_tools/vendor/package_format/` and writes the zip |
@@ -258,6 +265,7 @@ The layout follows the package files, so that export and Open map one to one.
 | `object.chstage.light` (light), `scene.chstage.snapshots`, `moods`, `colors` | `lighting.json` |
 | `object.chstage` scenery fields | `stage.glb` node extras `gh3LightGroup`, `gh3VisibilityGroup`, `gh3InitiallyVisible`, `gh3Fixture*`, `gh3Object*` |
 | `material.chstage` | `stage.glb` material extras `gh3*` and glTF `alphaMode`, `alphaCutoff`, `doubleSided`, `occlusionTexture`, base color alpha (opaque) |
+| `material.chstage.toon_*`, `use_outline`, `outline_*`, `hair_layer` | `gh3Toon` (the images as `#<image name>` references, the image embedded in the GLB) and `gh3HairLayer` |
 | `material.chstage.kept_extras`, `kept_images` | Other `gh3*` material extras (`gh3Shader`, `gh3SourceMaterial`, `gh3MaskTexture`, `gh3LayerTexture`, `gh3LayerColor`, `gh3UvWibble`) and the Blender image of each texture reference |
 | `scene.chstage.kept_files` | Other package files (`scripts.json`, other files): text blocks or packed data (`blobs.py`) |
 | `scene.chstage.anchor_frames` | The bone frames of the proxy rigs (JSON, runtime coordinates, relative to the performer roots) for the camera bone anchors |
@@ -395,7 +403,7 @@ python3 blender/build.py                      # writes blender/dist/chstage_tool
 flock /tmp/opencode/gh3-heavy.lock bash blender/test.sh ~/.cache/chstage-test blender-clean ~/.cache/blender/blender-4.2-clean
 ```
 
-With `assets/packages/gh3-band-v1.chlib` present (or `CHSTAGE_TEST_LIBRARY`), `blender/test.sh` also runs the character test (`blender/tests/character_test.py`, section 2.11) in a second Blender process. Result on 2026-10-09: 60 of 60 venue checks and 39 of 39 character checks pass on Blender 5.2.1 and on Blender 4.2.23.
+With `assets/packages/gh3-band-v1.chlib` present (or `CHSTAGE_TEST_LIBRARY`), `blender/test.sh` also runs the character test (`blender/tests/character_test.py`, section 2.11) in a second Blender process. Result on 2026-10-09: 60 of 60 venue checks and 39 of 39 character checks pass on Blender 5.2.1 and on Blender 4.2.23. On 2026-10-10 the character test has 41 checks (toon preview, toon extras in the GLB, toon round trip); 41 of 41 pass on Blender 5.2.1 (4.2.23 not run again).
 
 `blender/test.sh` installs the zip into a temporary Blender user folder (`BLENDER_USER_RESOURCES`), so it does not change the Blender setup of the user. It also opens, exports, and compares `assets/packages/gh3.credits.chstage` when it exists (`CHSTAGE_TEST_VENUE` selects another package; an empty value turns it off), and then tests the venue tools (`tools_test.py`; `CHSTAGE_TEST_SKIP=actors,scripts,lighting,cameras,groups` skips parts). Set `CHSTAGE_TEST_RIG` to a GH3 rig GLB (for example a spike file from `tools/research/spike-blender/band_glb.py`) to also test the import fix. Result on 2026-10-09: 60 of 60 checks pass on Blender 5.2.1 and on Blender 4.2.23:
 

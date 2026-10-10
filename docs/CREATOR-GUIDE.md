@@ -188,7 +188,7 @@ You can use a model that has its own skeleton, for example an MMD model (`.pmx`)
    - A model that comes from a Unity game (FBX from an asset tool) can be mirrored: object scale −1 and the face toward +Y. Mirror it so that the face looks toward −Y and the left side of the character is at +X, and check that the normals point out.
 3. Remove the shape keys (**Object Data > Shape Keys**). The mod does not play shape keys; the GH3 clips move the face with bones.
 4. **Materials.** Importers of MMD and VRM models make toon shader node groups. The glTF export does not read them, and the package then has no texture (the character is white in the game). Validate gives a warning for each such material. Give each material a **Principled BSDF** with the image on **Base Color**, and save the images as PNG. Images of 1024 × 1024 pixels are sufficient (the GH3 characters use 1024 pixels or less).
-5. Set the material panel: for example **Ambient** for the face (the face does not get dark), **Unlit** for parts that glow, **Blend** for hair cards and other parts with transparency.
+5. Set the material panel: for example **Toon** for an anime look ([section 5.2](#52-toon-look-and-eyebrows-over-the-hair)), **Unlit** for parts that glow, **Blend** for hair cards and other parts with transparency. For an MMD model, click **Toon from MMD** before you replace the MMD node groups: it reads the toon texture, the sphere map, and the edge of each MMD material.
 6. **Weights.** Click **Transfer Weights from the GH3 Body**. Then correct these parts with Weight Paint:
    - The face and the hair on the head: full weight on `bone_head`. The face bones of the GH3 body are at other places than the eyes and the mouth of your character; with their weights, the face changes shape when the GH3 face moves.
    - The hands: Transfer Weights can give a finger the weight of the next finger. When the model has good finger weights, keep them: rename the finger vertex groups to the GH3 finger bones (the add-on shows the bone names), then remove the other vertex groups.
@@ -200,7 +200,28 @@ Compare the face of your export with the source model: render both front-on in B
 
 Known limits: the character does not blink and does not move its mouth (the face is on the head bone). Long hair can go into the body or the guitar for a short time, because the hair physics knows only the bodies of the GH3 profile.
 
-### 5.2 Play the character
+### 5.2 Toon look and eyebrows over the hair
+
+Anime models look flat with the **Lit**, **Ambient**, or **Unlit** shading. Use **Toon** (cel shading). The venue lights still color a toon character: in a red light the character is red, and in a blackout the character is dark.
+
+1. Set **Shading** to **Toon** in **CH Stage Material**.
+2. Set the light and the shade:
+   - **Threshold**: where the shade starts. 0.5 shades the side that turns away from the key light. 0 is always lit (use it for the eyes).
+   - **Softness**: the width of the edge between light and shade. 0.02 gives a hard anime edge.
+   - **Shade texture** and **Shade color**: the color of the shaded side. A model from a game often has a shadow color texture (Project SEKAI: the `_S` texture). Without a texture, the shade is the base color times the shade color, for example (0.8, 0.8, 0.9).
+   - **Shade mask**: red 0 is always shaded, 0.5 follows the light, 1 is always lit (Project SEKAI: the blue channel of the `_H` texture).
+   - **Sphere map**: an MMD sphere map (`.sph` multiply, `.spa` add) for shine on hair and cloth.
+   - **Rim width** and **Rim color**: a thin light at the silhouette.
+3. **Outline**: set **Width** to about 0.0015 (1.5 mm at 1 m from the camera) and the **Color**. **Textured** multiplies the color by the base texture (a darker line in the color of the part). Do not use an outline on the eyes, the eyelashes, and the eye highlights. The mesh needs smooth normals; split normals give gaps in the line.
+4. Click **Preview** to see the toon look in Material Preview (EEVEE). Click **glTF material** to see the Principled BSDF again. Export always writes the glTF material and the toon settings.
+
+**Eyebrows over the hair.** In anime games the eyebrows and the eyelashes show through the bangs. Set **Hair layer** to **Over hair** on the eyebrow (and eyelash) material, and to **Hair** on the hair materials of the same character. The game then draws the hair around the eyebrows. Rules:
+
+- The eyebrows need their own material. If the eyebrows are in the face texture, select their faces in Edit Mode and give them a copy of the face material.
+- The feature shows only where its faces turn to the camera, so it never shows through the back of the head. Other parts (the hands, the instrument, other band members) still cover it.
+- To check it in the game, use `GH3_SKIN_DEBUG_HAIR_LAYER=mark` ([VERIFICATION.md](VERIFICATION.md#runtime-variables)): the features then show in a flat color.
+
+### 5.3 Play the character
 
 To use the character:
 

@@ -46,6 +46,22 @@ Since 0.9.9 each GH3 guitarist plays on its own GH3 rig profile of the character
 
 `~/.cache/instruments/`: `strip-*` (close-ups of the guitarist and bassist with 18 instruments), `hw-*` (highway runs: default, `main`, characters, a creator instrument, the bass part), `budokan/`, `picker/` (picker frames and log), `importtest/` (cold import of the 108 instruments outside the game), `video/instruments-highways.mp4` (42 s, game audio), `gh3check/` (the original GH3 attempts and their restore logs). Small images: `/tmp/opencode/instruments/`.
 
+## Toon characters
+
+Since 2026-10-10 a character or instrument material can use toon (cel) shading, an inverted-hull outline, and hair layers that show the eyebrows over the bangs ([PACKAGE-FORMAT.md section 6.5.1](PACKAGE-FORMAT.md#651-toon-materials-and-hair-layers), [CREATOR-GUIDE.md section 5.2](CREATOR-GUIDE.md#52-toon-look-and-eyebrows-over-the-hair)). The stage shader draws them (the surface model modes 3 and 4 in `Stage.glsl`, one program for OpenGL Core and Direct3D 11). GH3 materials do not use these modes. Checks on 2026-10-10 with Project SEKAI Miku (the SEKAI shadow color and value textures, outline width, eyebrows over the hair) and Tda Miku (from the MMD Tools data: toon ramps, sphere maps, edges; the eyebrows split from the face material), game copy `~/games/clonehero-gh3-toon`:
+
+| Check | Result |
+| --- | --- |
+| GH3 band unchanged | gh3.dive and gh3.budokan, default band, 8 song times each, against `main`: mean difference 0.8–7.7 (0–255) for 15 of 16 frames; two runs of `main` give 0.5–5.7. The 16th frame (gh3.dive 60 s, a moving camera) differs by 16.7 against `main` and by 16.9 between two runs of this build: run-to-run noise |
+| Eyebrows over the hair | `GH3_SKIN_DEBUG_HAIR_LAYER=mark`, head-locked views: front 1,031 and 1,084 marked pixels (452 and 849 with the depth test only), back and back from above 0 for both characters |
+| Other band members | Toon guitarist and toon bassist, 8 views from behind the guitarist's head to the bassist's head, both orders: no feature showed through the other character's hair |
+| Venue light | The characters take the color of the venue light (red, green, blue, and pink moods in gh3.dive and gh3.budokan) and get dark in blackouts |
+| Windows Direct3D 11 (Wine, DXVK) | Same frames as Linux OpenGL; the marked pixels of each view are within 13 pixels of Linux. Windows OpenGL Core also draws |
+
+Limits: the shading uses the key light and the ambient light of the band light group, not the GH3 spot lights one by one. The outline width is constant in the material; the per-vertex edge scale of MMD and the second outline normals of Project SEKAI (`_OUTLINE_SECOND_NORMAL`) are not used, so hard edges can show gaps. The Project SEKAI face shadow (SDF texture) is not used: the face uses the normal toon shading. The eyebrow mark uses a facing limit (`N·V` ≥ 0.3), so an eyebrow at a grazing angle is drawn only where the depth test passes.
+
+Evidence: `~/.cache/toon/` (`before/`, `after/`, `it*/` head views, `hl/` hair-layer counts, `band/` two-character views, `win/` Windows frames, `video/toon-dive.mp4`, `scripts/` build scripts, `out/` packages). Small sheets: `/tmp/opencode/toon/`.
+
 ## Known differences from GH3
 
 | Area | Difference |
@@ -97,7 +113,7 @@ Since 0.9.9 each GH3 guitarist plays on its own GH3 rig profile of the character
 
 ### Authoring
 
-- Blender add-on: no material preview node trees (GH3 shading in the viewport), and no GH3 script code editor ([BLENDER-ADDON.md section 1.14](BLENDER-ADDON.md#114-not-available-yet)).
+- Blender add-on: no material preview node trees for GH3 shading in the viewport (toon materials have an EEVEE preview), and no GH3 script code editor ([BLENDER-ADDON.md section 1.14](BLENDER-ADDON.md#114-not-available-yet)).
 - Characters on other rigs (retargeting, VRM) are not planned for v1 (PACKAGING-PLAN decision 2).
 - Moonscraper: the editor fork has preservation fixes and an event browser. A typed command inspector and an original-song round trip in the editor UI are not complete. See [CUSTOM-CONTENT.md](CUSTOM-CONTENT.md#12-moonscraper).
 - A general QB writer does not exist. The native PAK tool changes one camera note only.

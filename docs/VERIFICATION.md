@@ -31,6 +31,17 @@ After a change to the venue export or the shaders, run `python3 tools/audit-mate
 
 After a change to the shaders, also check Direct3D 11. The Windows build of Clone Hero runs under Wine with DXVK (see `tools/windows/run-win.sh` and [the spike report](spike/d3d11.md)). Build the mod against the Windows interop assemblies (`GameRoot` of the Windows copy), and capture the same song times with `-force-d3d11` and `-force-glcore` (`GH3_SKIN_CAPTURE_CLOCK=song`). Compare the frames with the Linux frames. A stage with no program for the graphics API logs `GH3 stage is off: ... has no program for the <API> graphics API` and does not draw; `-force-vulkan` shows this message.
 
+### Toon materials and hair layers
+
+After a change to the toon shader (`toon()` in `src/Stage/Shaders/Stage.glsl`) or to the hair layers:
+
+1. GH3 characters do not change: capture the same song times on `gh3.dive` and `gh3.budokan` before and after the change, with the default band, and compare the frames. The difference must be in the range of two runs of the same build (the band animation is not fully the same in two runs).
+2. Capture a toon character with the head views of `GH3_SKIN_DEBUG_VIEW_HEAD=local` (front, three-quarter, side, back, back from above, front from above) and `GH3_SKIN_DEBUG_HAIR_LAYER=mark`. Count the flat-color pixels. The back views must have none. The front views must have more marked pixels than with `GH3_SKIN_DEBUG_HAIR_LAYER=off` (the eyebrows through the bangs).
+3. Put two toon characters with hair layers on the guitarist and the bassist, and use `GH3_SKIN_DEBUG_VIEW_HEAD=through`. The color of the bassist must not show through the guitarist's hair.
+4. Check Direct3D 11 under Wine with the same head views ([Test under Wine](#test-under-wine)).
+
+Result on 2026-10-10 (Linux OpenGL, Project SEKAI Miku and Tda Miku, gh3.dive): marked pixels in the front view 1,031 and 1,084 (with `off`: 452 and 849); in the back view and the back view from above 0. With two characters (8 `through` views, both orders): the bassist's color showed only where the bassist's own face was in the open (her eyebrows over her own bangs), never on the guitarist's hair. Windows Direct3D 11 under Wine: the marked pixels of each head view are within 13 pixels of Linux. See [STATUS.md](STATUS.md#toon-characters).
+
 After a change to `src/Packages/` or to the package converter, run the cache comparison in [PIPELINE.md](PIPELINE.md#check-the-result) (`pipeline.package.cachecheck`).
 
 ### Package import in the game
@@ -234,7 +245,8 @@ These variables are for checks and captures. Normal play needs none of them.
 | `GH3_SKIN_FORCE_STAR_POWER_ACTIVE=1` | Display-only active Star Power (cyan gems, hit colors) |
 | `GH3_SKIN_FORCE_WHAMMY=<Hz>` | Sends a cosine whammy to Clone Hero's whammy input. Tests the sustain bend |
 | `GH3_SKIN_KEEP_STOCK_GEMS=1`, `GH3_SKIN_KEEP_STOCK_FLAMES=1` | Keeps Clone Hero's gems or hit effects, for comparisons |
-| `GH3_SKIN_DEBUG_VIEW="x,y,z,tx,ty,tz,fov[;...]"` | Fixes the stage camera and hides the highway; `GH3_SKIN_DEBUG_VIEW_SECONDS` cycles the views. With `GH3_SKIN_DEBUG_VIEW_HEAD=1` the camera stays at the view position and looks at the guitarist's head (close-ups of hair and face). With `GH3_SKIN_DEBUG_VIEW_HEAD=local` the position and the target are in the frame of the guitarist's head bone, and the head's +X axis is the up direction: the camera follows the head and shows the face at a fixed angle (for example `0.07,3,0,0.07,0,0,4.5` is front-on from 3 m, with a 4.5° field of view) |
+| `GH3_SKIN_DEBUG_VIEW="x,y,z,tx,ty,tz,fov[;...]"` | Fixes the stage camera and hides the highway; `GH3_SKIN_DEBUG_VIEW_SECONDS` cycles the views. With `GH3_SKIN_DEBUG_VIEW_HEAD=1` the camera stays at the view position and looks at the guitarist's head (close-ups of hair and face). With `GH3_SKIN_DEBUG_VIEW_HEAD=local` the position and the target are in the frame of the guitarist's head bone, and the head's +X axis is the up direction: the camera follows the head and shows the face at a fixed angle (for example `0.07,3,0,0.07,0,0,4.5` is front-on from 3 m, with a 4.5° field of view). With `GH3_SKIN_DEBUG_VIEW_HEAD=through` the camera is `x` metres behind the guitarist's head on the line from the bassist's head, `y` metres higher and `z` metres to the side, and looks at the bassist's head (draw order between band members) |
+| `GH3_SKIN_DEBUG_HAIR_LAYER=mark` | Draws the `overHair` features of characters in one flat color for each character (magenta, green, yellow) without lighting, so a script can count their pixels. `off` does the same and ignores the hair layers (the depth test only) |
 | `GH3_SKIN_DEBUG_SHOW=<id,...>` | Keeps these GH3 objects created |
 | `GH3_SKIN_PROFILE=1` | Logs milliseconds, managed kilobytes, and gen-0 collections per subsystem each second; `tools/summarize-profile.py` reads the logs |
 | `GH3_SKIN_KEEP_BHAPTICS=1` | Keeps MelonLoader's bHaptics client |

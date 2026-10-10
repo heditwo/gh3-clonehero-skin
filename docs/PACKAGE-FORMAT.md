@@ -194,7 +194,7 @@ Schema: `$defs/material` in the same file.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `gh3Shading` | `lit`, `ambient`, `unlit` | Stage surface model |
+| `gh3Shading` | `lit`, `ambient`, `unlit`, `toon` | Stage surface model. `toon` is for characters and instruments only ([section 6.5.1](#651-toon-materials-and-hair-layers)) |
 | `gh3Additive` | boolean | Additive transparency |
 | `gh3AlphaCutoff` | 0–1 | Alpha test for `BLEND` materials |
 | `gh3SortedTransparency` | boolean | Sort the triangles of a skinned transparent material |
@@ -210,10 +210,36 @@ Schema: `$defs/material` in the same file.
 | `gh3LayerColor` | 4 numbers | Layer color |
 | `gh3SourceMaterial` | string | Original material name (identity for scripts) |
 | `gh3Shader` | object | Original GH3 material record: `template` (8 hex digits), `vertexConstants` and `pixelConstants` (maximum 64 rows of 4 numbers), `textures` (maximum 16 texture references), `addressing` (one value for each texture), `flags`, `blend` (0–12), `alphaRef` (0–255), `drawOrder` |
+| `gh3Toon` | object | Toon settings of a `toon` material ([section 6.5.1](#651-toon-materials-and-hair-layers)). Characters and instruments only |
+| `gh3HairLayer` | `overHair`, `hair` | Draw order of face features and hair ([section 6.5.1](#651-toon-materials-and-hair-layers)). Characters and instruments only |
 
 Standard glTF material data stays standard: `baseColorTexture` (texture coordinate 0), `baseColorFactor`, `alphaMode` (`OPAQUE`, `MASK`, `BLEND`), `alphaCutoff`, `doubleSided`, and `occlusionTexture` as the lightmap (texture coordinate 1).
 
 A `gh3Shader.template` that the installed mod does not have uses the stage surface model. The package does not contain shaders.
+
+#### 6.5.1 Toon materials and hair layers
+
+A character or instrument material with `gh3Shading` `toon` uses cel shading. The stage lights color it: the key light direction of the band light group selects the base color or the shade color, and the color of the ambient and key lights multiplies both. The strongest channel of that light color is limited to 1, so the hue of the venue light stays and a bright GH3 light does not make the textures white. Thus a toon character follows the moods, the colors, and the blackouts of the venue. A venue (`.chstage`) must not use `toon`, `gh3Toon`, or `gh3HairLayer` (validator error). Schema: `$defs/toon` of [`glb-extras.schema.json`](../schemas/glb-extras.schema.json).
+
+| `gh3Toon` field | Type | Default | Meaning |
+|---|---|---|---|
+| `threshold` | 0–1 | 0.5 | Light amount (half Lambert: `0.5 + 0.5 N·L`) where the shade starts. 0: always lit |
+| `softness` | 0–0.5 | 0.05 | Half width of the blend between the shade and the lit color |
+| `shadeTexture` | texture reference | none | Color of the shaded side (texture coordinate 0). None: the base color |
+| `shadeColor` | 3 numbers, 0–4 | `[1, 1, 1]` | Multiplier for the shade texture or the base color |
+| `shadeMaskTexture` | texture reference | none | Red channel moves the light amount by `2 r − 1`: 0 always shaded, 0.5 no change, 1 always lit (the Project SEKAI value texture) |
+| `rimColor`, `rimWidth` | 3 numbers 0–4; 0–1 | black, 0 | Rim light on the lit side at the silhouette; the key light color multiplies it. Width 0: no rim |
+| `sphereTexture`, `sphereMode` | texture reference; `add` or `multiply` | none, `add` | Sphere map (matcap) on the view-space normal, as MMD `.spa` (add) and `.sph` (multiply) files |
+| `outline` | object | none | Inverted-hull outline: `width` (metres at 1 m from the camera, 0–0.05; from 0.5 m to 4 m the line keeps its screen width, farther it gets thinner), `color` (3 numbers, 0–4, default black; the light color multiplies it), `textured` (`true`: the base texture multiplies the color) |
+
+The outline draws the back faces of the mesh, pushed out along the vertex normals. Hard edges with split normals give gaps in the line. An opaque or cutout outline writes depth; the outline of a `BLEND` material draws before the material.
+
+`gh3HairLayer` shows face features over the bangs, as Project SEKAI shows the eyebrows (the eyebrow material there writes the stencil, and the hair material does not draw where it is set):
+
+- `overHair` (eyebrows, eyelashes): the material draws after the other opaque parts of all characters and marks its pixels in the stencil buffer. It marks only pixels where its surface turns to the camera (`N·V` ≥ 0.3), so the back and the far side of the head never show it.
+- `hair`: the hair of the same character does not draw on the marked pixels.
+- Each character has its own stencil value (7 values, stencil bits 1–3), so a feature never shows through the hair of another band member. Other parts (the face, the hands, an instrument, other band members) still hide the feature with the depth test.
+- Without `gh3Shading` the hair layer has no effect (warning).
 
 ### 6.6 Texture references
 
@@ -224,6 +250,8 @@ A texture reference in extras is a string:
 | `""` | No texture |
 | `#<name>` | The image with this `name` in the same GLB. Image names in one GLB are unique |
 | `<package path>.png` | A PNG file in the package |
+
+The texture references are `gh3MaskTexture`, `gh3LayerTexture`, the `gh3Shader.textures`, and the `gh3Toon` textures (`shadeTexture`, `shadeMaskTexture`, `sphereTexture`).
 
 **A texture reference must not be a glTF texture or image index.** Blender renumbers textures on export and drops images that no material slot uses (spike result 9.6). Thus the Blender add-on writes sampler-only textures as package files. The pipeline GLB writer (`GlbWriter`) names every image (the GH3 texture checksum, for example `1a52a814`) and writes `#<name>`.
 
@@ -792,7 +820,7 @@ Visual result: the dive recording from packages and from `main` agree (aligned v
 | Rest pose | Local joint transforms against the profile bind pose of `band/<role>/animation.bin`: 0.1 mm, 0.01° (chord form), scale 1e-4. Nodes above the root joint have no transform |
 | Bind | `world(joint) · IBM = world(mesh node)` within 1e-4 for each mesh node |
 | Vertices | `POSITION`, `NORMAL`, `JOINTS_0`, `WEIGHTS_0` (float or normalized integer; sum 1 within 0.01, normalized again) required; `TEXCOORD_0`, `COLOR_0`, and the `_GH3_UV0`–`_GH3_UV5`, `_GH3_BINORMAL`, `_GH3_TANGENT` streams optional. A material with a `gh3Shader` record and a mesh without the streams uses the surface model (warning) |
-| Materials | The library rules (`LibraryImporter`): `blend` from `gh3Shader.blend` when the record is present. `hairMaterials` add sorted transparency. Material and image names that are not 8 hex digits get checksum names |
+| Materials | The library rules (`LibraryImporter`): `blend` from `gh3Shader.blend` when the record is present. `hairMaterials` add sorted transparency. Material and image names that are not 8 hex digits get checksum names. A `toon` material gets the `stage.json` rows `toon` (the `gh3Toon` fields with their defaults; texture references become cache texture names) and `hairLayer` (`StageToon`, `StageHairLayer`) |
 
 A GH3 band member exported as one GLB with its instrument gave a cache that is byte-equal to the library member (`meshes.bin`, `stage.json`, and all textures; checked for the four members on 2026-10-09 with an earlier exporter). `python -m pipeline.package.character` now writes the body and hair only (the instrument is an attachment).
 
@@ -879,5 +907,6 @@ When all imports end (or at a warm start, on a worker thread), `PackageManager.C
 |---|---|---|
 | 1.0 | 2026-10-09 | First frozen version |
 | 1.0 | 2026-10-10 | Before the first release (PACKAGING-PLAN decision 12), in 1.0: the kind instrument (`.chinst`, `chinst/1.0`, section 9.4) and the folder `Custom/Instruments/`; `character.json` `highway` (section 9.1) |
+| 1.0 | 2026-10-10 | In 1.0 (decision 12): `gh3Shading` `toon`, `gh3Toon`, and `gh3HairLayer` for characters and instruments (section 6.5.1) |
 | 1.2 | 2026-10-10 | Additive, for `chlib` only (`chstage` stays 1.0, `chchar` stays 1.1). The optional Havok limit fields of the hair joints (`twistAxis`, `coneAxis`, `planeAxis`, `maxAngularVelocity`; section 10.1) in `band/hair.json` and `characters.json`. Mod 0.9.10 reads 1.2; packages of 1.2 set `minModVersion` 0.9.10. Mod 0.9.9 rejects 1.2 libraries with "needs a newer mod", and mod 0.9.10 reads all 1.0 and 1.1 packages as before (hair joints without the fields keep the cone on the bind direction) |
 | 1.1 | 2026-10-09 | Additive, for `chchar` and `chlib` only (`chstage` stays 1.0). The character library: a `chlib/1.1` package with the entry `characters` (section 10.1): rig profiles, animation sets, hair with hinge and prismatic joints, IK chains, and `clips/`. `character.json` of a `chchar/1.1` package can name a profile of a required character library and an optional `animations` set (section 9.1). Mod 0.9.9 reads 1.1; packages of 1.1 set `minModVersion` 0.9.9. Format 1.0 packages and readers are unchanged: mod 0.9.8 rejects 1.1 packages with "needs a newer mod", and mod 0.9.9 reads all 1.0 packages as before |
