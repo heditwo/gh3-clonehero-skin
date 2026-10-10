@@ -196,7 +196,7 @@ You can use a model that has its own skeleton, for example an MMD model (`.pmx`)
 7. **Long hair.** Select the vertices of each pigtail and assign them to a hair chain (**Assign to Hair Bones**). Midori has two pigtail chains (chain 1 and chain 2). The vertices below the end of the chain go to the last bone: the hair physics then moves them as one part. Add the hair materials to **Hair materials**.
 8. Click **Limit and Normalize**, look at some clips in **Clip Preview**, then Validate and export.
 
-Compare the face of your export with the source model: render both front-on in Blender (the export with **File > Import > glTF**). The eyes must be at the same places.
+Compare the face of your export with the source model: render both front-on in Blender (the export with **File > Import > glTF**). The eyes must be at the same places. Measure a ratio, for example the distance between the eyes divided by the width of the face at the height of the eyes: it must be the same in the source and in the export. To see the face in the game at a fixed angle, use `GH3_SKIN_DEBUG_VIEW_HEAD=local` ([VERIFICATION.md](VERIFICATION.md)). The game shows the face as Blender does with the same camera. Thus, if the eyes look too far apart in the game but the ratios are correct, the cause is the design of the model or the camera angle, not the export. (In a test on gh3.dive, half of the frames that show the guitarist's face are 12° to 42° to the side of the face.)
 
 Known limits: the character does not blink and does not move its mouth (the face is on the head bone). Long hair can go into the body or the guitar for a short time, because the hair physics knows only the bodies of the GH3 profile.
 

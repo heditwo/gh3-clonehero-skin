@@ -225,7 +225,7 @@ These variables are for checks and captures. Normal play needs none of them.
 | `GH3_SKIN_FORCE_STAR_POWER_ACTIVE=1` | Display-only active Star Power (cyan gems, hit colors) |
 | `GH3_SKIN_FORCE_WHAMMY=<Hz>` | Sends a cosine whammy to Clone Hero's whammy input. Tests the sustain bend |
 | `GH3_SKIN_KEEP_STOCK_GEMS=1`, `GH3_SKIN_KEEP_STOCK_FLAMES=1` | Keeps Clone Hero's gems or hit effects, for comparisons |
-| `GH3_SKIN_DEBUG_VIEW="x,y,z,tx,ty,tz,fov[;...]"` | Fixes the stage camera and hides the highway; `GH3_SKIN_DEBUG_VIEW_SECONDS` cycles the views. With `GH3_SKIN_DEBUG_VIEW_HEAD=1` the camera stays at the view position and looks at the guitarist's head (close-ups of hair and face) |
+| `GH3_SKIN_DEBUG_VIEW="x,y,z,tx,ty,tz,fov[;...]"` | Fixes the stage camera and hides the highway; `GH3_SKIN_DEBUG_VIEW_SECONDS` cycles the views. With `GH3_SKIN_DEBUG_VIEW_HEAD=1` the camera stays at the view position and looks at the guitarist's head (close-ups of hair and face). With `GH3_SKIN_DEBUG_VIEW_HEAD=local` the position and the target are in the frame of the guitarist's head bone, and the head's +X axis is the up direction: the camera follows the head and shows the face at a fixed angle (for example `0.07,3,0,0.07,0,0,4.5` is front-on from 3 m, with a 4.5° field of view) |
 | `GH3_SKIN_DEBUG_SHOW=<id,...>` | Keeps these GH3 objects created |
 | `GH3_SKIN_PROFILE=1` | Logs milliseconds, managed kilobytes, and gen-0 collections per subsystem each second; `tools/summarize-profile.py` reads the logs |
 | `GH3_SKIN_KEEP_BHAPTICS=1` | Keeps MelonLoader's bHaptics client |

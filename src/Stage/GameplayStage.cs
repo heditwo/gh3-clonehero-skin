@@ -398,8 +398,19 @@ internal sealed class GameplayStage
         if (DebugViews[index] is not { Length: 7 } view) return;
         camera.transform.localPosition = new Vector3(view[0], view[1], view[2]);
         camera.transform.LookAt(_root!.transform.position + new Vector3(view[3], view[4], view[5]));
-        if (Environment.GetEnvironmentVariable("GH3_SKIN_DEBUG_VIEW_HEAD") == "1" && _band?.Anchor("guitarist", "ddec28af") is { } head)
+        var headMode = Environment.GetEnvironmentVariable("GH3_SKIN_DEBUG_VIEW_HEAD");
+        if (headMode == "1" && _band?.Anchor("guitarist", "ddec28af") is { } head)
             camera.transform.LookAt(new Vector3(head.Position.X, head.Position.Y, head.Position.Z));
+        if (headMode == "local" && _band?.Anchor("guitarist", "ddec28af") is { } face)
+        {
+            // Position and target in the frame of the head bone (on the Midori rig, local +X points up and +Y to the front of
+            // the face), so the camera keeps the same view of the face while the head moves.
+            var eye = face.Position + System.Numerics.Vector3.Transform(new(view[0], view[1], view[2]), face.Rotation);
+            var target = face.Position + System.Numerics.Vector3.Transform(new(view[3], view[4], view[5]), face.Rotation);
+            var up = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitX, face.Rotation);
+            camera.transform.position = new Vector3(eye.X, eye.Y, eye.Z);
+            camera.transform.LookAt(new Vector3(target.X, target.Y, target.Z), new Vector3(up.X, up.Y, up.Z));
+        }
         camera.fieldOfView = view[6];
         foreach (var (other, _) in _cameras) other.cullingMask = 0;
         if (_playerCamera != null) _playerCamera.cullingMask = 0;
