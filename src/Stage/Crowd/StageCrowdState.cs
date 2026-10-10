@@ -4,6 +4,7 @@ internal sealed record CrowdAnimationRequest(double Time, string Animation);
 
 internal sealed class StageCrowdState
 {
+    private const double FrameTolerance = 1e-9;
     public const double GameFrame = 1.0 / 60;
     private sealed record SkillChange(double Time, string Skill);
     private sealed record VisibilityChange(double Time, bool Visible);
@@ -33,6 +34,7 @@ internal sealed class StageCrowdState
     public static string Skill(float rock)
     {
         var health = Math.Clamp(float.IsFinite(rock) ? rock : 0.5f, 0, 1) * 2;
+        // GH3: health_poor_medium and health_medium_good as float32 (Gh3Health).
         return health < 0.66f ? "bad" : health > 1.3299999f ? "good" : "normal";
     }
 
@@ -101,7 +103,7 @@ internal sealed class StageCrowdState
             if (!active || busy) return;
             var token = ++poll;
             var monitor = generation;
-            var wakeAt = nextPoll + Math.Max(0, Math.Ceiling((time - nextPoll) / GameFrame - 1e-9)) * GameFrame;
+            var wakeAt = nextPoll + Math.Max(0, Math.Ceiling((time - nextPoll) / GameFrame - FrameTolerance)) * GameFrame;
             void Poll(double at)
             {
                 if (token != poll || monitor != generation || !active || busy) return;

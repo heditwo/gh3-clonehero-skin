@@ -3,7 +3,15 @@ using System.Text.Json;
 namespace Gh3Skin;
 
 internal sealed class StageScriptBank
-{
+{    // Validation limits of a venue's script bank.
+    private const int MaximumDefinitions = 50000;
+    private const int MaximumStartupScripts = 256;
+    private const int MaximumNodeArrays = 256;
+    private const int MaximumTextures = 2048;
+    private const int MaximumNodes = 10000;
+    private const int MaximumPrefixMembers = 1000000;
+    private const int MaximumLightVolumes = 1024;
+
     public int Version { get; set; }
     public Dictionary<string, JsonElement> Definitions { get; set; } = new();
     public string[] Startup { get; set; } = Array.Empty<string>();
@@ -22,10 +30,10 @@ internal sealed class StageScriptBank
     public static StageScriptBank Load(string path, string? shared = null)
     {
         var bank = JsonSerializer.Deserialize<StageScriptBank>(File.ReadAllText(path), Packages.PackageJson.CaseInsensitive);
-        if (bank?.Version != 1 || bank.Definitions.Count > 50000 || bank.Startup.Length > 256 ||
+        if (bank?.Version != 1 || bank.Definitions.Count > MaximumDefinitions || bank.Startup.Length > MaximumStartupScripts ||
             bank.Definitions.Keys.Any(key => key.Length != 8 || !key.All(Uri.IsHexDigit)))
             throw new InvalidDataException("Invalid stage script library");
-        if (bank.Nodes.Length > 256 || bank.Textures.Count > 2048) throw new InvalidDataException("Too many stage script resources");
+        if (bank.Nodes.Length > MaximumNodeArrays || bank.Textures.Count > MaximumTextures) throw new InvalidDataException("Too many stage script resources");
         var library = shared != null && File.Exists(shared) ? Load(shared) : null;
         var values = library != null ? new Dictionary<uint, Gh3QbValue>(library.Values) : new();
         var textures = library != null ? new Dictionary<uint, string>(library.TexturePaths) : new();
@@ -51,13 +59,13 @@ internal sealed class StageScriptBank
         foreach (var pair in bank.Definitions) values[Convert.ToUInt32(pair.Key, 16)] = Gh3QbText.Decode(pair.Value.GetRawText());
         bank.Values = values;
         foreach (var name in bank.Nodes)
-            if (!values.TryGetValue(Gh3QbText.Key(name), out var nodes) || nodes.Type != Gh3QbType.Array || nodes.Items.Count > 10000)
+            if (!values.TryGetValue(Gh3QbText.Key(name), out var nodes) || nodes.Type != Gh3QbType.Array || nodes.Items.Count > MaximumNodes)
                 throw new InvalidDataException("Stage node array is missing or invalid: " + name);
         bank.NodeValues = bank.Nodes.SelectMany(name => values[Gh3QbText.Key(name)].Items).ToDictionary(row => row.Field("Name")?.Integer ?? throw new InvalidDataException("Stage node name is missing"));
-        if (bank.Prefixes.Count > StageLimits.MaximumCount || bank.Prefixes.Values.Sum(members => (long)members.Length) > 1000000) throw new InvalidDataException("Too many node prefix entries");
+        if (bank.Prefixes.Count > StageLimits.MaximumCount || bank.Prefixes.Values.Sum(members => (long)members.Length) > MaximumPrefixMembers) throw new InvalidDataException("Too many node prefix entries");
         bank.PrefixValues = bank.Prefixes.ToDictionary(pair => Gh3QbText.Key(pair.Key), pair => pair.Value.Select(Gh3QbText.Key).ToArray());
         if (bank.PrefixValues.Values.SelectMany(members => members).Any(id => !bank.NodeValues.ContainsKey(id))) throw new InvalidDataException("Node prefix member is missing");
-        if (bank.LightVolumes.Count > 1024 || bank.LightVolumes.Keys.Any(id => !bank.NodeValues.ContainsKey(Gh3QbText.Key(id))))
+        if (bank.LightVolumes.Count > MaximumLightVolumes || bank.LightVolumes.Keys.Any(id => !bank.NodeValues.ContainsKey(Gh3QbText.Key(id))))
             throw new InvalidDataException("Invalid script light volume bindings");
         foreach (var value in bank.Values.Values.Where(value => value.Type == Gh3QbType.Script)) _ = new Gh3ScriptCode(value);
         foreach (var script in bank.Startup)

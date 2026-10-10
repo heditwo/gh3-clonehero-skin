@@ -76,6 +76,7 @@ internal sealed class StageObjectState
         var y = Vector3.Transform(Vector3.UnitY, source);
         var z = Vector3.Transform(Vector3.UnitZ, source);
         var pitch = MathF.Atan2(-x.Z, MathF.Sqrt(x.X * x.X + x.Y * x.Y));
+        // GH3: the native gimbal-lock threshold of the Euler decomposition.
         return new Vector3(Math.Abs(MathF.Cos(pitch)) > .00001f ? MathF.Atan2(y.Z, z.Z) : MathF.Atan2(-z.Y, y.Y),
             pitch, Math.Abs(MathF.Cos(pitch)) > .00001f ? MathF.Atan2(x.Y, x.X) : 0) * (180 / MathF.PI);
     }

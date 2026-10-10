@@ -30,7 +30,18 @@ internal sealed class StageGh3Material
 // Values use Unity's BlendMode, BlendOp, CompareFunction, and CullMode numbering.
 internal readonly record struct StageGh3RenderState(int SrcBlend, int DstBlend, int BlendOp, bool ZWrite, int ZTest, int Cull,
     bool AlphaTest, int AlphaRef, bool Blended, int Queue)
-{
+{    // GH3: material flags (PARITY-NOTES.md#materials-and-shaders): bit 3 no cull, bit 4 depth always, bit 5 no depth
+    // write, bit 6 no alpha test, bit 8 cull direction.
+    private const long NoCullFlag = 0x08;
+    private const long DepthAlwaysFlag = 0x10;
+    private const long NoDepthWriteFlag = 0x20;
+    private const long NoAlphaTestFlag = 0x40;
+    private const long CullDirectionFlag = 0x100;
+    private const int SourceFactorMask = 31;
+    private const int ModeCount = 13;
+    // The draw order shifts the render queue by at most this much.
+    private const int MaximumDrawOrder = 400;
+
     // D3DBLEND (1 ZERO .. 10 INVDESTCOLOR) to Unity BlendMode.
     private static readonly int[] BlendFactors = { 0, 0, 1, 3, 6, 5, 10, 7, 8, 2, 4 };
     // D3DBLENDOP (1 ADD .. 5 MAX) to Unity BlendOp.
@@ -40,19 +51,20 @@ internal readonly record struct StageGh3RenderState(int SrcBlend, int DstBlend, 
 
     public static StageGh3RenderState From(long flags, int blend, int alphaRef, float drawOrder, bool billboard = false)
     {
-        var packed = Modes[blend is >= 0 and < 13 ? blend : 0];
+        var packed = Modes[blend is >= 0 and < ModeCount ? blend : 0];
         var blended = packed != Modes[0];
-        var alphaTest = (flags & 0x40) == 0;
+        var alphaTest = (flags & NoAlphaTestFlag) == 0;
         // Bit 3 disables culling; otherwise bit 8 selects counter-clockwise culling. The stage meshes reverse GH3's winding.
-        var cull = (flags & 0x08) != 0 ? 0 : (flags & 0x100) != 0 ? 1 : 2;
-        var order = (int)Math.Clamp(Math.Round(drawOrder), -400, 400);
+        var cull = (flags & NoCullFlag) != 0 ? 0 : (flags & CullDirectionFlag) != 0 ? 1 : 2;
+        var order = (int)Math.Clamp(Math.Round(drawOrder), -MaximumDrawOrder, MaximumDrawOrder);
         var destination = BlendFactors[packed >> 8 & 255];
         // The additive Flare billboards (up to 9 m wide) draw before the band's sorted hair (draw order 1 < 2). With their depth write,
         // the alpha-tested core of a card in front of a performer removed the hair behind it in the flare mood. A glow adds light only,
         // so it does not write depth. The hair stays in GH3 recordings of the flare mood.
-        var depthWrite = (flags & 0x20) == 0 && !(billboard && blended && destination == 1);
-        return new(BlendFactors[packed & 31], destination, BlendOps[packed >> 5 & 7], depthWrite,
-            (flags & 0x10) != 0 ? 8 : 4, cull, alphaTest, alphaRef, blended, (blended ? 3000 : alphaTest ? 2450 : 2000) + order);
+        var depthWrite = (flags & NoDepthWriteFlag) == 0 && !(billboard && blended && destination == 1);
+        // Unity CompareFunction: Always (8) with the depth-always flag, else LessEqual (4).
+        return new(BlendFactors[packed & SourceFactorMask], destination, BlendOps[packed >> 5 & 7], depthWrite,
+            (flags & DepthAlwaysFlag) != 0 ? 8 : 4, cull, alphaTest, alphaRef, blended, (blended ? RenderQueue.Transparent : alphaTest ? RenderQueue.AlphaTest : RenderQueue.Geometry) + order);
     }
 
     // Sampler address byte (+0xea + sampler): bit 0 clamps U, bit 1 clamps V.
@@ -61,7 +73,8 @@ internal readonly record struct StageGh3RenderState(int SrcBlend, int DstBlend, 
 
 // The templates compiled into render/stage.bundle (written by pipeline/render/shaders.py).
 internal sealed class StageShaderTemplates
-{
+{    private const int MaximumTemplateIndex = 4096;
+
     // Extra: the vertex stream that texture coordinates 6-7 carry ("position1", "binormal1", or none).
     public sealed record Template(int Index, string Name, string Shading, string Extra);
     private readonly Dictionary<string, Template> _templates;
@@ -84,7 +97,7 @@ internal sealed class StageShaderTemplates
         foreach (var row in root.GetProperty("templates").EnumerateObject())
         {
             var index = row.Value.GetProperty("index").GetInt32();
-            if (row.Name.Length != 8 || !row.Name.All(Uri.IsHexDigit) || index is < 1 or > 4096) throw new InvalidDataException("Invalid stage template");
+            if (row.Name.Length != 8 || !row.Name.All(Uri.IsHexDigit) || index is < 1 or > MaximumTemplateIndex) throw new InvalidDataException("Invalid stage template");
             templates.Add(row.Name, new(index, row.Value.GetProperty("name").GetString() ?? "", row.Value.GetProperty("shading").GetString() ?? "",
                 row.Value.TryGetProperty("extraStream", out var extra) ? extra.GetString() ?? "" : ""));
         }

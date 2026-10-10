@@ -32,7 +32,10 @@ internal sealed class StageMeshPart
 // worker threads while the main thread builds the scene; only plain struct fields are set here (no Unity calls, which are
 // not allowed off the main thread).
 internal sealed class StageModelData
-{
+{    private const int MaximumMeshes = 10000;
+    private const int MaximumIndices = 1000000;
+    private const float WeightTolerance = 0.001f;
+
     public StageDefinition Definition { get; private init; } = new();
     public StageMeshPart?[] Parts { get; private init; } = Array.Empty<StageMeshPart?>();
 
@@ -51,8 +54,8 @@ internal sealed class StageModelData
             throw new InvalidDataException("Invalid stage mesh header");
         var at = 8;
         var meshCount = Int(data, ref at);
-        if (meshCount < 1 || meshCount > 10000) throw new InvalidDataException("Invalid stage mesh count");
-        var stride = skinned ? Packages.StageGeometry.SkinnedStride : 144;
+        if (meshCount < 1 || meshCount > MaximumMeshes) throw new InvalidDataException("Invalid stage mesh count");
+        var stride = skinned ? Packages.StageGeometry.SkinnedStride : Packages.StageGeometry.StaticStride;
         var result = new StageMeshPart?[meshCount];
         for (var index = 0; index < meshCount; index++)
         {
@@ -60,7 +63,7 @@ internal sealed class StageModelData
             var materialId = (uint)Int(data, ref at);
             var vertexCount = Int(data, ref at);
             var indexCount = Int(data, ref at);
-            if (vertexCount < 1 || vertexCount > 65535 || indexCount < 0 || indexCount > 1000000 || indexCount % 3 != 0)
+            if (vertexCount < 1 || vertexCount > ushort.MaxValue || indexCount < 0 || indexCount > MaximumIndices || indexCount % 3 != 0)
                 throw new InvalidDataException("Invalid stage mesh size");
             var size = (long)vertexCount * stride + indexCount * 4L;
             if (data.Length - at < size) throw new InvalidDataException("Truncated stage mesh");
@@ -126,7 +129,7 @@ internal sealed class StageModelData
                 sum += influences[i].Weight;
             }
             // As Enumerable.Sum of floats (a double total, then float).
-            if (Math.Abs((float)sum - 1) > 0.001f) throw new InvalidDataException("Invalid band skin weights");
+            if (Math.Abs((float)sum - 1) > WeightTolerance) throw new InvalidDataException("Invalid band skin weights");
             // The influences with weight, largest first; equal weights keep their order (a stable sort, as OrderByDescending).
             var used = 0;
             for (var i = 0; i < 4; i++)

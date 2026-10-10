@@ -4,8 +4,6 @@ namespace Gh3Skin;
 
 internal sealed class StageParticles : IDisposable
 {
-    // Unity's transparent render queue.
-    private const int TransparentQueue = 3000;
     // GH3: technique flag 0x800 sorts a technique with the transparent particles.
     private const uint TransparentTechniqueFlag = 0x800;
     private static readonly int CameraForwardId = Shader.PropertyToID("_Gh3CameraForward");
@@ -280,7 +278,7 @@ internal sealed class StageParticles : IDisposable
         material.SetVector("_Gh3Particle", new(definition.Burn ? definition.BurnValue : 0, (byte)definition.AlphaCutoff / 255f, 1,
             !definition.Burn && definition.AlphaCutoff > 0 ? 1 : 0));
         material.SetVector("_Gh3SoftEdge", new(definition.SoftEdge ? 1 : 0, definition.SoftEdgeScale, 0, 0));
-        material.renderQueue = TransparentQueue;
+        material.renderQueue = RenderQueue.Transparent;
     }
 
     public static void ConfigureBlend(Material material, uint packed)

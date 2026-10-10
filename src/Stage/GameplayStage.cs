@@ -6,7 +6,12 @@ using UnityEngine;
 namespace Gh3Skin;
 
 internal sealed class GameplayStage
-{
+{    private const float ThroughViewAim = 0.2f;
+    // The stage camera draws just before the player camera.
+    private const float CameraDepthBelow = 0.1f;
+    private const float NearClip = 0.1f;
+    private const double BytesPerMegabyte = 1e6;
+
     private readonly StageNoteHits _noteHits = new();
     private const int Layer = 30;
     private readonly string _assetsDirectory;
@@ -424,7 +429,8 @@ internal sealed class GameplayStage
             var side = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.Cross(System.Numerics.Vector3.UnitY, away));
             var eye = front.Position + away * view[0] + System.Numerics.Vector3.UnitY * view[1] + side * view[2];
             camera.transform.position = new Vector3(eye.X, eye.Y, eye.Z);
-            camera.transform.LookAt(new Vector3(back.Position.X, back.Position.Y + view[1] * 0.2f, back.Position.Z));
+            // Aim a fifth of the height offset above the bassist's head.
+            camera.transform.LookAt(new Vector3(back.Position.X, back.Position.Y + view[1] * ThroughViewAim, back.Position.Z));
         }
         camera.fieldOfView = view[6];
         foreach (var (other, _) in _cameras) other.cullingMask = 0;
@@ -452,7 +458,7 @@ internal sealed class GameplayStage
     private void ShowHighway(double time)
     {
         var camera = _playerCamera!;
-        var hidden = time >= WinTime + StageShowFlow.HighwayHideDelay || IntroHudAnimation.HighwayOffset(time) >= 720;
+        var hidden = time >= WinTime + StageShowFlow.HighwayHideDelay || IntroHudAnimation.HighwayOffset(time) >= IntroHudAnimation.HighwayDrop;
         camera.cullingMask = hidden ? 0 : _playerCullingMask;
         var rise = IntroHudAnimation.HighwayOffset(time);
         if (rise == _highwayRise) return;
@@ -580,14 +586,15 @@ internal sealed class GameplayStage
             _camera = cameraObject.AddComponent<Camera>();
             _fixtures.View = _camera;
             _camera.cullingMask = 1 << Layer;
-            _camera.depth = player.mainCamera.depth - 0.1f;
+            _camera.depth = player.mainCamera.depth - CameraDepthBelow;
             _playerCamera = player.mainCamera;
             _playerClearFlags = _playerCamera.clearFlags;
             _playerCullingMask = _playerCamera.cullingMask;
             _playerCamera.clearFlags = CameraClearFlags.Depth;
             _camera.clearFlags = CameraClearFlags.SolidColor;
+            // Tuned: a near-black blue behind the stage.
             _camera.backgroundColor = new Color(0.006f, 0.008f, 0.015f, 1);
-            _camera.nearClipPlane = 0.1f;
+            _camera.nearClipPlane = NearClip;
             _camera.farClipPlane = 180;
             _camera.fieldOfView = _assets.Definition.FieldOfView;
             _camera.transform.localPosition = StageAssets.Vector(_assets.Definition.CameraPosition);
@@ -675,7 +682,7 @@ internal sealed class GameplayStage
             MelonLogger.Msg($"GH3 stage loaded: {_assets.Definition.Name}");
             MelonLogger.Msg($"GH3 stage load time: {loadClock.Elapsed.TotalMilliseconds:0} ms on the main thread " +
                 $"({StageAssets.TexturesUploaded - texturesBefore.Item1} cache textures in {StageAssets.TextureMilliseconds - texturesBefore.Item2:0} ms; " +
-                $"{clips} band clips decoded in {clipWorker:0} ms on worker threads while the main thread waited {clipWait:0} ms; managed heap {GC.GetTotalMemory(false) / 1e6:0} MB)");
+                $"{clips} band clips decoded in {clipWorker:0} ms on worker threads while the main thread waited {clipWait:0} ms; managed heap {GC.GetTotalMemory(false) / BytesPerMegabyte:0} MB)");
             MelonLogger.Msg($"GH3 stage cues: {_timeline.CueCount} from {_timeline.Source}; {_timeline.Effects.Length} effects");
             foreach (var diagnostic in _timeline.Diagnostics) MelonLogger.Msg(diagnostic);
             if (_timeline.NativeSong is { } nativeSong)

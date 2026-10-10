@@ -16,7 +16,7 @@ internal static class IntroHudAnimation
     private const float Frame = 1f / 60;
     // GH3: move_highway_2d starts the highway container 720 units down and slows it with
     // speed = max(0.05, log(1.005 - min(t / 1.3, 1)) / 4 + 1).
-    private const float HighwayDrop = 720;
+    public const float HighwayDrop = 720;
     private const float HighwayCurveSeconds = 1.3f;
     private const float HighwayMinimumSpeed = 0.05f;
     private const float HighwayLogOffset = 1.005f;

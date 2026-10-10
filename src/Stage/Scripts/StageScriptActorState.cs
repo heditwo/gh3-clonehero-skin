@@ -4,7 +4,8 @@ internal sealed record StageScriptActorDefinition(StageActorDefinition Actor, do
 internal readonly record struct StageScriptActorSample(int Clip, double Time, int PreviousClip, double PreviousTime, float Blend);
 
 internal sealed class StageScriptActorState
-{
+{    private const int MaximumBlendSeconds = 600;
+
     private sealed record Playback(int Clip, double Start, double Offset, double End, double Rate, bool Loop);
     private readonly StageScriptActorDefinition _definition;
     private readonly Dictionary<uint, int> _clips;
@@ -61,9 +62,10 @@ internal sealed class StageScriptActorState
             double Number(string field, double fallback) => parameters.Field(field) is { Type: Gh3QbType.Integer or Gh3QbType.Float } value ? Gh3ScriptRuntime.Numeric(value) : fallback;
             var rate = Number("speed", 1);
             var offset = Number("starttime", 0);
+            // GH3: the PlayAnim BlendDuration default.
             var blend = Number("BlendDuration", .1);
             if (!double.IsFinite(rate) || rate <= 0 || !double.IsFinite(offset) || offset < 0 || offset > _definition.Durations[clip] ||
-                !double.IsFinite(blend) || blend is < 0 or > 600) throw new InvalidDataException("Invalid actor animation timing");
+                !double.IsFinite(blend) || blend is < 0 or > MaximumBlendSeconds) throw new InvalidDataException("Invalid actor animation timing");
             _previous = _current;
             ClipKey = key;
             _current = new(clip, time, offset, time + (_definition.Durations[clip] - offset) / rate, rate,

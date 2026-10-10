@@ -34,7 +34,13 @@ internal sealed class StageCrowd : IDisposable
     private const int CellPixelsHigh = 256;
     // create_crowd_models parks ped n at (-500, -200 - 100n, 0); the atlas keeps that spacing so no camera sees another ped.
     private const float PedSpacing = 100;
+    private const float ParkX = -500, ParkY = -200;
     public const int Layer = 29;
+    // The alpha pass draws after the transparent queue.
+    private const int AlphaPassQueueOffset = 100;
+    // Tuned: each crowd cell starts its clips at another phase.
+    private const double PhasePerCell = 0.371;
+    private const float NearClip = 0.1f;
     private int Columns = 8;
     private int Rows = 3;
     private readonly List<StageAssets> _assets = new();
@@ -92,7 +98,7 @@ internal sealed class StageCrowd : IDisposable
             var animation = animations[model];
             var person = new GameObject($"GH3 Crowd {cell}") { layer = Layer };
             person.transform.SetParent(_root.transform, false);
-            person.transform.localPosition = new Vector3(0, -200 - PedSpacing * cell, 0);
+            person.transform.localPosition = new Vector3(0, ParkY - PedSpacing * cell, 0);
             // GH3 parks every crowd ped with quat (0, 1, 0); only rows with roty call Obj_SetOrientation and keep an unturned camera.
             var yaw = member?.Yaw ?? 0;
             var turned = yaw == 0;
@@ -105,7 +111,7 @@ internal sealed class StageCrowd : IDisposable
                 bones[i].SetParent(animation.Parents[i] < 0 ? person.transform : bones[animation.Parents[i]], false);
                 Apply(bones[i], animation.BindPose[i]);
             }
-            System.Numerics.Vector3? lightAt = lit ? new System.Numerics.Vector3(-500, -200 - 100 * RoleIndex(role), 0) : null;
+            System.Numerics.Vector3? lightAt = lit ? new System.Numerics.Vector3(ParkX, ParkY - PedSpacing * RoleIndex(role), 0) : null;
             var assets = new StageAssets();
             _assets.Add(assets);
             assets.Load(Path.Combine(directory, model), person, Layer, bones, lit, Gh3Checksum.Of("Crowd"), lit ? surfaceShader : null, lightAt);
@@ -119,12 +125,12 @@ internal sealed class StageCrowd : IDisposable
                     alpha.mainTexture = skin.sharedMaterial.mainTexture;
                     alpha.SetInt("_ColorMask", (int)ColorWriteMask.Alpha);
                     alpha.SetInt("unity_GUIZTestMode", (int)CompareFunction.LessEqual);
-                    alpha.renderQueue = 3100;
+                    alpha.renderQueue = RenderQueue.Transparent + AlphaPassQueueOffset;
                     skin.sharedMaterials = new Il2CppReferenceArray<Material>(new[] { skin.sharedMaterial, alpha });
                 }
             }
             Alpha(assets, person);
-            var player = new Player { Role = role, Bones = bones, Animation = animation, Phase = cell * 0.371,
+            var player = new Player { Role = role, Bones = bones, Animation = animation, Phase = cell * PhasePerCell,
                 Pose = new BandPose[bones.Length], Previous = new BandPose[bones.Length], Person = person.transform, Turned = turned };
             foreach (var hand in definition.Hands)
             {
@@ -150,7 +156,7 @@ internal sealed class StageCrowd : IDisposable
             camera.depth = stageCamera.depth - 1;
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = Color.clear;
-            camera.nearClipPlane = 0.1f;
+            camera.nearClipPlane = NearClip;
             camera.farClipPlane = FarClip;
             camera.allowHDR = false;
             camera.allowMSAA = false;

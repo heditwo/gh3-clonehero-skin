@@ -12,7 +12,7 @@ internal sealed class StageDefinition
     public string Name { get; set; } = "";
     public float[] CameraPosition { get; set; } = Array.Empty<float>();
     public float[] CameraTarget { get; set; } = Array.Empty<float>();
-    public float FieldOfView { get; set; } = 55;
+    public float FieldOfView { get; set; } = 55; // Tuned: the default camera of a stage without one
     public float[][] PyroPositions { get; set; } = Array.Empty<float[]>();
     public Dictionary<string, StageMaterial> Materials { get; set; } = new();
     public string[] LightGroups { get; set; } = Array.Empty<string>();
@@ -50,7 +50,13 @@ internal sealed class StageMaterial
 }
 
 internal sealed class StageAssets : IDisposable
-{
+{    private const int MaximumMaterials = 2048;
+    private const int MaximumObjects = 10000;
+    private const int MinimumFieldOfView = 10;
+    private const int MaximumFieldOfView = 120;
+    // GH3: movie texture slots 0-31.
+    private const int MaximumMovieSlot = 31;
+
     internal sealed record LitMesh(Mesh Mesh, string Group, Vector3[] Positions, Vector3[] Normals, Color32[] Colors, Transform Transform);
     internal sealed record LitBandMesh(SkinnedMeshRenderer Renderer, Color32[] Colors, string Group);
     // LightAt overrides the lighting sample position (stage-local) for meshes rendered away from where they appear.
@@ -118,7 +124,7 @@ internal sealed class StageAssets : IDisposable
         material.DisableKeyword("_ALPHAMODULATE_ON");
         if (transparent) material.EnableKeyword("_ALPHABLEND_ON");
         else material.DisableKeyword("_ALPHABLEND_ON");
-        material.renderQueue = transparent ? 3000 : 2000;
+        material.renderQueue = transparent ? RenderQueue.Transparent : RenderQueue.Geometry;
         material.color = Color.white;
         return material;
     }
@@ -170,7 +176,7 @@ internal sealed class StageAssets : IDisposable
         if (!float.IsFinite(source.ColorScale) || source.ColorScale is < 1 or > 1000) throw new InvalidDataException("Invalid material color scale");
         material.SetVector("_Gh3Surface", new(source.ShadingMode, cutout ? source.Cutoff : 0, source.Lightmap.Length > 0 ? 1 : 0, source.ColorScale));
         material.SetColor("_Color", Color.white);
-        material.renderQueue = transparent ? 3000 : cutout ? 2450 : 2000;
+        material.renderQueue = transparent ? RenderQueue.Transparent : cutout ? RenderQueue.AlphaTest : RenderQueue.Geometry;
         return material;
     }
 
@@ -322,10 +328,10 @@ internal sealed class StageAssets : IDisposable
         var section = LoadTiming.Now;
         var model = (parts == null ? StageModelPrefetch.Take(directory, bones != null) : null) ?? StageModelData.Read(directory, bones != null, parts);
         Definition = model.Definition;
-        if (Definition.Version != 1 || Definition.Materials.Count > 2048 ||
+        if (Definition.Version != 1 || Definition.Materials.Count > MaximumMaterials ||
             Definition.CameraPosition.Length != 3 || Definition.CameraTarget.Length != 3 ||
             !Definition.CameraPosition.Concat(Definition.CameraTarget).All(float.IsFinite) ||
-            !float.IsFinite(Definition.FieldOfView) || Definition.FieldOfView < 10 || Definition.FieldOfView > 120 ||
+            !float.IsFinite(Definition.FieldOfView) || Definition.FieldOfView < MinimumFieldOfView || Definition.FieldOfView > MaximumFieldOfView ||
             Definition.PyroPositions.Length > 16 || Definition.PyroPositions.Any(p => p.Length != 3 || !p.All(float.IsFinite)))
             throw new InvalidDataException("Invalid stage definition");
         var shader = Shader.Find("Particles/Standard Unlit");
@@ -392,7 +398,7 @@ internal sealed class StageAssets : IDisposable
                     CrowdMaterials.Add(generic);
                     CrowdRoles[generic] = source.CrowdRole;
                 }
-                if (source.MovieSlot is < -1 or > 31) throw new InvalidDataException("Invalid movie surface slot");
+                if (source.MovieSlot is < -1 or > MaximumMovieSlot) throw new InvalidDataException("Invalid movie surface slot");
                 if (source.MovieSlot >= 0) MovieSurfaces.Add((source.MovieSlot, generic, generic.mainTexture));
                 continue;
             }
@@ -410,13 +416,13 @@ internal sealed class StageAssets : IDisposable
             {
                 material.SetFloat("_Cutoff", source.Cutoff);
                 material.EnableKeyword("_ALPHATEST_ON");
-                material.renderQueue = 2450;
+                material.renderQueue = RenderQueue.AlphaTest;
             }
             if (bones != null && source.Blend == 3 && !source.SortedTransparency)
             {
                 // Cutout-only rendering loses texture alpha in this game's particle shader.
                 material.SetInt("_ZWrite", 1);
-                material.renderQueue = 3000;
+                material.renderQueue = RenderQueue.Transparent;
             }
             if (source.Texture.Length > 0) material.mainTexture = LoadTexture(source.Texture, TextureWrapMode.Repeat);
             if (shaded && source.Lightmap.Length > 0) material.SetTexture("_Gh3Lightmap", LoadTexture(source.Lightmap, TextureWrapMode.Clamp));
@@ -443,7 +449,7 @@ internal sealed class StageAssets : IDisposable
             if (source.Crowd) CrowdMaterials.Add(material);
             if (source.Billboard && shaded) BillboardMaterials.Add(material);
             if (source.Crowd && source.CrowdRole.Length > 0) CrowdRoles[material] = source.CrowdRole;
-            if (source.MovieSlot is < -1 or > 31) throw new InvalidDataException("Invalid movie surface slot");
+            if (source.MovieSlot is < -1 or > MaximumMovieSlot) throw new InvalidDataException("Invalid movie surface slot");
             if (source.MovieSlot >= 0) MovieSurfaces.Add((source.MovieSlot, material, material.mainTexture));
         }
         LoadTiming.Add("assets: materials and textures", section);
@@ -458,7 +464,7 @@ internal sealed class StageAssets : IDisposable
         if (lighting && bones == null && Definition.LightGroups.Length == 0)
             throw new InvalidDataException("Stage light groups are missing. Run scripts/regenerate.sh venues again.");
         if (Definition.ObjectIds.Length != 0 && Definition.ObjectIds.Length != meshCount ||
-            Definition.ObjectIds.Any(id => id.Length > 0 && !Definition.Objects.ContainsKey(id)) || Definition.Objects.Count > 10000)
+            Definition.ObjectIds.Any(id => id.Length > 0 && !Definition.Objects.ContainsKey(id)) || Definition.Objects.Count > MaximumObjects)
             throw new InvalidDataException("Invalid stage object groups");
         foreach (var (id, placement) in Definition.Objects)
         {
@@ -632,7 +638,7 @@ internal sealed class StageAssets : IDisposable
             {
                 var slot = reader.ReadByte();
                 var vertices = reader.ReadInt32();
-                if (slot >= Packages.CharacterSkeleton.FaceSlots.Length || vertices is < 1 or > 65535) throw new InvalidDataException("Invalid character blend shape");
+                if (slot >= Packages.CharacterSkeleton.FaceSlots.Length || vertices is < 1 or > ushort.MaxValue) throw new InvalidDataException("Invalid character blend shape");
                 var deltas = new Vector3[vertices];
                 for (var v = 0; v < vertices; v++) deltas[v] = new Vector3(ReadFloat(reader), ReadFloat(reader), ReadFloat(reader));
                 result[part].Add((slot, deltas));

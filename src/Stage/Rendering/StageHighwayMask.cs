@@ -8,7 +8,10 @@ namespace Gh3Skin;
 // Writes near depth over the highway's screen area after stage geometry, so particle effects drawn later
 // never show through the highway, including its transparent far end.
 internal sealed class StageHighwayMask
-{
+{    // The mask quad sits just past the stage camera's near plane, and the neck test just inside the player's far plane.
+    private const float NearPlaneOffset = 1.5f;
+    private const float FarPlaneShare = 0.999f;
+
     public const int Queue = 3005;
     private readonly Camera _stageCamera;
     private readonly Mesh _mesh;
@@ -63,10 +66,10 @@ internal sealed class StageHighwayMask
         var max = bounds.max;
         var transform = _neck.transform;
         var rect = _stageCamera.pixelRect;
-        var depth = _stageCamera.nearClipPlane * 1.5f;
+        var depth = _stageCamera.nearClipPlane * NearPlaneOffset;
         var height = MathF.Tan(_stageCamera.fieldOfView * MathF.PI / 360) * depth;
         var width = height * _stageCamera.aspect;
-        var far = playerCamera.farClipPlane * 0.999f;
+        var far = playerCamera.farClipPlane * FarPlaneShare;
         for (var side = 0; side < 2; side++)
         {
             var x = side == 0 ? min.x : max.x;

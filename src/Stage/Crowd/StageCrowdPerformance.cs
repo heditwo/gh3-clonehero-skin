@@ -9,7 +9,12 @@ internal sealed class CrowdMember
 }
 
 internal sealed class CrowdDefinition
-{
+{    private const int MaximumClips = 4096;
+    private const int MaximumClipSeconds = 120;
+    private const int MaximumGroups = 1024;
+    // Crowd blend times and tempos (seconds and beats per minute) stay below this.
+    private const int MaximumConstant = 400;
+
     public int Version { get; set; }
     public string[] Models { get; set; } = Array.Empty<string>();
     public string[] Bones { get; set; } = Array.Empty<string>();
@@ -27,13 +32,13 @@ internal sealed class CrowdDefinition
         if (bank.Version == 1) return bank;
         var hands = new[] { "left", "right" }.SelectMany(side => new[] { "clap", "lighter", "rock", "fist" }.Select(kind => side + "-" + kind)).ToArray();
         if (bank.Bones.Length is < 1 or > 255 || bank.Members.Count != 8 || bank.Hands.Length != 8 || hands.Except(bank.Hands).Any() ||
-            bank.PerformanceClips.Count is < 1 or > 4096 || bank.PerformanceClips.Any(clip => clip.Key.Length != 8 || !clip.Key.All(Uri.IsHexDigit) ||
-                !float.IsFinite(clip.Value.Duration) || clip.Value.Duration <= 0 || clip.Value.Duration > 120))
+            bank.PerformanceClips.Count is < 1 or > MaximumClips || bank.PerformanceClips.Any(clip => clip.Key.Length != 8 || !clip.Key.All(Uri.IsHexDigit) ||
+                !float.IsFinite(clip.Value.Duration) || clip.Value.Duration <= 0 || clip.Value.Duration > MaximumClipSeconds))
             throw new InvalidDataException("Invalid crowd performance library.");
         foreach (var (role, member) in bank.Members)
         {
             _ = StageCrowdState.Member(role);
-            if (!bank.Models.Contains(member.Model) || member.Groups.Count > 1024 || member.Groups.Values.Any(refs => refs.Length == 0 || refs.Any(id => !bank.PerformanceClips.ContainsKey(id))))
+            if (!bank.Models.Contains(member.Model) || member.Groups.Count > MaximumGroups || member.Groups.Values.Any(refs => refs.Length == 0 || refs.Any(id => !bank.PerformanceClips.ContainsKey(id))))
                 throw new InvalidDataException("Invalid crowd animation group.");
             foreach (var action in new[] { "idle", "special", "starpower" })
                 foreach (var skill in new[] { "bad", "normal", "good" })
@@ -41,7 +46,7 @@ internal sealed class CrowdDefinition
                         if (!member.Groups.ContainsKey($"{action}/{skill}/{speed}")) throw new InvalidDataException("Missing crowd animation group.");
         }
         foreach (var name in new[] { "Crowd_BlendTime_TempoChange", "Crowd_BlendTime_Bad", "Crowd_BlendTime_Special", "Crowd_BlendTime_Slow", "Crowd_BlendTime_Med", "Crowd_BlendTime_Fast", "slow_tempo", "med_tempo", "fast_tempo" })
-            if (!bank.Constants.TryGetValue(name, out var value) || !float.IsFinite(value) || value < 0 || value > 400)
+            if (!bank.Constants.TryGetValue(name, out var value) || !float.IsFinite(value) || value < 0 || value > MaximumConstant)
                 throw new InvalidDataException("Missing or invalid crowd timing constant.");
         return bank;
     }

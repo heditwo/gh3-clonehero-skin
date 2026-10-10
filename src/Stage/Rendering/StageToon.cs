@@ -5,9 +5,11 @@ namespace Gh3Skin;
 // Toon (cel) material of a character (stage.json `toon`, from the GLB extra gh3Toon; PACKAGE-FORMAT.md section 6.5).
 // Texture names are runtime texture names of the cache folder.
 internal sealed class StageToon
-{
+{    // The softness of a toon material without one (PACKAGE-FORMAT.md section 6.5).
+    private const float DefaultSoftness = 0.05f;
+
     public float Threshold { get; set; } = 0.5f;
-    public float Softness { get; set; } = 0.05f;
+    public float Softness { get; set; } = DefaultSoftness;
     public string ShadeTexture { get; set; } = "";
     public float[] ShadeColor { get; set; } = { 1, 1, 1 };
     public string ShadeMaskTexture { get; set; } = "";
@@ -38,14 +40,16 @@ internal sealed class StageToon
 }
 
 internal sealed class StageToonOutline
-{
+{    // The widest outline (metres) that the format allows.
+    private const float MaximumWidth = 0.05f;
+
     public float Width { get; set; }
     public float[] Color { get; set; } = { 0, 0, 0 };
     public bool Textured { get; set; }
 
     public void Validate()
     {
-        if (!float.IsFinite(Width) || Width is < 0 or > 0.05f || Color.Length != 3 || !Color.All(v => float.IsFinite(v) && v is >= 0 and <= 4))
+        if (!float.IsFinite(Width) || Width is < 0 or > MaximumWidth || Color.Length != 3 || !Color.All(v => float.IsFinite(v) && v is >= 0 and <= 4))
             throw new InvalidDataException("Invalid toon outline");
     }
 

@@ -3,7 +3,11 @@ using System.Runtime.InteropServices;
 namespace Gh3Skin;
 
 internal sealed class StageAudio : IDisposable
-{
+{    // The RIFF size counts the 36 header bytes after it ("WAVE", the 24-byte fmt chunk, the data chunk header).
+    private const int WaveHeaderAfterRiffSize = 36;
+    // A voice more than 50 ms off the song clock is moved back to its place.
+    private const double MaximumDrift = .05;
+
     private sealed record Wave(IntPtr Data, int Length);
     private readonly string _directory;
     private readonly StageSoundBank _bank;
@@ -67,7 +71,7 @@ internal sealed class StageAudio : IDisposable
                 if (paused && !_paused) StageAudioBackend.Pause(source);
                 else if (!paused && _paused) StageAudioBackend.Play(source);
                 var position = StageAudioBackend.Frame(source, data.Channels);
-                if (Math.Abs(position - frame) > data.Rate * .05 || voice.Loop && position >= data.LoopEnd)
+                if (Math.Abs(position - frame) > data.Rate * MaximumDrift || voice.Loop && position >= data.LoopEnd)
                     StageAudioBackend.Frame(source, data.Channels, frame);
                 StageAudioBackend.Volume(source, _state.Gain(voice, time));
             }
@@ -89,7 +93,7 @@ internal sealed class StageAudio : IDisposable
         if (pcm.Length != size || reader.BaseStream.ReadByte() != -1) throw new InvalidDataException("Invalid stage sound sample length");
         using var buffer = new MemoryStream();
         using var writer = new BinaryWriter(buffer);
-        writer.Write(System.Text.Encoding.ASCII.GetBytes("RIFF")); writer.Write(36 + size); writer.Write(System.Text.Encoding.ASCII.GetBytes("WAVEfmt "));
+        writer.Write(System.Text.Encoding.ASCII.GetBytes("RIFF")); writer.Write(WaveHeaderAfterRiffSize + size); writer.Write(System.Text.Encoding.ASCII.GetBytes("WAVEfmt "));
         writer.Write(16); writer.Write((short)1); writer.Write((short)sample.Channels);
         writer.Write(sample.Rate); writer.Write(sample.Rate * sample.Channels * 2);
         writer.Write((short)(sample.Channels * 2)); writer.Write((short)16);

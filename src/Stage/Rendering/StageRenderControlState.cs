@@ -28,14 +28,16 @@ internal sealed record StageScreenEffect(double Start, double Duration, Gh3QbVal
 }
 
 internal sealed class StageRenderControlState
-{
+{    // GH3: the SetOutlineShaderParams default of filldist.
+    private const float DefaultFillDistance = 40;
+
     private readonly StageLighting? _lighting;
     private readonly Func<uint, bool> _exists;
     private readonly Action<string> _gap;
     private readonly Dictionary<int, Vector4> _outlineColors = new();
     private readonly Dictionary<uint, StageOutlineObject> _outlines = new();
     private readonly Dictionary<StageScreenTarget, StageScreenEffect> _screenEffects = new();
-    public StageOutlineSettings Outline { get; private set; } = new(0, 0, 0, 0, 40, 0);
+    public StageOutlineSettings Outline { get; private set; } = new(0, 0, 0, 0, DefaultFillDistance, 0);
     public IReadOnlyDictionary<int, Vector4> OutlineColors => _outlineColors;
     public IReadOnlyDictionary<uint, StageOutlineObject> Outlines => _outlines;
     public IReadOnlyDictionary<StageScreenTarget, StageScreenEffect> ScreenEffects => _screenEffects;
@@ -70,7 +72,7 @@ internal sealed class StageRenderControlState
         }
         if (Is("SetOutlineShaderParams"))
         {
-            Outline = new(Number("min", 0), Number("max", 0), Number("rate", 0), Number("zscale", 0), Number("filldist", 40), Number("blendmode", 0));
+            Outline = new(Number("min", 0), Number("max", 0), Number("rate", 0), Number("zscale", 0), Number("filldist", DefaultFillDistance), Number("blendmode", 0));
             _gap("Source outline shader rendering is incomplete");
             return new(true);
         }

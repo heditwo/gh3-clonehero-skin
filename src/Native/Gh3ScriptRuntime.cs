@@ -47,7 +47,7 @@ internal sealed class Gh3ScriptRuntime : IDisposable
     // Tolerance of a component task's resume time against the clock, for rounding of the frame times.
     private const double ResumeTolerance = .000000001;
     // Seed of the script random generators. Source not documented (commit 44b355a); GH3's boot seed is Gh3Random.BootSeed.
-    private const int ScriptRandomSeed = 0x6e624eb7;
+    internal const int ScriptRandomSeed = 0x6e624eb7;
     // Expression binding strength. Member and Unary bind the operand of '.', '[', ':', '$', '-' and 'not'.
     private const int OrPrecedence = 10;
     private const int AndPrecedence = 20;

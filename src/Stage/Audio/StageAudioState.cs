@@ -2,6 +2,8 @@ namespace Gh3Skin;
 
 internal sealed class StageAudioState
 {
+    private const int MaximumWork = 1000000;
+    private const double DecibelsPerDecade = 20;
     private sealed record GainChange(double Time, double From, double To, double Duration)
     {
         public double At(double time) => From + (To - From) * Math.Clamp(Duration == 0 ? 1 : (time - Time) / Duration, 0, 1);
@@ -45,7 +47,7 @@ internal sealed class StageAudioState
     {
         _runtime?.Dispose();
         _runtime = new(_bank.RuntimeValues, Native, time: -StageLimits.MaximumSeconds) { Failed = (_, error) => _diagnostics.Add(error.Message) };
-        _runtime.Set(Gh3Checksum.Value("CrowdLevelForSurges"), Gh3ScriptRuntime.Number(_bank.Constants.GetValueOrDefault("CrowdLevelForSurges", 1.66)));
+        _runtime.Set(Gh3Checksum.Value("CrowdLevelForSurges"), Gh3ScriptRuntime.Number(_bank.Constants.GetValueOrDefault("CrowdLevelForSurges", Gh3Health.CrowdSurges)));
         _events = new(_bank);
         _queue.Clear();
         _gains.Clear();
@@ -88,7 +90,7 @@ internal sealed class StageAudioState
         var work = 0;
         while (_queue.TryPeek(out _, out var next) && next.Time <= time)
         {
-            if (++work > 1000000) throw new InvalidDataException("Stage audio work exceeds its limit");
+            if (++work > MaximumWork) throw new InvalidDataException("Stage audio work exceeds its limit");
             var action = _queue.Dequeue();
             if (double.IsFinite(next.Time)) _runtime!.Advance(next.Time);
             action(next.Time);
@@ -98,9 +100,9 @@ internal sealed class StageAudioState
         _lastTime = time;
     }
 
-    private (string Skill, bool Surge) RockState(float rock) => (Skill(rock), rock * 2 > _bank.Constants.GetValueOrDefault("CrowdLevelForSurges", 1.66));
-    private string Skill(float rock) => rock * 2 < _bank.Constants.GetValueOrDefault("health_poor_medium", .66) ? "Bad" :
-        rock * 2 > _bank.Constants.GetValueOrDefault("health_medium_good", 1.33) ? "Good" : "Neutral";
+    private (string Skill, bool Surge) RockState(float rock) => (Skill(rock), rock * 2 > _bank.Constants.GetValueOrDefault("CrowdLevelForSurges", Gh3Health.CrowdSurges));
+    private string Skill(float rock) => rock * 2 < _bank.Constants.GetValueOrDefault("health_poor_medium", Gh3Health.PoorMedium) ? "Bad" :
+        rock * 2 > _bank.Constants.GetValueOrDefault("health_medium_good", Gh3Health.MediumGood) ? "Good" : "Neutral";
 
     private void Bed(double time)
     {
@@ -116,7 +118,7 @@ internal sealed class StageAudioState
     public float Gain(StageSoundVoice voice, double time)
     {
         var decibels = _bank.Busses(voice.Buss).Sum(bus => _gains.TryGetValue(bus, out var change) ? change.At(time) : 0);
-        return voice.Gain * (float)Math.Pow(10, decibels / 20);
+        return voice.Gain * (float)Math.Pow(10, decibels / DecibelsPerDecade);
     }
 
     private void Execute(Gh3ScriptEvent call, double time)

@@ -4,12 +4,14 @@ using System.Text.RegularExpressions;
 namespace Gh3Skin;
 
 internal class StagePlacement
-{
+{    private const double UnitTolerance = 0.001;
+
+
     public float[] Position { get; set; } = Array.Empty<float>();
     public float[] Rotation { get; set; } = Array.Empty<float>();
 
     public bool Valid => Position.Length == 3 && Rotation.Length == 4 && Position.Concat(Rotation).All(float.IsFinite) &&
-        Math.Abs(Rotation.Sum(v => v * v) - 1) < 0.001;
+        Math.Abs(Rotation.Sum(v => v * v) - 1) < UnitTolerance;
 }
 
 internal sealed class StageCrowdMember

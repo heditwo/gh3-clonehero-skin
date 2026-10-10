@@ -4,6 +4,8 @@ namespace Gh3Skin;
 
 internal sealed class StageScriptState : IDisposable
 {
+    private const int MaximumEvents = 1000000;
+    private const int MaximumAnimationEvents = 10000;
     private readonly StageScriptBank _bank;
     private readonly IReadOnlyDictionary<string, StageObjectPlacement> _placements;
     private readonly StageCue[] _commands;
@@ -182,7 +184,7 @@ internal sealed class StageScriptState : IDisposable
     public void Raise(uint type, uint? target = null, Gh3QbValue? parameters = null)
     {
         if (!double.IsFinite(_time) || _time < _runtime.Time) return;
-        if (_events.Count >= 1000000) throw new InvalidDataException("Too many recorded gameplay events");
+        if (_events.Count >= MaximumEvents) throw new InvalidDataException("Too many recorded gameplay events");
         var input = new InputEvent(_time, type, target, parameters ?? Gh3ScriptRuntime.Structure(Array.Empty<Gh3QbField>()));
         _events.Add(input);
         _nextEvent = _events.Count;
@@ -257,7 +259,7 @@ internal sealed class StageScriptState : IDisposable
         if (table.Field(actor.ClipKey) is not { } track) return;
         var events = track.Items.Select(row => (Time: Gh3ScriptRuntime.Numeric(row.Field("time") ?? throw new InvalidDataException("Animation event time is missing")),
             Script: row.Field("scr")?.Integer ?? throw new InvalidDataException("Animation event script is missing"), Params: row.Field("params"))).OrderBy(row => row.Time).ToArray();
-        if (events.Length > 10000 || events.Any(row => !double.IsFinite(row.Time) || row.Time < 0 || row.Time > actor.Duration))
+        if (events.Length > MaximumAnimationEvents || events.Any(row => !double.IsFinite(row.Time) || row.Time < 0 || row.Time > actor.Duration))
             throw new InvalidDataException("Animation event exceeds its clip");
         void Cycle(double start, double offset)
         {
@@ -368,8 +370,8 @@ internal sealed class StageScriptState : IDisposable
         {
             double Tempo(string name, double fallback) => _bank.Values.TryGetValue(Gh3Checksum.Value(name), out var value) ? Gh3ScriptRuntime.Numeric(value) : fallback;
             var bpm = _timeline.TempoAt(_runtime.Time);
-            var speed = bpm < (Tempo("slow_tempo", 75) + Tempo("med_tempo", 115)) / 2 ? "slow" :
-                bpm < (Tempo("med_tempo", 115) + Tempo("fast_tempo", 145)) / 2 ? "med" : "fast";
+            var speed = bpm < (Tempo("slow_tempo", Gh3Tempo.Slow) + Tempo("med_tempo", Gh3Tempo.Medium)) / 2 ? "slow" :
+                bpm < (Tempo("med_tempo", Gh3Tempo.Medium) + Tempo("fast_tempo", Gh3Tempo.Fast)) / 2 ? "med" : "fast";
             return new(true, new[] { new Gh3QbField(Gh3Checksum.Value("anim_speed"), Gh3ScriptRuntime.Key(speed)) });
         }
         if (Is("Obj_LockToObject"))
@@ -430,7 +432,9 @@ internal sealed class StageScriptState : IDisposable
         {
             if (!_objects.ContainsKey(context.Object)) throw new InvalidDataException("Pulse object is missing");
             var events = parameters.Field("events")?.Items.Select(value => value.Integer).ToArray() ?? throw new InvalidDataException("Pulse events are missing");
+            // GH3: the Obj_Pulse defaults.
             var amount = (float)StageSoundBank.Number(parameters.Field("amount"), 1.12);
+            // GH3: see above.
             var duration = StageSoundBank.Number(parameters.Field("time"), .1);
             if (!float.IsFinite(amount) || amount < 0 || !double.IsFinite(duration) || duration is < 0 or > StageLimits.MaximumSeconds) throw new InvalidDataException("Invalid object pulse");
             _pulses.Add(new(context.Object, events, _objects[context.Object].Sample(_runtime.Time).Scale, amount, duration));
@@ -478,8 +482,8 @@ internal sealed class StageScriptState : IDisposable
 
     private string Performance()
     {
-        var poor = _bank.Values.TryGetValue(Gh3Checksum.Value("health_poor_medium"), out var low) ? Gh3ScriptRuntime.Numeric(low) : .66;
-        var good = _bank.Values.TryGetValue(Gh3Checksum.Value("health_medium_good"), out var high) ? Gh3ScriptRuntime.Numeric(high) : 1.33;
+        var poor = _bank.Values.TryGetValue(Gh3Checksum.Value("health_poor_medium"), out var low) ? Gh3ScriptRuntime.Numeric(low) : Gh3Health.PoorMedium;
+        var good = _bank.Values.TryGetValue(Gh3Checksum.Value("health_medium_good"), out var high) ? Gh3ScriptRuntime.Numeric(high) : Gh3Health.MediumGood;
         return _rock * 2 < poor ? "poor" : _rock * 2 > good ? "good" : "medium";
     }
 }

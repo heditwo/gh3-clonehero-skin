@@ -73,6 +73,7 @@
     <Compile Include="../src/Stage/StagePack.cs" Link="StagePack.cs" />
     <Compile Include="../src/Stage/StageLimits.cs" Link="StageLimits.cs" />
     <Compile Include="../src/Stage/StageTolerance.cs" Link="StageTolerance.cs" />
+    <Compile Include="../src/Stage/Gh3GameConstants.cs" Link="Gh3GameConstants.cs" />
     <Compile Include="../src/Stage/Direction/StageCameraPath.cs" Link="StageCameraPath.cs" />
     <Compile Include="../src/Stage/Band/BandAnimation.cs" Link="BandAnimation.cs" />
     <Compile Include="../src/Stage/Band/StageDrummer.cs" Link="StageDrummer.cs" />

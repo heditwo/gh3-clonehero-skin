@@ -14,7 +14,11 @@ internal sealed class StageSoundSample
 }
 
 internal sealed class StageSoundBank
-{
+{    private const int MaximumEntries = 10000;
+    // Sample rates 8-192 kHz; at most five minutes at 192 kHz.
+    private const int MinimumRate = 8000, MaximumRate = 192000;
+    private const int MaximumFrames = 57600000;
+
     public int Version { get; set; }
     public Dictionary<string, JsonElement> Definitions { get; set; } = new();
     public Dictionary<string, StageSoundSample> Samples { get; set; } = new();
@@ -27,8 +31,8 @@ internal sealed class StageSoundBank
     public static StageSoundBank Load(string path)
     {
         var bank = JsonSerializer.Deserialize<StageSoundBank>(File.ReadAllText(path), Packages.PackageJson.CaseInsensitive);
-        if (bank?.Version != 1 || bank.Samples.Count > 10000 || bank.Definitions.Count > 10000 ||
-            bank.Samples.Any(pair => pair.Key.Length != 8 || !pair.Key.All(Uri.IsHexDigit) || pair.Value is not { Rate: >= 8000 and <= 192000, Channels: 1 or 2, Frames: > 0 and <= 57600000 } ||
+        if (bank?.Version != 1 || bank.Samples.Count > MaximumEntries || bank.Definitions.Count > MaximumEntries ||
+            bank.Samples.Any(pair => pair.Key.Length != 8 || !pair.Key.All(Uri.IsHexDigit) || pair.Value is not { Rate: >= MinimumRate and <= MaximumRate, Channels: 1 or 2, Frames: > 0 and <= MaximumFrames } ||
                 pair.Value.LoopStart < 0 || pair.Value.LoopEnd <= pair.Value.LoopStart || pair.Value.LoopEnd > pair.Value.Frames))
             throw new InvalidDataException("Invalid stage sound library");
         foreach (var pair in bank.Definitions) bank._values.Add(Convert.ToUInt32(pair.Key, 16), Gh3QbText.Decode(pair.Value.GetRawText()));
@@ -84,7 +88,7 @@ internal sealed class StageSoundEvents
     private readonly Dictionary<uint, Queue<int>> _choices = new();
     private long _voice;
     private long _instance;
-    private uint _seed = 0x6e624eb7;
+    private uint _seed = Gh3ScriptRuntime.ScriptRandomSeed;
     public IReadOnlyList<StageSoundVoice> Voices => _voices;
 
     public StageSoundEvents(StageSoundBank bank) => _bank = bank;
@@ -106,7 +110,9 @@ internal sealed class StageSoundEvents
         void Voice(uint sample, Gh3QbValue? parameters)
         {
             var data = _bank.Sample(sample) ?? throw new InvalidDataException($"Missing stage sound sample {sample:x8}");
+            // GH3: pitch and volume are percentages; their random draws use the sample checksum xor 0x100 and 0x200.
             var pitch = (float)RandomNumber(parameters?.Field("RandomPitch"), sample ^ 0x100, StageSoundBank.Number(parameters?.Field("pitch"), 100)) / 100;
+            // GH3: see above.
             var volume = (float)RandomNumber(parameters?.Field("RandomVol"), sample ^ 0x200, StageSoundBank.Number(parameters?.Field("vol"), 100)) / 100;
             var loops = StageSoundBank.Number(parameters?.Field("num_loops"), 0);
             var looping = loop || data.Loop || loops < 0;
