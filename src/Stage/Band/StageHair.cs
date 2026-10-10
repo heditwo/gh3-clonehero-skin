@@ -129,6 +129,25 @@ internal sealed class StageHair
     private const float LimitTau = 0.6f * 0.8f;
     private const int Passes = 3;
     private static readonly float LimitShare = 1 - MathF.Pow(1 - LimitTau, 1f / (Passes * Iterations));
+    // Numeric tolerances of the solver: squared lengths below these are zero, and the dot products that count as
+    // parallel or opposite.
+    private const float ZeroLengthSquared = StageTolerance.ZeroLengthSquared;
+    private const float TinyLengthSquared = StageTolerance.TinyLengthSquared;
+    private const float MinimumAxisLengthSquared = StageTolerance.SmallLengthSquared;
+    private const float MinimumDistance = 1e-5f;
+    private const float ParallelDot = 0.999999f;
+    private const float OppositeDot = -0.99999f;
+    private const float NearAxis = StageTolerance.NearAxis;
+    private const double UnitTolerance = 0.01;
+    private const float UnitToleranceSingle = 0.01f;
+    // Two joints form a chain when the end of one is this close (metres) to the start of the next.
+    private const float ChainGap = 0.002f;
+    // A collision closer than this fraction to the joint start pushes the joint end instead.
+    private const float MinimumContactFraction = 0.1f;
+    // Validation limits of hair joints (metres, kilograms, and Havok units).
+    private const float MinimumJointLength = 0.005f;
+    private const int MaximumPhysicsValue = 100;
+    private const float MaximumConeAngle = 1.6f;
     private readonly HairDefinition _definition;
     private readonly int[] _parents;
     private readonly PoseSampler _sample;
@@ -252,7 +271,7 @@ internal sealed class StageHair
             if (joint.Direction.Length > 0)
             {
                 var direction = Unit(joint.Direction);
-                _aligned[i] = Vector3.Dot(direction, Vector3.UnitX) < 0.999999f;
+                _aligned[i] = Vector3.Dot(direction, Vector3.UnitX) < ParallelDot;
                 if (_aligned[i]) _align[i] = FromTo(Vector3.UnitX, direction);
             }
             if (!float.IsFinite(joint.Radius) || joint.Radius is < 0 or > 0.5f || (joint.ColliderMask >> _colliders.Length) != 0 ||
@@ -263,13 +282,13 @@ internal sealed class StageHair
             _radius[i] = joint.Radius;
             _headCapsule[i] = joint.HeadCapsule && _hasCapsule;
             if (joint.Bone < 0 || joint.Bone >= parents.Length || !seen.Contains(joint.Parent) || !seen.Add(joint.Bone) ||
-                !float.IsFinite(joint.Length) || joint.Length is < 0.005f or > 1 || !float.IsFinite(joint.Mass) || joint.Mass is <= 0 or > 100 ||
-                !float.IsFinite(joint.Friction) || joint.Friction is < 0 or > 100 || !float.IsFinite(joint.AngularDamping) || joint.AngularDamping is < 0 or > 100 ||
-                !float.IsFinite(joint.LinearDamping) || joint.LinearDamping is < 0 or > 100 || !float.IsFinite(joint.MaxAngularVelocity) || joint.MaxAngularVelocity < 0 ||
+                !float.IsFinite(joint.Length) || joint.Length is < MinimumJointLength or > 1 || !float.IsFinite(joint.Mass) || joint.Mass is <= 0 or > MaximumPhysicsValue ||
+                !float.IsFinite(joint.Friction) || joint.Friction is < 0 or > MaximumPhysicsValue || !float.IsFinite(joint.AngularDamping) || joint.AngularDamping is < 0 or > MaximumPhysicsValue ||
+                !float.IsFinite(joint.LinearDamping) || joint.LinearDamping is < 0 or > MaximumPhysicsValue || !float.IsFinite(joint.MaxAngularVelocity) || joint.MaxAngularVelocity < 0 ||
                 joint.Rotation.Length != 4 || !joint.Rotation.All(float.IsFinite))
                 throw new InvalidDataException("Invalid hair joint");
             var q = new Quaternion(joint.Rotation[0], joint.Rotation[1], joint.Rotation[2], joint.Rotation[3]);
-            if (Math.Abs(q.LengthSquared() - 1) > 0.01) throw new InvalidDataException("Invalid hair bind rotation");
+            if (Math.Abs(q.LengthSquared() - 1) > UnitTolerance) throw new InvalidDataException("Invalid hair bind rotation");
             _local[i] = new(Vector(joint.Position), Quaternion.Normalize(q));
             // The joint frame of the solver: +X along the joint.
             if (_aligned[i]) _local[i] = new(_local[i].Position, Quaternion.Normalize(_local[i].Rotation * _align[i]));
@@ -282,7 +301,7 @@ internal sealed class StageHair
             _inverseInertia[i] = 1 / (joint.Mass * joint.Length * joint.Length);
             if (_types[i] == Ragdoll)
             {
-                if (!joint.Limits.TryGetValue("coneLimit", out var cone) || cone.Length != 2 || !cone.All(float.IsFinite) || cone[1] is <= 0 or > 1.6f)
+                if (!joint.Limits.TryGetValue("coneLimit", out var cone) || cone.Length != 2 || !cone.All(float.IsFinite) || cone[1] is <= 0 or > MaximumConeAngle)
                     throw new InvalidDataException("Invalid hair joint");
                 _coneCos[i] = MathF.Cos(cone[1]);
                 _coneSin[i] = MathF.Sin(cone[1]);
@@ -301,7 +320,7 @@ internal sealed class StageHair
             }
             var axis = Vector(joint.Axis);
             var limit = _types[i] == Hinge ? MathF.PI : 1;
-            if (Math.Abs(axis.LengthSquared() - 1) > 0.01f || joint.Range.Length != 2 || !joint.Range.All(float.IsFinite) ||
+            if (Math.Abs(axis.LengthSquared() - 1) > UnitToleranceSingle || joint.Range.Length != 2 || !joint.Range.All(float.IsFinite) ||
                 joint.Range[0] > joint.Range[1] || joint.Range[0] < -limit || joint.Range[1] > limit)
                 throw new InvalidDataException("Invalid hair joint axis or range");
             _axes[i] = Vector3.Normalize(axis);
@@ -325,7 +344,7 @@ internal sealed class StageHair
             var bone = definition.Joints[i].Parent;
             var j = Array.FindIndex(definition.Joints, 0, i, p => p.Bone == bone);
             _chain[i] = j >= 0 && _types[j] != Prismatic && _types[i] != Prismatic &&
-                Vector3.Distance(_local[i].Position, new Vector3(definition.Joints[j].Length, 0, 0)) < 0.002f ? j : -1;
+                Vector3.Distance(_local[i].Position, new Vector3(definition.Joints[j].Length, 0, 0)) < ChainGap ? j : -1;
         }
         _animated = new BandPose[parents.Length]; _world = new BandPose[parents.Length]; _visited = new bool[parents.Length];
         _jointOf = Enumerable.Repeat(-1, parents.Length).ToArray();
@@ -450,7 +469,7 @@ internal sealed class StageHair
                 {
                     var before = Vector3.Normalize(_tails[i] - _origins[i]);
                     var now = tail - origin;
-                    now = now.LengthSquared() < 1e-10f ? before : Vector3.Normalize(now);
+                    now = now.LengthSquared() < ZeroLengthSquared ? before : Vector3.Normalize(now);
                     var turn = MathF.Acos(Math.Clamp(Vector3.Dot(before, now), -1, 1));
                     if (turn > _maxTurn[i]) tail = origin + Vector3.Transform(before, Quaternion.Slerp(Quaternion.Identity, FromTo(before, now), _maxTurn[i] / turn)) * joint.Length;
                 }
@@ -460,7 +479,7 @@ internal sealed class StageHair
             _origins[i] = origin;
             _frames[i] = rotation;
             var toward = tail - origin;
-            _world[joint.Bone] = new(origin, toward.LengthSquared() < 1e-10f ? rotation : Quaternion.Normalize(FromTo(direction, Vector3.Normalize(toward)) * rotation));
+            _world[joint.Bone] = new(origin, toward.LengthSquared() < ZeroLengthSquared ? rotation : Quaternion.Normalize(FromTo(direction, Vector3.Normalize(toward)) * rotation));
         }
         if (tick == 0) Bind();
         // The constraints, as the Havok solver iterates them: the length and the limits of each joint act on the joint
@@ -496,7 +515,7 @@ internal sealed class StageHair
                 if (j >= 0 && tick > 0 && pass < Iterations - 1)
                 {
                     var from = raw - origin;
-                    from = from.LengthSquared() < 1e-10f ? Vector3.Transform(Vector3.UnitX, rotation) : Vector3.Normalize(from);
+                    from = from.LengthSquared() < ZeroLengthSquared ? Vector3.Transform(Vector3.UnitX, rotation) : Vector3.Normalize(from);
                     var correction = FromTo(from, Vector3.Normalize(tail - origin));
                     var share = _inverseInertia[j] / (_inverseInertia[i] + _inverseInertia[j]);
                     Turn(j, _world[_definition.Joints[j].Bone].Position, Quaternion.Slerp(Quaternion.Identity, Quaternion.Inverse(correction), share));
@@ -556,7 +575,7 @@ internal sealed class StageHair
         if (_stiffness[i] > 0)
         {
             var now = _tails[i] - origin;
-            now = now.LengthSquared() < 1e-10f ? direction : Vector3.Normalize(now);
+            now = now.LengthSquared() < ZeroLengthSquared ? direction : Vector3.Normalize(now);
             tail += (direction - now) * (length * _stiffness[i]);
         }
         return tail;
@@ -570,7 +589,7 @@ internal sealed class StageHair
         {
             var j = _upper[i];
             if (_via[i] == null || _chain[i] >= 0 || _types[i] == Prismatic || _types[j] == Prismatic) continue;
-            if (Vector3.Distance(_origins[i], _tails[j]) < 0.002f) _chain[i] = j;
+            if (Vector3.Distance(_origins[i], _tails[j]) < ChainGap) _chain[i] = j;
         }
         foreach (var root in _bendRoots)
         {
@@ -589,15 +608,15 @@ internal sealed class StageHair
             var parent = ParentWorld(root);
             var origin = parent.Position + Vector3.Transform(_local[root].Position, parent.Rotation);
             var rest = _bendRest[root];
-            if (rest.LengthSquared() < 1e-10f) continue;
+            if (rest.LengthSquared() < ZeroLengthSquared) continue;
             rest = Vector3.Normalize(Vector3.Transform(rest, parent.Rotation));
             var chord = _tails[_bendEnd[root]] - origin;
-            if (chord.LengthSquared() < 1e-10f) continue;
+            if (chord.LengthSquared() < ZeroLengthSquared) continue;
             chord = Vector3.Normalize(chord);
             var cos = Vector3.Dot(chord, rest);
             if (cos >= _bendCos[root]) continue;
             var side = chord - rest * cos;
-            if (side.LengthSquared() < 1e-12f) side = Vector3.Cross(rest, MathF.Abs(rest.Y) < 0.9f ? Vector3.UnitY : Vector3.UnitX);
+            if (side.LengthSquared() < TinyLengthSquared) side = Vector3.Cross(rest, MathF.Abs(rest.Y) < NearAxis ? Vector3.UnitY : Vector3.UnitX);
             var target = rest * _bendCos[root] + Vector3.Normalize(side) * _bendSin[root];
             var turn = Quaternion.Slerp(Quaternion.Identity, FromTo(chord, target), BendShare);
             foreach (var k in _bendJoints[root])
@@ -643,13 +662,13 @@ internal sealed class StageHair
             if (_headCapsule[i])
             {
                 var axis = cb - ca;
-                var closest = ca + axis * Math.Clamp(Vector3.Dot(tail - ca, axis) / Math.Max(axis.LengthSquared(), 1e-8f), 0, 1);
+                var closest = ca + axis * Math.Clamp(Vector3.Dot(tail - ca, axis) / Math.Max(axis.LengthSquared(), MinimumAxisLengthSquared), 0, 1);
                 var outward = tail - closest;
-                if (outward.LengthSquared() < _definition.Capsule.Radius * _definition.Capsule.Radius && outward.LengthSquared() > 1e-10f)
+                if (outward.LengthSquared() < _definition.Capsule.Radius * _definition.Capsule.Radius && outward.LengthSquared() > ZeroLengthSquared)
                     tail = closest + Vector3.Normalize(outward) * _definition.Capsule.Radius;
             }
             var proposed = tail - origin;
-            proposed = proposed.LengthSquared() < 1e-10f ? direction : Vector3.Normalize(proposed);
+            proposed = proposed.LengthSquared() < ZeroLengthSquared ? direction : Vector3.Normalize(proposed);
             if (_types[i] == Hinge)
             {
                 // Only the turn about the hinge axis, within the limits from the bind pose.
@@ -679,7 +698,7 @@ internal sealed class StageHair
             var origin = parent.Position + Vector3.Transform(_local[i].Position, parent.Rotation);
             var rotation = Quaternion.Normalize(parent.Rotation * _local[i].Rotation);
             var along = _tails[i] - _origins[i];
-            var tail = origin + (along.LengthSquared() < 1e-10f ? Vector3.Transform(Vector3.UnitX, rotation) : Vector3.Normalize(along)) * joint.Length;
+            var tail = origin + (along.LengthSquared() < ZeroLengthSquared ? Vector3.Transform(Vector3.UnitX, rotation) : Vector3.Normalize(along)) * joint.Length;
             // A custom joint that follows the push of a joint above it does not take the push as speed (it would whip).
             if (_custom[i]) _oldTails[i] += origin - _origins[i];
             if (joint.ColliderMask != 0)
@@ -687,7 +706,7 @@ internal sealed class StageHair
                 var free = tail;
                 tail = Collide(i, origin, tail, joint.Length);
                 var push = tail - free;
-                if (_custom[i] && push.LengthSquared() > 1e-12f)
+                if (_custom[i] && push.LengthSquared() > TinyLengthSquared)
                 {
                     // An inelastic contact: the push does not become speed, and the speed into the collider stops.
                     var normal = Vector3.Normalize(push);
@@ -720,16 +739,16 @@ internal sealed class StageHair
                 continue;
             }
             var (s, t) = Closest(origin, tail, _colliderA[c], _colliderB[c]);
-            if (s < 0.1f) (s, t) = (1, Closest(tail, tail, _colliderA[c], _colliderB[c]).T);
+            if (s < MinimumContactFraction) (s, t) = (1, Closest(tail, tail, _colliderA[c], _colliderB[c]).T);
             var point = origin + (tail - origin) * s;
             var away = point - (_colliderA[c] + (_colliderB[c] - _colliderA[c]) * t);
             var distance = away.LengthSquared();
             if (distance >= radius * radius) continue;
             distance = MathF.Sqrt(distance);
-            if (distance < 1e-5f) continue;
+            if (distance < MinimumDistance) continue;
             tail += away / distance * ((radius - distance) / s);
             var turned = tail - origin;
-            if (turned.LengthSquared() > 1e-10f) tail = origin + Vector3.Normalize(turned) * length;
+            if (turned.LengthSquared() > ZeroLengthSquared) tail = origin + Vector3.Normalize(turned) * length;
         }
         return tail;
     }
@@ -743,10 +762,10 @@ internal sealed class StageHair
         var distance = away.LengthSquared();
         if (distance >= radius * radius) return tail;
         distance = MathF.Sqrt(distance);
-        if (distance < 1e-5f) return tail;
+        if (distance < MinimumDistance) return tail;
         tail += away / distance * ((radius - distance) / s);
         var turned = tail - origin;
-        return turned.LengthSquared() > 1e-10f ? origin + Vector3.Normalize(turned) * length : tail;
+        return turned.LengthSquared() > ZeroLengthSquared ? origin + Vector3.Normalize(turned) * length : tail;
     }
 
     // The parameters (s on p0-p1, t on q0-q1) of the closest points of two segments.
@@ -758,14 +777,14 @@ internal sealed class StageHair
         var a = Vector3.Dot(d1, d1);
         var e = Vector3.Dot(d2, d2);
         var f = Vector3.Dot(d2, r);
-        if (e < 1e-10f) return (a < 1e-10f ? 0 : Math.Clamp(-Vector3.Dot(d1, r) / a, 0, 1), 0);
+        if (e < ZeroLengthSquared) return (a < ZeroLengthSquared ? 0 : Math.Clamp(-Vector3.Dot(d1, r) / a, 0, 1), 0);
         var c = Vector3.Dot(d1, r);
         var b = Vector3.Dot(d1, d2);
         var denominator = a * e - b * b;
-        var s = denominator > 1e-10f ? Math.Clamp((b * f - c * e) / denominator, 0, 1) : 0;
+        var s = denominator > ZeroLengthSquared ? Math.Clamp((b * f - c * e) / denominator, 0, 1) : 0;
         var t = (b * s + f) / e;
-        if (t < 0) { t = 0; s = a < 1e-10f ? 0 : Math.Clamp(-c / a, 0, 1); }
-        else if (t > 1) { t = 1; s = a < 1e-10f ? 0 : Math.Clamp((b - c) / a, 0, 1); }
+        if (t < 0) { t = 0; s = a < ZeroLengthSquared ? 0 : Math.Clamp(-c / a, 0, 1); }
+        else if (t > 1) { t = 1; s = a < ZeroLengthSquared ? 0 : Math.Clamp((b - c) / a, 0, 1); }
         return (s, t);
     }
 
@@ -779,13 +798,13 @@ internal sealed class StageHair
             if (cos < _coneCos[i])
             {
                 var side = twist - cone * cos;
-                if (side.LengthSquared() > 1e-12f) twist = cone * _coneCos[i] + Vector3.Normalize(side) * _coneSin[i];
+                if (side.LengthSquared() > TinyLengthSquared) twist = cone * _coneCos[i] + Vector3.Normalize(side) * _coneSin[i];
             }
             if (!_planes[i]) break;
             var sin = Math.Clamp(Vector3.Dot(twist, plane), -1, 1);
             var clamped = Math.Clamp(sin, _planeLow[i], _planeHigh[i]);
             var flat = twist - plane * sin;
-            if (clamped == sin || flat.LengthSquared() < 1e-12f) break;
+            if (clamped == sin || flat.LengthSquared() < TinyLengthSquared) break;
             twist = Vector3.Normalize(flat) * MathF.Sqrt(1 - clamped * clamped) + plane * clamped;
         }
         return twist;
@@ -812,8 +831,8 @@ internal sealed class StageHair
     private static Quaternion FromTo(Vector3 a, Vector3 b)
     {
         var dot = Math.Clamp(Vector3.Dot(a, b), -1, 1);
-        if (dot < -0.99999f)
-            return Quaternion.CreateFromAxisAngle(Vector3.Normalize(Vector3.Cross(a, Math.Abs(a.Y) < 0.9f ? Vector3.UnitY : Vector3.UnitX)), MathF.PI);
+        if (dot < OppositeDot)
+            return Quaternion.CreateFromAxisAngle(Vector3.Normalize(Vector3.Cross(a, Math.Abs(a.Y) < NearAxis ? Vector3.UnitY : Vector3.UnitX)), MathF.PI);
         var cross = Vector3.Cross(a, b);
         return Quaternion.Normalize(new Quaternion(cross, 1 + dot));
     }
@@ -824,7 +843,7 @@ internal sealed class StageHair
     private static Vector3 Unit(float[] v)
     {
         var vector = Vector(v);
-        if (Math.Abs(vector.LengthSquared() - 1) > 0.01f) throw new InvalidDataException("Invalid hair joint axis");
+        if (Math.Abs(vector.LengthSquared() - 1) > UnitToleranceSingle) throw new InvalidDataException("Invalid hair joint axis");
         return Vector3.Normalize(vector);
     }
 

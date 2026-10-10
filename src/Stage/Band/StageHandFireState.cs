@@ -57,6 +57,10 @@ internal readonly record struct HandFireSample(Vector3 Position, Vector2 Size, V
 internal sealed class StageHandFireState
 {
     public const int StreakThreshold = 100;
+    // Room for the particles of both hands without growing the list.
+    private const int ParticleCapacity = 260;
+    // Absorbs rounding of the emission times.
+    private const double EmissionTolerance = 1e-9;
     private readonly HandFireEmitter[] _emitters;
     private readonly double[] _starts;
     private readonly int[] _emitted;
@@ -64,7 +68,7 @@ internal sealed class StageHandFireState
     private BandPose _left;
     private BandPose _right;
     public bool Active { get; private set; }
-    public List<HandFireParticle> Particles { get; } = new(260);
+    public List<HandFireParticle> Particles { get; } = new(ParticleCapacity);
 
     public StageHandFireState(HandFireDefinition definition)
     {
@@ -93,7 +97,7 @@ internal sealed class StageHandFireState
             for (var emitter = 0; emitter < _emitters.Length; emitter++)
             {
                 var definition = _emitters[emitter];
-                while (_starts[emitter] + _emitted[emitter] / (double)definition.Rate <= time + 1e-9)
+                while (_starts[emitter] + _emitted[emitter] / (double)definition.Rate <= time + EmissionTolerance)
                 {
                     var index = _emitted[emitter]++;
                     var birth = _starts[emitter] + index / (double)definition.Rate;
@@ -130,7 +134,7 @@ internal sealed class StageHandFireState
     private void Spawn(int emitterIndex, int hand, int index, double birth, BandPose anchor)
     {
         var emitter = _emitters[emitterIndex];
-        var seed = index * 101 + hand * 7919 + emitterIndex * 997;
+        var seed = index * PcgHash.ParticlePrime + hand * PcgHash.CuePrime + emitterIndex * PcgHash.EmitterPrime;
         var angle = Random(seed) * MathF.Tau;
         var cosine = 1 - Random(seed + 1) * (1 - MathF.Cos(emitter.Spread * MathF.PI / 180));
         var sine = MathF.Sqrt(1 - cosine * cosine);
@@ -145,10 +149,5 @@ internal sealed class StageHandFireState
 
     private static Vector3 Vector(float[] v) => new(v[0], v[1], v[2]);
     private static Vector4 Color(float[] v) => new(v[0], v[1], v[2], v[3]);
-    private static float Random(int seed)
-    {
-        var value = unchecked((uint)seed * 747796405u + 2891336453u);
-        value = ((value >> (int)((value >> 28) + 4)) ^ value) * 277803737u;
-        return ((value >> 22) ^ value) / (float)uint.MaxValue;
-    }
+    private static float Random(int seed) => PcgHash.Unit(seed);
 }

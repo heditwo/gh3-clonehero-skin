@@ -5,6 +5,11 @@ namespace Gh3Skin;
 
 internal sealed class StageHandFire
 {
+    // The quads of one emitter's batch.
+    private const int BatchCapacity = 132;
+    // GH3: the hand bones of the guitarist rig (Bone_Palm_L, Bone_Palm_R), for a definition without bone names.
+    private const int LeftHandBone = 45;
+    private const int RightHandBone = 48;
     private readonly StageHandFireState _state;
     private readonly StageEffects.ParticleBatch[] _batches;
     private readonly Transform _left;
@@ -31,7 +36,7 @@ internal sealed class StageHandFire
                 throw new InvalidDataException("Invalid hand-fire texture");
             texture.wrapMode = TextureWrapMode.Clamp;
             texture.filterMode = FilterMode.Bilinear;
-            _batches[i] = new StageEffects.ParticleBatch(assets, root, layer, Shader.Find("Particles/Standard Unlit"), texture, true, 132,
+            _batches[i] = new StageEffects.ParticleBatch(assets, root, layer, Shader.Find("Particles/Standard Unlit"), texture, true, BatchCapacity,
                 i == 0 ? "GH3 Hand Flames" : "GH3 Hand Sparks", emitter.Atlas);
         }
     }
@@ -44,8 +49,8 @@ internal sealed class StageHandFire
             MelonLogger.Warning("GH3 hand-fire assets are missing. Run scripts/regenerate.sh library and install.sh.");
             return null;
         }
-        var left = band.HandFireBone(definition.Bones[0], 45);
-        var right = band.HandFireBone(definition.Bones[1], 48);
+        var left = band.HandFireBone(definition.Bones[0], LeftHandBone);
+        var right = band.HandFireBone(definition.Bones[1], RightHandBone);
         if (left == null || right == null) return null;
         var fire = new StageHandFire(directory, definition, assets, root, camera, layer, left, right);
         MelonLogger.Msg("GH3 original hand flames and sparks loaded; 100-note streak trigger");

@@ -26,9 +26,6 @@ internal sealed class StageEffects
     private const float ParticleAfterlife = 4;
     private const float FlashFade = 0.35f;
     private const float FlashOverlayAlpha = 0.3f;
-    // Primes that give each cue and emitter its own random stream.
-    private const int CuePrime = 7919;
-    private const int EmitterPrime = 997;
     private readonly StageAssets _assets;
     private readonly Camera _camera;
     private readonly Dictionary<string, (Vector3 Position, Quaternion Rotation)[]> _emitters;
@@ -111,7 +108,7 @@ internal sealed class StageEffects
             for (var emitter = 0; emitter < emitters.Length; emitter++)
             {
                 var (origin, rotation) = emitters[emitter];
-                var seed = i * CuePrime + emitter * EmitterPrime;
+                var seed = i * PcgHash.CuePrime + emitter * PcgHash.EmitterPrime;
                 if (cue.Type == "fireworks") Firework(origin, rotation, age, seed, emitter);
                 else if (cue.Type is "pyro" or "sparks") Fountain(origin, rotation, age, duration, seed, cue.Type == "pyro");
                 if (cue.Type is "smoke" or "pyro") Smoke(origin, rotation, age, duration, seed, cue.Type == "pyro");
@@ -240,19 +237,7 @@ internal sealed class StageEffects
         }
     }
 
-    // The PCG hash (O'Neill, RXS-M-XS output): a random value in 0-1 from a seed.
-    private const uint PcgMultiplier = 747796405u;
-    private const uint PcgIncrement = 2891336453u;
-    private const uint PcgOutputMultiplier = 277803737u;
-    private const int PcgShiftSelectBits = 28;
-    private const int PcgOutputShift = 22;
-
-    private static float Random(int seed)
-    {
-        var value = unchecked((uint)seed * PcgMultiplier + PcgIncrement);
-        value = ((value >> (int)((value >> PcgShiftSelectBits) + 4)) ^ value) * PcgOutputMultiplier;
-        return ((value >> PcgOutputShift) ^ value) / (float)uint.MaxValue;
-    }
+    private static float Random(int seed) => PcgHash.Unit(seed);
 
     private static Mesh CreateCone()
     {

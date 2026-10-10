@@ -13,6 +13,14 @@ internal readonly record struct BandSample(int Clip, double Time, float Blend);
 
 internal sealed class BandAnimation
 {
+    // GH3CLP01 clip limits: 0.5 s to 2 minutes at 60 fps, one pose is 7 floats (28 bytes), positions within 100 m.
+    private const double MinimumSeconds = 0.5;
+    private const int MaximumSeconds = 120;
+    private const int MaximumFrames = 7201;
+    private const int MaximumPoses = 4000000;
+    private const int PoseBytes = 28;
+    private const int MaximumPositionSquared = 10000;
+    private const double UnitTolerance = 0.01;
     public int[] Parents { get; }
     public BandPose[] BindPose { get; }
     public BandClip[] Clips { get; }
@@ -64,10 +72,10 @@ internal sealed class BandAnimation
         {
             var duration = reader.ReadSingle();
             var frames = reader.ReadInt32();
-            if (!float.IsFinite(duration) || duration < 0.5 || duration > 120 || frames < 2 || frames > 7201)
+            if (!float.IsFinite(duration) || duration < MinimumSeconds || duration > MaximumSeconds || frames < 2 || frames > MaximumFrames)
                 throw new InvalidDataException("Invalid band clip size");
             totalPoses += count * frames;
-            if (totalPoses > 4000000 || reader.BaseStream.Length - reader.BaseStream.Position < (long)count * frames * 28)
+            if (totalPoses > MaximumPoses || reader.BaseStream.Length - reader.BaseStream.Position < (long)count * frames * PoseBytes)
                 throw new InvalidDataException("Band animation data exceeds its size limit");
             var poses = new BandPose[count * frames];
             for (var j = 0; j < poses.Length; j++) poses[j] = ReadPose(reader);
@@ -125,8 +133,8 @@ internal sealed class BandAnimation
     {
         var p = new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
         var q = new Quaternion(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
-        if (!float.IsFinite(p.LengthSquared()) || p.LengthSquared() > 10000 ||
-            !float.IsFinite(q.LengthSquared()) || Math.Abs(q.LengthSquared() - 1) > 0.01)
+        if (!float.IsFinite(p.LengthSquared()) || p.LengthSquared() > MaximumPositionSquared ||
+            !float.IsFinite(q.LengthSquared()) || Math.Abs(q.LengthSquared() - 1) > UnitTolerance)
             throw new InvalidDataException("Invalid band bone pose");
         return new BandPose(p, Quaternion.Normalize(q));
     }

@@ -14,6 +14,7 @@
     <Compile Include="../../src/Native/Gh3Checksum.cs" Link="Native/Gh3Checksum.cs" />
     <Compile Include="../../src/Stage/Band/StageHair.cs" Link="Stage/StageHair.cs" />
     <Compile Include="../../src/Stage/StageLimits.cs" Link="Stage/StageLimits.cs" />
+    <Compile Include="../../src/Stage/StageTolerance.cs" Link="Stage/StageTolerance.cs" />
     <Compile Include="../../src/Stage/Band/BandAnimation.cs" Link="Stage/BandAnimation.cs" />
   </ItemGroup>
 </Project>

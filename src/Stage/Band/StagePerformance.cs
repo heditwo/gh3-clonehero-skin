@@ -27,7 +27,7 @@ internal sealed class StagePerformance
 {
     private const int MaximumMembers = 4;
     private const int MaximumBones = 255;
-    private const int MaximumClips = 5000;
+    public const int MaximumClips = 5000;
     public int Version { get; set; }
     public Dictionary<string, PerformanceMember> Members { get; set; } = new();
     public Dictionary<string, float> Constants { get; set; } = new();

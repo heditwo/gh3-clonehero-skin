@@ -5,6 +5,10 @@ namespace Gh3Skin;
 // a new clip blends in over the old output (StageBlendTrack.Factors) and plays once, then holds its last frame.
 internal sealed class StageDrummer
 {
+    // GH3: guitar_band default of drummer_twist_rate.
+    private const double DefaultTwistRate = 0.05;
+    // The body twist curve covers at most one hour.
+    private const double MaximumTwistSeconds = 3600;
     private readonly record struct Hit(double Start, string Clip, double Blend, int Note);
 
     // play_drummer_*_arm_anim blends to the sticks-down clip over 0.6 s. GH3.exe passes BlendDuration only to the
@@ -21,7 +25,9 @@ internal sealed class StageDrummer
     {
         string? Layer(string name) => member.Layers.TryGetValue(name, out var refs) && refs.Length > 0 ? refs[0] : null;
         double Constant(string name, double fallback) => constants.TryGetValue(name, out var value) && float.IsFinite(value) ? value : fallback;
+        // GH3: guitar_band defaults of constants missing from the bank.
         var drumBlend = Constant("drum_blend_time", 0.1);
+        // GH3: guitar_band default.
         var lead = Constant("drum_anim_lead_time", 150) / 1000;
         var blendOut = Constant("drummer_arm_blend_out_delay", 0.25);
         var clearTwist = Constant("drummer_clear_arm_twist_value_delay", 0);
@@ -34,10 +40,10 @@ internal sealed class StageDrummer
         {
             if (!int.TryParse(cue.Value, out var note)) continue;
             var start = cue.Time - lead;
-            if (note is >= 37 and <= 45 && Layer($"drum/{note}") is { } left) arms[0].Add(new(start, left, drumBlend, note));
-            else if (note is >= 49 and <= 57 && Layer($"drum/{note}") is { } right) arms[1].Add(new(start, right, DefaultBlend, note));
-            else if (note == 48 && Layer("drum/48") is { } kick) foot.Add(new(start, kick, drumBlend));
-            else if (note == 70)
+            if (note is >= Gh3TrackNote.DrumLeftAnimatedFirst and <= Gh3TrackNote.DrumLeftLast && Layer($"drum/{note}") is { } left) arms[0].Add(new(start, left, drumBlend, note));
+            else if (note is >= Gh3TrackNote.DrumRightFirst and <= Gh3TrackNote.DrumRightLast && Layer($"drum/{note}") is { } right) arms[1].Add(new(start, right, DefaultBlend, note));
+            else if (note == Gh3TrackNote.DrumKick && Layer("drum/48") is { } kick) foot.Add(new(start, kick, drumBlend));
+            else if (note == Gh3TrackNote.DrumCountoff)
             {
                 twistNotes.Add((start, 0, 0));
                 twistNotes.Add((start, 1, 0));
@@ -51,6 +57,7 @@ internal sealed class StageDrummer
                     if (Layer("sticktap_r") is { } tapRight) arms[1].Add(new(start, tapRight, DefaultBlend, 0));
                 }
             }
+            // GH3: the cymbal of each drum note (the drummer's cymbal swing layers 0-3).
             var cymbal = note switch { 44 or 56 => 0, 45 or 57 => 1, 43 or 55 => 2, 41 or 42 or 53 or 54 => 3, _ => -1 };
             if (cymbal >= 0 && Layer($"cymbal/{cymbal}") is { } swing) cymbals[cymbal].Add(new(cue.Time, swing, drumBlend));
         }
@@ -73,7 +80,7 @@ internal sealed class StageDrummer
         }
         _slots = new[] { armSlots[0], armSlots[1], foot }.Concat(cymbals).Select(slot => slot.OrderBy(b => b.Time).ToArray()).ToArray();
         _twistClip = Layer("bodytwist") ?? "";
-        _twist = _twistClip.Length == 0 ? Array.Empty<float>() : Twist(twistNotes, constants, Constant("drummer_twist_rate", 0.05));
+        _twist = _twistClip.Length == 0 ? Array.Empty<float>() : Twist(twistNotes, constants, Constant("drummer_twist_rate", DefaultTwistRate));
     }
 
     public void Apply(BandPose[] pose, BandPose[] bind, double time, Func<string, PerformanceClip> clip)
@@ -99,7 +106,7 @@ internal sealed class StageDrummer
         float Factor(int arm, int note) => note == 0 ? 0 :
             constants.GetValueOrDefault($"drummer_{(arm == 0 ? "left" : "right")}_arm_twist_factors/{note}");
         var events = notes.OrderBy(n => n.Time).ToArray();
-        var end = events.Length == 0 ? 0 : Math.Min(3600, events[^1].Time + 5);
+        var end = events.Length == 0 ? 0 : Math.Min(MaximumTwistSeconds, events[^1].Time + 5);
         var twist = new float[(int)(Math.Max(0, end) / TwistFrame) + 2];
         var current = new int[2];
         var value = 0.0;

@@ -29,6 +29,25 @@ internal sealed class RetargetSkeleton
 // arm and leg lengths puts the hands on the instrument and the feet on the floor. No allocations per call.
 internal sealed class CharacterRetarget
 {
+    // A hip height or torso length (metres) below this is not a usable measure; the scale stays 1 (or the hip scale).
+    private const float MinimumBodyLength = 0.05f;
+    private const float MinimumArmLength = 0.1f;
+    // Tuned: the instrument scale (arm length ratio) stays in 0.5-1.5.
+    private const float MinimumInstrumentScale = 0.5f;
+    private const float MaximumInstrumentScale = 1.5f;
+    private const float MinimumPathLength = 1e-9f;
+    // Tuned: the microphone follows the nearer hand from 25 cm, fully at 10 cm.
+    private const float HandFollowStart = 0.25f;
+    private const float HandFollowRange = 0.15f;
+    // Tuned: the instrument moves so that each hand reaches it at 98 % of the arm length.
+    private const float ReachShare = 0.98f;
+    // Two-bone IK: bones shorter than this are degenerate; the goal stays this far inside full reach; a pole shorter
+    // than PoleLength gives no bend direction.
+    private const float MinimumBoneLength = 1e-4f;
+    private const float FullReach = 0.9999f;
+    private const float PoleLength = 0.005f;
+    private const float MinimumSine = 1e-7f;
+    private const float OppositeDot = -0.999999f;
     private readonly RetargetSkeleton _target;
     private readonly int[] _sourceParents;
     private readonly int[] _sourceOrder;
@@ -112,7 +131,7 @@ internal sealed class CharacterRetarget
             if (next == null || T(next) < 0 || S(next) < 0) continue;
             var from = _restPosition[T(next)] - _restPosition[bone];
             var to = sourceRestP[S(next)] - sourceRestP[_map[bone]];
-            if (from.LengthSquared() < 1e-10f || to.LengthSquared() < 1e-10f) continue;
+            if (from.LengthSquared() < StageTolerance.ZeroLengthSquared || to.LengthSquared() < StageTolerance.ZeroLengthSquared) continue;
             if (role2.EndsWith("Hand", StringComparison.Ordinal) && HumanoidRoles.PalmLine(role2[..^4], r => T(r) >= 0 && S(r) >= 0) is var (first, last))
             {
                 var (ti, tl, si, sl) = (T(first), T(last), S(first), S(last));
@@ -151,7 +170,7 @@ internal sealed class CharacterRetarget
         float Height(string role2, Vector3[] positions, Func<string, int> index) => index(role2) >= 0 ? positions[index(role2)].Y : float.NaN;
         var targetHip = (Height("leftUpperLeg", _restPosition, T) + Height("rightUpperLeg", _restPosition, T)) / 2;
         var sourceHip = (Height("leftUpperLeg", sourceRestP, S) + Height("rightUpperLeg", sourceRestP, S)) / 2;
-        HipScale = float.IsFinite(targetHip / sourceHip) && targetHip > 0.05f && sourceHip > 0.05f ? targetHip / sourceHip : 1;
+        HipScale = float.IsFinite(targetHip / sourceHip) && targetHip > MinimumBodyLength && sourceHip > MinimumBodyLength ? targetHip / sourceHip : 1;
         var top = spine.Length > 0 ? spine[^1] : "spine";
         _chestTarget = target.InstrumentBone >= 0 ? target.InstrumentBone : T(top);
         _chestSource = Source(Gh3Checksum.Of("bone_chest"));
@@ -161,14 +180,14 @@ internal sealed class CharacterRetarget
         var hipsS = (Position(sourceRestP, S("leftUpperLeg")) + Position(sourceRestP, S("rightUpperLeg"))) / 2;
         var torsoT = neckT >= 0 ? Vector3.Distance(_restPosition[neckT], hipsT) : 0;
         var torsoS = neckS >= 0 ? Vector3.Distance(sourceRestP[neckS], hipsS) : 0;
-        TorsoScale = torsoT > 0.05f && torsoS > 0.05f ? torsoT / torsoS : HipScale;
+        TorsoScale = torsoT > MinimumBodyLength && torsoS > MinimumBodyLength ? torsoT / torsoS : HipScale;
         float Arm(Vector3[] positions, Func<string, int> index, string side) =>
             index(side + "UpperArm") >= 0 && index(side + "LowerArm") >= 0 && index(side + "Hand") >= 0 ?
                 Vector3.Distance(positions[index(side + "UpperArm")], positions[index(side + "LowerArm")]) +
                 Vector3.Distance(positions[index(side + "LowerArm")], positions[index(side + "Hand")]) : 0;
         var armT = Arm(_restPosition, T, "left") + Arm(_restPosition, T, "right");
         var armS = Arm(sourceRestP, S, "left") + Arm(sourceRestP, S, "right");
-        InstrumentScale = target.InstrumentScale > 0 ? target.InstrumentScale : armT > 0.1f && armS > 0.1f ? Math.Clamp(armT / armS, 0.5f, 1.5f) : 1;
+        InstrumentScale = target.InstrumentScale > 0 ? target.InstrumentScale : armT > MinimumArmLength && armS > MinimumArmLength ? Math.Clamp(armT / armS, MinimumInstrumentScale, MaximumInstrumentScale) : 1;
 
         // Twist bones.
         var upper = new List<(int, int, int, Vector3)>();
@@ -204,7 +223,7 @@ internal sealed class CharacterRetarget
             points.Add(_restPosition[below]);
             var along = new float[points.Count];
             for (var i = 1; i < points.Count; i++) along[i] = along[i - 1] + Vector3.Distance(points[i - 1], points[i]);
-            var total = along[^1] > 1e-9f ? along[^1] : 1;
+            var total = along[^1] > MinimumPathLength ? along[^1] : 1;
             for (var i = 0; i < path.Count; i++)
                 if (_map[path[i]] < 0) _between[path[i]] = (x, below, along[i + 1] / total);
         }
@@ -310,7 +329,6 @@ internal sealed class CharacterRetarget
                 if (mode == ModeChest) moved += Reach(root, moved, left, right);
                 if (mode == ModeHand)
                 {
-                    // The microphone follows the nearer hand while the GH3 hand is within 25 cm of it.
                     var best = float.MaxValue;
                     var hand = Vector3.Zero;
                     for (var k = 0; k < 2; k++)
@@ -319,7 +337,7 @@ internal sealed class CharacterRetarget
                         var distance = Vector3.Distance(_sp[_palms[k]], _sp[root]);
                         if (distance < best) { best = distance; hand = _wp[_hands[k]] - _sp[_palms[k]]; }
                     }
-                    var weight = Smooth((0.25f - best) / 0.15f);
+                    var weight = Smooth((HandFollowStart - best) / HandFollowRange);
                     moved = Vector3.Lerp(moved, hand, weight);
                 }
                 var parent = _sourceParents[root];
@@ -385,7 +403,7 @@ internal sealed class CharacterRetarget
                 var goal = Goal(arm.Knuckle >= 0 ? arm.Knuckle : arm.SourceEnd, instrument, move + shift);
                 if (arm.Knuckle >= 0) goal -= Vector3.Transform(arm.KnuckleOffset, _desired[arm.End]);
                 var reach = goal - _wp[arm.Upper];
-                var excess = reach.Length() - arm.Reach * 0.98f;
+                var excess = reach.Length() - arm.Reach * ReachShare;
                 if (excess > 0) step -= Vector3.Normalize(reach) * (excess * gain);
             }
             shift += step;
@@ -458,7 +476,7 @@ internal sealed class CharacterRetarget
     {
         if (upper < 0 || lower < 0 || end < 0) return Vector3.Zero;
         var line = _sp[end] - _sp[upper];
-        if (line.LengthSquared() < 1e-12f) return Vector3.Zero;
+        if (line.LengthSquared() < StageTolerance.TinyLengthSquared) return Vector3.Zero;
         line = Vector3.Normalize(line);
         var offset = _sp[lower] - _sp[upper];
         return offset - line * Vector3.Dot(offset, line);
@@ -473,18 +491,18 @@ internal sealed class CharacterRetarget
         var c = _wp[end];
         var upperLength = Vector3.Distance(a, b);
         var lowerLength = Vector3.Distance(b, c);
-        if (upperLength < 1e-4f || lowerLength < 1e-4f) return;
+        if (upperLength < MinimumBoneLength || lowerLength < MinimumBoneLength) return;
         var toGoal = goal - a;
-        var distance = Math.Clamp(toGoal.Length(), Math.Abs(upperLength - lowerLength) + 1e-4f, (upperLength + lowerLength) * 0.9999f);
-        if (toGoal.LengthSquared() < 1e-10f) return;
+        var distance = Math.Clamp(toGoal.Length(), Math.Abs(upperLength - lowerLength) + MinimumBoneLength, (upperLength + lowerLength) * FullReach);
+        if (toGoal.LengthSquared() < StageTolerance.ZeroLengthSquared) return;
         var u = Vector3.Normalize(toGoal);
         var bend = b - a - u * Vector3.Dot(b - a, u);
         var hint = pole - u * Vector3.Dot(pole, u);
-        if (pole.Length() > 0.005f && hint.LengthSquared() > 1e-8f) bend = hint;
-        if (bend.LengthSquared() < 1e-10f)
+        if (pole.Length() > PoleLength && hint.LengthSquared() > StageTolerance.SmallLengthSquared) bend = hint;
+        if (bend.LengthSquared() < StageTolerance.ZeroLengthSquared)
         {
             bend = c - a - u * Vector3.Dot(c - a, u);
-            if (bend.LengthSquared() < 1e-10f) bend = Vector3.Cross(u, Math.Abs(u.Y) < 0.9f ? Vector3.UnitY : Vector3.UnitX);
+            if (bend.LengthSquared() < StageTolerance.ZeroLengthSquared) bend = Vector3.Cross(u, Math.Abs(u.Y) < StageTolerance.NearAxis ? Vector3.UnitY : Vector3.UnitX);
         }
         var v = Vector3.Normalize(bend);
         var cos = Math.Clamp((upperLength * upperLength + distance * distance - lowerLength * lowerLength) / (2 * upperLength * distance), -1f, 1f);
@@ -507,7 +525,7 @@ internal sealed class CharacterRetarget
     {
         var projection = axis * Vector3.Dot(new Vector3(q.X, q.Y, q.Z), axis);
         var twist = new Quaternion(projection, q.W);
-        return twist.LengthSquared() < 1e-12f ? Quaternion.Identity : Quaternion.Normalize(twist);
+        return twist.LengthSquared() < StageTolerance.TinyLengthSquared ? Quaternion.Identity : Quaternion.Normalize(twist);
     }
 
     private static Quaternion Swing(Quaternion q, Vector3 axis) => Quaternion.Normalize(q * Quaternion.Inverse(TwistAbout(q, axis)));
@@ -517,7 +535,7 @@ internal sealed class CharacterRetarget
     {
         if (q.W < 0) q = new Quaternion(-q.X, -q.Y, -q.Z, -q.W);
         var sin = MathF.Sqrt(q.X * q.X + q.Y * q.Y + q.Z * q.Z);
-        if (sin < 1e-7f) return Quaternion.Identity;
+        if (sin < MinimumSine) return Quaternion.Identity;
         var angle = 2 * MathF.Atan2(sin, q.W) * t;
         var s = MathF.Sin(angle / 2) / sin;
         return new Quaternion(q.X * s, q.Y * s, q.Z * s, MathF.Cos(angle / 2));
@@ -526,9 +544,9 @@ internal sealed class CharacterRetarget
     public static Quaternion FromTo(Vector3 from, Vector3 to)
     {
         var dot = Vector3.Dot(from, to);
-        if (dot < -0.999999f)
+        if (dot < OppositeDot)
         {
-            var axis = Vector3.Cross(Math.Abs(from.X) < 0.9f ? Vector3.UnitX : Vector3.UnitY, from);
+            var axis = Vector3.Cross(Math.Abs(from.X) < StageTolerance.NearAxis ? Vector3.UnitX : Vector3.UnitY, from);
             return Quaternion.CreateFromAxisAngle(Vector3.Normalize(axis), MathF.PI);
         }
         var cross = Vector3.Cross(from, to);
@@ -543,7 +561,7 @@ internal sealed class CharacterRetarget
         var a = Vector3.Transform(fromSecondary, first);
         a -= axis * Vector3.Dot(a, axis);
         var b = toSecondary - axis * Vector3.Dot(toSecondary, axis);
-        if (a.LengthSquared() < 1e-10f || b.LengthSquared() < 1e-10f) return first;
+        if (a.LengthSquared() < StageTolerance.ZeroLengthSquared || b.LengthSquared() < StageTolerance.ZeroLengthSquared) return first;
         return Quaternion.Normalize(FromTo(Vector3.Normalize(a), Vector3.Normalize(b)) * first);
     }
 

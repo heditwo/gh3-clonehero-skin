@@ -84,6 +84,8 @@ internal sealed class IkChainDefinition
 // drummer_IK_params; they differ only in the hand target bones), then hero_ConstraintBones.
 internal sealed class StageGuitarRig
 {
+    // Arm bones shorter than this (metres) give no IK solution.
+    private const float MinimumBoneLength = 1e-5f;
     private sealed record Chain(int First, int Second, int End, int Target, Vector3 Hinge, int Side, float CosMax, float CosMin);
     private sealed record Constraint(int Type, int Bone, int Target, float Amount);
     private const float CosMaxArm = -0.97f, CosMinArm = 0.97f, CosMaxLeg = -0.98999995f, CosMinLeg = 0.97f;
@@ -168,7 +170,7 @@ internal sealed class StageGuitarRig
         var target = _position[chain.Target];
         var upper = Vector3.Distance(first, second);
         var lower = Vector3.Distance(second, end);
-        if (upper < 1e-5f || lower < 1e-5f) return;
+        if (upper < MinimumBoneLength || lower < MinimumBoneLength) return;
         var reach = Vector3.DistanceSquared(first, target);
         var (cosMax, cosMin) = (chain.CosMax, chain.CosMin);
         var cosine = Math.Max(Math.Min((reach - upper * upper - lower * lower) / (-2 * upper * lower), cosMin), cosMax);
@@ -185,7 +187,7 @@ internal sealed class StageGuitarRig
             Quaternion turn;
             if (damped < -1)
             {
-                var other = MathF.Abs(from.X) < 0.9f ? Vector3.UnitX : Vector3.UnitY;
+                var other = MathF.Abs(from.X) < StageTolerance.NearAxis ? Vector3.UnitX : Vector3.UnitY;
                 turn = Quaternion.CreateFromAxisAngle(Vector3.Normalize(Vector3.Cross(from, other)), MathF.PI);
             }
             else

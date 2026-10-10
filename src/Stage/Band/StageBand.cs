@@ -20,6 +20,10 @@ internal sealed class BandMember
 
 internal sealed class StageBand : IDisposable
 {
+    // Walk speed (m/s) and duration (s) floors, and the blend into and out of a walk (Tuned).
+    private const double MinimumWalkSpeed = 0.1;
+    private const double MinimumWalk = 0.01;
+    private const double WalkBlend = 0.2;
     private sealed class Performer
     {
         public string Role = "";
@@ -608,14 +612,14 @@ internal sealed class StageBand : IDisposable
             if (definition.Groups.TryGetValue("walk/cycle_anim/med", out var cycle))
             {
                 var clip = definition.Clips[cycle[0]];
-                speed = Math.Max(0.1, clip.RootDistance / clip.Duration);
+                speed = Math.Max(MinimumWalkSpeed, clip.RootDistance / clip.Duration);
             }
             foreach (var cue in timeline.Track("walk", player.Role))
             {
                 if (waypoints == null || !waypoints.TryGetValue(cue.Value, out var waypoint)) continue;
                 var target = StageAssets.Vector(waypoint.Position);
                 var q = waypoint.Rotation;
-                player.Walks.Add(new Walk(cue.Time, Math.Max(0.01, Vector3.Distance(position, target) / speed), position, target, new(q[0], q[1], q[2], q[3])));
+                player.Walks.Add(new Walk(cue.Time, Math.Max(MinimumWalk, Vector3.Distance(position, target) / speed), position, target, new(q[0], q[1], q[2], q[3])));
                 position = target;
             }
         }
@@ -734,7 +738,7 @@ internal sealed class StageBand : IDisposable
                 if (age < walk.Duration)
                 {
                     walkAge = age;
-                    walkWeight = (float)Math.Clamp(Math.Min(age, walk.Duration - age) / 0.2, 0, 1);
+                    walkWeight = (float)Math.Clamp(Math.Min(age, walk.Duration - age) / WalkBlend, 0, 1);
                     var facing = Quaternion.LookRotation(walk.From - walk.To, Vector3.up);
                     rotation = Quaternion.Slerp(walk.Rotation, facing, walkWeight);
                 }

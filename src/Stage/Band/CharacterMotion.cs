@@ -20,9 +20,9 @@ internal sealed class CharacterMotionBank
         var bank = JsonSerializer.Deserialize<CharacterMotionBank>(File.ReadAllText(Path.Combine(folder, CharacterLibrary.FileName)),
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? throw new InvalidDataException("Invalid character library");
         foreach (var (name, member) in bank.Animations)
-            if (member.Clips.Count is < 1 or > 5000 ||
+            if (member.Clips.Count is < 1 or > StagePerformance.MaximumClips ||
                 member.Clips.Any(c => c.Key.Length != 8 || c.Key.Any(x => !Uri.IsHexDigit(x)) ||
-                    !float.IsFinite(c.Value.Duration) || c.Value.Duration is <= 0 or > 600 || c.Value.Frames is < 2 or > 18001) ||
+                    !float.IsFinite(c.Value.Duration) || c.Value.Duration is <= 0 or > PerformanceClip.MaximumSeconds || c.Value.Frames is < 2 or > PerformanceClip.MaximumFrames) ||
                 member.Groups.Values.Concat(member.Layers.Values).SelectMany(c => c).Any(c => !member.Clips.ContainsKey(c)))
                 throw new InvalidDataException($"Invalid animation set {name}");
         foreach (var (name, chains) in bank.Ik)

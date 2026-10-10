@@ -72,6 +72,15 @@ internal sealed class StageRetarget
 // of the GH3 facial clips when the song has them.
 internal sealed class CharacterFace
 {
+    // Blink times cover the song plus 30 s, at least 10 minutes.
+    private const int MinimumBlinkSeconds = 600;
+    private const int BlinkTail = 30;
+    // Tuned: the GH3 jaw turn (degrees) of a fully open mouth, and the eyelid turn range of a blink.
+    private const int OpenJawDegrees = 24;
+    private const int LidStartDegrees = 5;
+    private const int LidRangeDegrees = 35;
+    // Blend shape weights that change less than this are not set again.
+    private const float WeightChange = 0.002f;
     private readonly List<(SkinnedMeshRenderer Renderer, int[] Slots)> _shapes;
     private readonly float[] _weights = new float[CharacterSkeleton.FaceSlots.Length];
     private readonly float[] _applied;
@@ -96,8 +105,8 @@ internal sealed class CharacterFace
 
     public void Prepare(StageTimeline timeline, string role)
     {
-        var end = Math.Max(600, (timeline.Cues.LastOrDefault()?.Time ?? 0) + 30);
-        _blinks = StageLipSync.BlinkTimes(timeline.Start + 1, end, Gh3Checksum.Value(role) ^ 0x9e3779b9);
+        var end = Math.Max(MinimumBlinkSeconds, (timeline.Cues.LastOrDefault()?.Time ?? 0) + BlinkTail);
+        _blinks = StageLipSync.BlinkTimes(timeline.Start + 1, end, Gh3Checksum.Value(role) ^ XorShift32.GoldenRatioIncrement);
         _lipSync = StageLipSync.Shapes(timeline, role);
         _facialClips = timeline.Track("face", role).Length > 0;
     }
@@ -110,8 +119,8 @@ internal sealed class CharacterFace
         if (_facialClips)
         {
             // The GH3 facial clip opens the jaw and closes the eyelids; the shapes follow the angles from the rest pose.
-            if (_jaw >= 0) _weights[1] = Math.Clamp(Turn(gh3Pose, _jaw) / 24, 0, 1);
-            foreach (var lid in _lids) _weights[0] = Math.Max(_weights[0], Math.Clamp((Turn(gh3Pose, lid) - 5) / 35, 0, 1));
+            if (_jaw >= 0) _weights[1] = Math.Clamp(Turn(gh3Pose, _jaw) / OpenJawDegrees, 0, 1);
+            foreach (var lid in _lids) _weights[0] = Math.Max(_weights[0], Math.Clamp((Turn(gh3Pose, lid) - LidStartDegrees) / LidRangeDegrees, 0, 1));
         }
         else
         {
@@ -124,7 +133,7 @@ internal sealed class CharacterFace
         }
         for (var slot = 0; slot < _weights.Length; slot++)
         {
-            if (Math.Abs(_weights[slot] - _applied[slot]) < 0.002f) continue;
+            if (Math.Abs(_weights[slot] - _applied[slot]) < WeightChange) continue;
             _applied[slot] = _weights[slot];
             foreach (var (renderer, slots) in _shapes)
                 if (slots[slot] >= 0) renderer.SetBlendShapeWeight(slots[slot], _weights[slot] * 100);
