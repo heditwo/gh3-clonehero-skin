@@ -2,6 +2,8 @@ using System.Text.Json;
 
 namespace Gh3Skin;
 
+// A skinned venue actor: its definition and its clip state on the song clock (no Unity).
+
 internal sealed class StageActorDefinition
 {
     public string Id { get; set; } = "";

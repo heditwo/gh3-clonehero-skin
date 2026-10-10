@@ -3,6 +3,8 @@ using UnityEngine.UI;
 
 namespace Gh3Skin;
 
+// The lamp column of the score amp: one lamp per streak step toward the next multiplier.
+
 internal sealed class LampColumnHud
 {
     // Lamp sprites are 32 units high and overlap by one unit.

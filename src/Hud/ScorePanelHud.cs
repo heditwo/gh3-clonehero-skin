@@ -2,6 +2,8 @@ using UnityEngine;
 
 namespace Gh3Skin;
 
+// The score panel: the amp and the streak counter in their GH3 positions.
+
 internal sealed class ScorePanelHud
 {
     // Tuned: the amp position in the panel, from GH3 frames.

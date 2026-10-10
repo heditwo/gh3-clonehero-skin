@@ -2,6 +2,8 @@ using UnityEngine;
 
 namespace Gh3Skin;
 
+// Plays the venue movies (GH3VID01 frame banks) into their material texture slots.
+
 internal sealed class StageMovies
 {
     private sealed record TextureFrame(Texture2D Texture, StageMovieClip Clip, int Frame);

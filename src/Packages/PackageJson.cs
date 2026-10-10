@@ -5,6 +5,8 @@ using System.Text.Json.Nodes;
 
 namespace Gh3Skin.Packages;
 
+// Strict JSON reading of package files: field checks, numbers in range, vectors, and rotations.
+
 internal static class PackageJson
 {
     private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };

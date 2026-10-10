@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// GH3's wind fields that move the particles.
+
 internal sealed record StageWindField
 {
     public uint Id { get; init; } = Gh3Checksum.Value("localwind");

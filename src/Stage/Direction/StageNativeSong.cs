@@ -1,5 +1,7 @@
 namespace Gh3Skin;
 
+// Finds and loads the native GH3 song PAK of a song folder.
+
 internal static class StageNativeSong
 {
     public static StageTimeline Load(string path)

@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// The motion of a light beam between two settings over a blend.
+
 internal sealed class StageBeamMotion
 {
     private const float SameRotationDot = 0.999999f;

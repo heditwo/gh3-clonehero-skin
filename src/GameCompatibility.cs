@@ -1,5 +1,7 @@
 namespace Gh3Skin;
 
+// The supported Clone Hero version and platforms; other installs leave the skin off.
+
 internal static class GameCompatibility
 {
     public const string Version = "1.1.0.6142";

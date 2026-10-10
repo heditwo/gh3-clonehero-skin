@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// The quads of a particle (billboard, aligned, cross, ribbon) as GH3 builds them.
+
 internal readonly record struct StageParticleBasis(Vector3 Right, Vector3 Up, bool Visible = true);
 internal readonly record struct StageParticleAxes(Vector3 Right, Vector3 Up, Vector3 Depth, bool Visible = true);
 internal readonly record struct StageParticleQuad(Vector3 A, Vector3 B, Vector3 C, Vector3 D, Vector4 Uv, float StartAlpha = 1, float EndAlpha = 1)

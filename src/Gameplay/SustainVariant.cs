@@ -1,5 +1,7 @@
 namespace Gh3Skin;
 
+// Sustain colors: lane, Star Power, and dead, with GH3's star whammy timing.
+
 internal enum SustainVariant
 {
     Green,

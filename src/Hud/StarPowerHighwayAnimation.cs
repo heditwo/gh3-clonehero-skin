@@ -1,5 +1,7 @@
 namespace Gh3Skin;
 
+// The frame of the active Star Power rail animation (GH3: sys_Big_Bolt01, 8 frames at 15 fps).
+
 internal sealed class StarPowerHighwayAnimation
 {
     public const int FrameCount = 8;

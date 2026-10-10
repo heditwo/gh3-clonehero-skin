@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// GH3's particle sort key: group, transparency, draw order, depth, and material.
+
 internal static class StageParticleRenderOrder
 {
     public static float DistanceScale(float near, float far) => StageParticleConstants.DepthSteps / (far - near);

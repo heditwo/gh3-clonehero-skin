@@ -5,6 +5,8 @@ using UnityEngine.Rendering;
 
 namespace Gh3Skin;
 
+// The crowd: one impostor render texture per crowd row, drawn from animated peds parked off stage (GH3's method).
+
 internal sealed class StageCrowd : IDisposable
 {
     private sealed class Player

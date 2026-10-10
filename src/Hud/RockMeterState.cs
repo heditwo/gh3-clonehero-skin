@@ -1,5 +1,7 @@
 namespace Gh3Skin;
 
+// The rock meter's needle angle and the background blend and light color of that angle.
+
 internal sealed class RockMeterState
 {
     private const float BackgroundFadeAngle = 15;

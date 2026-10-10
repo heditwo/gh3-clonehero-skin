@@ -3,6 +3,8 @@ using System.Text.Json;
 
 namespace Gh3Skin;
 
+// The channels of song direction (version 2 of stage-events.json) and the checks of authored cues.
+
 internal static class StageSongDirection
 {
     public static string? Channel(StageCue cue) => cue.Type switch

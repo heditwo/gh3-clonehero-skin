@@ -2,6 +2,8 @@ using System.Globalization;
 
 namespace Gh3Skin;
 
+// The capture and display test options from the environment (SkinEnvironment), read once at start.
+
 internal sealed class SkinOptions
 {
     public bool KeepStockGems { get; private init; }

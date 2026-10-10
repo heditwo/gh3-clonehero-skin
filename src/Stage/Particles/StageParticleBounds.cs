@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// The bounding box and sphere of a particle system's live particles.
+
 internal sealed class StageParticleBounds
 {
     public Vector3 Minimum { get; private set; }

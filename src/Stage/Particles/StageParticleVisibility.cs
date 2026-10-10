@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// The visibility sphere of a particle system, quantized as GH3 stores it.
+
 internal sealed class StageParticleVisibility
 {
     public Vector3 Center { get; private set; }

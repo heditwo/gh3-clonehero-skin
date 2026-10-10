@@ -3,6 +3,8 @@ using UnityEngine;
 
 namespace Gh3Skin;
 
+// Timed screenshots for captures (GH3_SKIN_CAPTURE_TIMES, on the scene or the song clock).
+
 internal sealed class PreviewCapture
 {
     private readonly SkinOptions _options;

@@ -2,6 +2,8 @@ using System.Text.Json;
 
 namespace Gh3Skin;
 
+// The venue sound bank (samples and sound definitions) and the sound event choice rules.
+
 internal sealed class StageSoundSample
 {
     public int Rate { get; set; }

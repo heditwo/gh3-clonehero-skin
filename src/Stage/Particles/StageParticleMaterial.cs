@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// A particle material: blend mode, texture atlas, and render flags.
+
 internal sealed record StageParticleMaterial
 {
     public uint Layout { get; }

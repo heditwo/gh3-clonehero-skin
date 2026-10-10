@@ -2,6 +2,8 @@ using System.Text.Json;
 
 namespace Gh3Skin;
 
+// A venue's script bank (scripts.json): definitions, startup scripts, nodes, and textures.
+
 internal sealed class StageScriptBank
 {    // Validation limits of a venue's script bank.
     private const int MaximumDefinitions = 50000;

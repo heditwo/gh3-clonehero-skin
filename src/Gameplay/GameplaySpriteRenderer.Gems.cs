@@ -2,6 +2,8 @@ using UnityEngine;
 
 namespace Gh3Skin;
 
+// Gem sprites: GH3 gems, HOPOs, taps, and Star Power gems on Clone Hero's notes.
+
 internal sealed partial class GameplaySpriteRenderer
 {
     private void ReplaceGem(GemVisual note, bool starPowerActive, int frame)

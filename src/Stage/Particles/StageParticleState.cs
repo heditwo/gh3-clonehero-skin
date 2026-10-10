@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// The particle systems of the venue scripts: creation, emission, and the live particles (no Unity).
+
 internal sealed class StageParticleEmitter
 {
     public uint Id { get; init; }

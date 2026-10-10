@@ -6,6 +6,8 @@ using UnityEngine;
 
 namespace Gh3Skin;
 
+// The MelonLoader entry point: start-up checks, bindings, assets, and the per-scene parts in their update order.
+
 public sealed class SkinMod : MelonMod
 {
     private SkinOptions? _options;

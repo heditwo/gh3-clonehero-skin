@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// Sorts the triangles of a transparent mesh back to front for the camera.
+
 internal sealed class StageTriangleOrder
 {
     private readonly int[] _triangles;

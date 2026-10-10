@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// Scripted render controls: outlines and screen effects (no Unity).
+
 internal sealed record StageOutlineSettings(float Min, float Max, float Rate, float ZScale, float FillDistance, float BlendMode);
 internal readonly record struct StageOutlineObject(bool Enabled, int Color);
 internal readonly record struct StageScreenTarget(uint Viewport, uint Name);

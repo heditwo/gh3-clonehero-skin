@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// The atlas animation of GH3's AnimatedTexture templates.
+
 internal sealed class StageTextureAnimation
 {
     public int Columns { get; set; } = 1;

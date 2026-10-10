@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// The spatial index of the light volumes, as GH3 builds it to find the lights of a point.
+
 internal sealed record StageLightInterval(float Start, float End, int[] Members);
 
 internal sealed class StageLightSpatial

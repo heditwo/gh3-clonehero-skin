@@ -2,6 +2,8 @@ using System.Text.Json;
 
 namespace Gh3Skin;
 
+// The crowd's performance bank and the clip player of one crowd member.
+
 internal sealed class CrowdMember
 {
     public string Model { get; set; } = "";

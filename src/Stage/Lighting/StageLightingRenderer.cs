@@ -5,6 +5,8 @@ using Vec = System.Numerics.Vector3;
 
 namespace Gh3Skin;
 
+// Uploads the lighting state to the shaders (the light-data texture) and draws the beams.
+
 internal sealed class StageLightingRenderer
 {
     private const int BeamBounds = 200;

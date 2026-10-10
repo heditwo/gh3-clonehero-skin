@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// Runs a venue's scripts on the song clock and serves their engine commands (no Unity).
+
 internal sealed class StageScriptState : IDisposable
 {
     private const int MaximumEvents = 1000000;

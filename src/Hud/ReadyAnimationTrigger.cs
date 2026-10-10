@@ -1,5 +1,7 @@
 namespace Gh3Skin;
 
+// Decides when the Star Power ready banner plays.
+
 internal sealed class ReadyAnimationTrigger
 {
     private bool _wasReady;

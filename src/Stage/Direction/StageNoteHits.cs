@@ -2,6 +2,8 @@ using Il2Cpp;
 
 namespace Gh3Skin;
 
+// Finds the notes that the player hit and raises GH3's hitnote_<lane> stage events.
+
 internal sealed class StageNoteHits
 {
     private ObjectPublicObInObDoSiDoUIInBoInUnique[] _notes = Array.Empty<ObjectPublicObInObDoSiDoUIInBoInUnique>();

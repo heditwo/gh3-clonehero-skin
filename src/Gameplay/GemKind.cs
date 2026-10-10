@@ -1,5 +1,7 @@
 namespace Gh3Skin;
 
+// The GH3 gem kind of a Clone Hero note, from its sprite names (regular, HOPO, tap, Star Power).
+
 internal readonly record struct GemKind(int Index)
 {
     public static readonly GemKind Stock = new(-1);

@@ -1,5 +1,7 @@
 namespace Gh3Skin;
 
+// GH3 PC engine commands with constant results (from the PC command registry), for scripts that call them.
+
 internal static class Gh3PcCommands
 {
     private const string TrueCommands =

@@ -3,6 +3,8 @@ using UnityEngine.UI;
 
 namespace Gh3Skin;
 
+// The Star Power ready banner: the frames cut from the GH3 recording.
+
 internal sealed class ReadyBannerHud
 {
     private readonly ReadyAnimationTrigger _animation = new();

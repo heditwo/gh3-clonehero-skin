@@ -2,6 +2,8 @@ using System.Globalization;
 
 namespace Gh3Skin;
 
+// The GH3 direction of a native song PAK as stage cues.
+
 internal static class StageGh3Events
 {
     public static StageCue[] Read(Gh3Song song)

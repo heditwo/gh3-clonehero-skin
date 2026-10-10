@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// GH3's particle level of detail (off in GH3 PC; kept for parity checks).
+
 internal sealed class StageParticleLod
 {
     // GH3: the default LOD distances (UseDefLODDistances).

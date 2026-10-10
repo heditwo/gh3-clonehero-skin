@@ -1,5 +1,7 @@
 namespace Gh3Skin;
 
+// The actors that the venue scripts play (PlayAnim and its blends).
+
 internal sealed record StageScriptActorDefinition(StageActorDefinition Actor, double[] Durations, BandAnimation? Animation = null, IReadOnlyDictionary<uint, int>? Bones = null);
 internal readonly record struct StageScriptActorSample(int Clip, double Time, int PreviousClip, double PreviousTime, float Blend);
 

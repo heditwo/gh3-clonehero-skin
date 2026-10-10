@@ -4,6 +4,8 @@ using UnityEngine;
 
 namespace Gh3Skin;
 
+// The band on the stage: performers on their rigs, their performance players, walks, hair, and the per-frame pose.
+
 internal sealed class BandDefinition
 {
     public int Version { get; set; }

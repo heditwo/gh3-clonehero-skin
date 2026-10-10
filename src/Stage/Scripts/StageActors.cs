@@ -2,6 +2,8 @@ using UnityEngine;
 
 namespace Gh3Skin;
 
+// The skinned venue actors (stage divers, dancers) and their clips.
+
 internal sealed class StageActors : IDisposable
 {
     private sealed record Actor(GameObject Root, Transform[] Bones, BandAnimation Animation, StageActorDefinition Definition)

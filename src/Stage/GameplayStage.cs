@@ -5,6 +5,8 @@ using UnityEngine;
 
 namespace Gh3Skin;
 
+// The 3D stage behind the highway: loads it for each song and updates its parts on the song clock in order.
+
 internal sealed partial class GameplayStage
 {    private const float ThroughViewAim = 0.2f;
     // The stage camera draws just before the player camera.

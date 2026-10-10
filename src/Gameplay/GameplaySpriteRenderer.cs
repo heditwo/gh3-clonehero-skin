@@ -4,6 +4,8 @@ using UnityEngine;
 
 namespace Gh3Skin;
 
+// Replaces Clone Hero's gameplay sprites with GH3's and hides its stock effects; the parts are in the partial files.
+
 internal sealed partial class GameplaySpriteRenderer
 {
     private static readonly string[] FretNames = { "Fret_Green", "Fret_Red", "Fret_Yellow", "Fret_Blue", "Fret_Orange" };
@@ -217,6 +219,5 @@ internal sealed partial class GameplaySpriteRenderer
             _spriteNames[sprite.Pointer] = name = sprite.name;
         return name;
     }
-
 
 }

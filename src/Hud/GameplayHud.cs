@@ -2,6 +2,8 @@ using UnityEngine;
 
 namespace Gh3Skin;
 
+// Builds the GH3 HUD tree (highway, rock meter, score panel, messages, hit effects) and updates it each frame.
+
 internal sealed class GameplayHud
 {
     // Above Clone Hero's own canvases.

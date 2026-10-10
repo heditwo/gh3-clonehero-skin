@@ -6,6 +6,8 @@ using UnityEngine.Rendering;
 
 namespace Gh3Skin;
 
+// Loads a compiled stage or model folder into Unity: meshes, materials, textures, skinning, and groups.
+
 internal sealed partial class StageAssets : IDisposable
 {    private const int MaximumMaterials = 2048;
     private const int MaximumObjects = 10000;

@@ -5,6 +5,8 @@ using UnityEngine.Rendering;
 
 namespace Gh3Skin;
 
+// The light housings (fixtures) of a venue: their models, aim, and lens flares.
+
 internal sealed class StageFixtureDefinition
 {
     public int Version { get; set; }

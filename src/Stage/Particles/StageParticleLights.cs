@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// The lights that light a particle system: GH3's light choice and its spherical harmonics.
+
 internal sealed record StageParticleLight(int Type, Vector4 Color, Vector4 Position, Vector4 Direction, float Intensity, float Weight,
     float SpecularPower, float FarSquared, float InverseRange, uint Flags, Vector4[] Harmonics);
 

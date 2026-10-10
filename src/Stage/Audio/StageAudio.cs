@@ -2,6 +2,8 @@ using System.Runtime.InteropServices;
 
 namespace Gh3Skin;
 
+// Plays the stage sound voices (crowd, count-off, venue sounds) through BASS on the song clock.
+
 internal sealed class StageAudio : IDisposable
 {    // The RIFF size counts the 36 header bytes after it ("WAVE", the 24-byte fmt chunk, the data chunk header).
     private const int WaveHeaderAfterRiffSize = 36;

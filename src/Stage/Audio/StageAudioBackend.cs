@@ -2,6 +2,8 @@ using System.Runtime.InteropServices;
 
 namespace Gh3Skin;
 
+// Clone Hero's BASS library: finds it and wraps the calls that the stage audio uses.
+
 internal static class StageAudioBackend
 {
     private const string Library = "gh3_stage_bass";

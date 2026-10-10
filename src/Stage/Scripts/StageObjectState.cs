@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// The scripted venue objects: placement, motion, visibility, and scaling (no Unity).
+
 internal readonly record struct StageObjectPose(Vector3 Position, Quaternion Rotation, bool Visible)
 {
     public Vector3 Scale { get; init; } = Vector3.One;

@@ -1,5 +1,7 @@
 namespace Gh3Skin;
 
+// Pure HUD rules: the multiplier images and the rock needle angle.
+
 internal readonly record struct GameplayState(int Score, int Combo, float Rock, float StarPower,
     int Multiplier = 1, bool StarPowerActive = false);
 

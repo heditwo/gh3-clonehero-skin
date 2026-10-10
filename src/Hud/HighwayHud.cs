@@ -3,6 +3,8 @@ using UnityEngine.UI;
 
 namespace Gh3Skin;
 
+// The highway layer of the HUD: the highway edges, the Star Power rails, and the ready banner.
+
 internal sealed class HighwayHud
 {
     // Tuned: top of the active Star Power rail images on the 1080-line canvas.

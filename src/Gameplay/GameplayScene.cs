@@ -4,6 +4,8 @@ using UnityEngine;
 
 namespace Gh3Skin;
 
+// Finds the game manager and the player of the gameplay scene, and remembers them for the scene.
+
 internal sealed class GameplayScene
 {
     private GameManager? _manager;

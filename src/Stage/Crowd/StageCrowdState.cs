@@ -1,5 +1,7 @@
 namespace Gh3Skin;
 
+// The crowd's state from the song: skill from the rock value, lighters, hands, and special animations.
+
 internal sealed record CrowdAnimationRequest(double Time, string Animation);
 
 internal sealed class StageCrowdState

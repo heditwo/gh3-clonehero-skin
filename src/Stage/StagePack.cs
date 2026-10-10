@@ -3,9 +3,10 @@ using System.Text.RegularExpressions;
 
 namespace Gh3Skin;
 
+// A compiled stage pack (pack.json): band placements, waypoints, effects, and crowd.
+
 internal class StagePlacement
 {    private const double UnitTolerance = 0.001;
-
 
     public float[] Position { get; set; } = Array.Empty<float>();
     public float[] Rotation { get; set; } = Array.Empty<float>();

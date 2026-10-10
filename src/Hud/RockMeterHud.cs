@@ -2,6 +2,8 @@ using UnityEngine;
 
 namespace Gh3Skin;
 
+// The rock meter: the gauge, the Star Power bulbs, and the meter pulse.
+
 internal sealed class RockMeterHud
 {
     // Tuned: placement of the bulbs and the gauge in the meter, from GH3 frames.

@@ -2,6 +2,8 @@ using System.Text.Json;
 
 namespace Gh3Skin;
 
+// The measured streak-counter animation and placement values (assets/hud/counter-tuning.json).
+
 internal sealed class HudTuning
 {
     public float ScoreOffsetX { get; private init; }

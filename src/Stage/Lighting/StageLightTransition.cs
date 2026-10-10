@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// The fade of a light's channels (color, intensity, specular, shadow) over a GH3 transition.
+
 internal readonly record struct StageLightChannels(Vector4 Color, float Intensity, float Specular, float Shadow)
 {
     public static StageLightChannels Mix(StageLightChannels from, StageLightChannels to, float amount) => new(

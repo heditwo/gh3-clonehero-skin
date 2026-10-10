@@ -2,6 +2,8 @@ using Il2Cpp;
 
 namespace Gh3Skin;
 
+// Reads score, streak, rock, and Star Power from Clone Hero once per frame (GameplayStateReader).
+
 internal static class GameplayStateReader
 {
     public static GameplayState Read(BasePlayer player, ScoreManager manager, SkinOptions options, ComboOverride comboOverride)

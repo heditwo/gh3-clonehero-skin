@@ -3,6 +3,8 @@ using UnityEngine.Rendering;
 
 namespace Gh3Skin;
 
+// GH3's outline effect on scripted objects, drawn with stencil bit 0.
+
 internal sealed class StageOutlines : IDisposable
 {
     private sealed record Surface(uint Object, Renderer Renderer, Mesh Mesh, bool Skinned);

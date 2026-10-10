@@ -3,6 +3,8 @@ using UnityEngine;
 
 namespace Gh3Skin;
 
+// The hand fire of the guitarist after a 100-note streak: particle batches on the hand bones.
+
 internal sealed class StageHandFire
 {
     // The quads of one emitter's batch.

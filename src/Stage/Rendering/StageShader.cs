@@ -2,6 +2,8 @@ using UnityEngine;
 
 namespace Gh3Skin;
 
+// Loads a shader bundle and checks that the graphics API has a program for it.
+
 internal sealed class StageShaderUnsupportedException : Exception
 {
     public StageShaderUnsupportedException(string message) : base(message) { }

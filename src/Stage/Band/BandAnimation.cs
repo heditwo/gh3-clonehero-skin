@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// A band rig and its sampled clips (GH3CLP01): bones, bind pose, and pose sampling.
+
 internal readonly record struct BandPose(Vector3 Position, Quaternion Rotation)
 {
     public static BandPose Mix(BandPose a, BandPose b, float t) =>

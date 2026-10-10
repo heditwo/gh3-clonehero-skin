@@ -4,6 +4,8 @@ using NoteFlags = Il2Cpp.ObjectPublicObInObDoSiDoUIInBoInUnique.EnumNPublicSeale
 
 namespace Gh3Skin;
 
+// Sustains: the GH3 whammy bar sprites, the held glow, and the bend.
+
 internal sealed partial class GameplaySpriteRenderer
 {
     private readonly Dictionary<IntPtr, int> _sustainFrames = new();

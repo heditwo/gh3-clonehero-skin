@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// GH3's scripted light scene: light groups, light nodes, and their commands (no Unity).
+
 internal sealed record StageLightGroup(uint Flags, float Weight);
 internal sealed record StageLightSceneSample(int[] Candidates, StageParticleLightSet Lighting);
 internal readonly record struct StageLightTransform(Vector4 Position, Vector4 Direction, Vector3 BoundsPosition);

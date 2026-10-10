@@ -2,6 +2,9 @@ using UnityEngine;
 
 namespace Gh3Skin;
 
+// GH3 beat lines: the bar, beat, and half-beat sprites that replace Clone Hero's beat lines, with GH3's width and
+// distance fade.
+
 internal sealed class BeatlineVisual
 {
     // Below the gems and the strings on the HighwayOverlay layer.

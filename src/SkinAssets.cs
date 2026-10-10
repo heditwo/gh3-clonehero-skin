@@ -7,6 +7,8 @@ using UnityEngine;
 
 namespace Gh3Skin;
 
+// The skin textures: worker threads decode the images, and the main thread uploads a few each menu frame.
+
 internal readonly record struct AnimationFrame(Texture2D Texture, Rect Layout);
 
 internal sealed class SkinAssets

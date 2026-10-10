@@ -3,6 +3,8 @@ using System.Text.Json;
 
 namespace Gh3Skin;
 
+// The venue lighting bank and its state on the song clock: lights, beams, snapshots, and fades.
+
 internal sealed class StageLightDefinition
 {
     public string Id { get; set; } = "";

@@ -3,6 +3,8 @@ using System.Text.Json;
 
 namespace Gh3Skin;
 
+// GH3 camera cuts on the song clock: shot choice, cut lengths, and the camera path of each shot type.
+
 internal readonly record struct StageCameraPose(Vector3 Position, Vector3 Target, float FieldOfView, string Shot)
 {
     public Quaternion? Rotation { get; init; } = null;

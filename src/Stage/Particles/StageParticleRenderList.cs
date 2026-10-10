@@ -1,5 +1,7 @@
 namespace Gh3Skin;
 
+// GH3's particle submission list: at most 150 emitters per frame, in order.
+
 internal static class StageParticleRenderList
 {
     public const int Capacity = 150;

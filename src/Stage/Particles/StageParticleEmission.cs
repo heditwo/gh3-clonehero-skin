@@ -1,5 +1,7 @@
 namespace Gh3Skin;
 
+// GH3's particle emission over time: rate, burst, delay, and period.
+
 internal sealed class StageParticleEmission
 {
     private readonly uint _function;

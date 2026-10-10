@@ -2,6 +2,8 @@ using System.Text.Json;
 
 namespace Gh3Skin;
 
+// GH3's particle shader techniques and their sort IDs.
+
 internal sealed class StageParticleTechnique
 {
     public string Name { get; set; } = "";

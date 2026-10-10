@@ -5,6 +5,8 @@ using System.Text.Json;
 
 namespace Gh3Skin;
 
+// Reads a song's direction from its chart: .chart and MIDI tracks, the VENUE track, lyrics, and stage-events.json.
+
 internal sealed class StageEventFile
 {
     public int Version { get; set; }

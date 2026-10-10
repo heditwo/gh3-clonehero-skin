@@ -1,5 +1,7 @@
 namespace Gh3Skin;
 
+// The venue sound scripts: GH3's sound events, busses, and crowd reactions, as voices on the song clock.
+
 internal sealed class StageAudioState
 {
     private const int MaximumWork = 1000000;

@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// One particle step (velocity, forces, bounce on the floor height) and the bounce callback rule.
+
 internal readonly record struct StageParticleMotion(Vector3 Position, Vector3 Velocity)
 {
     public StageParticleMotion Step(float duration, Vector3 force, bool bounce, float height, float coefficient, Vector3 displacement = default)

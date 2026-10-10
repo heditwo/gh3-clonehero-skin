@@ -4,6 +4,8 @@ using UnityEngine.Rendering;
 
 namespace Gh3Skin;
 
+// Draws the Tesla arcs with the Tesla shader.
+
 internal sealed class StageTeslaRenderer : IDisposable
 {
     private sealed record Slot(Mesh Mesh, Material Material, MeshRenderer Renderer);

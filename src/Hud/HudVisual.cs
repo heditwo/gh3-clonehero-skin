@@ -3,6 +3,8 @@ using UnityEngine.UI;
 
 namespace Gh3Skin;
 
+// Unity UI helpers of the HUD: groups, images, and layout in GH3 units on the 1080-line canvas.
+
 internal static class HudVisual
 {
     // GH3 lays out its career HUD in 1280 x 720 units at 0.7 scale (career_hud_2d_elements), so one GH3 unit is

@@ -2,6 +2,8 @@ using UnityEngine;
 
 namespace Gh3Skin;
 
+// Connects the venue script state to the Unity stage objects.
+
 internal sealed class StageScripts : IDisposable
 {
     private readonly StageScriptState _state;

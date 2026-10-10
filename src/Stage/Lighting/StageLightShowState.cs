@@ -1,5 +1,7 @@
 namespace Gh3Skin;
 
+// GH3's lightshow: moods, snapshots, and blends from the lightshow notes and scripts.
+
 internal sealed class StageLightShowState
 {
     private const int MaximumBlendSeconds = 600;

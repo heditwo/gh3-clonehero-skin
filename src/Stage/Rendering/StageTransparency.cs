@@ -5,6 +5,8 @@ using Vec = System.Numerics.Vector3;
 
 namespace Gh3Skin;
 
+// Sorts the transparent stage meshes back to front each frame.
+
 internal sealed class StageTransparency
 {
     private readonly SkinnedMeshRenderer _renderer;

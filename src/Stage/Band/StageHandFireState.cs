@@ -3,6 +3,8 @@ using System.Text.Json;
 
 namespace Gh3Skin;
 
+// The hand-fire particle state: emission, motion, and life of the particles (no Unity).
+
 internal sealed class HandFireDefinition
 {
     public int Version { get; set; }

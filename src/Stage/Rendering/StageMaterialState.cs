@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// Scripted material changes (UpdateMaterialProperty) on the song clock.
+
 internal readonly record struct StageMaterialTarget(uint Object, uint Material, uint Parameter);
 
 internal sealed class StageMaterialState

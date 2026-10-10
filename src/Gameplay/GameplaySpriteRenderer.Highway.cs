@@ -4,6 +4,8 @@ using UnityEngine;
 
 namespace Gh3Skin;
 
+// The highway: GH3 board texture, rails, and the highway scroll.
+
 internal sealed partial class GameplaySpriteRenderer
 {
     private Transform? _neck;

@@ -2,6 +2,8 @@ using UnityEngine;
 
 namespace Gh3Skin;
 
+// Draws the particles: batches by emitter, texture, and material, in GH3's sort order.
+
 internal sealed class StageParticles : IDisposable
 {
     // GH3: technique flag 0x800 sorts a technique with the transparent particles.

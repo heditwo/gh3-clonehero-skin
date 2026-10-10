@@ -3,6 +3,8 @@ using UnityEngine.Rendering;
 
 namespace Gh3Skin;
 
+// Draws GH3's scripted screen effects (for example bright_sat) on the stage camera with a command buffer.
+
 internal sealed class StageScreenEffects : IDisposable
 {
     private readonly StageScripts _scripts;

@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// A GH3 particle system definition, read from its script structure and checked.
+
 internal sealed class StageParticleDefinition
 {
     // Validation limits of particle definitions.
