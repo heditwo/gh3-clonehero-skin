@@ -190,10 +190,18 @@ def _identity(matrix):
     return np.abs(np.array(matrix) - np.eye(4)).max() < 1e-6
 
 
+def _refresh_pose(rig):
+    # Armature.transform does not tag the object: without a tag, the pose (the map overlay, the bounds) keeps the old
+    # bone places until the next frame change.
+    rig.data.update_tag()
+    rig.update_tag(refresh={"OBJECT", "DATA"})
+
+
 def _apply(rig, meshes, matrix):
     """Move the armature bones and the mesh data (with shape keys) by a matrix; the objects keep no transform."""
     matrix = Matrix(np.asarray(matrix).tolist())
     rig.data.transform(matrix)
+    _refresh_pose(rig)
     for obj in meshes:
         obj.data.transform(matrix, shape_keys=True)
         if matrix.determinant() < 0 and hasattr(obj.data, "flip_normals"): obj.data.flip_normals()
@@ -225,7 +233,9 @@ def _bake_transforms(scene, rig):
     worlds = {obj: obj.matrix_world.copy() for obj in meshes}
     rig_world = rig.matrix_world.copy()
     rig.parent = None
-    if not _identity(rig_world): rig.data.transform(rig_world)
+    if not _identity(rig_world):
+        rig.data.transform(rig_world)
+        _refresh_pose(rig)
     rig.matrix_world = Matrix.Identity(4)
     for obj in meshes:
         if not _identity(worlds[obj]):
@@ -415,6 +425,7 @@ def auto_map(scene):
     p.map_notes = json.dumps(found["notes"], ensure_ascii=False)
     p.checks.clear()
     p.checked = False
+    fit_source_rig(scene)
     return mapping
 
 
@@ -656,6 +667,24 @@ def _keys(action, obj, bone_names, locations, rotations, frames):
                 curve.update()
 
 
+def fit_source_rig(scene):
+    """Give the GH3 rig helper the size of the model: the object scale is the hip height ratio of the retarget, the
+    root and the facing are those of the armature. Only the display changes: the retarget reads the GH3 rig of the
+    library, not this object. Returns the scale."""
+    p = props(scene)
+    source = p.source_rig
+    if source is None: return 1.0
+    scale = 1.0
+    if p.rig is not None and all(r in humanoid(scene) for r in ("leftUpperLeg", "rightUpperLeg")):
+        try:
+            scale = float(retarget_for(scene)[0].hip_scale)
+        except (KeyError, ValueError, IndexError):
+            scale = 1.0
+    base = p.rig.matrix_world if p.rig is not None else Matrix.Identity(4)
+    source.matrix_world = base @ Matrix.Scale(scale, 4)
+    return scale
+
+
 def retarget_for(scene):
     """The Retarget of the scene: the GH3 rig of the profile to the character's armature."""
     p = props(scene)
@@ -690,6 +719,22 @@ def source_poses(scene, clip, rig_data):
     return gltf_t * [1, 1, -1], gltf_q * [-1, -1, 1, 1]
 
 
+def _display_attachments(retarget, out_t, scale):
+    """The GH3 local translations for the GH3 rig helper at an object scale: the retarget puts the instrument (or the
+    microphone) at the model, so its root moves by 1 / scale to stay at the same place in the scene."""
+    if abs(scale - 1.0) < 1e-9 or not retarget.attachments: return out_t
+    display = out_t.copy()
+    for root, _ in retarget.attachments:
+        parent = retarget.source_parents[root]
+        if parent < 0:
+            display[:, root] = out_t[:, root] / scale
+            continue
+        sp, sq = retarget.source_p[:, parent], retarget.source_q[:, parent]
+        position = sp + skeleton.qrotate(sq, out_t[:, root])
+        display[:, root] = skeleton.qrotate(skeleton.qinv(sq), position / scale - sp)
+    return display
+
+
 def clip_action(scene, clip):
     """The clip preview of a character with its own skeleton: the GH3 clip (with the game IK) on the GH3 rig helper, and
     its retarget on the character's armature. Returns the action of the armature."""
@@ -700,6 +745,7 @@ def clip_action(scene, clip):
     source_t, source_q = source_poses(scene, clip, rig_data)
     frames = source_t.shape[0]
     target_t, target_q, out_t, out_q = retarget.apply(source_t, source_q, *retarget.arm_gains(source_t, source_q))
+    scale = fit_source_rig(scene)
     name = f"{profile or role} clip {clip} (retargeted)"
     for action in character_tools.clip_actions(): bpy.data.actions.remove(action)
     for obj, label in ((p.rig, name), (p.source_rig, f"{name} GH3")):
@@ -714,11 +760,12 @@ def clip_action(scene, clip):
             locations, rotations = _basis(obj, names, _world(parents, target_t, target_q))
             _keys(action, obj, names, locations, rotations, frames)
         else:
-            locations, rotations = character_tools.clip_basis(obj, rig_data, out_t * [1, 1, -1], out_q * [-1, -1, 1, 1])
+            display_t = _display_attachments(retarget, out_t, scale)
+            locations, rotations = character_tools.clip_basis(obj, rig_data, display_t * [1, 1, -1], out_q * [-1, -1, 1, 1])
             _keys(action, obj, rig_data.names, locations, rotations, frames)
             # The instrument takes the size of the character (the arm length ratio), as in the game.
             for root, mode in retarget.attachments:
-                if mode == "chest": obj.pose.bones[rig_data.names[root]].scale = (retarget.instrument_scale,) * 3
+                if mode == "chest": obj.pose.bones[rig_data.names[root]].scale = (retarget.instrument_scale / scale,) * 3
     scene.render.fps, scene.render.fps_base = character_tools.CLIP_FPS, 1.0
     scene.frame_start, scene.frame_end = 0, max(1, frames - 1)
     scene.frame_set(0)
@@ -846,6 +893,43 @@ def _draw_map():
         if points[name]: batch_for_shader(shader, "POINTS", {"pos": points[name]}).draw(shader)
     gpu.state.line_width_set(1.0)
     gpu.state.point_size_set(1.0)
+
+
+SOURCE_COLOR = (0.25, 0.55, 1.0, 1.0)
+_source_overlay = []
+
+
+def _draw_source():
+    """The GH3 rig helper in blue: Blender draws all armatures in Object Mode in the theme colour (bone colours show in
+    Pose and Edit Mode only). The lines follow the visibility of the rig, of its bone collections, and of the Bones overlay."""
+    import gpu
+    from gpu_extras.batch import batch_for_shader
+    context = bpy.context
+    scene = context.scene
+    if scene is None or not getattr(scene, "chstage", None) or not own(scene): return
+    source = props(scene).source_rig
+    overlay_settings = getattr(context.space_data, "overlay", None)
+    if source is None or source.name not in scene.objects or not source.visible_get(): return
+    if overlay_settings is not None and not (overlay_settings.show_overlays and overlay_settings.show_bones): return
+    def shown(bone):
+        groups = getattr(bone.bone, "collections", None)
+        return not bone.bone.hide and not (groups is not None and len(groups) and not any(g.is_visible for g in groups))
+
+    # Joint to joint (the nearest shown parent), as the map overlay: the bone tails of the GH3 rig do not meet.
+    world = source.matrix_world
+    lines = []
+    for bone in source.pose.bones:
+        if not shown(bone): continue
+        parent = bone.parent
+        while parent is not None and not shown(parent): parent = parent.parent
+        if parent is not None: lines += [tuple(world @ parent.head), tuple(world @ bone.head)]
+    if not lines: return
+    shader = gpu.shader.from_builtin("UNIFORM_COLOR")
+    gpu.state.depth_test_set("NONE")
+    gpu.state.line_width_set(5.0)
+    shader.uniform_float("color", SOURCE_COLOR)
+    batch_for_shader(shader, "LINES", {"pos": lines}).draw(shader)
+    gpu.state.line_width_set(1.0)
 
 
 def _draw_labels():
@@ -978,6 +1062,7 @@ class CHSTAGE_OT_role_edit(Operator):
         rig = p.rig
         if self.action in ("LEFT", "RIGHT"):
             count = mirror_roles(context.scene, self.action.lower())
+            fit_source_rig(context.scene)
             self.report({"INFO"}, f"Mirrored {count} roles")
             return {"FINISHED"}
         if not 0 <= p.roles_index < len(p.roles):
@@ -1002,6 +1087,7 @@ class CHSTAGE_OT_role_edit(Operator):
                 if other.bone == name and other != row: other.bone, other.confidence = "", 0.0
             row.bone, row.confidence = name, 1.0
             if p.roles_index + 1 < len(p.roles): p.roles_index += 1
+        fit_source_rig(context.scene)
         return {"FINISHED"}
 
 
@@ -1039,6 +1125,7 @@ class CHSTAGE_OT_load_map_preset(Operator, ImportHelper):
         except (OSError, ValueError, KeyError) as error:
             self.report({"WARNING"}, f"No preset: {error}")
             return {"CANCELLED"}
+        fit_source_rig(context.scene)
         self.report({"WARNING" if missing else "INFO"}, f"Set {done} roles" + (f"; no bone for {', '.join(missing)}" if missing else ""))
         return {"FINISHED"}
 
@@ -1132,6 +1219,7 @@ class CHSTAGE_PT_character_skeleton(Panel):
                   icon="ERROR" if missing else "QUESTION" if unsure else "CHECKMARK")
         row = box.row(align=True)
         row.prop(p, "show_map", toggle=True, icon="HIDE_OFF" if p.show_map else "HIDE_ON")
+        if p.source_rig is not None: row.prop(p, "show_source_rig", toggle=True, icon="HIDE_OFF" if p.show_source_rig else "HIDE_ON")
         row.operator("chstage.auto_map", icon="FILE_REFRESH")
         box.template_list("CHSTAGE_UL_roles", "", p, "roles", p, "roles_index", rows=8)
         row = box.row(align=True)
@@ -1180,8 +1268,10 @@ CLASSES = (CHSTAGE_OT_use_skeleton, CHSTAGE_OT_join_armatures, CHSTAGE_OT_auto_m
 
 def register():
     for cls in CLASSES: bpy.utils.register_class(cls)
+    if not bpy.app.background: _source_overlay.append(bpy.types.SpaceView3D.draw_handler_add(_draw_source, (), "WINDOW", "POST_VIEW"))
 
 
 def unregister():
     overlay(False)
+    while _source_overlay: bpy.types.SpaceView3D.draw_handler_remove(_source_overlay.pop(), "WINDOW")
     for cls in reversed(CLASSES): bpy.utils.unregister_class(cls)

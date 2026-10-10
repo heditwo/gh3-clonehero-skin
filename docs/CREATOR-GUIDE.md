@@ -209,6 +209,8 @@ flowchart LR
    - finds the roles, the followers, and the face shape keys.
 
    The panel lists each change in words. Undo (**Ctrl Z**) restores the model.
+
+   The blue skeleton is the GH3 rig (**GH3 rig (animation source)**). The add-on gives it the size of your model: its hips are at the height of your hips. During a clip preview it shows what the GH3 animation does, and your model follows it. To hide it, click **Show GH3 Rig** in the **Skeleton** panel or the eye of the rig in the outliner. The face, hair, and instrument bones of the GH3 rig are in a hidden bone collection.
 4. **Check the map.** Click **Show Map**: the add-on draws the roles on your armature. Green is sure, yellow is a role to check, red is not sure. The role list has the same marks; a required role without a bone is red.
    - To correct a role: select the role in the list, click the bone in the viewport (Pose Mode or Edit Mode), and click **Assign Active Bone**. The next role in the list is then selected.
    - **Left to Right** gives each right role the bone on the other side of its left role (by the name, else by the place). **Right to Left** does the opposite.

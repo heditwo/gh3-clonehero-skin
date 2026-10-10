@@ -403,16 +403,16 @@ def open_package(path, library=None):
             lib = character_tools.library(library)
             if p.own_skeleton:
                 parts = character_tools.helper_parts(scene, lib, role)
-                made, *_ = character_tools.import_glb(scene, parts["body"], helpers)
+                made, *_ = character_tools.import_glb(scene, parts["body"], helpers, bone_heuristic=character_tools.SOURCE_BONES)
                 source = next(o for o in made if o.type == "ARMATURE")
                 for obj in made:
                     if obj != source: bpy.data.objects.remove(obj, do_unlink=True)
-                source.name, source.hide_render = f"GH3 {role} rig (clip source)", True
-                source["chstage_source"] = True
+                character_tools.make_source_rig(source)
                 p.source_rig = source
             character_tools.load_helpers(scene, helpers, lib, role, show_reference=False)
             character_tools.load_profile_data(scene, lib, role)
             character_tools.add_preview_camera(scene, helpers)
+            if p.own_skeleton: skeleton_tools.fit_source_rig(scene)
         except (OSError, ValueError, KeyError) as error:
             issues.warn(f"the GH3 library {library} has no rig for {role} ({error}); no helpers and no clip preview")
     elif not library:

@@ -663,6 +663,9 @@ own = own_scene.chstage.character
 check("own skeleton: new character keeps the GH3 rig as the clip source", status == {"FINISHED"} and own.own_skeleton and own.rig is None
       and own.source_rig is not None and len(own.clips) == 356, (own.own_skeleton, own.source_rig))
 source = own.source_rig
+check("own skeleton: the GH3 rig helper is visible, in front, octahedral, and named", source.visible_get() and own.show_source_rig
+      and source.show_in_front and source.data.display_type == "OCTAHEDRAL" and source.name.startswith(character_tools.SOURCE_NAME),
+      (source.name, source.visible_get(), source.data.display_type))
 
 
 def gh3_head(name):
@@ -770,11 +773,60 @@ for frame in (0, 10, 20):
 check("own skeleton: the retargeted preview follows the GH3 bones (rest-pose correction, T-pose, bone rolls)", status == {"FINISHED"}
       and model_rig.animation_data.action is not None and source.animation_data.action is not None and worst < 0.5
       and min((moved[0][k] - moved[2][k]).length for k in (0, 1)) > 0.005, (worst, [(moved[0][k] - moved[2][k]).length for k in (0, 1)]))
+
+
+# The GH3 rig helper has the size of the model (hip height ratio, object scale only): the retarget reads the library rig,
+# so the armature poses and the instrument place are the same as with a GH3 rig helper at GH3 size, also when it is hidden.
+def hip_height(obj, names):
+    return sum((obj.matrix_world @ obj.data.bones[n].head_local).z for n in names) / len(names)
+
+
+def preview_rows(frames=(0, 10, 20)):
+    rows = []
+    guitar = f"bone-{character_format.gh3_key('bone_guitar_body'):08x}"
+    with bpy.context.temp_override(scene=own_scene, view_layer=own_view):
+        bpy.ops.chstage.preview_clip(clip=start_clip)
+    for frame in frames:
+        own_scene.frame_set(frame)
+        evaluated = own.attachment.evaluated_get(own_view.depsgraph)
+        mesh = evaluated.to_mesh()
+        guitar_points = np.array([tuple(evaluated.matrix_world @ v.co) for v in mesh.vertices[:200]])
+        evaluated.to_mesh_clear()
+        rows.append(([np.array(b.matrix) for b in model_rig.pose.bones], np.array(source.matrix_world @ source.pose.bones[guitar].head), guitar_points))
+    return rows
+
+
+def gh3_size(scene):
+    source.matrix_world = Matrix.Identity(4)
+    return 1.0
+
+
+gh3_legs = [f"bone-{character_format.gh3_key(n):08x}" for n in ("bone_thigh_l", "bone_thigh_r")]
+model_hips = hip_height(model_rig, ["mixamorig:LeftUpLeg", "mixamorig:RightUpLeg"])
+scaled_hips = hip_height(source, gh3_legs)
+fitted = preview_rows()
+scale = source.matrix_world.to_scale().x
+source.hide_set(True, view_layer=own_view)
+fit = skeleton_tools.fit_source_rig
+skeleton_tools.fit_source_rig = gh3_size
+unscaled = preview_rows()
+skeleton_tools.fit_source_rig = fit
+pose_change = max(np.abs(a - b).max() for f, u in zip(fitted, unscaled) for a, b in zip(f[0], u[0]))
+guitar_change = max(max(np.linalg.norm(f[1] - u[1]), np.abs(f[2] - u[2]).max()) for f, u in zip(fitted, unscaled))
+check("own skeleton: the GH3 rig helper has the hip height of the model (object scale only)", abs(scaled_hips - model_hips) < 0.01 and abs(scale - SCALE) < 0.05,
+      (scaled_hips, model_hips, scale))
+check("own skeleton: the preview poses the armature and places the instrument as with the GH3 rig at GH3 size, also when the helper is hidden",
+      pose_change < 1e-5 and guitar_change < 1e-4 and not own.show_source_rig and np.abs(unscaled[0][2] - unscaled[2][2]).max() > 0.01,
+      (pose_change, guitar_change))
+own.show_source_rig = True
+check("own skeleton: Show GH3 Rig is the eye of the outliner", source.visible_get(view_layer=own_view) and not source.hide_get(view_layer=own_view))
+skeleton_tools.fit_source_rig(own_scene)
 character_tools.clear_pose(own_scene)
 opened, opened_issues = character_package.open_package(own_package, library=str(library)) if own_package.is_file() else (None, [])
-check("own skeleton: Open restores the skeleton, the map, and the face", opened is not None and opened.chstage.character.own_skeleton
+check("own skeleton: Open restores the skeleton, the map, the face, and the GH3 rig helper at the size of the model", opened is not None and opened.chstage.character.own_skeleton
       and skeleton_tools.humanoid(opened) == own_json.get("skeleton", {}).get("humanoid") and skeleton_tools.face(opened) == own_json.get("face")
-      and opened.chstage.character.source_rig is not None, [m for s, m, *_ in opened_issues if s == "ERROR"])
+      and opened.chstage.character.source_rig is not None and opened.chstage.character.source_rig.visible_get()
+      and abs(opened.chstage.character.source_rig.matrix_world.to_scale().x - SCALE) < 0.05, [m for s, m, *_ in opened_issues if s == "ERROR"])
 
 # 9. Any humanoid (BLENDER-ADDON.md section 2.13): the same model with bone names that say nothing (joint1, joint2, ...),
 # turned to look toward +X, in centimetres (object scale 100), a helper bone without weights. Set Up Skeleton turns and
@@ -815,6 +867,12 @@ toe, ankle = bones[renames["mixamorig:LeftToeBase"]].head_local, bones[renames["
 check("any humanoid: Set Up Skeleton turns and scales the model and finds the roles without names", status == {"FINISHED"} and not wrong
       and np.abs(np.array(any_rig.matrix_world) - np.eye(4)).max() < 1e-6 and toe.y < ankle.y and bones[renames["mixamorig:LeftArm"]].head_local.x > 0
       and 1.0 < bones[renames["mixamorig:Head"]].head_local.z < 2.0, (wrong, skeleton_tools.notes(any_scene)))
+any_hips = any_rig.pose.bones[renames["mixamorig:Hips"]]
+any_source = any_p.source_rig
+check("any humanoid: after Set Up Skeleton the pose (map overlay) and the GH3 rig helper have the new bone places",
+      (Vector(any_hips.head) - any_hips.bone.head_local).length < 1e-4 and any_source.visible_get()
+      and abs(hip_height(any_source, gh3_legs) - hip_height(any_rig, [renames["mixamorig:LeftUpLeg"], renames["mixamorig:RightUpLeg"]])) < 0.01,
+      (tuple(any_hips.head), tuple(any_hips.bone.head_local)))
 rows = {row.role: k for k, row in enumerate(any_p.roles)}
 any_p.roles_index = rows["leftHand"]
 any_rig.data.bones.active = any_rig.data.bones[renames["mixamorig:LeftHand"]]

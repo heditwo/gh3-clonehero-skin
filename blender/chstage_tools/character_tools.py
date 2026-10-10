@@ -19,7 +19,7 @@ from mathutils import Matrix, Vector
 from mathutils.bvhtree import BVHTree
 
 from . import brotli_decode, camera_tools, glb_tools, gltf_io, package_open
-from .vendor.package_format import character, q48
+from .vendor.package_format import character, q48, skeleton
 from .vendor.package_format.glb import Glb
 
 HELPER = "chstage_helper"
@@ -132,9 +132,10 @@ def character_meshes(scene):
     return sorted(result, key=lambda o: o.name)
 
 
-def import_glb(scene, data, collection, mapped=False):
+def import_glb(scene, data, collection, mapped=False, bone_heuristic=None):
     """Import GLB bytes with the safe settings and the import fixes. Returns (new objects, glTF JSON, binary, node
-    objects, materials, images by glTF index); the last three only when mapped (the import hooks of package_open)."""
+    objects, materials, images by glTF index); the last three only when mapped (the import hooks of package_open).
+    bone_heuristic: the bone direction option of the glTF importer (default: the safe settings)."""
     prepared, _ = glb_tools.separate_faces(data)
     prepared, _ = glb_tools.fill_texcoord_gaps(prepared)
     prepared, _ = glb_tools.normalize_normals(prepared)
@@ -146,7 +147,7 @@ def import_glb(scene, data, collection, mapped=False):
             path = Path(folder)/"character.glb"
             path.write_bytes(prepared)
             with bpy.context.temp_override(scene=scene, view_layer=scene.view_layers[0], collection=collection):
-                gltf_io.import_glb(path, fps=CLIP_FPS, disable_bone_shape=True)
+                gltf_io.import_glb(path, fps=CLIP_FPS, disable_bone_shape=True, **({"bone_heuristic": bone_heuristic} if bone_heuristic else {}))
         nodes, mats, images = dict(hooks["nodes"]), dict(hooks["materials"]), dict(hooks["images"])
     finally:
         if mapped: hooks.update(active=False, nodes={}, materials={}, images={})
@@ -231,9 +232,44 @@ def load_profile_data(scene, lib, role):
     props(scene)["clips_index"] = -1
 
 
+SOURCE_NAME = "GH3 rig (animation source)"
+# Bones that point to their child: the octahedral bones then follow the body (the default points them along the GH3
+# bone axes). The clip preview reads the rest matrices of the bones, so any direction gives the same pose.
+SOURCE_BONES = "TEMPERANCE"
+# Blue: the map overlay uses green, yellow, and red.
+SOURCE_COLOR = "THEME04"
+SOURCE_BODY = "GH3 body bones"
+SOURCE_OTHER = "GH3 face, hair, and instrument bones"
+
+
+def make_source_rig(rig):
+    """The GH3 rig of a character with its own skeleton: a helper in front of the model, octahedral, blue in Pose and
+    Edit Mode. The bones that the retarget reads are in a visible bone collection; the face, hair, and instrument bones
+    are in a hidden one (skeleton_tools.fit_source_rig gives the rig the size of the model)."""
+    rig.name = SOURCE_NAME
+    rig["chstage_source"] = True
+    rig.hide_render = True
+    rig.show_in_front = True
+    armature = rig.data
+    armature.display_type = "OCTAHEDRAL"
+    if hasattr(armature, "show_bone_colors"): armature.show_bone_colors = True
+    body_keys = set(skeleton.GH3.values()) | set(skeleton.spine_sources(3))
+    groups = {}
+    if hasattr(armature, "collections"):
+        for name, visible in ((SOURCE_BODY, True), (SOURCE_OTHER, False)):
+            group = armature.collections.get(name) or armature.collections.new(name)
+            group.is_visible = visible
+            groups[visible] = group
+    for bone in armature.bones:
+        if hasattr(bone, "color"): bone.color.palette = SOURCE_COLOR
+        if groups: groups[bone.name.removeprefix("bone-") in body_keys].assign(bone)
+
+
 def add_preview_camera(scene, collection):
     data = bpy.data.cameras.new("character-preview")
     data.lens = 50
+    # A small camera shape: the default size reaches into the view of a creator who looks at the model from the front.
+    data.display_size = 0.25
     camera = bpy.data.objects.new("Preview Camera", data)
     collection.objects.link(camera)
     # The performer looks toward Blender -Y (docs/BLENDER-ADDON.md 1.13): the camera looks at the face.
@@ -281,7 +317,8 @@ def new_character(profile, library_file, use_gh3_body=False, name=None, characte
     helpers = bpy.data.collections.new("Character Helpers")
     scene.collection.children.link(helpers)
     parts = helper_parts(scene, lib, role)
-    new, gltf, binary, nodes, mats, images = import_glb(scene, parts["body"], collection, mapped=use_gh3_body)
+    new, gltf, binary, nodes, mats, images = import_glb(scene, parts["body"], collection, mapped=use_gh3_body,
+                                                        bone_heuristic=SOURCE_BONES if own_skeleton else None)
     rig = next(o for o in new if o.type == "ARMATURE")
     rig.name = f"{role}-rig"
     p.rig = rig
@@ -295,9 +332,7 @@ def new_character(profile, library_file, use_gh3_body=False, name=None, characte
         for obj in meshes: bpy.data.objects.remove(obj, do_unlink=True)
     if own_skeleton:
         # The GH3 rig plays the clips in the preview; the creator's armature becomes the rig.
-        rig.name = f"GH3 {role} rig (clip source)"
-        rig["chstage_source"] = True
-        rig.hide_render = True
+        make_source_rig(rig)
         p.source_rig, p.rig, p.own_skeleton = rig, None, True
         for obj in list(collection.objects):
             if obj == rig:

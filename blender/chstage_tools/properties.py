@@ -455,6 +455,23 @@ def preview_selected_clip(self, context):
     character_tools.preview_clip_index(self.id_data)
 
 
+def _source_view_layer(character):
+    scene = character.id_data
+    layer = getattr(bpy.context, "view_layer", None)
+    return layer if layer is not None and layer in scene.view_layers.values() else scene.view_layers[0]
+
+
+def get_show_source_rig(self):
+    source = self.source_rig
+    return source is not None and source.name in self.id_data.objects and not source.hide_get(view_layer=_source_view_layer(self))
+
+
+def set_show_source_rig(self, value):
+    # The eye of the outliner: this toggle and the outliner show the same state.
+    source = self.source_rig
+    if source is not None and source.name in self.id_data.objects: source.hide_set(not value, view_layer=_source_view_layer(self))
+
+
 def toggle_map_overlay(self, context):
     from . import skeleton_tools
     skeleton_tools.overlay(self.show_map)
@@ -514,6 +531,9 @@ class CHSTAGE_PG_character(PropertyGroup):
                                "the profile to it (character.json skeleton)")
     source_rig: PointerProperty(name="GH3 rig", type=bpy.types.Object, description="The GH3 rig of the profile (helper, never exported): "
                                 "the clip preview plays the GH3 clip on it and retargets it to the character's armature")
+    show_source_rig: BoolProperty(name="Show GH3 Rig", get=get_show_source_rig, set=set_show_source_rig,
+                                  description="Show the GH3 rig (animation source) in the viewport, at the size of your model. It shows "
+                                  "what the GH3 clip does; your armature follows it. Same as the eye in the outliner")
     roles: CollectionProperty(type=CHSTAGE_PG_role, description="The humanoid map (character.json skeleton.humanoid)")
     roles_index: IntProperty()
     followers: StringProperty(description="character.json skeleton.followers (JSON list): bones that turn with another bone (MMD append rotation)")
