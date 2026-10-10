@@ -25,6 +25,7 @@ internal sealed partial class GameplaySpriteRenderer
             var gem = new GameObject("GH3 Gem");
             gem.layer = note.Head.gameObject.layer;
             gem.transform.SetParent(note.Transform, false);
+            // Tuned: lifts the gem above Clone Hero's note head.
             gem.transform.localPosition = new Vector3(0, 0.008f, 0);
             note.Display = gem.AddComponent<SpriteRenderer>();
             note.Display.sortingLayerID = note.Head.sortingLayerID;

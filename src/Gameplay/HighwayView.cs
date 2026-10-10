@@ -53,7 +53,9 @@ internal static class HighwayView
     }
 
     // GH3 draws a thin fretbar halfway between two beats when the beat is at most ThinFretbarMaxBpm.
-    public static bool HasThinFretbar(float beatSeconds) => beatSeconds > 0 && 60 / beatSeconds <= ThinFretbarMaxBpm + 1e-3f;
+    private const float BpmTolerance = 1e-3f;
+
+    public static bool HasThinFretbar(float beatSeconds) => beatSeconds > 0 && 60 / beatSeconds <= ThinFretbarMaxBpm + BpmTolerance;
 
     public static float TimeAt(float screenY) => DepthScale / (screenY - VanishingY) - LeadTime;
 

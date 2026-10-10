@@ -60,8 +60,10 @@ internal sealed class WhammyHistory
     }
 
     // Verification only: drives Clone Hero's own whammy input path for player 1, lanes green to orange.
+    private const ushort FretLanes = 0x3e;
+
     public static void Force(float deflection) =>
-        CloneHeroBindings.SetWhammy(0, 0x3e, (byte)Math.Clamp(MathF.Round(deflection * 255), 0, 255));
+        CloneHeroBindings.SetWhammy(0, FretLanes, (byte)Math.Clamp(MathF.Round(deflection * 255), 0, 255));
 }
 
 // Replaces a held sustain's sliced sprite with a strip mesh while its whammy history is not flat, so the bar width can
@@ -134,6 +136,7 @@ internal sealed class SustainBend
     {
         sustain.GetPropertyBlock(properties);
         var length = properties.GetFloat(LengthId);
+        // Tuned: the body overlaps the cap by 0.2 units.
         var bodyLength = Math.Max(0, length - (CapHeight - 0.2f));
         var transform = sustain.transform;
         var baseZ = transform.position.z;

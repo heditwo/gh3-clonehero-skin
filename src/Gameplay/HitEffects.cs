@@ -24,6 +24,7 @@ internal sealed record Gh3ParticleParams(
     public static readonly Gh3ParticleParams BonusSparks = new(HitEffectTexture.Spark, new(0, 255, 255, 255), new(0, 255, 255, 0),
         new(1.5f, 1.5f), new(0.25f, 0.25f), 360, -500, 500, 0, 2, 0.04f, 0, 180, 12, new(0, 0), 1);
 
+    // GH3: the shared fields of the three spark parameter sets (guitar_events.qb).
     private static Gh3ParticleParams Sparks(Vector4 start, Vector4 end, float time) => new(HitEffectTexture.Spark, start, end,
         new(1, 1), new(0.5f, 0.5f), 0, 0, 0, 0, 1, 0.02f, 0, 160, 10, new(0, 50), time);
 }
@@ -90,7 +91,8 @@ internal sealed class Gh3ParticleSystem
             particle.Position += particle.Velocity;
             particle.Velocity += p.Friction * deltaTime;
             var t = particle.Age * (1 / p.Time);
-            var fixedT = (int)(t * 4096);
+            // GH3: Update2DParticleSystems (0x428ba0) fades the color in 12-bit fixed point.
+            var fixedT = (int)(t * FixedPointOne);
             particle.Color = new Vector4(Fade(p.StartColor.X, p.EndColor.X, fixedT), Fade(p.StartColor.Y, p.EndColor.Y, fixedT),
                 Fade(p.StartColor.Z, p.EndColor.Z, fixedT), Fade(p.StartColor.W, p.EndColor.W, fixedT));
             particle.Scale = p.StartScale + (p.EndScale - p.StartScale) * t;
@@ -98,7 +100,10 @@ internal sealed class Gh3ParticleSystem
         }
     }
 
-    private static float Fade(float start, float end, int fixedT) => (byte)((int)start + (((int)end - (int)start) * fixedT >> 12));
+    private const int FixedPointOne = 4096;
+    private const int FixedPointShift = 12;
+
+    private static float Fade(float start, float end, int fixedT) => (byte)((int)start + (((int)end - (int)start) * fixedT >> FixedPointShift));
 
     private Gh3Particle Spawn(Gh3Random random)
     {
@@ -135,9 +140,13 @@ internal sealed class HitEffectSprite
     public Gh3ParticleSystem[] BonusParticles { get; set; } = Array.Empty<Gh3ParticleSystem>();
 
     // AnimatedTexture_UI cells, row by row from the top left: (columns, rows, frames per second) from the sys_* material.
+    // GH3: the note hit is 4 x 4 cells at 60 fps and stops on its last cell, the held glow 4 x 4 at 30 fps, and the bolt
+    // 8 x 1 at 15 fps (PARITY-NOTES.md#hit-effects).
+    private const int LastNoteHitCell = 15;
+
     public int Cell => Texture switch
     {
-        HitEffectTexture.NoteHit or HitEffectTexture.NoteHitStar => Math.Min(Frames, 15),
+        HitEffectTexture.NoteHit or HitEffectTexture.NoteHitStar => Math.Min(Frames, LastNoteHitCell),
         HitEffectTexture.WhammyHold => Frames / 2 % 16,
         HitEffectTexture.BigBolt => Frames / 4 % 8,
         _ => 0,
@@ -150,31 +159,44 @@ internal sealed class HitEffectState
 {
     public const float FrameTime = 1f / 60;
     public const int Lanes = 5;
-    // generate_pos_table: highway_top_width1 160, widthOffsetFactor1 2.2, highway_playline1 655.
-    private const float BottomWidth = 160 + 160 * 2.2f;
+    // GH3: generate_pos_table, highway_top_width1 160, widthOffsetFactor1 2.2, highway_height1 350, highway_playline1 655.
+    private const int HighwayTopWidth = 160;
+    private const int HighwayHeight = 350;
+    private const float BottomWidth = HighwayTopWidth + HighwayTopWidth * 2.2f;
     public const float PlayLine = 655;
     // star_power_bolt_scale (1.0, 1.5) and star_power_bolt_time 0.3 s (guitar_tweaks.qb).
     private static readonly Vector2 BoltScale = new(1, 1.5f);
     private const int BoltFrames = 18;
+    // GH3: hit_note_fx kills the particles after 6 game frames and destroys the sprite after 10 more; particles start
+    // 20 units above the button, the phrase-bonus sparks 15 units higher than the stars.
+    private const int NoteHitParticleFrames = 6;
+    private const int NoteHitFrames = 16;
+    private const int ParticleRise = 20;
+    private const int BonusSparkRise = 15;
+    // GH3: sprite sizes in screen units: note hit 128 x 256, held glow 128 x 128, bolt 128 x 512 before its scale.
+    private const int SpriteWidth = 128;
+    private const int NoteHitHeight = 256;
+    private const int BoltHeight = 512;
+    private const float ScreenCenterX = HudCanvas.Gh3Width / 2;
     private readonly List<HitEffectSprite> _sprites = new();
     private readonly List<Gh3ParticleSystem> _systems = new();
     private readonly List<(HitEvent Kind, int Lane, bool Flag, int Delay)> _events = new();
     private readonly HitEffectSprite?[] _whammy = new HitEffectSprite?[Lanes];
-    private readonly Gh3Random _random = new(0x6680bf3);
+    private readonly Gh3Random _random = new(Gh3Random.BootSeed);
     private float _time;
 
     public IReadOnlyList<HitEffectSprite> Sprites => _sprites;
     public IReadOnlyList<Gh3ParticleSystem> Systems => _systems;
 
-    public static float LaneX(int lane) => 640 - BottomWidth / 2 + BottomWidth / 5 * (lane + 0.5f);
+    public static float LaneX(int lane) => ScreenCenterX - BottomWidth / 2 + BottomWidth / 5 * (lane + 0.5f);
 
     // button_models left_angle, which GuitarEvent_StarSequenceBonus uses for right-handed players: the mirrored
     // lane's Atan2(highway_height, start_x - end_x), in degrees clockwise.
     public static float BoltAngle(int lane)
     {
         var mirrored = Lanes - 1 - lane;
-        var start = 640 - 160 / 2f + 160 / 5f * (mirrored + 0.5f);
-        return MathF.Atan2(start - LaneX(mirrored), 350) * 180 / MathF.PI;
+        var start = ScreenCenterX - HighwayTopWidth / 2f + HighwayTopWidth / 5f * (mirrored + 0.5f);
+        return MathF.Atan2(start - LaneX(mirrored), HighwayHeight) * 180 / MathF.PI;
     }
 
     public void Reset()
@@ -249,9 +271,9 @@ internal sealed class HitEffectState
         _sprites.Add(new HitEffectSprite
         {
             Texture = star ? HitEffectTexture.NoteHitStar : HitEffectTexture.NoteHit, Lane = lane,
-            Position = new(LaneX(lane), PlayLine), Size = new(128, 256), RemoveAt = 16, KillParticlesAt = 6,
+            Position = new(LaneX(lane), PlayLine), Size = new(SpriteWidth, NoteHitHeight), RemoveAt = NoteHitFrames, KillParticlesAt = NoteHitParticleFrames,
             Particles = Add(new Gh3ParticleSystem(star ? Gh3ParticleParams.StarHit : Gh3ParticleParams.Hit,
-                new(LaneX(lane), PlayLine - 20))),
+                new(LaneX(lane), PlayLine - ParticleRise))),
         });
     }
 
@@ -264,8 +286,8 @@ internal sealed class HitEffectState
             // WhammyFXOn (0x42b110): sys_whammy_hold01 at the button, whammy_particle_params 20 units higher.
             var sprite = new HitEffectSprite
             {
-                Texture = HitEffectTexture.WhammyHold, Lane = lane, Position = new(LaneX(lane), PlayLine), Size = new(128, 128),
-                Particles = Add(new Gh3ParticleSystem(Gh3ParticleParams.Whammy, new(LaneX(lane), PlayLine - 20))),
+                Texture = HitEffectTexture.WhammyHold, Lane = lane, Position = new(LaneX(lane), PlayLine), Size = new(SpriteWidth, SpriteWidth),
+                Particles = Add(new Gh3ParticleSystem(Gh3ParticleParams.Whammy, new(LaneX(lane), PlayLine - ParticleRise))),
             };
             _sprites.Add(sprite);
             _whammy[lane] = sprite;
@@ -284,13 +306,13 @@ internal sealed class HitEffectState
         var button = new Vector2(LaneX(lane), PlayLine);
         _sprites.Add(new HitEffectSprite
         {
-            Texture = HitEffectTexture.BigBolt, Lane = lane, Position = button, Size = new Vector2(128, 512) * BoltScale,
+            Texture = HitEffectTexture.BigBolt, Lane = lane, Position = button, Size = new Vector2(SpriteWidth, BoltHeight) * BoltScale,
             Rotation = BoltAngle(lane), RemoveAt = BoltFrames + order, KillParticlesAt = BoltFrames + order,
             BonusParticles = new[]
             {
                 Add(new Gh3ParticleSystem(Gh3ParticleParams.BonusStars, button)),
                 Add(new Gh3ParticleSystem(Gh3ParticleParams.BonusWhiteStars, button)),
-                Add(new Gh3ParticleSystem(Gh3ParticleParams.BonusSparks, button - new Vector2(0, 15))),
+                Add(new Gh3ParticleSystem(Gh3ParticleParams.BonusSparks, button - new Vector2(0, BonusSparkRise))),
             },
         });
     }

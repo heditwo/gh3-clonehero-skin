@@ -4,6 +4,13 @@ namespace Gh3Skin;
 
 internal sealed class BeatlineVisual
 {
+    // Below the gems and the strings on the HighwayOverlay layer.
+    private const int SortingOrder = -201;
+    // Clone Hero scales its measure lines up and its half-beat lines down; these bounds tell them apart.
+    private const float BarScale = 1.5f;
+    private const float HalfBeatScale = 0.8f;
+    // Reference pixels (1600 x 900 GH3 recording) per HUD canvas unit of 1080 lines: 1080 / 900.
+    private const float ReferenceScale = 1.2f;
     private const float ReferenceCenterX = 800;
     private const float ReferenceFadeStartY = HighwayView.FadeStartY;
     private const float ReferenceFadeLength = HighwayView.FadeLength;
@@ -42,7 +49,7 @@ internal sealed class BeatlineVisual
         var renderer = display.AddComponent<SpriteRenderer>();
         renderer.sharedMaterial = assets.BeatlineMaterial;
         renderer.sortingLayerID = SortingLayer.NameToID("HighwayOverlay");
-        renderer.sortingOrder = -201;
+        renderer.sortingOrder = SortingOrder;
         return renderer;
     }
 
@@ -52,7 +59,7 @@ internal sealed class BeatlineVisual
             return;
         _source.enabled = false;
         var scale = _transform.localScale;
-        _display.sprite = scale.y > 1.5f ? _bar : scale.y < 0.8f ? _halfBeat : _beat;
+        _display.sprite = scale.y > BarScale ? _bar : scale.y < HalfBeatScale ? _halfBeat : _beat;
         Place(camera, _display, _displayTransform, _transform.position, _transform.parent.right, 0, 0, 0, scale.x, scale.y);
     }
 
@@ -64,7 +71,7 @@ internal sealed class BeatlineVisual
         var position = camera.WorldToScreenPoint(world);
         var rect = camera.pixelRect;
         var viewport = HudViewport.ForHighway(Screen.height, rect.x, rect.y, rect.width, rect.height, camera.fieldOfView);
-        var referenceScale = viewport.Scale * 1.2f;
+        var referenceScale = viewport.Scale * ReferenceScale;
         var referenceY = (Screen.height - position.y - viewport.CenterOffsetY) / referenceScale;
         display.color = new Color(1, 1, 1,
             Mathf.SmoothStep(0, 1, (referenceY - ReferenceFadeStartY) / ReferenceFadeLength));
