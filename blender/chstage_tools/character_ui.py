@@ -431,6 +431,7 @@ class CHSTAGE_PT_character_info(CharacterPanel, Panel):
 
 class CHSTAGE_PT_character_weights(CharacterPanel, Panel):
     bl_label = "Weights and Hair"
+    bl_order = 2
 
     def draw(self, context):
         layout = self.layout
@@ -465,6 +466,7 @@ class CHSTAGE_PT_character_weights(CharacterPanel, Panel):
 
 class CHSTAGE_PT_character_clips(CharacterPanel, Panel):
     bl_label = "Clip Preview"
+    bl_order = 3
 
     def draw(self, context):
         layout = self.layout

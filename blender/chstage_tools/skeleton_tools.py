@@ -1096,6 +1096,8 @@ class CHSTAGE_UL_checks(UIList):
 
 class CHSTAGE_PT_character_skeleton(Panel):
     bl_label = "Skeleton"
+    # Right after the package panel: for a character on its own skeleton this is the main flow.
+    bl_order = 1
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = CATEGORY
