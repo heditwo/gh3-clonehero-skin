@@ -24,6 +24,10 @@ internal sealed class StageHousing
 
 internal sealed class StageFixtures : IDisposable
 {
+    private const double UnitTolerance = 0.01;
+    private const float MinimumLength = 0.0001f;
+    // Tuned: lens flares below this strength are off.
+    private const float MinimumFlare = 0.002f;
     private readonly List<StageAssets> _assets = new();
     private readonly Dictionary<string, (Transform Transform, bool FixedPosition)> _housings = new();
     private readonly Dictionary<string, List<Renderer>> _flares = new();
@@ -45,7 +49,7 @@ internal sealed class StageFixtures : IDisposable
             definition.Housings.Select(h => h.Id).Distinct().Count() != definition.Housings.Length ||
             definition.Housings.Any(h => h.Id.Length != 8 || !h.Id.All(Uri.IsHexDigit) || h.Model.Length != 8 || !h.Model.All(Uri.IsHexDigit) ||
                 h.Position.Length != 3 || !h.Position.All(float.IsFinite) || h.Rotation.Length != 4 || !h.Rotation.All(float.IsFinite) ||
-                Math.Abs(h.Rotation.Sum(v => v * v) - 1) > 0.01))
+                Math.Abs(h.Rotation.Sum(v => v * v) - 1) > UnitTolerance))
             throw new InvalidDataException("Invalid light housing definitions");
         var section = LoadTiming.Now;
         var models = new Dictionary<string, (Mesh Mesh, Material Material)[]>();
@@ -110,12 +114,12 @@ internal sealed class StageFixtures : IDisposable
         var eye = View.transform.position;
         var dx = eye.x - from.x; var dy = eye.y - from.y; var dz = eye.z - from.z;
         var length = MathF.Sqrt(dx * dx + dy * dy + dz * dz);
-        var facing = length > 0.0001f ? Math.Max(0, (forward.x * dx + forward.y * dy + forward.z * dz) / length) : 0;
+        var facing = length > MinimumLength ? Math.Max(0, (forward.x * dx + forward.y * dy + forward.z * dz) / length) : 0;
         var strength = Math.Min(1, value.Density) * facing * facing * facing * facing;
         _flareProperties.SetColor(ColorId, new Color { r = value.Color.X * strength, g = value.Color.Y * strength, b = value.Color.Z * strength, a = strength });
         foreach (var flare in flares)
         {
-            flare.enabled = strength > 0.002f;
+            flare.enabled = strength > MinimumFlare;
             if (flare.enabled) flare.SetPropertyBlock(_flareProperties);
         }
     }

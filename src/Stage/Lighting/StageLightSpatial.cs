@@ -51,6 +51,7 @@ internal sealed class StageLightSpatial
             {
                 var previous = axis[i - 1];
                 var current = axis[i];
+                // GH3: the native merge tolerance of neighbor cells.
                 if (current.Start - previous.End < .00001f && previous.Members.SequenceEqual(current.Members))
                 {
                     axis[i - 1] = previous with { End = current.End };

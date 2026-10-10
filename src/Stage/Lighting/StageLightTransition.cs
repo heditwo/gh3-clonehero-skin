@@ -33,15 +33,15 @@ internal sealed class StageLightTransition
             var color = target.Color;
             switch (field.Name)
             {
-                case 0x93f60062: color.X = value * (1f / 255); target = target with { Color = color }; break;
-                case 0xfe2be489: color.Y = value * (1f / 255); target = target with { Color = color }; break;
-                case 0x8e411006: color.Z = value * (1f / 255); target = target with { Color = color }; break;
-                case 0x164d476d: target = target with { Intensity = value }; break;
-                case 0xb9832749: target = target with { Specular = value }; break;
-                case 0xa0bad95d: target = target with { Shadow = value }; break;
+                case Gh3Keys.R: color.X = value * (1f / 255); target = target with { Color = color }; break;
+                case Gh3Keys.G: color.Y = value * (1f / 255); target = target with { Color = color }; break;
+                case Gh3Keys.B: color.Z = value * (1f / 255); target = target with { Color = color }; break;
+                case Gh3Keys.Intensity: target = target with { Intensity = value }; break;
+                case Gh3Keys.SpecularIntensity: target = target with { Specular = value }; break;
+                case Gh3Keys.ShadowIntensity: target = target with { Shadow = value }; break;
             }
         }
-        var motion = parameters.Field("motion")?.Integer switch { 0xf221474c => 0, 0x8addac1f => 1, 0xb3eaf72e => 2, 0x26b6e535 => 3, _ => Motion };
+        var motion = parameters.Field("motion")?.Integer switch { Gh3Keys.Linear => 0, Gh3Keys.Smooth => 1, Gh3Keys.EaseIn => 2, Gh3Keys.EaseOut => 3, _ => Motion };
         var duration = parameters.Field("time") is { Type: Gh3QbType.Integer or Gh3QbType.Float } seconds ? (float)Gh3ScriptRuntime.Numeric(seconds) : 0;
         Begin(target, duration, time, motion);
     }
@@ -69,6 +69,7 @@ internal sealed class StageLightTransition
     public static float Amount(uint duration, uint elapsed, int motion)
     {
         var amount = duration == 0 || elapsed > duration ? 1 : (float)((double)elapsed / duration);
+        // GH3: the DoMorph motion curves (smooth 3t² - 2t³, ease_in, ease_out).
         return motion switch { 1 => ((amount - 1.5f) * amount) * amount * -2, 2 => amount * amount, 3 => amount * 2 - amount * amount, _ => amount };
     }
 }

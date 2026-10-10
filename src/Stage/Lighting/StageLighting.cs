@@ -50,6 +50,8 @@ internal sealed class StageLightingSnapshot
 
 internal sealed class StageLightingBank
 {
+    // A stored rotation with a smaller squared length is not a rotation.
+    private const double MinimumRotationLengthSquared = 0.9;
     public int Version { get; set; }
     public StageLightDefinition[] Lights { get; set; } = Array.Empty<StageLightDefinition>();
     public Dictionary<string, StageLightingSnapshot> Snapshots { get; set; } = new();
@@ -86,7 +88,7 @@ internal sealed class StageLightingBank
     }
 
     private static bool ValidVector(float[] value) => value.Length == 3 && value.All(float.IsFinite);
-    private static bool ValidRotation(float[] value) => value.Length == 4 && value.All(float.IsFinite) && value.Sum(v => v * v) > 0.9;
+    private static bool ValidRotation(float[] value) => value.Length == 4 && value.All(float.IsFinite) && value.Sum(v => v * v) > MinimumRotationLengthSquared;
     public static Vector3 Vector(float[] value) => new(value[0], value[1], value[2]);
 }
 
@@ -121,12 +123,12 @@ internal readonly struct StageLightSample
         _position = pose?.Position ?? light.Location;
         _forward = pose?.Forward ?? light.Forward;
         _far = value.Far;
-        _rangeScale = 1 / Math.Max(0.00001f, value.Far - value.Near);
+        _rangeScale = 1 / Math.Max(StageTolerance.MinimumLightRange, value.Far - value.Near);
         _ambient = light.Type == "Ambient";
         _directional = light.Type == "Dir";
         _spot = light.Type == "Spot";
         _coneOuter = _spot ? MathF.Cos(light.Field * MathF.PI / 180) : 0;
-        _coneScale = _spot ? 1 / Math.Max(0.0001f, MathF.Cos(light.Hotspot * MathF.PI / 180) - _coneOuter) : 0;
+        _coneScale = _spot ? 1 / Math.Max(StageTolerance.MinimumConeWidth, MathF.Cos(light.Hotspot * MathF.PI / 180) - _coneOuter) : 0;
     }
 
     public float Weight(Vector3 position, Vector3 normal)
@@ -135,7 +137,7 @@ internal readonly struct StageLightSample
         var delta = _position - position;
         var distance = delta.Length();
         var attenuation = Math.Clamp((_far - distance) * _rangeScale, 0, 1);
-        var toward = _directional ? -_forward : delta / Math.Max(distance, 0.0001f);
+        var toward = _directional ? -_forward : delta / Math.Max(distance, StageTolerance.MinimumLightDistance);
         if (_spot) attenuation *= Math.Clamp((Vector3.Dot(-toward, _forward) - _coneOuter) * _coneScale, 0, 1);
         return Math.Max(0, Vector3.Dot(normal, toward)) * attenuation;
     }
@@ -182,6 +184,8 @@ internal sealed record StageLightingFrame(double Time, double Blend, StageLighti
 
 internal sealed class StageLighting
 {
+    // Tuned: a color override blends over 0.4 s.
+    private const double ColorBlend = 0.4;
     private readonly StageLightingFrame[] _frames;
     private readonly List<StageLightingFrame> _scriptFrames = new();
     private bool _scriptControl;
@@ -252,7 +256,7 @@ internal sealed class StageLighting
             if (mood == "strobe" || original.Type == "gh3-note" && original.Value == "57")
                 for (var i = 0; i < target.Beams.Length; i++)
                     target.Beams[i] = target.Beams[i] with { Position = from.Beams[i].Position, Rotation = from.Beams[i].Rotation };
-            var duration = mood == "strobe" ? 0 : cue.Type == "color" ? 0.4 : blend;
+            var duration = mood == "strobe" ? 0 : cue.Type == "color" ? ColorBlend : blend;
             if (mood != "strobe" && cue.Type != "color" && !(original.Type == "gh3-note" && original.Value == "57"))
                 motion = motion.Select((m, i) => m.Retarget(cue.Time, duration, target.Beams[i])).ToArray();
             frames.Add(new(cue.Time, duration, from, target, snapshot, motion));
@@ -335,14 +339,14 @@ internal sealed class StageLighting
         if (light.Type == "Ambient") return 1;
         var delta = (pose?.Position ?? light.Location) - position;
         var distance = delta.Length();
-        var attenuation = Math.Clamp((value.Far - distance) / Math.Max(0.00001f, value.Far - value.Near), 0, 1);
+        var attenuation = Math.Clamp((value.Far - distance) / Math.Max(StageTolerance.MinimumLightRange, value.Far - value.Near), 0, 1);
         var forward = pose?.Forward ?? light.Forward;
-        var toward = light.Type == "Dir" ? -forward : delta / Math.Max(distance, 0.0001f);
+        var toward = light.Type == "Dir" ? -forward : delta / Math.Max(distance, StageTolerance.MinimumLightDistance);
         if (light.Type == "Spot")
         {
             var inner = MathF.Cos(light.Hotspot * MathF.PI / 180);
             var outer = MathF.Cos(light.Field * MathF.PI / 180);
-            attenuation *= Math.Clamp((Vector3.Dot(-toward, forward) - outer) / Math.Max(0.0001f, inner - outer), 0, 1);
+            attenuation *= Math.Clamp((Vector3.Dot(-toward, forward) - outer) / Math.Max(StageTolerance.MinimumConeWidth, inner - outer), 0, 1);
         }
         return Math.Max(0, Vector3.Dot(normal, toward)) * attenuation;
     }

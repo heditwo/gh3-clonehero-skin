@@ -32,13 +32,13 @@ internal sealed class StageLightNative
         float Number(string name, float fallback) => source.Field(name) is { Type: Gh3QbType.Integer or Gh3QbType.Float } value ? (float)Gh3ScriptRuntime.Numeric(value) : fallback;
         Vector3 Vector(uint name, Vector3 fallback) => source.Field(name)?.Data is float[] { Length: 3 } values ? new(values[0], values[1], values[2]) : fallback;
         Id = source.Field("Name")?.Integer ?? 0;
-        // GH3: the default light group, and the light Type checksums that select the shader light types 2-5.
-        Group = source.Field("LightGroup")?.Integer ?? 0x8aebf027;
-        // GH3: see above.
-        Type = source.Field("Type")?.Integer switch { 0x485a0cdb => 2, 0x46cd858c => 3, 0x1e2ee0ec => 4, 0xbcee1d37 => 5, _ => 1 };
-        // GH3: light flags; 0xb454f54b is an unnamed flag word.
+        Group = source.Field("LightGroup")?.Integer ?? Gh3Keys.DefaultGroup;
+        // GH3: the light types point, spot, an unnamed one (0x1e2ee0ec, with spherical harmonics), and ambient select the
+        // shader light types 2-5.
+        Type = source.Field("Type")?.Integer switch { Gh3Keys.Point => 2, Gh3Keys.Spot => 3, 0x1e2ee0ec => 4, Gh3Keys.Ambient => 5, _ => 1 };
+        // GH3: the light flag bits.
         Flags = (source.Flag("CreatedAtStart") ? 2u : 0u) | (source.Flag("Global") ? 1u : 0u) |
-            (source.Fields.Any(field => field.Name == 0 && field.Value.Integer == 0xb454f54b) ? 4u : 0u) | (source.Flag("Shadow") ? 8u : 0u);
+            (source.Fields.Any(field => field.Name == 0 && field.Value.Integer == Gh3Keys.Dynamic) ? 4u : 0u) | (source.Flag("Shadow") ? 8u : 0u);
         Color = new(Vector(Gh3Checksum.Value("LightColor"), Vector3.Zero), source.Field("LightColor")?.Data is float[] { Length: 3 } ? 1 : 0);
         Position = new(Vector(Gh3Checksum.Value("Pos"), Vector3.Zero), 1);
         var values = source.Field("RotationQuat")?.Items.Select(value => (float)Gh3ScriptRuntime.Numeric(value)).ToArray();
@@ -63,8 +63,8 @@ internal sealed class StageLightNative
         else Cone = Vector4.One;
         Intensity = Number("Intensity", 1);
         Specular = Number("SpecularIntensity", 1);
-        // GH3: the two unnamed specular power fields.
-        SpecularPower = (source.Field(0xa0bad95d) ?? source.Field(0xe8363d4b)) is { } power ? (float)Gh3ScriptRuntime.Numeric(power) : 1;
+        // GH3: the specular power comes from the shadowintensity field, else from an unnamed field.
+        SpecularPower = (source.Field(Gh3Keys.ShadowIntensity) ?? source.Field(0xe8363d4b)) is { } power ? (float)Gh3ScriptRuntime.Numeric(power) : 1;
         var position = new Vector3(Position.X, Position.Y, Position.Z);
         var direction = new Vector3(Direction.X, Direction.Y, Direction.Z);
         // GH3: the unnamed bounds position and extent fields; omitted, the bounds cover the light's range.

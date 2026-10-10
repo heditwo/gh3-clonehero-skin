@@ -26,6 +26,9 @@ internal static class ScriptLogicTests
 
     public static void Run()
     {
+        foreach (var (key, name) in Gh3Keys.Names)
+            if (Gh3Checksum.Value(name) != key) throw new Exception($"Gh3Keys: {name} is {Gh3Checksum.Value(name):x8}, not {key:x8}");
+        if (Gh3Checksum.Of("Bone_Head") != Gh3Bones.Head) throw new Exception("Gh3Bones.Head");
         var calls = new List<(double Time, uint Target, string Value)>();
         var values = new Dictionary<uint, Gh3QbValue> {
             [Gh3Checksum.Value("main")] = Script("value", (byte)7, 2, (byte)1,

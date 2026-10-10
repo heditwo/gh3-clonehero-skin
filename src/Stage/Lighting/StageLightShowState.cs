@@ -2,6 +2,7 @@ namespace Gh3Skin;
 
 internal sealed class StageLightShowState
 {
+    private const int MaximumBlendSeconds = 600;
     private readonly StageScriptBank _bank;
     private readonly Gh3ScriptRuntime _runtime;
     private readonly StageLighting _lighting;
@@ -199,7 +200,7 @@ internal sealed class StageLightShowState
         {
             if (parameters.Flag("default")) _blend = Gh3CommandDispatch.DefaultLightBlend;
             if (parameters.Field("time") is { Type: Gh3QbType.Integer or Gh3QbType.Float } time) _blend = Gh3ScriptRuntime.Numeric(time);
-            if (!double.IsFinite(_blend) || _blend is < 0 or > 600) throw new InvalidDataException("Invalid lightshow blend");
+            if (!double.IsFinite(_blend) || _blend is < 0 or > MaximumBlendSeconds) throw new InvalidDataException("Invalid lightshow blend");
             if (parameters.Field("enable") is { } enabled) _blendEnabled = Enabled(enabled);
             return new(true);
         }

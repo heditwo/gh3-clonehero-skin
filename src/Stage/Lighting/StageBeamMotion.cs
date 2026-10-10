@@ -4,6 +4,7 @@ namespace Gh3Skin;
 
 internal sealed class StageBeamMotion
 {
+    private const float SameRotationDot = 0.999999f;
     private const double MinimumDuration = 0.3;
     private const double AngularSpeed = Math.PI;
     private readonly double _time;
@@ -32,7 +33,7 @@ internal sealed class StageBeamMotion
     }
 
     public StageBeamMotion Retarget(double time, double blend, StageBeamValue target) =>
-        Vector3.DistanceSquared(Position, target.Position) < 1e-10f && Math.Abs(Quaternion.Dot(Rotation, target.Rotation)) > 0.999999f
+        Vector3.DistanceSquared(Position, target.Position) < StageTolerance.ZeroLengthSquared && Math.Abs(Quaternion.Dot(Rotation, target.Rotation)) > SameRotationDot
             ? this : new(time, blend, this, target);
 
     public (Vector3 Position, Quaternion Rotation, Vector3 Velocity, Quaternion RotationVelocity) Sample(double time)

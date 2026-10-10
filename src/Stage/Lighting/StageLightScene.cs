@@ -8,8 +8,11 @@ internal readonly record struct StageLightTransform(Vector4 Position, Vector4 Di
 
 internal sealed class StageLightScene
 {
+    // GH3: pi/180 as float32; brightness is a percentage.
+    private const float RadiansPerDegree = .01745329238474369f;
+    private const float PercentToFraction = .01f;
     private readonly StageLightSpatial _spatial = new();
-    private readonly Dictionary<uint, StageLightGroup> _groups = new() { [0x8aebf027] = new(3, 1) };
+    private readonly Dictionary<uint, StageLightGroup> _groups = new() { [Gh3Keys.DefaultGroup] = new(3, 1) };
     private readonly Dictionary<uint, int> _indices;
     private readonly uint[] _flags;
     private readonly uint[] _lightGroups;
@@ -168,7 +171,7 @@ internal sealed class StageLightScene
         {
             if (!_indices.TryGetValue(id, out var index)) return new(false);
             var transform = _transforms[index];
-            if (Is("GetLightDirection")) return new(true, new[] { new Gh3QbField(0xc1b52e4c,
+            if (Is("GetLightDirection")) return new(true, new[] { new Gh3QbField(Gh3Keys.Direction,
                 new Gh3QbValue(Gh3QbType.Vector, -1, new[] { transform.Direction.X, transform.Direction.Y, transform.Direction.Z })) });
             if (Is("MoveLight"))
             {
@@ -179,7 +182,7 @@ internal sealed class StageLightScene
             }
             else
             {
-                float Angle(string name) => parameters.Field(name) is { Type: Gh3QbType.Integer or Gh3QbType.Float } value ? (float)Gh3ScriptRuntime.Numeric(value) * .01745329238474369f : 0;
+                float Angle(string name) => parameters.Field(name) is { Type: Gh3QbType.Integer or Gh3QbType.Float } value ? (float)Gh3ScriptRuntime.Numeric(value) * RadiansPerDegree : 0;
                 var heading = Angle("heading");
                 var pitch = Angle("pitch");
                 transform = transform with { Direction = new(-(float)Math.Sin(heading) * (float)Math.Cos(pitch), -(float)Math.Sin(pitch),
@@ -208,6 +211,7 @@ internal sealed class StageLightScene
         }
         if (Is("SetDynamicLightModulationFactor")) return new(true);
         if (Is("GetDynamicLightModulationFactor")) return new(true, new[] {
+            // GH3: the two unnamed result fields of GetDynamicLightModulationFactor.
             new Gh3QbField(0xf2bb5523, Gh3ScriptRuntime.Number(0)), new Gh3QbField(0x7fb43512, Gh3ScriptRuntime.Number(0)) });
         if (Is("CreateLightGroup"))
         {
@@ -216,7 +220,7 @@ internal sealed class StageLightScene
             var flags = _groups.TryGetValue(id, out var previous) ? previous.Flags : 3u;
             if (!parameters.Flag("CreatedAtStart")) flags &= ~2u;
             if (!parameters.Flag("Global")) flags &= ~1u;
-            _groups[id] = new(flags, weight * .01f);
+            _groups[id] = new(flags, weight * PercentToFraction);
             return new(true);
         }
         if (Is("EnableLightGroup") || Is("DisableLightGroup") || Is("SetLightGroupIntensity") || Is("GetLightGroupIntensity"))
@@ -239,7 +243,7 @@ internal sealed class StageLightScene
                 return new(true);
             }
             if (Is("EnableLight") || Is("DisableLight")) { Enable(id, Is("EnableLight")); return new(true); }
-            var mask = parameters.Field("flag")?.Integer switch { 0x17fa747c => 1u, 0xaf06447b => 2u, 0xb454f54b => 4u, 0x8a897dd2 => 8u, 0x366727cb => 0x1000000u, _ => 0u };
+            var mask = parameters.Field("flag")?.Integer switch { Gh3Keys.Global => 1u, Gh3Keys.Enabled => 2u, Gh3Keys.Dynamic => 4u, Gh3Keys.Shadow => 8u, 0x366727cb => 0x1000000u, _ => 0u }; // GH3: light flag names; 0x366727cb is unnamed
             var flags = Is("SetLightFlag") ? _flags[index] | mask : _flags[index] & ~mask;
             var moved = ((_flags[index] ^ flags) & 4) != 0;
             _flags[index] = flags;

@@ -10,9 +10,9 @@ internal sealed record StageParticleLightSet(uint Flags, int[] Indices, float[] 
 
 internal static class StageParticleLights
 {
-    // GH3: light group 0xb7205d14 also lights group 0x89e1cc18; 0x8aebf027 (the default group) lights all.
+    // GH3: light group band also lights group 0x89e1cc18 (unnamed); the default group lights all.
     public static bool Accepts(uint group, uint lightGroup, uint enabled, uint flags) =>
-        (enabled & 2) != 0 && (flags & 2) != 0 && (lightGroup == group || group == (lightGroup == 0xb7205d14 ? 0x89e1cc18u : 0u) || lightGroup == 0x8aebf027);
+        (enabled & 2) != 0 && (flags & 2) != 0 && (lightGroup == group || group == (lightGroup == Gh3Keys.Band ? 0x89e1cc18u : 0u) || lightGroup == Gh3Keys.DefaultGroup);
 
     public static StageParticleLightSet Select(IReadOnlyList<StageParticleLight> lights, Vector4 position, bool disableSH = false)
     {

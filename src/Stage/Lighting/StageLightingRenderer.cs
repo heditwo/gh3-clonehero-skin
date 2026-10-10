@@ -7,6 +7,11 @@ namespace Gh3Skin;
 
 internal sealed class StageLightingRenderer
 {
+    private const int BeamBounds = 200;
+    // Beams below this density are off.
+    private const float MinimumBeamDensity = 0.001f;
+    // Tuned: the opacity of a beam at density 1.
+    private const float BeamOpacity = 0.08f;
     private sealed class Surface
     {
         public StageAssets.LitMesh Source = null!;
@@ -119,10 +124,12 @@ internal sealed class StageLightingRenderer
             obj.transform.SetParent(root.transform, false);
             var mesh = assets.Own(new Mesh { name = obj.name });
             mesh.MarkDynamic();
-            var vertices = new Il2CppStructArray<Vector3>(24);
-            var colors = new Color[24];
-            var triangles = new int[72];
-            for (var side = 0; side < 12; side++)
+            // A beam is an open cone of 12 sides: a ring at the lens and a ring at the far end, two triangles per side.
+            const int sides = 12;
+            var vertices = new Il2CppStructArray<Vector3>(2 * sides);
+            var colors = new Color[2 * sides];
+            var triangles = new int[6 * sides];
+            for (var side = 0; side < sides; side++)
             {
                 colors[side] = Color.white;
                 colors[side + 12] = new(1, 1, 1, 0);
@@ -134,7 +141,8 @@ internal sealed class StageLightingRenderer
             mesh.vertices = vertices;
             mesh.colors = new Il2CppStructArray<Color>(colors);
             mesh.triangles = new Il2CppStructArray<int>(triangles);
-            mesh.bounds = new Bounds(Vector3.zero, Vector3.one * 200);
+            // Larger than any stage, so that Unity never culls a beam.
+            mesh.bounds = new Bounds(Vector3.zero, Vector3.one * BeamBounds);
             var material = assets.Own(StageAssets.MakeMaterial(Shader.Find("Particles/Standard Unlit"), true, true));
             obj.AddComponent<MeshFilter>().sharedMesh = mesh;
             var renderer = obj.AddComponent<MeshRenderer>();
@@ -235,8 +243,8 @@ internal sealed class StageLightingRenderer
             var value = _fixtures?.Resolve(_lighting.BeamIds[i], state.Beams[i], time) ?? state.Beams[i];
             _fixtures?.Update(_lighting.BeamIds[i], value);
             var beam = _beams[i];
-            beam.Object.SetActive(value.Density > 0.001f);
-            if (value.Density <= 0.001f) continue;
+            beam.Object.SetActive(value.Density > MinimumBeamDensity);
+            if (value.Density <= MinimumBeamDensity) continue;
             beam.Object.transform.localPosition = Unity(value.Position);
             var q = value.Rotation;
             beam.Object.transform.localRotation = new(q.X, q.Y, q.Z, q.W);
@@ -251,7 +259,7 @@ internal sealed class StageLightingRenderer
                 beam.Vertices[side + 12] = new Vector3(x * value.EndRadius, y * value.EndRadius, value.Range);
             }
             beam.Mesh.vertices = beam.Vertices;
-            beam.Material.color = new(value.Color.X, value.Color.Y, value.Color.Z, value.Density * 0.08f);
+            beam.Material.color = new(value.Color.X, value.Color.Y, value.Color.Z, value.Density * BeamOpacity);
         }
         Mark("l.beams");
         _frame = frame;
@@ -340,6 +348,7 @@ internal sealed class StageLightingRenderer
             var location = pose?.Position ?? definition.Location;
             var forward = pose?.Forward ?? definition.Forward;
             var far = value.Far > 0 ? value.Far : 1000;
+            // GH3: shader light types (5 ambient, 1 directional, 2 point), and the falloff guard of StageLightNative.
             lights.Add(new(definition.Type switch { "Ambient" => 5, "Dir" => 1, _ => 2 }, new(value.Color, 1), new(location, 1), new(forward, 0),
                 value.Intensity, 1, 1, far * far, 1 / (far * far - value.Near * value.Near + .0001f), 2, new System.Numerics.Vector4[9]));
             if (lights.Count == 32) break;
