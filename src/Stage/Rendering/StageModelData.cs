@@ -108,6 +108,7 @@ internal sealed class StageModelData
         var boneCounts = part.BoneCounts = new byte[count];
         var weights = new List<StageAssets.SkinWeight>(count * 3);
         Span<StageAssets.SkinWeight> influences = stackalloc StageAssets.SkinWeight[4];
+        Span<StageAssets.SkinWeight> sorted = stackalloc StageAssets.SkinWeight[4];
         for (var v = 0; v < count; v++)
         {
             ReadCommon(data, ref at, part, v);
@@ -128,7 +129,6 @@ internal sealed class StageModelData
             if (Math.Abs((float)sum - 1) > 0.001f) throw new InvalidDataException("Invalid band skin weights");
             // The influences with weight, largest first; equal weights keep their order (a stable sort, as OrderByDescending).
             var used = 0;
-            Span<StageAssets.SkinWeight> sorted = stackalloc StageAssets.SkinWeight[4];
             for (var i = 0; i < 4; i++)
             {
                 if (influences[i].Weight <= 0) continue;
