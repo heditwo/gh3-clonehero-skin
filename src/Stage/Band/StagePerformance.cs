@@ -22,8 +22,12 @@ internal sealed class PerformanceMember
     public Dictionary<string, PerformanceClipInfo> Clips { get; set; } = new();
 }
 
+// The band library's performance bank (band/performance.json): members, clip groups and layers, and GH3's constants.
 internal sealed class StagePerformance
 {
+    private const int MaximumMembers = 4;
+    private const int MaximumBones = 255;
+    private const int MaximumClips = 5000;
     public int Version { get; set; }
     public Dictionary<string, PerformanceMember> Members { get; set; } = new();
     public Dictionary<string, float> Constants { get; set; } = new();
@@ -33,13 +37,13 @@ internal sealed class StagePerformance
     {
         if (!File.Exists(path)) return null;
         var bank = JsonSerializer.Deserialize<StagePerformance>(File.ReadAllText(path), Packages.PackageJson.CaseInsensitive);
-        if (bank?.Version != 1 || bank.Members.Count is < 1 or > 4)
+        if (bank?.Version != 1 || bank.Members.Count is < 1 or > MaximumMembers)
             throw new InvalidDataException("Invalid original performance library");
         foreach (var member in bank.Members.Values)
         {
-            if (member.Bones.Length is < 1 or > 255 || member.Clips.Count > 5000 ||
+            if (member.Bones.Length is < 1 or > MaximumBones || member.Clips.Count > MaximumClips ||
                 member.Clips.Any(c => c.Key.Length != 8 || c.Key.Any(x => !Uri.IsHexDigit(x)) ||
-                    !float.IsFinite(c.Value.Duration) || c.Value.Duration is <= 0 or > 600 || c.Value.Frames is < 2 or > 18001) ||
+                    !float.IsFinite(c.Value.Duration) || c.Value.Duration is <= 0 or > PerformanceClip.MaximumSeconds || c.Value.Frames is < 2 or > PerformanceClip.MaximumFrames) ||
                 member.Groups.Values.Concat(member.Layers.Values).SelectMany(c => c).Any(c => !member.Clips.ContainsKey(c)))
                 throw new InvalidDataException("Invalid original performance clips");
         }
@@ -47,8 +51,24 @@ internal sealed class StagePerformance
     }
 }
 
+// One band clip, sampled at 30 fps: GH3CLP01 (gzip, float poses) or GH3CLQ01 q48 (PACKAGE-FORMAT.md section 11.1).
 internal sealed class PerformanceClip
 {
+    // Ten minutes at 30 fps, plus the end frame.
+    public const int MaximumFrames = 18001;
+    public const float MaximumSeconds = 600;
+    // GH3CLQ01: magic (8), bits (1), bones (1), frames (2), tracks (2), duration (4); then 3 bytes per track: bone, mask,
+    // flags. Mask and flag bit 0 is the position, bit 1 the rotation; a set flag stores one constant value.
+    private const int Q48HeaderSize = 18;
+    private const int Q48BitsOffset = 8, Q48BonesOffset = 9, Q48FramesOffset = 10, Q48TracksOffset = 12, Q48DurationOffset = 14;
+    private const int Q48TrackSize = 3;
+    private const int PositionBit = 1, RotationBit = 2;
+    private const int MinimumBits = 2, MaximumBits = 16;
+    // Quaternion components other than the largest lie in -1/sqrt(2)..1/sqrt(2); 0-3 selects the largest component.
+    private const int LargestComponentLast = 3;
+    // Tolerance of a stored quaternion's squared length.
+    private const double UnitTolerance = 0.02;
+    private const int Vector3Bytes = 12;
     public float Duration { get; }
     private readonly int _frames;
     private readonly int[] _bones;
@@ -64,7 +84,7 @@ internal sealed class PerformanceClip
         _frames = reader.ReadInt32();
         var count = reader.ReadInt32();
         Duration = reader.ReadSingle();
-        if (_frames is < 2 or > 18001 || count < 1 || count > bones || !float.IsFinite(Duration) || Duration is <= 0 or > 600)
+        if (_frames is < 2 or > MaximumFrames || count < 1 || count > bones || !float.IsFinite(Duration) || Duration is <= 0 or > MaximumSeconds)
             throw new InvalidDataException("Invalid performance clip size");
         _bones = new int[count];
         _masks = new int[count];
@@ -79,7 +99,7 @@ internal sealed class PerformanceClip
         {
             var p = new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
             var q = new Quaternion(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
-            if (!float.IsFinite(p.LengthSquared()) || !float.IsFinite(q.LengthSquared()) || Math.Abs(q.LengthSquared() - 1) > 0.02)
+            if (!float.IsFinite(p.LengthSquared()) || !float.IsFinite(q.LengthSquared()) || Math.Abs(q.LengthSquared() - 1) > UnitTolerance)
                 throw new InvalidDataException("Invalid performance pose");
             _poses[i] = new(p, Quaternion.Normalize(q));
         }
@@ -113,45 +133,46 @@ internal sealed class PerformanceClip
     // Decoded q48 layout (GH3CLQ01, PACKAGE-FORMAT.md section 11.1). Channels outside the track mask stay zero or identity.
     public PerformanceClip(ReadOnlySpan<byte> data, int bones)
     {
-        if (data.Length < 18 || System.Text.Encoding.ASCII.GetString(data[..8]) != "GH3CLQ01" || data[9] != bones)
+        if (data.Length < Q48HeaderSize || System.Text.Encoding.ASCII.GetString(data[..8]) != "GH3CLQ01" || data[Q48BonesOffset] != bones)
             throw new InvalidDataException("Invalid q48 clip header");
-        int bits = data[8];
-        _frames = BinaryPrimitives.ReadUInt16LittleEndian(data[10..]);
-        var count = BinaryPrimitives.ReadUInt16LittleEndian(data[12..]);
-        Duration = BinaryPrimitives.ReadSingleLittleEndian(data[14..]);
-        if (bits is < 2 or > 16 || _frames is < 2 or > 18001 || count < 1 || count > bones || !float.IsFinite(Duration) || Duration is <= 0 or > 600 ||
-            data.Length < 18 + 3 * count)
+        int bits = data[Q48BitsOffset];
+        _frames = BinaryPrimitives.ReadUInt16LittleEndian(data[Q48FramesOffset..]);
+        var count = BinaryPrimitives.ReadUInt16LittleEndian(data[Q48TracksOffset..]);
+        Duration = BinaryPrimitives.ReadSingleLittleEndian(data[Q48DurationOffset..]);
+        if (bits is < MinimumBits or > MaximumBits || _frames is < 2 or > MaximumFrames || count < 1 || count > bones || !float.IsFinite(Duration) ||
+            Duration is <= 0 or > MaximumSeconds || data.Length < Q48HeaderSize + Q48TrackSize * count)
             throw new InvalidDataException("Invalid q48 clip size");
         _bones = new int[count];
         _masks = new int[count];
         var flags = new int[count];
         for (var i = 0; i < count; i++)
         {
-            _bones[i] = data[18 + 3 * i];
-            _masks[i] = data[19 + 3 * i];
-            flags[i] = data[20 + 3 * i];
+            _bones[i] = data[Q48HeaderSize + Q48TrackSize * i];
+            _masks[i] = data[Q48HeaderSize + 1 + Q48TrackSize * i];
+            flags[i] = data[Q48HeaderSize + 2 + Q48TrackSize * i];
             if ((flags[i] & ~_masks[i]) != 0) throw new InvalidDataException("Invalid q48 track flags");
         }
         CheckTracks(bones);
-        var at = 18 + 3 * count;
+        var at = Q48HeaderSize + Q48TrackSize * count;
         var positions = new Vector3[_frames * count];
         var rotations = new Quaternion[_frames * count];
         Array.Fill(rotations, Quaternion.Identity);
         for (var t = 0; t < count; t++)
         {
             if ((_masks[t] & 1) == 0) continue;
-            if ((flags[t] & 1) != 0)
+            if ((flags[t] & PositionBit) != 0)
             {
-                var block = Take(data, ref at, 12);
+                var block = Take(data, ref at, Vector3Bytes);
                 var value = new Vector3(BinaryPrimitives.ReadSingleLittleEndian(block), BinaryPrimitives.ReadSingleLittleEndian(block[4..]), BinaryPrimitives.ReadSingleLittleEndian(block[8..]));
                 for (var f = 0; f < _frames; f++) positions[f * count + t] = value;
                 continue;
             }
-            var range = Take(data, ref at, 24);
+            // Three float lows, then three float scales.
+            var range = Take(data, ref at, 2 * Vector3Bytes);
             for (var c = 0; c < 3; c++)
             {
                 var low = BinaryPrimitives.ReadSingleLittleEndian(range[(4 * c)..]);
-                var scale = BinaryPrimitives.ReadSingleLittleEndian(range[(12 + 4 * c)..]);
+                var scale = BinaryPrimitives.ReadSingleLittleEndian(range[(Vector3Bytes + 4 * c)..]);
                 var plane = Take(data, ref at, 2 * _frames);
                 var value = 0;
                 for (var f = 0; f < _frames; f++)
@@ -168,8 +189,8 @@ internal sealed class PerformanceClip
         Span<double> q = stackalloc double[4];
         for (var t = 0; t < count; t++)
         {
-            if ((_masks[t] & 2) == 0) continue;
-            if ((flags[t] & 2) != 0)
+            if ((_masks[t] & RotationBit) == 0) continue;
+            if ((flags[t] & RotationBit) != 0)
             {
                 var block = Take(data, ref at, 16);
                 var value = Quaternion.Normalize(new Quaternion(BinaryPrimitives.ReadSingleLittleEndian(block), BinaryPrimitives.ReadSingleLittleEndian(block[4..]),
@@ -186,7 +207,7 @@ internal sealed class PerformanceClip
                 a = (a + BinaryPrimitives.ReadUInt16LittleEndian(planes[(2 * f)..])) & 0xFFFF;
                 b = (b + BinaryPrimitives.ReadUInt16LittleEndian(planes[(2 * (_frames + f))..])) & 0xFFFF;
                 d = (d + BinaryPrimitives.ReadUInt16LittleEndian(planes[(2 * (2 * _frames + f))..])) & 0xFFFF;
-                if (a > top || b > top || d > top || index[f] > 3) throw new InvalidDataException("Invalid q48 rotation value");
+                if (a > top || b > top || d > top || index[f] > LargestComponentLast) throw new InvalidDataException("Invalid q48 rotation value");
                 double x = ((double)a / top * 2 - 1) * Sqrt1_2, y = ((double)b / top * 2 - 1) * Sqrt1_2, z = ((double)d / top * 2 - 1) * Sqrt1_2;
                 var largest = Math.Sqrt(Math.Clamp(1 - (x * x + y * y + z * z), 0, 1));
                 for (int k = 0, slot = 0; k < 4; k++) q[k] = k == index[f] ? largest : slot++ switch { 0 => x, 1 => y, _ => z };
@@ -265,6 +286,23 @@ internal sealed class PerformanceClip
 
 internal sealed class PerformancePlayer
 {
+    // GH3: the body DegenerateBlend has BlendDuration 0.2 (hero_play_adjusting_random_anims; see StageBlendTrack).
+    private const double BodyBlend = 0.2;
+    // Tuned: blend into a facial clip, a strum clip, and the rest pose after a strum.
+    private const double FaceBlend = 0.1;
+    private const double StrumBlend = 0.1;
+    private const double RestBlend = 0.2;
+    // Tuned: tempo bands (beats per minute) of the slow, med, and fast idle groups; GH3 source not found.
+    private const double SlowTempo = 95;
+    private const double MediumTempo = 130;
+    // Prepare() decodes the clips of at least one minute and at most one hour of the song.
+    private const double PrepareMinimumSeconds = 60;
+    private const double PrepareMaximumSeconds = 3600;
+    private const double MinimumSegment = 0.001;
+    // Reads the arm state just before a change at the same time.
+    private const double JustBefore = 1e-4;
+    // Charts give normal notes no length; GH3 note arrays give them their MIDI length, usually a sixteenth note.
+    private const double SixteenthNoteBeats = 0.25;
     internal sealed record Segment(double Time, double End, string Clip, double Rate, string Stance, string Action, int DisableArms);
     private readonly string _role;
     private readonly string _directory;
@@ -338,7 +376,7 @@ internal sealed class PerformancePlayer
 
     public void Prepare()
     {
-        var end = Math.Min(3600, Math.Max(60, _timeline.Cues.LastOrDefault()?.Time ?? 0));
+        var end = Math.Min(PrepareMaximumSeconds, Math.Max(PrepareMinimumSeconds, _timeline.Cues.LastOrDefault()?.Time ?? 0));
         _ = At(end);
         var needed = _segments.Select(s => s.Clip)
             .Concat(_member.Layers.Where(pair => !pair.Key.StartsWith("strum/")).SelectMany(pair => pair.Value)).Concat(_armTracks.SelectMany(t => t.Clips));
@@ -365,8 +403,7 @@ internal sealed class PerformancePlayer
         Array.Copy(_bind, Pose, Pose.Length);
         Clip(segment.Clip).Apply(Pose, _bind, (time - segment.Time) * segment.Rate);
         var index = StageTimeline.UpperBound(_segments, time, s => s.Time) - 1;
-        // Body DegenerateBlend with BlendDuration 0.2 (hero_play_adjusting_random_anims); see StageBlendTrack.
-        var weight = (float)Math.Clamp((time - segment.Time) / 0.2, 0, 1);
+        var weight = (float)Math.Clamp((time - segment.Time) / BodyBlend, 0, 1);
         if (index > 0 && weight < 1)
         {
             var previous = _segments[index - 1];
@@ -396,7 +433,7 @@ internal sealed class PerformancePlayer
         else if (_rig != null) Arms(time);
         var face = Last(_timeline.Track("face", _role), time);
         if (face != null && _faceMember.Clips.TryGetValue(face.Value, out var info) && time < face.Time + info.Duration)
-            _faceClips.Get(face.Value).Apply(Pose, _bind, time - face.Time, weight: (float)Math.Clamp((time - face.Time) / 0.1, 0, 1));
+            _faceClips.Get(face.Value).Apply(Pose, _bind, time - face.Time, weight: (float)Math.Clamp((time - face.Time) / FaceBlend, 0, 1));
         _lipSync?.Apply(Pose, time);
         var next = _segments[Math.Min(index + 1, _segments.Count - 1)];
         _ = Clip(next.Clip);
@@ -424,7 +461,7 @@ internal sealed class PerformancePlayer
             else { _action = command.Value; _loop = command.Loop; _repeat = command.Count; _disableArms = command.DisableArms; }
         }
         var bpm = _timeline.TempoAt(start);
-        var speed = bpm < 95 ? "slow" : bpm < 130 ? "med" : "fast";
+        var speed = bpm < SlowTempo ? "slow" : bpm < MediumTempo ? "med" : "fast";
         // play_special_anim switches to the win and lose stances without a transition animation.
         var special = _stance.StartsWith("win") || _stance.StartsWith("lose");
         var options = previousStance != _stance && !special ? Group($"{previousStance}/transitions/{_stance}") : Array.Empty<string>();
@@ -434,16 +471,14 @@ internal sealed class PerformancePlayer
         if (options.Length == 0) options = Group($"{_stance}/idle/normal/{speed}");
         if (options.Length == 0) options = Group($"stance_a/idle/normal/{speed}");
         if (options.Length == 0) throw new InvalidDataException($"No original idle animation for {_role}");
-        _seed ^= _seed << 13;
-        _seed ^= _seed >> 17;
-        _seed ^= _seed << 5;
+        XorShift32.Next(ref _seed);
         var selected = options[_seed % options.Length];
         // hero_play_tempo_anim_cfunc (GH3.exe 0x420d50) only picks the slow, med, or fast clip; hero_play_anim plays it at Speed 1.
         const double rate = 1;
         var end = start + _member.Clips[selected].Duration / rate;
         var immediate = _commands.Skip(_commandIndex).FirstOrDefault(c => c.Immediate && c.Time < end);
-        if (immediate != null) end = Math.Max(start + 0.001, immediate.Time);
-        _segments.Add(new(start, Math.Max(start + 0.001, end), selected, rate, _stance, _action, _disableArms));
+        if (immediate != null) end = Math.Max(start + MinimumSegment, immediate.Time);
+        _segments.Add(new(start, Math.Max(start + MinimumSegment, end), selected, rate, _stance, _action, _disableArms));
         if (!transition && !_loop && --_repeat <= 0) { _action = "idle"; _loop = true; _disableArms = 0; }
     }
 
@@ -484,11 +519,11 @@ internal sealed class PerformancePlayer
         var segment = At(time);
         var arms = Last(_timeline.Track("arms", _role), time);
         var change = Math.Max(segment.Time, arms?.Time ?? double.NegativeInfinity);
-        var before = ArmCount(change - 1e-4);
+        var before = ArmCount(change - JustBefore);
         if (before == now && arms != null && arms.Time < segment.Time)
         {
             change = segment.Time;
-            before = ArmCount(change - 1e-4);
+            before = ArmCount(change - JustBefore);
         }
         var weight = (float)Math.Clamp((time - change) / ArmsBlendTime, 0, 1);
         float Side(int count, int needed) => count >= needed ? 1 : 0;
@@ -508,10 +543,10 @@ internal sealed class PerformancePlayer
     private static double Constant(IReadOnlyDictionary<string, float>? constants, string name, double fallback) =>
         constants != null && constants.TryGetValue(name, out var value) ? value : fallback;
 
+    // GH3: the defaults of guitar_band constants missing from the bank (milliseconds, then seconds).
     private double LeadTime(IReadOnlyDictionary<string, float>? constants) => Constant(constants, "strum_anim_lead_time", 250) / 1000;
 
-    // Charts give normal notes no length; GH3 note arrays give them their MIDI length, usually a sixteenth note.
-    private double NoteLength(StageCue note) => note.Duration > 0 ? note.Duration : 15 / _timeline.TempoAt(note.Time);
+    private double NoteLength(StageCue note) => note.Duration > 0 ? note.Duration : SixteenthNoteBeats * 60 / _timeline.TempoAt(note.Time);
 
     private string[] Layer(string name) => _member.Layers.GetValueOrDefault(name, Array.Empty<string>());
 
@@ -519,7 +554,9 @@ internal sealed class PerformancePlayer
     private StageBlendTrack StrumTrack(IReadOnlyDictionary<string, float>? constants)
     {
         var lead = LeadTime(constants);
+        // GH3: guitar_band defaults.
         var shortest = Constant(constants, "short_strum_max_gem_length", 150) / 1000;
+        // GH3: guitar_band default.
         var medium = Constant(constants, "med_strum_max_gem_length", 600) / 1000;
         var styles = _timeline.Track("strum-style", _role);
         string Style(double time) => Last(styles, time)?.Value ?? "default";
@@ -535,14 +572,12 @@ internal sealed class PerformancePlayer
             var length = NoteLength(notes[i]);
             var options = Layer($"strum/{style}/{(length < shortest ? "short" : length < medium ? "med" : "long")}");
             if (options.Length == 0) continue;
-            random ^= random << 13;
-            random ^= random >> 17;
-            random ^= random << 5;
+            XorShift32.Next(ref random);
             var clip = options[random % options.Length];
-            branches.Add(new(start, clip, 0.1));
+            branches.Add(new(start, clip, StrumBlend));
             var end = start + _member.Clips[clip].Duration;
             var rest = Layer($"strum/{style}/no_strum_anim");
-            if (rest.Length > 0 && (i + 1 >= notes.Length || notes[i + 1].Time - lead > end)) branches.Add(new(end, rest[0], 0.2));
+            if (rest.Length > 0 && (i + 1 >= notes.Length || notes[i + 1].Time - lead > end)) branches.Add(new(end, rest[0], RestBlend));
         }
         return new(branches, _bind.Length);
     }
@@ -551,13 +586,14 @@ internal sealed class PerformancePlayer
     private StageBlendTrack FretTrack(IReadOnlyDictionary<string, float>? constants)
     {
         var lead = LeadTime(constants);
+        // GH3: guitar_band default.
         var blend = Constant(constants, "fret_blend_time", 0.1);
         var branches = new List<StageBlendTrack.Branch>();
         var start = Layer("fret/123");
         if (start.Length > 0) branches.Add(new(double.NegativeInfinity, start[0], 0));
         foreach (var cue in _timeline.Track("fret"))
         {
-            if (!int.TryParse(cue.Value, out var note) || !(_role == "guitarist" ? note is >= 118 and <= 127 : note is >= 101 and <= 110)) continue;
+            if (!int.TryParse(cue.Value, out var note) || !(_role == "guitarist" ? note is >= Gh3TrackNote.GuitarFretFirst and <= Gh3TrackNote.GuitarFretLast : note is >= Gh3TrackNote.BassFretFirst and <= Gh3TrackNote.BassFretLast)) continue;
             var clip = Layer("fret/" + note);
             if (clip.Length > 0) branches.Add(new(cue.Time - lead, clip[0], blend));
         }
@@ -569,7 +605,9 @@ internal sealed class PerformancePlayer
     private StageBlendTrack FingerTrack(IReadOnlyDictionary<string, float>? constants)
     {
         var lead = LeadTime(constants);
+        // GH3: guitar_band defaults.
         var press = Constant(constants, "finger_press_blend_time", 0.07);
+        // GH3: guitar_band default.
         var release = Constant(constants, "finger_release_blend_time", 0.2);
         var branches = new List<StageBlendTrack.Branch>();
         var open = Layer("chord/0");

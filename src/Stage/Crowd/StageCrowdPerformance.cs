@@ -109,8 +109,8 @@ internal sealed class CrowdAnimationPlayer
             bpm < (_bank.Constants["med_tempo"] + _bank.Constants["fast_tempo"]) / 2 ? "med" : "fast";
         if (!_member.Groups.TryGetValue($"{action}/{skill}/{speed}", out var choices))
             throw new InvalidDataException($"Unresolved crowd animation {action}/{skill}/{speed}.");
-        var hash = unchecked(_seed + (uint)_segments.Count * 0x9e3779b9u);
-        hash ^= hash << 13; hash ^= hash >> 17; hash ^= hash << 5;
+        var hash = unchecked(_seed + (uint)_segments.Count * XorShift32.GoldenRatioIncrement);
+        XorShift32.Next(ref hash);
         var selected = choices[hash % choices.Length];
         var previousSpeed = request >= 0 && requests[request].Time == time ? null : _segments.LastOrDefault()?.Speed;
         var blend = _bank.Constants["Crowd_BlendTime_" + (previousSpeed != speed ? "TempoChange" : skill == "bad" ? "Bad" : action == "special" ? "Special" :

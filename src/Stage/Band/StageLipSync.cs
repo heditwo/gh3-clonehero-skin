@@ -38,7 +38,7 @@ internal sealed class StageLipSync
         Syllables = syllables;
         _mouth = mouth;
         _lids = lids;
-        _blinks = syllables.Length > 0 ? BlinkTimes(syllables[0].On - 1, syllables[^1].Off + 2, 0x9e3779b9) : Array.Empty<double>();
+        _blinks = syllables.Length > 0 ? BlinkTimes(syllables[0].On - 1, syllables[^1].Off + 2, XorShift32.GoldenRatioIncrement) : Array.Empty<double>();
     }
 
     // The GH3 facial clips show about 6 blinks per minute (eyelid closed by more than 20 degrees), with long gaps.
@@ -48,9 +48,7 @@ internal sealed class StageLipSync
         for (var time = start; time < end;)
         {
             blinks.Add(time);
-            seed ^= seed << 13;
-            seed ^= seed >> 17;
-            seed ^= seed << 5;
+            XorShift32.Next(ref seed);
             var random = (seed % 1000) / 1000.0;
             time += 2 + 16 * random * random;
         }

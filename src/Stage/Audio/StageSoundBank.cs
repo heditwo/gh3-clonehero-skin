@@ -137,7 +137,7 @@ internal sealed class StageSoundEvents
         if (history == null) _choices.Add(key, history = new());
         var avoid = mode == Gh3Checksum.Value("RandomNoRepeatLastTwoType") ? 2 : mode == Gh3Checksum.Value("RandomNoRepeatType") ? 1 : 0;
         var candidates = Enumerable.Range(0, count).Where(index => !history.TakeLast(Math.Min(avoid, count - 1)).Contains(index)).ToArray();
-        _seed ^= _seed << 13; _seed ^= _seed >> 17; _seed ^= _seed << 5;
+        XorShift32.Next(ref _seed);
         var choice = candidates[_seed % candidates.Length];
         history.Enqueue(choice);
         while (history.Count > 2) history.Dequeue();

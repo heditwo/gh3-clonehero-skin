@@ -82,7 +82,7 @@ internal sealed class YouRockAnimation
         for (var i = 0; i < Text.Length; i++)
         {
             var random = _seed ^ (uint)(step * StepPrime + i * LetterPrime + 1);
-            Next(ref random);
+            XorShift32.Next(ref random);
             var offset = new Vector2(MathF.Round(Range(ref random, -JiggleOffset, JiggleOffset)), -JiggleOffset);
             var rotation = MathF.Round(Range(ref random, 0, MaximumJiggleRotation));
             var scale = Range(ref random, MinimumJiggleScale, MaximumJiggleScale);
@@ -107,14 +107,5 @@ internal sealed class YouRockAnimation
         }
     }
 
-    // xorshift32 (Marsaglia).
-    private static uint Next(ref uint state)
-    {
-        state ^= state << 13;
-        state ^= state >> 17;
-        state ^= state << 5;
-        return state;
-    }
-
-    private static float Range(ref uint state, float min, float max) => min + (max - min) * (Next(ref state) / (float)uint.MaxValue);
+    private static float Range(ref uint state, float min, float max) => min + (max - min) * (XorShift32.Next(ref state) / (float)uint.MaxValue);
 }

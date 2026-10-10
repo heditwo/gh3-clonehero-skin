@@ -100,9 +100,7 @@ internal sealed class StageActorState
                 var action = cue.Type == "stage-diver" ? "jump" : cue.Value;
                 if (_definition.Actions.TryGetValue(action, out var choices))
                 {
-                    _seed ^= _seed << 13;
-                    _seed ^= _seed >> 17;
-                    _seed ^= _seed << 5;
+                    XorShift32.Next(ref _seed);
                     _clip = choices[_seed % choices.Length];
                 }
                 else if (_definition.Clips.TryGetValue(action, out var clip)) _clip = clip;
