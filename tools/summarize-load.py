@@ -42,10 +42,15 @@ def metrics(folder):
     if early:
         result["process start to mod early init (s)"] = early[0]
     if init:
-        result["mod init (ms)"] = float(re.search(r"\+(\d+) ms", next(l for l in log.splitlines() if "mod init [" in l)).group(1))
-        textures = re.search(r"skin textures (\d+)", next(l for l in log.splitlines() if "mod init [" in l))
+        line = next(l for l in log.splitlines() if "mod init [" in l)
+        steps = re.search(r"mod init \[ms: ([^\]]*)\]", line).group(1)
+        result["mod init on the main thread (ms)"] = sum(float(v) for v in re.findall(r" (\d+)(?:,|$)", steps))
+        textures = re.search(r"skin textures (\d+)", line)
         if textures:
             result["mod init: skin textures (ms)"] = float(textures.group(1))
+    uploaded = first(rows, "skin textures uploaded")
+    if uploaded:
+        result["process start to skin textures uploaded (s)"] = uploaded[0]
     scan, done = first(rows, "package scan starts"), first(rows, "package scan and cache check done")
     if scan and done:
         result["package scan on the main thread (ms)"] = round((done[0] - scan[0]) * 1000)
@@ -90,6 +95,10 @@ def metrics(folder):
         if len(scenes) > 1 and len(clocks) == len(scenes):
             result["next songs: gameplay scene to song clock, median (s)"] = round(statistics.median(c[0] - s[0] for s, c in zip(scenes[1:], clocks[1:])), 3)
         zeros = [row for row in rows if "song time 0" in row[1]]
+        counts = [re.search(r"(\d+) textures, (\d+) meshes, (\d+) materials, (\d+) game objects", row[1]) for row in zeros]
+        if counts and counts[0]:
+            result["Unity textures/meshes/materials at song time 0, first song"] = "/".join(counts[0].groups()[:3])
+            result["Unity textures/meshes/materials at song time 0, last song"] = "/".join(counts[-1].groups()[:3])
         if zeros:
             result["resident memory at song time 0, first song (MB)"] = zeros[0][3]
             result["resident memory at song time 0, last song (MB)"] = zeros[-1][3]
@@ -119,6 +128,8 @@ def summarize(root):
 def fmt(values):
     if not values:
         return "-"
+    if isinstance(values[0], str):
+        return values[-1]
     median = statistics.median(values)
     text = f"{median:.2f}" if median < 100 and median != int(median) else f"{median:.0f}"
     return f"{text} (n={len(values)})"

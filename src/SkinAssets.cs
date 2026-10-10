@@ -68,10 +68,64 @@ internal sealed class SkinAssets
         PlanReadyAnimation(root);
         PlanGameplaySprites(root);
         PlanHudTextures(root);
-        _decoded = new DecodedImage?[_batches.Sum(batch => batch.Files.Count)];
         var files = _batches.SelectMany(batch => batch.Files).ToArray();
-        _decoding = Task.Run(() => Parallel.For(0, files.Length, new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount / 2, 1, 8) },
-            index => Volatile.Write(ref _decoded[index], Decode(files[index]))));
+        _decoded = new DecodedImage?[files.Length];
+        _sizes = new long[files.Length];
+        _decoding = Task.Run(() =>
+        {
+            for (var index = 0; index < files.Length; index++) _sizes[index] = DecodedSize(files[index]);
+            var workers = Enumerable.Range(0, Math.Clamp(Environment.ProcessorCount / 2, 1, 8)).Select(_ => Task.Run(() => DecodeInOrder(files))).ToArray();
+            Task.WaitAll(workers);
+        });
+    }
+
+    // The workers decode the images in upload order and stop while the decoded images that wait for the upload would
+    // pass the budget, so the skin needs about 64 MB at a time instead of 190 MB.
+    private const long DecodeBudget = 64_000_000;
+    private readonly object _gate = new();
+    private readonly long[] _sizes;
+    private long _waiting;
+    private int _nextDecode;
+    private bool _failed;
+
+    private void DecodeInOrder(string[] files)
+    {
+        while (true)
+        {
+            int index;
+            lock (_gate)
+            {
+                while (!_failed && _nextDecode < files.Length && _waiting > 0 && _waiting + _sizes[_nextDecode] > DecodeBudget) Monitor.Wait(_gate);
+                if (_failed || _nextDecode >= files.Length) return;
+                index = _nextDecode++;
+                _waiting += _sizes[index];
+            }
+            try { Volatile.Write(ref _decoded[index], Decode(files[index])); }
+            catch
+            {
+                lock (_gate)
+                {
+                    _failed = true;
+                    Monitor.PulseAll(_gate);
+                }
+                throw;
+            }
+        }
+    }
+
+    private static long DecodedSize(string file)
+    {
+        if (file.EndsWith(".dds", StringComparison.Ordinal)) return new FileInfo(file).Length;
+        // The PNG IHDR chunk: width and height at bytes 16 and 20.
+        Span<byte> header = stackalloc byte[24];
+        using var stream = File.OpenRead(file);
+        for (var read = 0; read < header.Length;)
+        {
+            var count = stream.Read(header[read..]);
+            if (count == 0) return 0;
+            read += count;
+        }
+        return (long)BinaryPrimitives.ReadInt32BigEndian(header[16..]) * BinaryPrimitives.ReadInt32BigEndian(header[20..]) * 4;
     }
 
     private sealed record DecodedImage(byte[] Data, int Width, int Height, bool Dxt5);
@@ -102,8 +156,13 @@ internal sealed class SkinAssets
                     Thread.Sleep(1);
                     continue;
                 }
-                _decoded[_next++] = null;
+                _decoded[_next] = null;
                 _uploaded.Add(image.Dxt5 ? UploadDxt5(image, files[_uploaded.Count]) : UploadRgba(image));
+                lock (_gate)
+                {
+                    _waiting -= _sizes[_next++];
+                    Monitor.PulseAll(_gate);
+                }
             }
             else
             {
