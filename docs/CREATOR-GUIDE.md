@@ -343,7 +343,7 @@ An instrument is a guitar or a bass that the player can select in the picker. It
 6. Pack and check the instrument (the `--split` option keeps only the mesh parts on the instrument bones, so the export can contain the body):
 
 ```sh
-MISE_QUIET=1 uv run --with numpy python -m pipeline.package.instrument my-guitar.glb --id me.my-guitar --name "My Guitar" \
+MISE_QUIET=1 uv run --with numpy --with pillow python -m pipeline.package.instrument my-guitar.glb --id me.my-guitar --name "My Guitar" \
   --kind guitar --highway my-highway.png --author "My Name" --license CC-BY-4.0 --split \
   --library assets/packages/gh3-band-v1.chlib --output out
 ```
@@ -390,6 +390,7 @@ On a custom stage, the GH3 camera notes select these groups: 84 and 86 close-up 
 | `mesh '...' has its own transform` | Click **Transfer Weights**, or **Object > Apply > All Transforms** |
 | `the rig must stay at the origin ...` or `the rig has no bone ...` | Clear the rig transform, or start again from **New** |
 | `material '...': image '...' is ...; packages use PNG only` | Save the image as PNG |
+| `image N is PNG; package format 1.0 stores textures pre-encoded ...` (validator, or `texture ... is a PNG image` in the game log) | The package comes from an older add-on. Open the `.blend` file and export again with the current add-on |
 | `material '...': the glTF export does not read its surface node ...` (warning) | Connect a Principled BSDF with the image on Base Color to the material output (section 5.1) |
 | `... needs the GH3 character library ...` (Open) | Set **GH3 character library (.chlib)** in the add-on preferences |
 | `no GH3 library: ...` (warning) | Set **GH3 library (.chlib)** in the add-on preferences |

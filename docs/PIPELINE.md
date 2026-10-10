@@ -73,7 +73,7 @@ Each command uses `uv run --with ...` for its Python packages. See `scripts/rege
 
 The `venues` step compiles each pack against the library catalog. Thus run `library` first.
 
-The `packages` step reads the source packs, the library folder, and the song direction. Thus run it last. Its output (`assets/packages/`) is what `install.sh` and the release build install. The clip encoder (q48 + Brotli 11) keeps a cache in `assets/packages/.clip-cache/`, so a second run takes less time. Use `--jobs N` to set the number of encoder processes (default 2, about 0.1 GB each).
+The `packages` step reads the source packs, the library folder, and the song direction. Thus run it last. Its output (`assets/packages/`) is what `install.sh` and the release build install. The step encodes the GLB images to pre-encoded GH3TEX02 textures (BC1/BC3 with mipmaps, [PACKAGE-FORMAT.md section 7](PACKAGE-FORMAT.md#7-textures)), so the players do not encode them. The source packs and the runtime folders keep PNG. The clip encoder (q48 + Brotli 11) keeps a cache in `assets/packages/.clip-cache/`, and the texture encoder in `assets/packages/.texture-cache/` (about 0.7 GB), so a second run takes less time (about 50 s with full caches; about 2 min with an empty texture cache and `--jobs 6`). Use `--jobs N` to set the number of encoder processes (default 2, about 0.1 GB each).
 
 ## GH3 characters
 
@@ -166,7 +166,7 @@ python3 tools/audit-materials.py
 
 The audit lists how each used material draws. The expected result is `2031 template` (921 for the band, crowd, and ten venues, and 1,110 for the 72 GH3 characters) and no `FALLBACK` lines.
 
-The exporters are deterministic. The package files are reproducible: two runs of the `packages` step give byte-equal `.chstage` and `.chlib` files (sorted zip entries, fixed times and attributes, DEFLATE level 9 of the same zlib).
+The exporters are deterministic. The package files are reproducible: two runs of the `packages` step give byte-equal `.chstage` and `.chlib` files (sorted zip entries, fixed times and attributes, DEFLATE level 6 of the same zlib, and the deterministic texture encoder).
 
 The round-trip check converts each package back to the compiled runtime files and compares them with `assets/stages` and `assets/libraries/gh3-band-v1`:
 
@@ -175,7 +175,7 @@ flock /tmp/opencode/gh3-heavy.lock env MISE_QUIET=1 uv run --with pillow --with 
   python -m pipeline.package.roundtrip --json /tmp/opencode/roundtrip.json
 ```
 
-Expected result: every compiled venue file is byte-equal; the library JSON, textures, sounds, movies, and rigs are byte-equal or JSON-equal; 159 V coordinates of the guitarist and drummer meshes differ by at most 3e-8 (glTF stores 1 − v); all 1,240 clips are within the q48 error bound.
+Expected result: every compiled venue file is byte-equal, except `pack.json` (equal without its source hashes, because the package GLBs hold GH3TEX02 images) and the textures (the package texture is the encoder output of the compiled PNG); the library JSON, sounds, movies, and rigs are byte-equal or JSON-equal, and its textures are the encoder output of the library PNG files; 159 V coordinates of the guitarist and drummer meshes differ by at most 3e-8 (glTF stores 1 − v); all 1,240 clips are within the q48 error bound.
 
 The four library band members can be written as character packages (`gh3.<role>.chchar`, the round-trip reference of the Blender character tools, [BLENDER-ADDON.md section 2.11](BLENDER-ADDON.md#211-characters)):
 
@@ -191,7 +191,7 @@ flock /tmp/opencode/gh3-heavy.lock env MISE_QUIET=1 uv run --with numpy --with p
   python -m pipeline.package.cachecheck <cache folder> --json /tmp/opencode/cachecheck.json
 ```
 
-Expected result: every package `equal` (character caches are skipped; `preview.png` is a copy of the manifest preview); textures BC1/BC3 with a minimum first-level PSNR above 36 dB. With `--rgba` (no BC encoding) all textures are pixel-equal (`maxError` 0). Put the cache folder on a disk, not on `/tmp` (a RAM disk here).
+Expected result: every package `equal` (character caches are skipped; `preview.png` is a copy of the manifest preview); textures BC1/BC3 with a minimum first-level PSNR above 36 dB, and the RGBA32 textures pixel-equal (`rgbaExact`). With `--rgba` (a GPU without BC1/BC3) the importer decodes the BC1/BC3 textures, so only the RGBA32 textures are pixel-equal. cachecheck does not know the character library and the instruments: give it a folder with links to the venue and band library cache folders only. Put the cache folder on a disk, not on `/tmp` (a RAM disk here).
 
 The `hud` step makes `assets/highway/beat-lines/beatline*.png` files that are different from the files in Git (also with the code before the cleanup). Do not commit the new files without a visual check. To keep the files in Git, run `git checkout -- assets/highway/beat-lines`.
 

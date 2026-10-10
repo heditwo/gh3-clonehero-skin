@@ -6,7 +6,7 @@ The words "must" and "must not" give rules. The validator reports a rule failure
 
 ## 1. Overview
 
-A package is one zip file. It holds glTF 2.0 binary files (GLB), JSON files, PNG images, and other data files. Package data is the same on Linux, Windows, and macOS. Only the per-machine cache holds platform-specific data.
+A package is one zip file. It holds glTF 2.0 binary files (GLB) with pre-encoded textures (GH3TEX02, [section 7](#7-textures)), JSON files, PNG images, and other data files. Package data is the same on Linux, Windows, and macOS. Only the per-machine cache holds platform-specific data.
 
 ```mermaid
 flowchart LR
@@ -49,7 +49,7 @@ These rules make the paths safe on all three platforms. They also prevent paths 
 
 | File type | Method | Reason |
 |---|---|---|
-| `.glb` | STORE | Decision of section 4.1 of the plan (see [open question O1](#171-for-the-orchestrator-or-the-owner)) |
+| `.glb`, `.tex` | DEFLATE | Mesh data and BC1/BC3 textures compress to 40–60 % ([open question O1](#171-for-the-orchestrator-or-the-owner), decided on 2026-10-10 by measurement) |
 | `.png` | STORE | Already compressed |
 | `.q48.br` | STORE | Already compressed (Brotli) |
 | `.ogg`, `.mp3` | STORE | Already compressed |
@@ -139,7 +139,7 @@ These rules apply to every GLB in a package.
 
 - glTF 2.0 binary: a JSON chunk and at most one binary chunk. `asset.version` is `"2.0"`.
 - One buffer, embedded in the binary chunk. External URIs are not permitted.
-- Images are embedded (`bufferView`) with `mimeType` `image/png`.
+- Images are embedded (`bufferView`) with `mimeType` `image/vnd-gh3.tex`: each image is a GH3TEX02 texture ([section 7](#7-textures)). `extensionsRequired` and `extensionsUsed` contain `GH3_texture_bc`.
 - Meshes are triangle lists (mode 4). `POSITION` and `NORMAL` are required.
 - Sparse accessors are not permitted. Maximum 10,000,000 elements in each accessor.
 - The importer reads the node hierarchy, `matrix` or TRS transforms, and all scene root nodes.
@@ -149,9 +149,10 @@ These rules apply to every GLB in a package.
 | Extension | v1 |
 |---|---|
 | `KHR_materials_unlit` | Read. It gives `unlit` shading when `gh3Shading` is absent |
+| `GH3_texture_bc` | Required when the GLB has images (all package GLBs with textures). It permits images with the media type `image/vnd-gh3.tex` (GH3TEX02, section 7) as the source of a glTF texture and of a `#<name>` reference. Other glTF tools do not read these images; the Blender add-on changes them back to PNG when it opens a package |
 | `KHR_lights_punctual`, `KHR_materials_emissive_strength`, `KHR_texture_transform`, others | Ignored (warning). Lighting comes from `lighting.json` |
 | `EXT_meshopt_compression`, `KHR_draco_mesh_compression`, `KHR_texture_basisu` | Not permitted in v1 |
-| Any entry in `extensionsRequired` | Not permitted in v1 |
+| Any other entry in `extensionsRequired` | Not permitted in v1 |
 
 ### 6.3 Vertex attributes
 
@@ -249,7 +250,7 @@ A texture reference in extras is a string:
 |---|---|
 | `""` | No texture |
 | `#<name>` | The image with this `name` in the same GLB. Image names in one GLB are unique |
-| `<package path>.png` | A PNG file in the package |
+| `<package path>.tex` | A GH3TEX02 texture file in the package (section 7) |
 
 The texture references are `gh3MaskTexture`, `gh3LayerTexture`, the `gh3Shader.textures`, and the `gh3Toon` textures (`shadeTexture`, `shadeMaskTexture`, `sphereTexture`).
 
@@ -265,10 +266,48 @@ The texture references are `gh3MaskTexture`, `gh3LayerTexture`, the `gh3Shader.t
 
 ## 7. Textures
 
-- Packages ship PNG files only: 8 bits for each channel (or an 8-bit palette), not interlaced, 1 to 4096 pixels on each side.
-- The importer makes the GPU format on the player's machine (BC1 for opaque, BC3 for alpha, with mipmaps). Power-of-two sizes are not required. A size that is not a multiple of 4 uses RGBA32 in the cache.
-- The color space is sRGB. Clone Hero uses Gamma color space.
-- References are image names or package paths (see [section 6.6](#66-texture-references)).
+Packages store the textures of the models pre-encoded in the GPU format. The player's machine does not encode textures: the importer copies them into the cache ([section 20.2](#202-import)). The converter (`pipeline.package.build`) and the Blender add-on (Export) encode them with one shared encoder, `pipeline/package/texture.py`.
+
+**GH3TEX02 file.** All values are little-endian.
+
+| Offset | Size | Value |
+|---|---|---|
+| 0 | 8 | Magic `GH3TEX02` |
+| 8 | 4 | Unity `TextureFormat`: 10 BC1 (DXT1), 12 BC3 (DXT5), or 4 RGBA32 |
+| 12, 16 | 4 each | Width and height, 1 to 4096 pixels |
+| 20 | 4 | Mip count: always the full chain, `floor(log2(max(width, height))) + 1` |
+| 24 | 4 | Flags. Bit 0: the texture holds data, not colour (linear). Other bits must be 0 |
+| 28 | — | The mip levels, largest first. Each level has its rows bottom first (Unity order, as `Texture2D.LoadRawTextureData` takes them). BC1: 8 bytes, BC3: 16 bytes for each 4 × 4 block; RGBA32: 4 bytes for each pixel |
+
+Rules (the validator checks each one):
+
+- A GLB image has the media type `image/vnd-gh3.tex`. A texture file in the package has the suffix `.tex`. PNG images in a GLB, and PNG texture references, are errors.
+- The header is valid, the file size agrees with the header, and the mip chain is complete.
+- BC1 and BC3 need a width and a height that are multiples of 4.
+- Alpha needs BC3: a BC1 block must not use the transparent index (color0 ≤ color1 with index 3). A BC3 texture without alpha gives a warning (BC1 is half the size).
+- The linear flag: the source of a glTF `normalTexture` should have it, other GLB images should not (warning). Clone Hero uses the gamma colour space, so the flag does not change the image in the game now.
+
+**Encoder** (`texture.encode`). It gives the same bytes as the C# encoder that the importer used before (checked: all 1,536 different model textures of the 195 packages of 2026-10-10 are byte-equal):
+
+- The image is opaque (every alpha 255): BC1. Else BC3.
+- A width or a height that is not a multiple of 4: RGBA32. A first level under 36 dB PSNR in BC1/BC3 (art that GH3 did not store as DXT, for example smooth gradients): RGBA32 (13 GH3 textures).
+- The mip chain comes from a 2 × 2 box filter with rounding (an odd last row or column repeats).
+- BC1/BC3: principal-axis endpoints, least-squares refinement (two passes), exact single colours; BC3 alpha from the block minimum and maximum with 8 levels.
+
+The color space is sRGB. Clone Hero uses Gamma color space. References are image names or package paths (see [section 6.6](#66-texture-references)).
+
+Other images of a package stay PNG files (8 bits for each channel or an 8-bit palette, not interlaced, 1 to 4096 pixels on each side): the manifest `preview`, the character and instrument `highway`, the library particle and hand-fire textures and `effects/tesla-noise.png`, the movie frames, and the script textures of `scripts.json`. The game decodes them when it needs them.
+
+**Size and choice (2026-10-10).** The 193 GH3 packages (11 venues, 2 libraries, 72 characters, 108 instruments; MB, 10^6 bytes):
+
+| Variant | Venues | Libraries | Characters | Instruments | Total |
+|---|---:|---:|---:|---:|---:|
+| PNG only, GLB STORE (before) | 551.6 | 691.7 | 434.9 | 101.7 | 1,779.9 |
+| BC only, GLB STORE | 536.2 | 700.8 | 525.9 | 142.6 | 1,905.5 |
+| PNG and BC (estimate: PNG packages plus the GH3TEX02 bytes) | 732.6 | 712.4 | 822.1 | 212.9 | 2,479.9 |
+| **BC only, GLB and `.tex` DEFLATE level 6 (format 1.0)** | **194.3** | **677.8** | **215.2** | **51.1** | **1,138.4** |
+
+The model textures are 574.5 MB as PNG and 700.1 MB as GH3TEX02. A PNG copy beside the BC data is not necessary: the Blender add-on decodes GH3TEX02 for editing (section 19.6). DEFLATE takes the GLB mesh data to about one third. The importer then inflates the GLB files: all 195 packages imported in 10.0 s with DEFLATE GLBs and 9.3 s with STORE GLBs (`tools/PackageImport`, the same PC).
 
 ## 8. Venue (`.chstage`)
 
@@ -692,11 +731,11 @@ The importer converts a package one time and writes a per-machine cache.
 - `cache.json` in each cache folder records the key, the platform, the graphics API, and the texture formats. The loader rebuilds the cache when they differ from the running game (for example a copied user folder or `-force-glcore` on Windows).
 - The importer writes into a temporary folder and renames it when it is complete. A crash does not leave a partial cache.
 - `index.json` in the cache root keeps the key of each package with its size and time (zip) or with a signature of its file list (folder). A warm start reads the manifests (the scan) and this index; it does not hash the packages. When the size or the time of a zip changes, the importer reads its manifest again; the same manifest gives the same cache folder without an import.
-- Cache layout (importer version 1): the runtime folders that the mod loaded before packages. A venue cache is a compiled stage folder (`pack.json`, `stage.json`, `meshes.bin` `GH3STG04`, `cameras.json`, `lighting.json`, `scripts.json`, `actors/`, `fixtures/`). A library cache is a library folder (`band/<role>/` and `crowd/…/` with `GH3BND02` meshes, `GH3ANM01` rigs, and `stage.json`; JSON files; `songs/`; `render/` with the effect files). Differences from the older install:
+- Cache layout (importer version 2; version 1 encoded PNG textures): the runtime folders that the mod loaded before packages. A venue cache is a compiled stage folder (`pack.json`, `stage.json`, `meshes.bin` `GH3STG04`, `cameras.json`, `lighting.json`, `scripts.json`, `actors/`, `fixtures/`). A library cache is a library folder (`band/<role>/` and `crowd/…/` with `GH3BND02` meshes, `GH3ANM01` rigs, and `stage.json`; JSON files; `songs/`; `render/` with the effect files). Differences from the older install:
 
 | Item | Cache file | Older install |
 |---|---|---|
-| Model textures | `textures/<name>.tex`: magic `GH3TEX01`, Unity `TextureFormat` (4 RGBA32, 10 BC1, 12 BC3), width, height, mip count (int32 each), then the full mip chain, largest first, rows bottom first | `textures/<name>.png` |
+| Model textures | `textures/<name>.tex`: the GH3TEX02 file of the package ([section 7](#7-textures)), copied without a change. On a GPU without BC1/BC3, the importer decodes it to RGBA32 (`textureFormat` `rgba32` in `cache.json`) | `textures/<name>.png` |
 | Clips | `<clip>.q48.br`, copied from the package; decoded by the clip prefetch | `<clip>.bin.gz` (`GH3CLP01`) |
 | Sounds | `audio/<sample>.pcm` (raw 16-bit PCM) | `audio/<sample>.pcm.gz` |
 | Song direction | `songs/` in the library cache | `assets/stages/events/` |
@@ -709,7 +748,7 @@ MISE_QUIET=1 uv run --with numpy --with brotli python -m pipeline.package.valida
   [--character-library assets/packages/gh3-characters-v1.chlib]
 ```
 
-- The validator reads a zip or a development folder. It checks the container, the paths, the manifest, the hashes, the schemas, the references, the GLB rules, and the extras. For a character, `--library` adds the profile rig check (section 9.3); the value is a library package (`gh3-band-v1.chlib`, the rig comes from `band/<role>/model.glb`) or the current library folder. For a character on a character library profile, `--character-library` (`gh3-characters-v1.chlib` or the folder `assets/libraries/gh3-characters-v1`) gives the rig. For an instrument, `--library` adds the same rig check; without it, the validator checks that every mesh part follows the instrument joints. A highway image that is not 512 × 1024 gives a warning. For a library, it decodes all clips (needs the `brotli` module) and checks the library schemas and file references (sections 10 and 10.1).
+- The validator reads a zip or a development folder. It checks the container, the paths, the manifest, the hashes, the schemas, the references, the GLB rules, the extras, and the textures (section 7). A PNG model texture gives the error `image N is PNG; package format 1.0 stores textures pre-encoded …`: export the package again with the current add-on, or run the converter again. For a character, `--library` adds the profile rig check (section 9.3); the value is a library package (`gh3-band-v1.chlib`, the rig comes from `band/<role>/model.glb`) or the current library folder. For a character on a character library profile, `--character-library` (`gh3-characters-v1.chlib` or the folder `assets/libraries/gh3-characters-v1`) gives the rig. For an instrument, `--library` adds the same rig check; without it, the validator checks that every mesh part follows the instrument joints. A highway image that is not 512 × 1024 gives a warning. For a library, it decodes all clips (needs the `brotli` module) and checks the library schemas and file references (sections 10 and 10.1).
 - `pipeline/package/schema.py` evaluates the schemas without third-party packages, so the Blender add-on can bundle the validator (`blender/build.py` copies `pipeline/package` and `schemas/`). The tests compare it with the `jsonschema` reference implementation.
 - Dry conversion check of the current outputs: `python -m pipeline.package.sources --json report.json` (see [section 16](#16-mapping-of-the-current-pipeline-outputs)).
 
@@ -748,11 +787,11 @@ The current library does not map file for file. Each part has a conversion step 
 
 ### 17.1 For the orchestrator or the owner
 
-The owner decided O1 to O5 as the converter defaults (PACKAGING-PLAN decisions 8 and 9): GLB and PNG stored, `LicenseRef-GH3-Derived` (redistribute and modify yes, commercial no), `.chlib`, WAV audio, and PNG movie frames. O6 is open (PACKAGING-PLAN section 10).
+The owner decided O1 to O5 as the converter defaults (PACKAGING-PLAN decisions 8 and 9): GLB and PNG stored (O1 changed on 2026-10-10: GLB DEFLATE, see the table), `LicenseRef-GH3-Derived` (redistribute and modify yes, commercial no), `.chlib`, WAV audio, and PNG movie frames. O6 is open (PACKAGING-PLAN section 10).
 
 | # | Question | Data |
 |---|---|---|
-| O1 | Permit DEFLATE for `.glb`? The plan says STORE (the converter default, `pipeline/package/decisions.py`). | All source-pack GLBs: 550 MB stored, 299 MB with DEFLATE level 6. The PNG images are 196 MB of this; the mesh data compresses to about one third. The validator only warns, so the change is one line |
+| O1 | Permit DEFLATE for `.glb`? **Decided 2026-10-10: DEFLATE** for `.glb` and `.tex` (`pipeline/package/decisions.py`, one line to change back). | With pre-encoded textures, the 193 GH3 packages are 1,905 MB with STORE GLBs and 1,138 MB with DEFLATE GLBs; the import of all packages takes about 1 s more (section 7). Before: all source-pack GLBs 550 MB stored, 299 MB with DEFLATE level 6 |
 | O2 | License text for the GH3-derived packages (`LicenseRef-GH3-Derived`?) and the `permissions` values. The converter uses `LicenseRef-GH3-Derived`, redistribute and modify yes, commercial no. `example.studio` uses `CC0-1.0`. | Decision 1 accepts the IP risk |
 | O3 | Library file extension `.chlib`. The plan names `.chstage` and `.chchar` only. The converter uses `.chlib`. | — |
 | O4 | Audio in the library: the original MP3 data (smaller, as GH3 shipped it) or WAV of the current PCM (identical samples)? The converter writes WAV of the current PCM. | Current PCM gzip: 104 MB. WAV: 132.4 MB, 107.7 MB with DEFLATE 9 in the zip. MP3 size not measured. MP3 decoders can differ by a few samples at the start, which moves loop points |
@@ -767,7 +806,7 @@ The owner decided O1 to O5 as the converter defaults (PACKAGING-PLAN decisions 8
 
 ### 17.3 For the C# importer (step 4)
 
-- Done ([section 20](#20-c-importer)): `ZipArchive` reads the packages in the game (DEFLATE entries; the 658 MB library zip). Zip64 was not needed by the current packages and is not tested. The importer has its own GLB reader (`GlbDocument`) with the node hierarchy, extras, and materials. BC1/BC3 encoding runs on worker threads before the stage loads; the stage waits for the import of its package (it does not show RGBA32 first).
+- Done ([section 20](#20-c-importer)): `ZipArchive` reads the packages in the game (DEFLATE entries; the 658 MB library zip). Zip64 was not needed by the current packages and is not tested. The importer has its own GLB reader (`GlbDocument`) with the node hierarchy, extras, and materials. The packages hold BC1/BC3 textures (section 7); the importer copies them. The stage waits for the import of its package (it does not show RGBA32 first).
 - Done: cache clean-up ([section 20.7](#207-cache-clean-up)). Open: development folders are hashed at start, but not watched while the game runs.
 
 ## 18. In-game check of Brotli
@@ -808,14 +847,14 @@ Evidence: all ten venues were exported again. All 40 GLBs have the same binary c
 
 ### 19.2 Reproducible output
 
-- Zip entries: `manifest.json` first, then the sorted paths; time 1980-01-01 00:00; Unix attributes `0644`; STORE or DEFLATE level 9 (`decisions.py`).
+- Zip entries: `manifest.json` first, then the sorted paths; time 1980-01-01 00:00; Unix attributes `0644`; STORE or DEFLATE level 6 (`decisions.py`; level 9 until 2026-10-10: 3 times slower on the GH3TEX02 data for 0.1–0.7 % less size).
 - JSON that the converter writes: two-space indent, UTF-8, key order of the source.
 - The two old exceptions are fixed at their source: `pack.json` lists its files in sorted order, and the venue exporter sorts the camera arrays of Credits and Soundcheck (the order came from a Python set). An export of the two venues with two different `PYTHONHASHSEED` values gave byte-equal `cameras.json` files.
 - Two full converter runs (the second with an empty clip cache and 3 processes) gave byte-equal packages.
 
 ### 19.3 Owner choices
 
-`pipeline/package/decisions.py` holds every open choice of section 17.1: the zip method for each suffix (GLB and PNG STORE), the license and permissions, the library extension (`.chlib`), the audio format (`wav`: the current 16-bit PCM, decoded from the GH3 MP3 data by FFmpeg, in a WAV container, without re-encoding), and the movie format (`png-frames`).
+`pipeline/package/decisions.py` holds every open choice of section 17.1: the zip method for each suffix (PNG STORE, GLB and `.tex` DEFLATE), the license and permissions, the library extension (`.chlib`), the audio format (`wav`: the current 16-bit PCM, decoded from the GH3 MP3 data by FFmpeg, in a WAV container, without re-encoding), and the movie format (`png-frames`).
 
 ### 19.4 Validation and round trip (2026-10-09)
 
@@ -839,6 +878,8 @@ The rotation error uses the chord form 4 asin(|a − b| / 2). An `arccos` of the
 Not carried into the library package, by design: the shader bundles and `render/stage-templates.json` (6 files, mod installation), `library.json` (replaced by `manifest.json` `files`), the 4 movie conversion stamps, 50 model textures that no material refers to (the runtime loads textures by material reference), and the `stage.json` material fields `textures`, `template`, and `geometryCutout` (173 values; the runtime does not read them). An explicit white `color` and an absent `color` draw the same (`StageAssets` keeps white), so the round trip treats them as equal (29 materials have an explicit white `color`; glTF writes no white `baseColorFactor`).
 
 ### 19.5 Sizes (MB, 10^6 bytes)
+
+These sizes are from 2026-10-09 and 2026-10-10, before the pre-encoded textures and the GLB DEFLATE. The sizes of format 1.0 with GH3TEX02 are in [section 7](#7-textures).
 
 | Package | Folder | Zip |
 |---|---:|---:|
@@ -875,6 +916,13 @@ Library parts:
 | `scripts.json` | 1 | 12.1 | 1.2 | 12.1 |
 | Other JSON, hand fire, effects, manifest | 9 | 1.7 | 0.4 | 1.0 (with `render/` bundles and `library.json`) |
 
+### 19.6 Pre-encoded textures (2026-10-10)
+
+- The converter changes every PNG image of a package GLB to a GH3TEX02 image (`texture.encode_glb`; `TextureEncoder` in `build.py`, Pillow decodes the PNG). Worker processes encode the images (`--jobs`). `assets/packages/.texture-cache/` keeps each result by the SHA-256 of the PNG bytes and the encoder version (`TEXTURE_ENCODER`), so a second run encodes only changed images. Encoder speed: 822 megapixels (all model textures of the 195 packages, with duplicates) in 319 s of CPU time, 2.6 megapixels per second on one core; a full `packages` step with an empty texture cache and 6 processes: 2 min.
+- The source packs (`assets/stage-packs/`) and the runtime folders keep PNG; only the packages change. `pipeline.package.roundtrip` compares a texture of a package with the encoder output of the PNG of the compiled pack: all 10 venues and the library are equal (1,199 venue textures, 117 library textures).
+- The Blender add-on bundles `texture.py` (numpy only). **Export**: Blender decodes the PNG images of the exported GLB, and the encoder runs on worker threads (one texture each). Package texture files are `textures/<name>.tex`. **Open**: each GH3TEX02 image becomes a PNG image of its first level for Blender. The PNG keeps the GH3TEX02 file in a private chunk (`ghTx`); when an image comes back unchanged at the next export, the add-on writes the original texture again (the pixels are compared first), so Open and Export do not lose quality. An edited image is encoded again (a second BC1/BC3 encoding of a decoded texture: 68.9 dB or more against the first one on gh3.credits).
+- Export times (Blender 5.2.1, this PC, export without the preview render, 3 runs): Tda Miku (10 textures, 6.3 megapixels) 2.0–3.1 s against 0.8–1.3 s with PNG; Project SEKAI Miku (11 textures, 7.6 megapixels) 1.3–1.9 s against 0.3–0.7 s; GH3 Johnny (25 textures, opened from its package, so the textures come back unchanged) 1.2–1.4 s against 0.3–0.5 s. The encoder takes 0.8–1.3 s of the Miku exports. Open .chchar of Johnny: 2.1 s against 0.7 s. Venue round trip of gh3.dive (`blender/roundtrip.sh`, 0 differences, the textures byte-equal): open 11.6–12.3 s, export 8.3–11.4 s, against 5.1 s and 2.6 s on 2026-10-09 (PNG, GLB STORE; the PC had less load then). In the export, the glTF exporter takes 3.7 s, the zip with DEFLATE 1.8 s, the validator 1.6 s, and the textures 1.1 s (the unchanged textures come from the PNG source chunk without a Blender decode).
+
 ## 20. C# importer
 
 Step 4 of the plan, core part. The mod finds packages, checks them, converts each one to the cache (section 14), and loads the venue and the library from the cache. Code: `src/Packages/` (Unity-free, except `PackageRuntime.cs`).
@@ -883,7 +931,7 @@ Step 4 of the plan, core part. The mod finds packages, checks them, converts eac
 flowchart LR
     Scan[Scan and check manifests<br/>scan thread, about 0.15 s] --> Hit{Cache entry<br/>for this package?}
     Hit -- yes --> Ready[Ready]
-    Hit -- no --> Worker[Two import workers:<br/>check SHA-256, compile,<br/>encode BC1/BC3]
+    Hit -- no --> Worker[Two import workers:<br/>check SHA-256, compile,<br/>copy the textures]
     Worker --> Ready
     Ready --> Stage[GameplayStage loads<br/>from the cache]
 ```
@@ -899,9 +947,9 @@ flowchart LR
 ### 20.2 Import
 
 - The scan and the cache check run on a background thread (`GH3 package scan`), so the first menu frame does not wait for them. A warm start starts no import worker.
-- Up to two packages import at the same time (`GH3 package importer`, a quarter of the cores, at most 2): the libraries first and alone (the other packages need their caches), then the stage and the characters that a song waits for, then the player's stage (`GH3_SKIN_STAGE` or the picker choice), then the characters, then the instruments, then the other stages. At most one library or stage imports at a time (they need the most memory). The workers start again when a song adds its venue package. Texture encoding uses up to 4 threads (half the cores) for each package. After a library or a stage, or when the managed heap is larger than 256 MB, a compacting collection gives the import memory back.
+- Up to two packages import at the same time (`GH3 package importer`, a quarter of the cores, at most 2): the libraries first and alone (the other packages need their caches), then the stage and the characters that a song waits for, then the player's stage (`GH3_SKIN_STAGE` or the picker choice), then the characters, then the instruments, then the other stages. At most one library or stage imports at a time (they need the most memory). The workers start again when a song adds its venue package. The RGBA32 decode for a GPU without BC1/BC3 uses up to 4 threads (half the cores) for each package. After a library or a stage, or when the managed heap is larger than 256 MB, a compacting collection gives the import memory back.
 - Venues: a C# port of `compile_stage` and `compile_actor` (`StageCompiler`, `StageGeometry`). Library: the C# side of `roundtrip.py` (`LibraryImporter`).
-- Textures: PNG decode (all colour types, `tRNS`), box-filter mip chain, then BC1 (opaque) or BC3 (alpha) with a managed encoder written for this project (`BlockCompression`: principal axis, least-squares refinement, exact single colours). A size that is not a multiple of 4, a GPU without DXT1/DXT5 (`SystemInfo.SupportsTextureFormat`), or a first level under 36 dB PSNR (art that GH3 did not store as DXT) gives RGBA32.
+- Textures: the GH3TEX02 files of the package ([section 7](#7-textures)) go into the cache without a change (`TextureCodec.ForCache` checks the header and the size). A GPU without DXT1/DXT5 (`SystemInfo.SupportsTextureFormat`) gets RGBA32: `BlockCompression` decodes each level as the GPU does (checked against the Python decoder on 1,395 levels). A PNG texture is refused: `texture <name> is a PNG image; package format 1.0 stores textures pre-encoded (GH3TEX02): export the package again with the current CH Stage Tools add-on`. Before 2026-10-10 the importer decoded PNG and encoded BC1/BC3 itself (77 % of the import time).
 - Not ported: the alpha-mask mesh trimming of `pipeline/gh3/mesh_cutout.py`. It applies only to unshaded materials without a GH3 record; no GH3 venue has one. The importer logs a warning for such a material and keeps the full mesh (the shader discards the same pixels).
 - Clips: copied as q48 + Brotli. Decision by measurement: the decoded clips (GH3CLP01 float32) would be about 1 GB on disk against 121 MB; the q48 decode of a song set takes 30–85 ms on worker threads in the game (below), less than the gzip decode of the older install (348 ms).
 
@@ -927,6 +975,7 @@ flowchart LR
 | Clips | 1,240 `.q48.br` byte-equal to the package. The C# decoder against the `GH3CLP01` clips of the older install (C# test, `GH3_PACKAGE_ASSETS`): 0.0068° and 0.108 mm maximum |
 | Textures, RGBA32 cache (`--rgba`) | All 1,520 textures pixel-equal to the Python PNG files |
 | Textures, BC1/BC3 cache | 1,120 BC1, 387 BC3, 13 RGBA32 (quality limit). PSNR of the first level: median 61.6–65.4 dB per package, minimum 36.5 dB. On the three worst textures, `etcpak` (the spike's native encoder) gives 28.1, 28.1, and 33.3 dB where this encoder gives 30.5 (now RGBA32), 40.5, and 47.6 dB |
+| Pre-encoded textures (2026-10-10, 195 packages with the two Miku test characters; compared by package ID, so `gh3.morello` is the character only) | The cache of the pre-encoded packages against the cache of `main` f91785d (the C# encoder): all 4,404 `.tex` files have the same mip data (only the header changed, `GH3TEX01` to `GH3TEX02`), and the other 5,383 files are byte-equal except the source hashes in the `pack.json` of the 10 venues |
 
 ### 20.5 Game measurements (Linux, 2026-10-09)
 
@@ -944,6 +993,8 @@ Game copy `~/games/clonehero-gh3-importer`, gh3.dive, mycurse-native, 1600 × 90
 Visual result: the dive recording from packages and from `main` agree (aligned videos: mean RGB difference 2.3–2.9 in 8 of 10 samples, up to 7.7 when the frame times differ). Screenshot pairs at the same song times differ as much as two `main` runs differ from each other (21–41 dB in both cases, from timing). `tools/audit-materials.py` on the cache gives the same 921 template materials as on `assets/stages`.
 
 Import speed on 2026-10-10 (195 packages: 11 stages, 2 libraries, 74 characters, 108 instruments; `tools/PackageImport` on the game's .NET 6.0.25 runtime, the same 16-thread PC): `main` 3313bed imports all packages in 46.5 s (peak working set 595 MB), this importer in 24.6 s with two workers (621 MB; one worker 34.1 s, three workers 22.1 s and 744 MB). The faster PNG decoder, the BC error from the encoder (the first level is not decoded again for the quality limit), and the faster actor clip sampler give the same bytes: all 9,787 cache files of the 194 imported packages are byte-equal to the cache of `main`. The game measurements are in [STATUS.md](STATUS.md#load-times).
+
+Pre-encoded textures (2026-10-10, the same 195 packages, `tools/PackageImport`, two workers; the PC had a load average of 7–13 from other jobs): `main` f91785d with PNG packages 22.0–24.7 s, format 1.0 with GH3TEX02 and DEFLATE GLBs 10.0–16.2 s (STORE GLBs: 8.5–9.3 s). The texture work of all packages went from 30 s to 0.3 s of worker time (game logs).
 
 ### 20.6 Characters
 
@@ -1050,3 +1101,4 @@ When all imports end (or at a warm start, on a worker thread), `PackageManager.C
 | 1.0 | 2026-10-10 | Added to 1.0: `gh3Shading` `toon`, `gh3Toon`, and `gh3HairLayer` for characters and instruments (section 6.5.1) |
 | 1.0 | 2026-10-10 | Added to 1.0: `character.json` `skeleton` and `face` (own skeleton, section 9.6); bone names of `bones`, `colliders`, and `chains` can use any script |
 | 1.0 | 2026-10-10 | Added to 1.0: the character library (`.chlib` with the entry `characters`, section 10.1: rig profiles, animation sets, hair with hinge and prismatic joints and the Havok limit fields, IK chains, and `clips/`); `character.json` `library` of a character library and `animations` (section 9.1); the kind instrument (`.chinst`, section 9.4) and the folder `Custom/Instruments/`; `character.json` `highway` (section 9.1). The earlier versions `chchar/1.1`, `chlib/1.1`, and `chlib/1.2` are now 1.0, without `minModVersion` |
+| 1.0 | 2026-10-10 | Changed in 1.0 (decision 12): model textures are pre-encoded GH3TEX02 files (BC1, BC3, or RGBA32 with the full mip chain; GLB images `image/vnd-gh3.tex` with the required extension `GH3_texture_bc`, texture files `.tex`; section 7). PNG model textures are errors. GLB and `.tex` entries use DEFLATE (O1). Importer version 2 |

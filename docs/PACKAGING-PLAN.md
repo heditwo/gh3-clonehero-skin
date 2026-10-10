@@ -199,7 +199,7 @@ The spike ran on 2026-10-09. Each item has a report in [docs/spike/](spike/) wit
 - Clone Hero Linux uses OpenGL Core 4.5. BC1, BC3, BC5, and BC7 upload with full mip chains and draw correctly. Check `SupportsTextureFormat` before upload (Unity's BC5 value is 27, not 32).
 - Main-thread time for one 2048² texture with mipmaps (median): `LoadImage` 80 ms; worker PNG decode then RGBA32 upload 30–38 ms; BC7 or BC3 from a cache file 5–13 ms. `SetPixelData` is stripped, so the worker must make the mip chain.
 - Encode time for one 2048² texture: BC1 or BC3 0.2–0.3 s in managed C#; BC7 8.5 s in managed C#, 1.5 s with a native encoder.
-- **Decision:** packages ship PNG. The importer encodes BC1 (opaque) or BC3 (alpha) into the cache. BC7 needs a native encoder per platform; it is not in v1 unless the owner asks.
+- **Decision:** packages ship PNG. The importer encodes BC1 (opaque) or BC3 (alpha) into the cache. **Changed on 2026-10-10 (owner):** packages store the textures pre-encoded (BC1/BC3 with mipmaps, made by the converter and the Blender add-on); the importer copies them ([PACKAGE-FORMAT.md section 7](PACKAGE-FORMAT.md#7-textures)). BC7 needs a native encoder per platform; it is not in v1 unless the owner asks.
 
 ### 9.2 Custom folders ([report](spike/textures.md))
 

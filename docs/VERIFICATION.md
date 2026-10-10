@@ -60,6 +60,10 @@ The log shows the package steps with the prefix `GH3 packages:`:
 
 To test a cold import, delete `UserData/GH3Skin/Cache/` in the test game.
 
+### Package textures
+
+The packages store the model textures pre-encoded ([PACKAGE-FORMAT.md section 7](PACKAGE-FORMAT.md#7-textures)); the validator checks each one. After a change of the encoder (`pipeline/package/texture.py`), check that the output did not change: `tests/test_texture.py` has a fixed digest (equal to the C# encoder of 2026-10-10), and the whole package set can be compared with a cache of `tools/PackageImport` (the mip data after the header of each `.tex` file). After a change of the importer, `pipeline.package.cachecheck` compares the cache with the pipeline output ([PIPELINE.md](PIPELINE.md)).
+
 ### Load times
 
 `GH3_SKIN_TIMING=1` writes `[timing]` lines: the time since the process start, the managed heap, the resident memory, the garbage collections, and the JIT time of each load phase (mod start, scenes, package scan, skin texture upload, each step of the stage load, the first frame with a running song clock, song time 0, the picker). It also writes `[timing] … long frame N ms` for each main-thread frame longer than 50 ms. `GH3_SKIN_TIMING_RELOADS=<n>` loads the gameplay scene again 4 s after song time 0, *n* times: a song change without the menus, for the stage load of the next song and the memory after each song.

@@ -141,7 +141,8 @@ Export gives the same bytes for the same scene and Blender version (fixed zip ti
 - The moods `intro` and `blackout` are necessary. The group `wide` must have one shot.
 - **Unchanged data stays the same.** After Open, export writes each row (a shot, a light, a snapshot, a material, a node, an actor) of the opened package again without a change while its Blender data did not change. A row that you change is written from the Blender data, with float32 precision. An actor model that does not change is the packed GLB, byte for byte.
 - Blender can rename objects, materials, images, and actions when you open a package into a `.blend` file that has the same names (`floor.001`). Export uses the names of the package again.
-- GH3 texture references (`#<image name>`) to images that Blender does not export (the GH3 shader samplers) become PNG files in `textures/` of the package (stage) or embedded images (actor GLB).
+- GH3 texture references (`#<image name>`) to images that Blender does not export (the GH3 shader samplers) become texture files in `textures/` of the package (stage) or embedded images (actor GLB).
+- **Textures.** Use PNG images in Blender. Export changes every image to the GPU format of the game (BC1 for opaque images, BC3 for images with alpha, with mipmaps; [PACKAGE-FORMAT.md section 7](PACKAGE-FORMAT.md#7-textures)), so the players do not wait for an encoder. This adds about 0.1–0.2 s for each 1024 × 1024 image to the export. Open changes the textures of a package back to PNG images. An image that you do not change exports with its original texture bytes; an image that you change is encoded again.
 
 ### 1.14 Not available yet
 
@@ -294,6 +295,7 @@ A character can keep the skeleton of its model (PACKAGE-FORMAT 9.6). The game re
 | `blender/chstage_tools/package_open.py` | Open .chstage: GLB import with fixes, sidecars into the property groups, kept files. Has the glTF import hooks |
 | `blender/chstage_tools/materials.py` | Lightmap node tree (glTF occlusion texture), vertex alpha for the 4.2 exporter, image bytes |
 | `blender/chstage_tools/glb_tools.py` | GLB read and write, GLB fixes before import, PNG text chunk removal; actor GLB edits (keep clips, drop unit scale channels, merge clips by joint name, rename clips, restore names, embed images). No `bpy` |
+| `blender/chstage_tools/textures.py` | Pre-encoded textures: PNG decode with Blender, the shared GH3TEX02 encoder on worker threads (export), GH3TEX02 to PNG (open) |
 | `blender/chstage_tools/actor_tools.py` | Actors: import (with the used clips), linked copies for equal GLBs, the model fingerprint, export of a Blender model with the actor rules |
 | `blender/chstage_tools/blobs.py` | Package files packed into the `.blend` file (bytes in a custom property of a text block) |
 | `blender/chstage_tools/rig.py` | Joint frames of a library band model in the first key of its first clip (camera bone anchors). No `bpy` |
@@ -354,7 +356,7 @@ The glTF export hooks (`glTF2ExportUserExtension` in `__init__.py`) write the `g
 flowchart LR
     Scene[Blender scene] --> Sidecars[placements, cameras, lighting, actors JSON]
     Scene --> Glb[glTF export with hooks]
-    Glb --> Finish[Texture references and textures/*.png]
+    Glb --> Finish[Texture references, GH3TEX02 textures, textures/*.tex]
     Scene --> Actors[Actor GLBs: packed or exported]
     Scene --> Kept[Kept files and preview]
     Sidecars --> Folder[Staging folder and manifest]
@@ -369,7 +371,8 @@ flowchart LR
 - glTF export settings: `gltf_io.EXPORT_OPTIONS` (spike 9.6), the selected scenery only (no markers, actors, or proxy rigs), no cameras and lights, `export_vertex_color="ACTIVE"`. Objects that the viewport hides are shown while the exporter runs (it exports only selected objects, and a hidden object cannot be selected).
 - Before the export, `materials.sync_lightmap` makes the occlusion node chain (image, Separate Color, glTF Material Output group) for each material with a lightmap. The glTF exporter gives a texture the `TEXCOORD` index of its UV map in the mesh, so the lightmap UV map must be the second one.
 - During the export, `materials.vertex_alpha_for_export` links the vertex color alpha to the shader alpha. Without it, the Blender 4.2 exporter writes `COLOR_0` without alpha for opaque materials (seen on `gh3.soundcheck` and `gh3.artdeco`).
-- `package_export.finish_glb` keeps `#<name>` for images that Blender exported and writes the other referenced images to `textures/<name>.png` (PACKAGE-FORMAT 6.6).
+- `package_export.finish_glb` keeps `#<name>` for images that Blender exported and writes the other referenced images to `textures/<name>.tex` (PACKAGE-FORMAT 6.6).
+- `textures.encode_glb` changes every PNG image of a stage, actor, or character GLB to a GH3TEX02 image (PACKAGE-FORMAT section 7) with the bundled encoder `vendor/package_format/texture.py` (numpy): Blender decodes the PNG (`bpy.data.images.load`, raw values), and the encoder runs on worker threads, one texture each (numpy releases the GIL; 7 threads on 16 cores encode the 21 Miku textures in 1.4 s against 4.2 s on one thread). A PNG that Open made keeps its GH3TEX02 source in the private chunk `ghTx`; when the pixels did not change, export writes that source again. Times: PACKAGE-FORMAT section 19.6.
 - The preview render saves and restores the render settings and removes the PNG text and time chunks.
 
 ### 2.4 Open
@@ -379,6 +382,7 @@ flowchart LR
   - `fill_texcoord_gaps`: the importer reads `TEXCOORD_n` only up to the first missing set. GH3 meshes have `TEXCOORD_3` (mask UV) without `TEXCOORD_1` and `TEXCOORD_2`. The add-on adds the missing sets with zeros; export then writes them as zeros.
   - `normalize_normals`: 12 GH3 meshes (prison, hell, budokan, party) have normals that are not unit length. The Blender 4.2 importer turns their custom normals up to 38° wrong. The add-on makes them unit length (glTF requires it, and Blender exports unit normals).
   - The 4.2 custom attribute fix (section 2.8).
+- `textures.decode_glb` changes the GH3TEX02 images of every GLB (stage, actors, characters, library rigs and helpers) to PNG images of the first mip level before the Blender importer reads it (`texture.decode_glb`), and `textures.png_of` does the same for `.tex` files of the package.
 - Images that no material socket uses (the GH3 shader samplers) are not imported by the glTF importer. The add-on packs them into the `.blend` file from the GLB.
 - The add-on removes the `gh3*` custom properties that the importer makes from extras and sets the property groups.
 - **Rigs.** When the GH3 library is available (the preference, or `gh3-band-v1.chlib` next to the package), Open loads `band/<role>/model.glb` for each band placement with its first clip, sets the pose of the first key, and removes the clip. `rig.anchor_frames` reads the joint frames of that pose from the GLB itself (glTF to runtime: negate Z), so the camera math does not depend on the Blender bone axes. The frames go into `scene.chstage.anchor_frames` before the cameras open; Open and Export use the stored frames, also when the library moves later.

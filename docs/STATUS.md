@@ -233,11 +233,39 @@ What is left:
 - MelonLoader and Clone Hero: with a mod that only writes the timing lines, the first main menu frame comes at 6.38–6.73 s (median 6.63 s, 3 runs). MelonLoader takes about 1.5 s before the first code of a mod and about 1 s more for its Il2Cpp support module. The skin adds no measured time before the menu now.
 - JIT: the first song compiles code for about 0.6 s during its stage load (later songs almost none). A ReadyToRun build of `Gh3Skin.dll` (crossgen2 6.0.36) made the first stage load 0.89 s in one run, but most compiled methods are generic and interop code that ReadyToRun does not compile, the image decoder ran 2 times slower, and each platform needs its own DLL: not used.
 - Clone Hero starts the song clock about 0.8 s after the stage load ends (without the stage: 0.97 s after the gameplay scene).
-- Cold start: the band library (3.6 s, all other packages need it) and the song's stage import before the stage can load; the song starts without the stage, and the stage appears when it is ready (as before). The texture steps (PNG decode, mip chain, BC1/BC3) are 77% of the summed import time of the packages (29 of 38 s; two packages import at the same time, so the wall time is 26 s). BC textures in the packages would remove most of it but change the package format, the pipeline, and the add-on.
+- Cold start: the band library and the song's stage import before the stage can load; the song starts without the stage, and the stage appears when it is ready (as before). The texture steps (PNG decode, mip chain, BC1/BC3) were 77% of the summed import time of the packages (29 of 38 s); the packages now store the textures pre-encoded ([Pre-encoded textures](#pre-encoded-textures)).
 - The stage objects are not kept between songs (the next stage load is 0.46 s).
 - The menus were not driven by keys: in the nested Xwayland display, Clone Hero took only the first key. Song starts use `--song`, and song changes use `GH3_SKIN_TIMING_RELOADS`.
 
 Evidence: `~/.cache/load-speed/` (`before/`, `final/`, `win/`, `shots2/`, `full-base/` and `full-final/` for the byte comparison); small images in `/tmp/opencode/load-speed/`.
+
+### Pre-encoded textures
+
+Since 2026-10-10 the packages store the model textures in the GPU format (GH3TEX02: BC1, BC3, or RGBA32 with the full mip chain, [PACKAGE-FORMAT.md section 7](PACKAGE-FORMAT.md#7-textures)). The converter and the Blender add-on encode them at export with one shared encoder (`pipeline/package/texture.py`); the importer copies them into the cache. GLB files use DEFLATE in the zip.
+
+Measured with `scripts/measure-load.sh` (3 runs each, median) on `~/games/clonehero-gh3-bc-textures` with 195 packages (the 193 GH3 packages and the two Miku test characters), the guitarist `custom.miku-sekai`, the bassist `gh3.axel.outfit1.style1`, the guitar `gh3.es400-blk`, My Curse on gh3.dive. "Before" is `main` f91785d with the PNG packages. The PC had a load average of 7–13 from other jobs.
+
+| Flow | Measure | Before | After |
+| --- | --- | --- | --- |
+| Cold start (empty cache) | Package imports (all 195), wall time | 27.1 s | 9.8 s |
+| | Process start to all packages imported | 34.2 s | 16.6 s |
+| | Summed import time of the packages; texture work in it | 39.6 s; 30.8 s | 12.0 s; 0.3 s |
+| | Process start to the first main menu frame | 7.12 s | 6.58 s |
+| | Peak resident memory | 1,464 MB | 1,468 MB |
+| First song after a cold start | Gameplay scene to stage loaded | 6.20 s | 5.14 s |
+| | Process start to stage loaded | 13.90 s | 11.65 s |
+| Warm start | Process start to the first main menu frame | 6.66 s | 6.56 s |
+| Song start, warm | Gameplay scene to stage loaded | 1.51 s | 1.62 s |
+| | Stage load on the main thread | 1,130 ms | 1,174 ms |
+| | Gameplay scene to the running song clock | 2.37 s | 2.50 s |
+| Sizes | The 193 GH3 packages | 1,779.9 MB | 1,138.4 MB |
+| | The two Miku packages | 11.95 MB | 4.05 MB |
+
+The warm song start uses the same cache texture bytes as before (only the header changed); its differences are in the range of the single runs (stage loaded 7.97–8.11 s before, 8.06–8.31 s after, from the process start). The first song after a cold start still waits for the band library (2.0 s) and the stage package import; the rest of the import time is the SHA-256 check (2.1 GB), the inflate, and the mesh and clip conversion.
+
+Checked: the cache of all 195 packages has the same texture data as the cache of `main` (4,404 files; the other files byte-equal except the source hashes of `pack.json`); `pipeline.package.cachecheck` gives `equal` for the venues and the band library; screenshots of gh3.dive at song times 2, 10, 20, 30, and 45 s differ between `main` and this change only where two runs also differ (the highway scroll, the animation of the band, the lights): on the pixels that are stable in two `main` runs and in two runs of this change, the mean difference is 0.1–1.1 RGB levels. The export through the Blender add-on takes 0.9–1.8 s more for the two Miku characters (section 19.6 of PACKAGE-FORMAT.md).
+
+Evidence: `~/.cache/bc-textures/load/` (`before/`, `after/`), `~/.cache/bc-textures/shots/` (`before-1`, `before-2`, `after-1`, `after-2`), `/tmp/opencode/bc-textures/` (`cachecheck.json`, `equal-full2.json`, `validate-all.txt`, `stable-diff-2.png`).
 
 ## Stability
 
