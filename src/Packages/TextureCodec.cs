@@ -76,9 +76,13 @@ internal static class TextureCodec
 // Output is RGBA32 with the bottom row first, as Unity's LoadImage stores it.
 internal static class Png
 {
+    // PNG: the file signature and the chunk types IHDR, PLTE, tRNS, IDAT, IEND.
+    private const ulong PngSignature = 0x89504E470D0A1A0AUL;
+    private const uint PngHeader = 0x49484452, PngPalette = 0x504C5445, PngTransparency = 0x74524E53, PngData = 0x49444154, PngEnd = 0x49454E44;
+
     public static byte[] DecodeRgba(byte[] png, out int width, out int height)
     {
-        if (png.Length < 33 || BinaryPrimitives.ReadUInt64BigEndian(png) != 0x89504E470D0A1A0AUL) throw new InvalidDataException("not a PNG file");
+        if (png.Length < 33 || BinaryPrimitives.ReadUInt64BigEndian(png) != PngSignature) throw new InvalidDataException("not a PNG file");
         width = height = 0;
         int depth = 0, colorType = -1;
         byte[]? palette = null, transparency = null;
@@ -91,18 +95,18 @@ internal static class Png
             var data = png.AsSpan(offset + 8, length);
             switch (type)
             {
-                case 0x49484452:
+                case PngHeader:
                     width = BinaryPrimitives.ReadInt32BigEndian(data);
                     height = BinaryPrimitives.ReadInt32BigEndian(data[4..]);
                     depth = data[8];
                     colorType = data[9];
                     if (data[12] != 0) throw new InvalidDataException("interlaced PNG files are not permitted");
                     break;
-                case 0x504C5445: palette = data.ToArray(); break;
-                case 0x74524E53: transparency = data.ToArray(); break;
-                case 0x49444154: compressed.Write(data); break;
+                case PngPalette: palette = data.ToArray(); break;
+                case PngTransparency: transparency = data.ToArray(); break;
+                case PngData: compressed.Write(data); break;
             }
-            if (type == 0x49454E44) break;
+            if (type == PngEnd) break;
             offset += length + 12;
         }
         var channels = colorType switch { 0 => 1, 2 => 3, 3 => 1, 4 => 2, 6 => 4, _ => throw new InvalidDataException("invalid PNG colour type") };

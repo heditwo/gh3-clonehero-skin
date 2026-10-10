@@ -8,7 +8,8 @@ using System.Text.RegularExpressions;
 // - a comment with "GH3:", "Measured:", or "Tuned:" is on a line of its statement or in the comment block directly
 //   above the statement;
 // - tests/fixtures/literal-allowlist.txt lists it ("<path> | <literal> | <trimmed source line>").
-// GH3_LITERAL_REPORT=1 prints every rejected literal and stops the test run.
+// GH3_LITERAL_REPORT=1 prints every rejected literal and stops the test run; GH3_LITERAL_FOLDERS=src/Packages,src
+// reports other folders ("src" alone: its top folder).
 internal static class LiteralGuardTests
 {
     private static readonly string[] Folders = { "src/Stage", "src/Hud", "src/Gameplay", "src/Native" };
@@ -30,8 +31,9 @@ internal static class LiteralGuardTests
             .Where(line => line.Length > 0 && !line.StartsWith('#')).ToHashSet();
         var rejected = new List<string>();
         var used = new HashSet<string>();
-        foreach (var folder in Folders)
-            foreach (var path in Directory.EnumerateFiles(Path.Combine(root, folder), "*.cs", SearchOption.AllDirectories).OrderBy(p => p, StringComparer.Ordinal))
+        var folders = Environment.GetEnvironmentVariable("GH3_LITERAL_FOLDERS")?.Split(',') ?? Folders;
+        foreach (var folder in folders)
+            foreach (var path in Directory.EnumerateFiles(Path.Combine(root, folder), "*.cs", folder == "src" ? SearchOption.TopDirectoryOnly : SearchOption.AllDirectories).OrderBy(p => p, StringComparer.Ordinal))
             {
                 var relative = Path.GetRelativePath(root, path).Replace('\\', '/');
                 if (relative.EndsWith("Constants.cs") || relative.EndsWith("Tables.cs")) continue;

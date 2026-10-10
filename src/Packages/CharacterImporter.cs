@@ -514,29 +514,29 @@ internal sealed class CharacterImporter
             var offset = v * StageGeometry.SkinnedStride;
             var row = vertices.AsSpan(offset, StageGeometry.SkinnedStride);
             void F(int at, double value) => BinaryPrimitives.WriteSingleLittleEndian(vertices.AsSpan(offset + at), (float)value);
-            F(0, positions[v, 0]); F(4, positions[v, 1]); F(8, -positions[v, 2]);
-            F(12, normals[v, 0]); F(16, normals[v, 1]); F(20, -normals[v, 2]);
-            if (uv is { } texture) { F(24, texture[v, 0]); BinaryPrimitives.WriteSingleLittleEndian(row[28..], 1f - (float)texture[v, 1]); }
+            F(SkinnedVertex.Position, positions[v, 0]); F(SkinnedVertex.Position + 4, positions[v, 1]); F(SkinnedVertex.Position + 8, -positions[v, 2]);
+            F(SkinnedVertex.Normal, normals[v, 0]); F(SkinnedVertex.Normal + 4, normals[v, 1]); F(SkinnedVertex.Normal + 8, -normals[v, 2]);
+            if (uv is { } texture) { F(SkinnedVertex.Uv, texture[v, 0]); BinaryPrimitives.WriteSingleLittleEndian(row[SkinnedVertex.UvV..], 1f - (float)texture[v, 1]); }
             for (var c = 0; c < 4; c++)
-                row[32 + c] = color is not { } paint ? (byte)255 : c >= paint.Columns ? (byte)255 :
+                row[SkinnedVertex.Color + c] = color is not { } paint ? (byte)255 : c >= paint.Columns ? (byte)255 :
                     rawColor ? (byte)paint[v, c] : (byte)Math.Clamp(Math.Round(paint[v, c] * 255), 0, 255);
             double sum = 0;
             for (var c = 0; c < 4; c++)
             {
                 var index = joint[v, c];
                 if (index < 0 || index >= jointCount || weight[v, c] < 0) throw new PackageException("invalid character skin weights");
-                row[36 + c] = (byte)index;
+                row[SkinnedVertex.Joints + c] = (byte)index;
                 sum += weight[v, c];
             }
             if (Math.Abs(sum - 1) > 0.01) throw new PackageException("character skin weights must add up to 1");
             // Normalized integer weights round; float weights stay as exported.
             var renormalize = Math.Abs(sum - 1) > 1e-6;
-            for (var c = 0; c < 4; c++) F(40 + c * 4, renormalize ? weight[v, c] / sum : weight[v, c]);
+            for (var c = 0; c < 4; c++) F(SkinnedVertex.Weights + c * 4, renormalize ? weight[v, c] / sum : weight[v, c]);
             if (gh3Uv != null)
             {
-                for (var i = 0; i < 6; i++) { F(56 + i * 8, gh3Uv[i][v, 0]); F(60 + i * 8, gh3Uv[i][v, 1]); }
-                F(104, binormal[v, 0]); F(108, binormal[v, 1]); F(112, -binormal[v, 2]);
-                F(116, tangent[v, 0]); F(120, tangent[v, 1]); F(124, -tangent[v, 2]);
+                for (var i = 0; i < 6; i++) { F(SkinnedVertex.Gh3Uv + i * SkinnedVertex.Gh3UvSize, gh3Uv[i][v, 0]); F(SkinnedVertex.Gh3Uv + 4 + i * SkinnedVertex.Gh3UvSize, gh3Uv[i][v, 1]); }
+                F(SkinnedVertex.Binormal, binormal[v, 0]); F(SkinnedVertex.Binormal + 4, binormal[v, 1]); F(SkinnedVertex.Binormal + 8, -binormal[v, 2]);
+                F(SkinnedVertex.Tangent, tangent[v, 0]); F(SkinnedVertex.Tangent + 4, tangent[v, 1]); F(SkinnedVertex.Tangent + 8, -tangent[v, 2]);
             }
         }
         return (vertices, count, streams);

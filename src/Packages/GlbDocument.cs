@@ -12,6 +12,16 @@ internal readonly record struct GlbAccessor(double[] Values, int Count, int Colu
 // Values are doubles, as in the Python compiler (pipeline/stagepack/gltf.py GlbReader), so the cache has the same numbers.
 internal sealed class GlbDocument
 {
+    // glTF 2.0 binary container: "glTF" magic, version 2, total length; chunks "JSON" and "BIN\0".
+    private const uint Magic = 0x46546c67;
+    private const uint JsonChunk = 0x4e4f534a;
+    private const uint BinaryChunk = 0x004e4942;
+    private const int HeaderSize = 12;
+    private const int ChunkHeaderSize = 8;
+    private const int MinimumFileSize = 28;
+    private const int MaximumAccessorCount = 10000000;
+    // glTF accessor component types.
+    private const int SignedByte = 5120, UnsignedByte = 5121, SignedShort = 5122, UnsignedShort = 5123, UnsignedInt = 5125, Float = 5126;
     private readonly byte[] _data;
     private readonly int _binary;
     private readonly int _binaryLength;
@@ -21,24 +31,24 @@ internal sealed class GlbDocument
 
     public GlbDocument(byte[] data)
     {
-        if (data.Length < 28 || BinaryPrimitives.ReadUInt32LittleEndian(data) != 0x46546c67 || BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4)) != 2 ||
+        if (data.Length < MinimumFileSize || BinaryPrimitives.ReadUInt32LittleEndian(data) != Magic || BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4)) != 2 ||
             BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(8)) != data.Length)
             throw new PackageException("expected a glTF 2.0 GLB");
         JsonObject? json = null;
         _binary = -1;
-        for (var cursor = 12; cursor < data.Length;)
+        for (var cursor = HeaderSize; cursor < data.Length;)
         {
             if (cursor + 8 > data.Length) throw new PackageException("invalid GLB chunks");
             var length = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(cursor));
             var kind = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(cursor + 4));
-            cursor += 8;
+            cursor += ChunkHeaderSize;
             if (length < 0 || cursor + (long)length > data.Length) throw new PackageException("invalid GLB chunks");
-            if (kind == 0x4e4f534a)
+            if (kind == JsonChunk)
             {
                 if (json != null) throw new PackageException("invalid GLB chunks");
                 json = JsonNode.Parse(data.AsSpan(cursor, length)) as JsonObject;
             }
-            else if (kind == 0x004e4942)
+            else if (kind == BinaryChunk)
             {
                 if (_binary >= 0) throw new PackageException("invalid GLB chunks");
                 _binary = cursor;
@@ -74,7 +84,7 @@ internal sealed class GlbDocument
         var accessor = Item("accessors", index);
         if (accessor["sparse"] != null) throw new PackageException("sparse glTF accessors are not permitted");
         var type = accessor["componentType"]!.GetValue<int>();
-        var size = type switch { 5120 or 5121 => 1, 5122 or 5123 => 2, 5125 or 5126 => 4, _ => throw new PackageException("unsupported accessor component type") };
+        var size = type switch { SignedByte or UnsignedByte => 1, SignedShort or UnsignedShort => 2, UnsignedInt or Float => 4, _ => throw new PackageException("unsupported accessor component type") };
         var columns = accessor["type"]!.GetValue<string>() switch
         {
             "SCALAR" => 1, "VEC2" => 2, "VEC3" => 3, "VEC4" => 4, "MAT4" => 16, _ => throw new PackageException("unsupported accessor type"),
@@ -83,7 +93,7 @@ internal sealed class GlbDocument
         {
             // glTF: an accessor without a buffer view holds zeros (Blender writes these for unchanged morph targets).
             var zeros = accessor["count"]!.GetValue<int>();
-            if (zeros is < 1 or > 10000000) throw new PackageException("invalid glTF accessor range");
+            if (zeros is < 1 or > MaximumAccessorCount) throw new PackageException("invalid glTF accessor range");
             return new GlbAccessor(new double[zeros * columns], zeros, columns);
         }
         var viewIndex = accessor["bufferView"]!.GetValue<int>();
@@ -92,9 +102,9 @@ internal sealed class GlbDocument
         var offset = Int(accessor, "byteOffset", 0);
         var stride = Int(view, "byteStride", columns * size);
         var count = accessor["count"]!.GetValue<int>();
-        if (count is < 1 or > 10000000 || stride < columns * size || offset < 0 || offset + (long)(count - 1) * stride + columns * size > data.Length)
+        if (count is < 1 or > MaximumAccessorCount || stride < columns * size || offset < 0 || offset + (long)(count - 1) * stride + columns * size > data.Length)
             throw new PackageException("invalid glTF accessor range");
-        var normalized = normalize && accessor["normalized"] is JsonValue flag && flag.GetValue<bool>() && type != 5126;
+        var normalized = normalize && accessor["normalized"] is JsonValue flag && flag.GetValue<bool>() && type != Float;
         var values = new double[count * columns];
         for (var row = 0; row < count; row++)
         {
@@ -103,15 +113,15 @@ internal sealed class GlbDocument
             {
                 double value = type switch
                 {
-                    5126 => BinaryPrimitives.ReadSingleLittleEndian(at[(c * 4)..]),
-                    5121 => at[c],
-                    5120 => (sbyte)at[c],
-                    5123 => BinaryPrimitives.ReadUInt16LittleEndian(at[(c * 2)..]),
-                    5122 => BinaryPrimitives.ReadInt16LittleEndian(at[(c * 2)..]),
+                    Float => BinaryPrimitives.ReadSingleLittleEndian(at[(c * 4)..]),
+                    UnsignedByte => at[c],
+                    SignedByte => (sbyte)at[c],
+                    UnsignedShort => BinaryPrimitives.ReadUInt16LittleEndian(at[(c * 2)..]),
+                    SignedShort => BinaryPrimitives.ReadInt16LittleEndian(at[(c * 2)..]),
                     _ => BinaryPrimitives.ReadUInt32LittleEndian(at[(c * 4)..]),
                 };
                 if (normalized)
-                    value = Math.Max(-1, value / type switch { 5121 => 255.0, 5120 => 127.0, 5123 => 65535.0, 5122 => 32767.0, _ => 4294967295.0 });
+                    value = Math.Max(-1, value / type switch { UnsignedByte => byte.MaxValue, SignedByte => sbyte.MaxValue, UnsignedShort => ushort.MaxValue, SignedShort => short.MaxValue, _ => (double)uint.MaxValue });
                 if (!double.IsFinite(value)) throw new PackageException("non-finite glTF accessor value");
                 values[row * columns + c] = value;
             }
@@ -119,7 +129,7 @@ internal sealed class GlbDocument
         return new GlbAccessor(values, count, columns);
     }
 
-    public bool IsIntegerAccessor(int index) => Item("accessors", index)["componentType"]!.GetValue<int>() != 5126;
+    public bool IsIntegerAccessor(int index) => Item("accessors", index)["componentType"]!.GetValue<int>() != Float;
 
     // Index of the first texture whose image has this name (texture references '#<name>', PACKAGE-FORMAT.md section 6.6).
     public int? NamedTexture(string name)

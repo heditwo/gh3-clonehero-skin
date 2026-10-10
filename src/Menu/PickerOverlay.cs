@@ -233,16 +233,13 @@ internal sealed class PickerOverlay
             var current = choices.Character(role);
             var index = ids.IndexOf(current);
             GUI.Label(new Rect(area.x, y + 4, 90, 22), char.ToUpperInvariant(role[0]) + role[1..]);
-            // < and > step through all characters; << and >> jump to the previous or next character (over its outfits).
-            var jump = GUI.Button(new Rect(area.x + 90, y, 30, 26), "<<") ? -1 : GUI.Button(new Rect(area.x + 418, y, 30, 26), ">>") ? 1 : 0;
-            var step = GUI.Button(new Rect(area.x + 122, y, 26, 26), "<") ? -1 : GUI.Button(new Rect(area.x + 390, y, 26, 26), ">") ? 1 : 0;
             var row = options.FirstOrDefault(c => c.Id == current);
             var label = current == PlayerChoices.DefaultCharacter ? "Default (venue)" :
                 row == null ? current + " (not installed)" : row.Role == role ? row.Name : $"{row.Name} <color=#999999>(a {row.Role})</color>";
-            GUI.Box(new Rect(area.x + 150, y, 238, 26), Fit(label));
+            var (jump, step) = Stepper(area, y, label);
             if (step != 0 || jump != 0)
             {
-                choices.Characters[role] = step != 0 ? ids[((index < 0 ? 0 : index) + step + ids.Count) % ids.Count] : PlayerChoices.Jump(ids, index < 0 ? 0 : index, jump);
+                choices.Characters[role] = step != 0 ? Step(ids, index, step) : PlayerChoices.Jump(ids, index < 0 ? 0 : index, jump);
                 PackageRuntime.SaveChoices();
             }
         }
@@ -265,17 +262,28 @@ internal sealed class PickerOverlay
         var current = choices.Instrument(role);
         var index = ids.IndexOf(current);
         GUI.Label(new Rect(area.x + 12, y + 4, 80, 22), role == "bassist" ? "Bass" : "Guitar");
-        var jump = GUI.Button(new Rect(area.x + 90, y, 30, 26), "<<") ? -1 : GUI.Button(new Rect(area.x + 418, y, 30, 26), ">>") ? 1 : 0;
-        var step = GUI.Button(new Rect(area.x + 122, y, 26, 26), "<") ? -1 : GUI.Button(new Rect(area.x + 390, y, 26, 26), ">") ? 1 : 0;
         var row = options.FirstOrDefault(i => i.Id == current);
         var label = current == PlayerChoices.DefaultInstrument ? "Default (the character's own)" : row == null ? current + " (not installed)" : row.Name;
-        GUI.Box(new Rect(area.x + 150, y, 238, 26), Fit(label));
+        var (jump, step) = Stepper(area, y, label);
         if (step == 0 && jump == 0) return;
         string Family(string id) => options.FirstOrDefault(i => i.Id == id)?.Family ?? id;
-        choices.Instruments[role] = step != 0 ? ids[((index < 0 ? 0 : index) + step + ids.Count) % ids.Count] :
-            PlayerChoices.Jump(ids, index < 0 ? 0 : index, jump, Family);
+        choices.Instruments[role] = step != 0 ? Step(ids, index, step) : PlayerChoices.Jump(ids, index < 0 ? 0 : index, jump, Family);
         PackageRuntime.SaveChoices();
     }
+
+    // The stepper of a band row: < and > step through all entries; << and >> jump to the previous or next family (a
+    // character over its outfits, an instrument over its finishes). IMGUI numbers its controls in call order, so the
+    // buttons stay before the label box.
+    private static (int Jump, int Step) Stepper(Rect area, float y, string label)
+    {
+        var jump = GUI.Button(new Rect(area.x + 90, y, 30, 26), "<<") ? -1 : GUI.Button(new Rect(area.x + 418, y, 30, 26), ">>") ? 1 : 0;
+        var step = GUI.Button(new Rect(area.x + 122, y, 26, 26), "<") ? -1 : GUI.Button(new Rect(area.x + 390, y, 26, 26), ">") ? 1 : 0;
+        GUI.Box(new Rect(area.x + 150, y, 238, 26), Fit(label));
+        return (jump, step);
+    }
+
+    // The entry `step` places after the current one (index -1: the first), wrapping around.
+    private static string Step(List<string> ids, int index, int step) => ids[((index < 0 ? 0 : index) + step + ids.Count) % ids.Count];
 
     // Long names (GH3 guitars with their finish, characters with outfit and style) get a smaller font to fit the box.
     private static string Fit(string label) => System.Text.RegularExpressions.Regex.Replace(label, "<[^>]*>", "").Length switch

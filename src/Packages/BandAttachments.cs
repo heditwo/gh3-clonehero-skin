@@ -49,8 +49,8 @@ internal static class BandAttachments
                 if (reader.Read(row, 0, row.Length) != row.Length) throw new EndOfStreamException();
                 var best = 0;
                 for (var c = 1; c < 4; c++)
-                    if (BitConverter.ToSingle(row, 40 + c * 4) > BitConverter.ToSingle(row, 40 + best * 4)) best = c;
-                dominant[v] = row[36 + best];
+                    if (BitConverter.ToSingle(row, SkinnedVertex.Weights + c * 4) > BitConverter.ToSingle(row, SkinnedVertex.Weights + best * 4)) best = c;
+                dominant[v] = row[SkinnedVertex.Joints + best];
             }
             reader.BaseStream.Seek(indices * 4L, SeekOrigin.Current);
             parts[p] = new Part(material, dominant);

@@ -16,8 +16,21 @@ internal sealed class PrimitiveData
 
 internal sealed record MeshPart(string Material, int Count, byte[] Vertices, int[] Faces);
 
+// The GH3BND02 skinned vertex (128 bytes, docs/ARCHITECTURE.md#asset-formats): byte offsets of its fields.
+internal static class SkinnedVertex
+{
+    public const int Position = 0, Normal = 12, Uv = 24, UvV = 28, Color = 32, Joints = 36, Weights = 40;
+    // Six GH3 UV sets of 8 bytes, then binormal 0 and tangent 0.
+    public const int Gh3Uv = 56, Gh3UvSize = 8, Binormal = 104, Tangent = 116;
+}
+
+// Mesh packing of the stage compiler (pipeline/stagepack): primitives to GH3STG04 and GH3BND02 vertex rows, split into
+// parts of at most 60,000 faces.
 internal static class StageGeometry
 {
+    // Unity's 16-bit index limit with a margin: a part has at most this many face indices.
+    private const int MaximumPartIndices = 60000;
+    private const double MinimumNormalLength = 1e-10;
     public const int StaticStride = 144;
     public const int SkinnedStride = 128;
     private static readonly string[] Gh3Streams = { "_GH3_UV0", "_GH3_UV1", "_GH3_UV2", "_GH3_UV3", "_GH3_UV4", "_GH3_UV5", "_GH3_BINORMAL" };
@@ -56,7 +69,7 @@ internal static class StageGeometry
         for (var i = 0; i < count; i++)
         {
             var length = Math.Sqrt(data.Normal[i * 3] * data.Normal[i * 3] + data.Normal[i * 3 + 1] * data.Normal[i * 3 + 1] + data.Normal[i * 3 + 2] * data.Normal[i * 3 + 2]);
-            length = Math.Max(length, 1e-10);
+            length = Math.Max(length, MinimumNormalLength);
             for (var c = 0; c < 3; c++) data.Normal[i * 3 + c] /= length;
         }
         // numpy keeps float32 accessors in float32, so `1 - v` and the colour scale round in single precision there.
@@ -185,14 +198,14 @@ internal static class StageGeometry
         {
             var row = packed.AsSpan(v * SkinnedStride, SkinnedStride);
             Floats(row, data.Position, v * 3, 3);
-            Floats(row[12..], data.Normal, v * 3, 3);
-            Floats(row[24..], data.Uv, v * 2, 2);
-            data.Color.AsSpan(v * 4, 4).CopyTo(row[32..]);
-            for (var i = 0; i < 4; i++) row[36 + i] = (byte)joints[v * 4 + i];
-            Floats(row[40..], weights, v * 4, 4);
-            Floats(row[56..], data.Gh3Uv, v * 12, 12);
-            Floats(row[104..], data.Gh3Binormal, v * 3, 3);
-            if (tangents != null) Floats(row[116..], tangents, v * 3, 3);
+            Floats(row[SkinnedVertex.Normal..], data.Normal, v * 3, 3);
+            Floats(row[SkinnedVertex.Uv..], data.Uv, v * 2, 2);
+            data.Color.AsSpan(v * 4, 4).CopyTo(row[SkinnedVertex.Color..]);
+            for (var i = 0; i < 4; i++) row[SkinnedVertex.Joints + i] = (byte)joints[v * 4 + i];
+            Floats(row[SkinnedVertex.Weights..], weights, v * 4, 4);
+            Floats(row[SkinnedVertex.Gh3Uv..], data.Gh3Uv, v * 12, 12);
+            Floats(row[SkinnedVertex.Binormal..], data.Gh3Binormal, v * 3, 3);
+            if (tangents != null) Floats(row[SkinnedVertex.Tangent..], tangents, v * 3, 3);
         }
         return packed;
     }
@@ -200,9 +213,9 @@ internal static class StageGeometry
     // pipeline/stagepack/pack.py split_mesh: at most 20,000 faces for each part, with the used vertices in index order.
     public static IEnumerable<MeshPart> Split(string material, byte[] packed, int stride, int[] faces)
     {
-        for (var start = 0; start < faces.Length; start += 60000)
+        for (var start = 0; start < faces.Length; start += MaximumPartIndices)
         {
-            var length = Math.Min(60000, faces.Length - start);
+            var length = Math.Min(MaximumPartIndices, faces.Length - start);
             var used = new SortedSet<int>();
             for (var i = 0; i < length; i++) used.Add(faces[start + i]);
             var order = used.ToArray();
@@ -219,10 +232,10 @@ internal static class StageGeometry
     // The source vertex indices of each part of Split, in the order of the part vertices.
     public static IEnumerable<int[]> SplitOrders(int[] faces)
     {
-        for (var start = 0; start < faces.Length; start += 60000)
+        for (var start = 0; start < faces.Length; start += MaximumPartIndices)
         {
             var used = new SortedSet<int>();
-            for (var i = 0; i < Math.Min(60000, faces.Length - start); i++) used.Add(faces[start + i]);
+            for (var i = 0; i < Math.Min(MaximumPartIndices, faces.Length - start); i++) used.Add(faces[start + i]);
             yield return used.ToArray();
         }
     }
