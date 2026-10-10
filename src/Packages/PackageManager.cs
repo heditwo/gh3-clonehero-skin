@@ -38,10 +38,12 @@ internal sealed record PackageSettings(
     string GraphicsApi,
     SemanticVersion ModVersion,
     string PreferredStage,
-    int TextureThreads);
+    int TextureThreads,
+    int ImportWorkers = 1);
 
-// Finds packages, checks their manifests and requirements, and imports one package at a time on a background thread
-// into the per-machine cache (PACKAGE-FORMAT.md sections 13 and 14). Bad packages are skipped with one log line each.
+// Finds packages, checks their manifests and requirements, and imports them on background threads into the per-machine
+// cache (PACKAGE-FORMAT.md sections 13 and 14). Bad packages are skipped with one log line each. Up to ImportWorkers
+// packages import at the same time: the libraries first, then at most one stage beside the characters and instruments.
 internal sealed class PackageManager
 {
     public const int ImporterVersion = 1;
@@ -63,24 +65,37 @@ internal sealed class PackageManager
 
     public string TextureFormat => _settings.CompressedTextures ? "bc1-bc3" : "rgba32";
 
-    // The scan and the cache check run on the calling thread (about 0.1 s). A worker thread starts only when a package
-    // needs an import, so a warm start runs no package code in the background.
-    public void Start()
+    // The scan and the cache check run on a background thread (0.1 to 0.2 s for 200 packages), so the first menu frame
+    // does not wait for them. Import workers start only when a package needs an import.
+    public void Start() => new Thread(ScanAndCheck) { IsBackground = true, Name = "GH3 package scan" }.Start();
+
+    private void ScanAndCheck()
     {
-        var clock = Stopwatch.StartNew();
-        Scan();
-        foreach (var package in Packages.OrderBy(p => p.Manifest.Kind == PackageKind.Library ? 0 : 1))
-            if (TryCacheHit(package)) package.State = PackageState.Ready;
-        if (Packages.All(p => p.State != PackageState.Pending))
+        try
         {
-            Activity = "finished";
-            Finished = true;
-            Log($"all packages ready from the cache in {clock.ElapsedMilliseconds} ms");
-            // The clean-up deletes files; it does not need the main thread.
-            Task.Run(CleanCache);
-            return;
+            var clock = Stopwatch.StartNew();
+            Scan();
+            var index = ReadIndex();
+            foreach (var package in Packages.OrderBy(p => p.Manifest.Kind == PackageKind.Library ? 0 : 1))
+                if (TryCacheHit(package, index)) package.State = PackageState.Ready;
+            Scanned = true;
+            if (Packages.All(p => p.State != PackageState.Pending))
+            {
+                Activity = "finished";
+                Finished = true;
+                Log($"all packages ready from the cache in {clock.ElapsedMilliseconds} ms");
+                CleanCache();
+                return;
+            }
+            CleanTemporaryFolders();
+            StartWorker();
         }
-        StartWorker();
+        catch (Exception error)
+        {
+            Warn($"the package scan stopped: {error}");
+            Scanned = true;
+            Finished = true;
+        }
     }
 
     private void StartWorker()
@@ -111,7 +126,7 @@ internal sealed class PackageManager
                 !Packages.Any(p => p.Manifest.Id == requirement.Id && p.Manifest.Version.Satisfies(requirement.Version)));
             if (missing.Id != null) throw new PackageException($"it requires {missing.Id} {missing.Version} (same major version or later), which is not installed");
             var package = new InstalledPackage(path, manifest, int.MaxValue) { SongPackage = true };
-            if (TryCacheHit(package)) package.State = PackageState.Ready;
+            if (TryCacheHit(package, ReadIndex())) package.State = PackageState.Ready;
             lock (_gate) _packages.Add(package);
             Log($"song venue {package.Label} {(package.State == PackageState.Ready ? "ready from the cache" : "imports now")}");
             if (package.State == PackageState.Pending) StartWorker();
@@ -128,6 +143,8 @@ internal sealed class PackageManager
     public void RunNow()
     {
         Scan();
+        Scanned = true;
+        CleanTemporaryFolders();
         Run();
     }
 
@@ -137,15 +154,14 @@ internal sealed class PackageManager
         Activity = "scanning the package folders";
         try { Discover(); }
         catch (Exception error) { Warn($"the package scan stopped: {error.Message}"); }
-        Scanned = true;
         Log($"found {_packages.Count} usable package(s) in {clock.ElapsedMilliseconds} ms");
     }
 
-    private bool TryCacheHit(InstalledPackage package)
+    private bool TryCacheHit(InstalledPackage package, JsonObject index)
     {
         try
         {
-            if (KnownKey(package.Location) is not { } key) return false;
+            if (KnownKey(package.Location, index) is not { } key) return false;
             var folder = Path.Combine(_settings.CacheRoot, $"{key}-i{ImporterVersion}");
             if (!CacheMatches(folder)) return false;
             package.CacheDirectory = folder;
@@ -186,24 +202,12 @@ internal sealed class PackageManager
         try
         {
             var clock = Stopwatch.StartNew();
-            CleanTemporaryFolders();
-            while (true)
-            {
-                InstalledPackage? next;
-                lock (_gate)
-                {
-                    next = _packages.Where(p => p.State == PackageState.Pending)
-                        .OrderBy(p => p.Manifest.Kind == PackageKind.Library ? 0 : 1)
-                        .ThenBy(p => _priority.IndexOf(p.Location) is var index and >= 0 ? index : int.MaxValue)
-                        .ThenBy(p => p.Manifest.Id == _settings.PreferredStage ? 0 : 1)
-                        .ThenBy(p => p.Manifest.Kind switch { PackageKind.Character => 0, PackageKind.Instrument => 1, _ => 2 })
-                        .ThenBy(p => p.Manifest.Id, StringComparer.Ordinal).FirstOrDefault();
-                    if (next != null) next.State = PackageState.Importing;
-                    else _stopping = true;
-                }
-                if (next == null) break;
-                Prepare(next);
-            }
+            var helpers = Enumerable.Range(1, Math.Max(1, _settings.ImportWorkers) - 1)
+                .Select(index => new Thread(Work) { IsBackground = true, Name = $"GH3 package importer {index + 1}", Priority = ThreadPriority.BelowNormal })
+                .ToList();
+            foreach (var helper in helpers) helper.Start();
+            Work();
+            foreach (var helper in helpers) helper.Join();
             Activity = "finished";
             Log($"all packages ready; the imports took {clock.Elapsed.TotalSeconds:0.0} s");
             CleanCache();
@@ -221,6 +225,46 @@ internal sealed class PackageManager
         finally
         {
             lock (_gate) if (_thread == Thread.CurrentThread) Finished = true;
+        }
+    }
+
+    private static bool Large(InstalledPackage package) => package.Manifest.Kind is PackageKind.Library or PackageKind.Stage;
+
+    // One import worker: takes the next package that can import now, until no package waits.
+    private void Work()
+    {
+        while (true)
+        {
+            InstalledPackage? next;
+            lock (_gate)
+            {
+                // The other packages read the library caches; a second large import at the same time would double the
+                // import memory.
+                var librariesBusy = _packages.Any(p => p.Manifest.Kind == PackageKind.Library && p.State is PackageState.Pending or PackageState.Importing);
+                var largeBusy = _packages.Any(p => Large(p) && p.State == PackageState.Importing);
+                next = _packages.Where(p => p.State == PackageState.Pending)
+                    .Where(p => p.Manifest.Kind == PackageKind.Library ? !largeBusy : !librariesBusy && !(Large(p) && largeBusy))
+                    .OrderBy(p => p.Manifest.Kind == PackageKind.Library ? 0 : 1)
+                    .ThenBy(p => _priority.IndexOf(p.Location) is var index and >= 0 ? index : int.MaxValue)
+                    .ThenBy(p => p.Manifest.Id == _settings.PreferredStage ? 0 : 1)
+                    .ThenBy(p => p.Manifest.Kind switch { PackageKind.Character => 0, PackageKind.Instrument => 1, _ => 2 })
+                    .ThenBy(p => p.Manifest.Id, StringComparer.Ordinal).FirstOrDefault();
+                if (next != null) next.State = PackageState.Importing;
+                else if (_packages.Any(p => p.State == PackageState.Importing))
+                {
+                    // Another worker imports a package that the waiting packages need; look again when it ends.
+                    if (_packages.Any(p => p.State == PackageState.Pending)) Monitor.Wait(_gate, 250);
+                    else return;
+                    continue;
+                }
+                else
+                {
+                    _stopping = true;
+                    return;
+                }
+            }
+            try { Prepare(next); }
+            finally { lock (_gate) Monitor.PulseAll(_gate); }
         }
     }
 
@@ -335,9 +379,13 @@ internal sealed class PackageManager
             Import(package, key, folder, clock);
             package.CacheDirectory = folder;
             package.State = PackageState.Ready;
-            // Give the large import buffers back before the next package, so the import memory stays at one package.
-            GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
-            GC.Collect();
+            // Give the large import buffers of a library or a stage back before the next one. A full compacting
+            // collection stops all threads, so the small packages do not force one.
+            if (Large(package))
+            {
+                GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+                GC.Collect();
+            }
         }
         catch (Exception error)
         {
@@ -503,7 +551,7 @@ internal sealed class PackageManager
         }
     }
 
-    // PACKAGE-FORMAT.md section 14: SHA-256 of the zip file, or of the sorted "<path> <sha256>\n" lines of a folder.
+    // PACKAGE-FORMAT.md section 14: SHA-256 of the zip's manifest.json, or of the sorted "<path> <sha256>\n" lines of a folder.
     // index.json keeps the hash with the size and time of each package, so a warm start does not read the packages.
     private JsonObject ReadIndex()
     {
@@ -512,8 +560,8 @@ internal sealed class PackageManager
         catch (Exception error) when (error is IOException or PackageException or System.Text.Json.JsonException) { return new JsonObject(); }
     }
 
-    private string? KnownKey(string location) =>
-        ReadIndex()[location] is JsonObject row && PackageJson.Text(row["signature"]) == Signature(location) && PackageJson.Text(row["sha256"]) is { Length: 64 } known
+    private static string? KnownKey(string location, JsonObject index) =>
+        index[location] is JsonObject row && PackageJson.Text(row["signature"]) == Signature(location) && PackageJson.Text(row["sha256"]) is { Length: 64 } known
             ? known : null;
 
     private string CacheKey(string location)
@@ -538,9 +586,10 @@ internal sealed class PackageManager
         }
         else
         {
-            using var stream = File.OpenRead(location);
-            using var sha = SHA256.Create();
-            key = Convert.ToHexString(sha.ComputeHash(stream)).ToLowerInvariant();
+            // The manifest lists the SHA-256 and size of every file, and the import checks each file against it, so the
+            // manifest identifies the content. Its hash costs nothing; the hash of a 658 MB library zip took 0.6 s.
+            using var source = new ZipPackageSource(location);
+            key = Convert.ToHexString(SHA256.HashData(source.ReadAll("manifest.json"))).ToLowerInvariant();
         }
         lock (_cacheGate)
         {

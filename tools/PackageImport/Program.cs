@@ -3,11 +3,11 @@ using Gh3Skin.Packages;
 
 // Runs the mod's package importer outside the game, for tests and for the C# against Python cache comparison
 // (pipeline/package/cachecheck.py).
-// Usage: dotnet run --project tools/PackageImport -c Release -- PACKAGES_FOLDER CACHE_FOLDER [--rgba] [--threads N] [--custom FOLDER]...
+// Usage: dotnet run --project tools/PackageImport -c Release -- PACKAGES_FOLDER CACHE_FOLDER [--rgba] [--threads N] [--workers N] [--custom FOLDER]...
 var arguments = args.ToList();
 if (arguments.Count < 2)
 {
-    Console.Error.WriteLine("usage: PackageImport PACKAGES_FOLDER CACHE_FOLDER [--rgba] [--threads N] [--custom FOLDER]...");
+    Console.Error.WriteLine("usage: PackageImport PACKAGES_FOLDER CACHE_FOLDER [--rgba] [--threads N] [--workers N] [--custom FOLDER]...");
     return 2;
 }
 var custom = new List<string>();
@@ -17,9 +17,10 @@ for (var i = arguments.IndexOf("--custom"); i >= 0; i = arguments.IndexOf("--cus
     arguments.RemoveRange(i, 2);
 }
 var threads = arguments.IndexOf("--threads") is var t and >= 0 ? int.Parse(arguments[t + 1]) : Math.Clamp(Environment.ProcessorCount / 2, 1, 4);
+var workers = arguments.IndexOf("--workers") is var w and >= 0 ? int.Parse(arguments[w + 1]) : Math.Clamp(Environment.ProcessorCount / 4, 1, 3);
 SemanticVersion.TryParse(Gh3Skin.ModInfo.Version, out var version);
 var settings = new PackageSettings(Path.GetFullPath(arguments[0]), custom, Path.GetFullPath(arguments[1]), !arguments.Contains("--rgba"),
-    "Tool", "None", version, "", threads);
+    "Tool", "None", version, "", threads, workers);
 var manager = new PackageManager(settings);
 var clock = Stopwatch.StartNew();
 manager.RunNow();

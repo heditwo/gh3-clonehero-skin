@@ -817,7 +817,10 @@ internal sealed class StageCompiler
             {
                 writer.Write((float)duration);
                 writer.Write(poses.GetLength(0));
-                foreach (var value in poses) writer.Write((float)value);
+                var floats = new float[poses.Length];
+                var at = 0;
+                foreach (var value in poses) floats[at++] = (float)value;
+                writer.Write(System.Runtime.InteropServices.MemoryMarshal.AsBytes(floats.AsSpan()));
             }
         }
         return names;
@@ -901,11 +904,12 @@ internal sealed class StageCompiler
                         var index = Math.Max(0, UpperBound(key.Times, samples[f]) - 1);
                         for (var c = 0; c < columns; c++) result[c] = values[index * columns + c];
                     }
-                    else
-                        for (var c = 0; c < columns; c++) result[c] = Interpolate(samples[f], key.Times, values, columns, c);
+                    else Interpolate(samples[f], key.Times, values, result);
                     if (property == "rotation")
                     {
-                        var length = Math.Sqrt(result.Sum(v => v * v));
+                        double squares = 0;
+                        foreach (var v in result) squares += v * v;
+                        var length = Math.Sqrt(squares);
                         poses[f, bone, 3] = -result[0] / length;
                         poses[f, bone, 4] = -result[1] / length;
                         poses[f, bone, 5] = result[2] / length;
@@ -950,16 +954,28 @@ internal sealed class StageCompiler
         return low;
     }
 
-    // numpy.interp for one column.
-    private static double Interpolate(double x, double[] xp, double[] fp, int columns, int column)
+    // numpy.interp for each column (one key search for all columns).
+    private static void Interpolate(double x, double[] xp, double[] fp, double[] result)
     {
         var n = xp.Length;
-        if (x <= xp[0]) return fp[column];
-        if (x >= xp[n - 1]) return fp[(n - 1) * columns + column];
+        var columns = result.Length;
+        if (x <= xp[0] || x >= xp[n - 1])
+        {
+            var row = x <= xp[0] ? 0 : n - 1;
+            for (var column = 0; column < columns; column++) result[column] = fp[row * columns + column];
+            return;
+        }
         var j = UpperBound(xp, x) - 1;
-        if (xp[j] == x) return fp[j * columns + column];
-        var slope = (fp[(j + 1) * columns + column] - fp[j * columns + column]) / (xp[j + 1] - xp[j]);
-        var value = slope * (x - xp[j]) + fp[j * columns + column];
-        return double.IsNaN(value) ? slope * (x - xp[j + 1]) + fp[(j + 1) * columns + column] : value;
+        for (var column = 0; column < columns; column++)
+        {
+            if (xp[j] == x)
+            {
+                result[column] = fp[j * columns + column];
+                continue;
+            }
+            var slope = (fp[(j + 1) * columns + column] - fp[j * columns + column]) / (xp[j + 1] - xp[j]);
+            var value = slope * (x - xp[j]) + fp[j * columns + column];
+            result[column] = double.IsNaN(value) ? slope * (x - xp[j + 1]) + fp[(j + 1) * columns + column] : value;
+        }
     }
 }

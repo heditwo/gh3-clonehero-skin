@@ -34,8 +34,8 @@ internal static class TextureCodec
         {
             // Art that GH3 did not store as DXT can lose too much in BC1/BC3 (for example the band face gradients); keep it
             // uncompressed when the first level falls below the quality limit.
-            first = BlockCompression.Encode(rgba, width, height, format == Dxt5);
-            var error = BlockCompression.MeanSquaredError(rgba, width, height, first, format == Dxt5);
+            first = BlockCompression.Encode(rgba, width, height, format == Dxt5, out var squaredError);
+            var error = (double)squaredError / (width * height * (format == Dxt5 ? 4 : 3));
             if (error > 0 && 10 * Math.Log10(255.0 * 255.0 / error) < MinimumPsnr)
             {
                 format = Rgba32;
@@ -157,65 +157,95 @@ internal static class Png
         {
             Unfilter(filtered[y * (stride + 1)], filtered.AsSpan(y * (stride + 1) + 1, stride), current, previous, bpp);
             var target = rgba.AsSpan((height - 1 - y) * width * 4, width * 4);
-            for (var x = 0; x < width; x++)
-            {
-                int Sample(int channel)
-                {
-                    if (depth == 8) return current[x * channels + channel];
-                    if (depth == 16) return current[(x * channels + channel) * 2];
-                    var bit = (x * channels + channel) * depth;
-                    return (current[bit >> 3] >> (8 - depth - (bit & 7))) & ((1 << depth) - 1);
-                }
-                int Raw16(int channel) => depth == 16 ? current[(x * channels + channel) * 2] << 8 | current[(x * channels + channel) * 2 + 1] : Sample(channel);
-                byte r, g, b, a = 255;
-                switch (colorType)
-                {
-                    case 3:
-                        var index = Sample(0);
-                        if (index * 3 + 2 >= palette!.Length) throw new InvalidDataException("PNG palette index out of range");
-                        (r, g, b) = (palette[index * 3], palette[index * 3 + 1], palette[index * 3 + 2]);
-                        if (transparency != null && index < transparency.Length) a = transparency[index];
-                        break;
-                    case 0:
-                        r = g = b = (byte)(Sample(0) * scale);
-                        if (transparency is { Length: >= 2 } && Raw16(0) == (transparency[0] << 8 | transparency[1])) a = 0;
-                        break;
-                    case 4:
-                        r = g = b = (byte)Sample(0);
-                        a = (byte)Sample(1);
-                        break;
-                    case 2:
-                        (r, g, b) = ((byte)Sample(0), (byte)Sample(1), (byte)Sample(2));
-                        if (transparency is { Length: >= 6 } && Raw16(0) == (transparency[0] << 8 | transparency[1]) &&
-                            Raw16(1) == (transparency[2] << 8 | transparency[3]) && Raw16(2) == (transparency[4] << 8 | transparency[5])) a = 0;
-                        break;
-                    default:
-                        (r, g, b, a) = ((byte)Sample(0), (byte)Sample(1), (byte)Sample(2), (byte)Sample(3));
-                        break;
-                }
-                target[x * 4] = r;
-                target[x * 4 + 1] = g;
-                target[x * 4 + 2] = b;
-                target[x * 4 + 3] = a;
-            }
+            if (depth == 8 && colorType == 6) current.AsSpan(0, width * 4).CopyTo(target);
+            else if (depth == 8 && colorType == 2 && transparency == null) Rgb8Row(current, target, width);
+            else ConvertRow(current, target, width, channels, depth, colorType, scale, palette, transparency);
             (previous, current) = (current, previous);
         }
         return rgba;
     }
 
+    // The common 8-bit RGB rows without per-pixel branches.
+    private static void Rgb8Row(byte[] current, Span<byte> target, int width)
+    {
+        for (int x = 0, source = 0, at = 0; x < width; x++, source += 3, at += 4)
+        {
+            target[at] = current[source];
+            target[at + 1] = current[source + 1];
+            target[at + 2] = current[source + 2];
+            target[at + 3] = 255;
+        }
+    }
+
+    private static void ConvertRow(byte[] current, Span<byte> target, int width, int channels, int depth, int colorType, int scale,
+        byte[]? palette, byte[]? transparency)
+    {
+        for (var x = 0; x < width; x++)
+        {
+            int Sample(int channel)
+            {
+                if (depth == 8) return current[x * channels + channel];
+                if (depth == 16) return current[(x * channels + channel) * 2];
+                var bit = (x * channels + channel) * depth;
+                return (current[bit >> 3] >> (8 - depth - (bit & 7))) & ((1 << depth) - 1);
+            }
+            int Raw16(int channel) => depth == 16 ? current[(x * channels + channel) * 2] << 8 | current[(x * channels + channel) * 2 + 1] : Sample(channel);
+            byte r, g, b, a = 255;
+            switch (colorType)
+            {
+                case 3:
+                    var index = Sample(0);
+                    if (index * 3 + 2 >= palette!.Length) throw new InvalidDataException("PNG palette index out of range");
+                    (r, g, b) = (palette[index * 3], palette[index * 3 + 1], palette[index * 3 + 2]);
+                    if (transparency != null && index < transparency.Length) a = transparency[index];
+                    break;
+                case 0:
+                    r = g = b = (byte)(Sample(0) * scale);
+                    if (transparency is { Length: >= 2 } && Raw16(0) == (transparency[0] << 8 | transparency[1])) a = 0;
+                    break;
+                case 4:
+                    r = g = b = (byte)Sample(0);
+                    a = (byte)Sample(1);
+                    break;
+                case 2:
+                    (r, g, b) = ((byte)Sample(0), (byte)Sample(1), (byte)Sample(2));
+                    if (transparency is { Length: >= 6 } && Raw16(0) == (transparency[0] << 8 | transparency[1]) &&
+                        Raw16(1) == (transparency[2] << 8 | transparency[3]) && Raw16(2) == (transparency[4] << 8 | transparency[5])) a = 0;
+                    break;
+                default:
+                    (r, g, b, a) = ((byte)Sample(0), (byte)Sample(1), (byte)Sample(2), (byte)Sample(3));
+                    break;
+            }
+            target[x * 4] = r;
+            target[x * 4 + 1] = g;
+            target[x * 4 + 2] = b;
+            target[x * 4 + 3] = a;
+        }
+    }
+
+    // The first bpp bytes of a row have no left neighbour; the loops handle them first so the inner loops have no branch.
     private static void Unfilter(byte filter, ReadOnlySpan<byte> row, byte[] current, byte[] previous, int bpp)
     {
+        var head = Math.Min(bpp, row.Length);
         switch (filter)
         {
             case 0: row.CopyTo(current); break;
-            case 1: for (var i = 0; i < row.Length; i++) current[i] = (byte)(row[i] + (i >= bpp ? current[i - bpp] : 0)); break;
+            case 1:
+                row[..head].CopyTo(current);
+                for (var i = head; i < row.Length; i++) current[i] = (byte)(row[i] + current[i - bpp]);
+                break;
             case 2: for (var i = 0; i < row.Length; i++) current[i] = (byte)(row[i] + previous[i]); break;
-            case 3: for (var i = 0; i < row.Length; i++) current[i] = (byte)(row[i] + (((i >= bpp ? current[i - bpp] : 0) + previous[i]) >> 1)); break;
+            case 3:
+                for (var i = 0; i < head; i++) current[i] = (byte)(row[i] + (previous[i] >> 1));
+                for (var i = head; i < row.Length; i++) current[i] = (byte)(row[i] + ((current[i - bpp] + previous[i]) >> 1));
+                break;
             case 4:
-                for (var i = 0; i < row.Length; i++)
+                // Paeth with a = c = 0 selects b.
+                for (var i = 0; i < head; i++) current[i] = (byte)(row[i] + previous[i]);
+                for (var i = head; i < row.Length; i++)
                 {
-                    int a = i >= bpp ? current[i - bpp] : 0, b = previous[i], c = i >= bpp ? previous[i - bpp] : 0;
-                    int p = a + b - c, pa = Math.Abs(p - a), pb = Math.Abs(p - b), pc = Math.Abs(p - c);
+                    int a = current[i - bpp], b = previous[i], c = previous[i - bpp];
+                    int pa = Math.Abs(b - c), pb = Math.Abs(a - c), pc = Math.Abs(a + b - 2 * c);
                     current[i] = (byte)(row[i] + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c));
                 }
                 break;

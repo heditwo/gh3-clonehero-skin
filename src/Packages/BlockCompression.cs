@@ -7,8 +7,13 @@ internal static class BlockCompression
     private static readonly byte[,] Single5 = SingleColorTable(5);
     private static readonly byte[,] Single6 = SingleColorTable(6);
 
-    public static byte[] Encode(byte[] rgba, int width, int height, bool alpha)
+    public static byte[] Encode(byte[] rgba, int width, int height, bool alpha) => Encode(rgba, width, height, alpha, out _);
+
+    // squaredError: the sum of the squared RGB(A) errors of the blocks, as MeanSquaredError counts them when the size is a
+    // multiple of 4 (no edge pixels repeat), so the importer does not decode the level again.
+    public static byte[] Encode(byte[] rgba, int width, int height, bool alpha, out long squaredError)
     {
+        squaredError = 0;
         int blocksX = Math.Max(1, (width + 3) / 4), blocksY = Math.Max(1, (height + 3) / 4);
         var blockSize = alpha ? 16 : 8;
         var output = new byte[blocksX * blocksY * blockSize];
@@ -31,10 +36,10 @@ internal static class BlockCompression
                 var at = (by * blocksX + bx) * blockSize;
                 if (alpha)
                 {
-                    EncodeAlpha(block, output.AsSpan(at, 8));
+                    squaredError += EncodeAlpha(block, output.AsSpan(at, 8));
                     at += 8;
                 }
-                EncodeColor(block, output.AsSpan(at, 8));
+                squaredError += EncodeColor(block, output.AsSpan(at, 8));
             }
         return output;
     }
@@ -136,8 +141,9 @@ internal static class BlockCompression
         return total;
     }
 
-    private static void EncodeColor(ReadOnlySpan<byte> block, Span<byte> output)
+    private static int EncodeColor(ReadOnlySpan<byte> block, Span<byte> output)
     {
+        int error;
         Span<int> indices = stackalloc int[16];
         int minR = 255, minG = 255, minB = 255, maxR = 0, maxG = 0, maxB = 0;
         double meanR = 0, meanG = 0, meanB = 0;
@@ -155,7 +161,7 @@ internal static class BlockCompression
             c1 = Pack(Single5[minR, 1], Single6[minG, 1], Single5[minB, 1]);
             var exact = Pack(Quantize(minR, 5), Quantize(minG, 6), Quantize(minB, 5));
             if (Expand5(exact >> 11) == minR && Expand6(exact >> 5 & 63) == minG && Expand5(exact & 31) == minB) c0 = c1 = exact;
-            Match(block, c0, c1, indices);
+            error = Match(block, c0, c1, indices);
         }
         else
         {
@@ -185,7 +191,7 @@ internal static class BlockCompression
             }
             c0 = Pack(Quantize(block[highIndex * 4], 5), Quantize(block[highIndex * 4 + 1], 6), Quantize(block[highIndex * 4 + 2], 5));
             c1 = Pack(Quantize(block[lowIndex * 4], 5), Quantize(block[lowIndex * 4 + 1], 6), Quantize(block[lowIndex * 4 + 2], 5));
-            var error = Match(block, c0, c1, indices);
+            error = Match(block, c0, c1, indices);
             Span<int> trial = stackalloc int[16];
             for (var pass = 0; pass < 2 && error > 0; pass++)
             {
@@ -208,6 +214,7 @@ internal static class BlockCompression
         uint bits = 0;
         for (var i = 15; i >= 0; i--) bits = bits << 2 | (uint)indices[i];
         output[4] = (byte)bits; output[5] = (byte)(bits >> 8); output[6] = (byte)(bits >> 16); output[7] = (byte)(bits >> 24);
+        return error;
     }
 
     // Least-squares endpoints for the given indices (weights 1, 0, 2/3, 1/3 of endpoint 0).
@@ -233,9 +240,9 @@ internal static class BlockCompression
         return true;
     }
 
-    private static void EncodeAlpha(ReadOnlySpan<byte> block, Span<byte> output)
+    private static int EncodeAlpha(ReadOnlySpan<byte> block, Span<byte> output)
     {
-        int low = 255, high = 0;
+        int low = 255, high = 0, squared = 0;
         for (var i = 0; i < 16; i++)
         {
             low = Math.Min(low, block[i * 4 + 3]);
@@ -260,8 +267,10 @@ internal static class BlockCompression
                     if (error < best) { best = error; choice = p; }
                 }
                 bits = bits << 3 | (uint)choice;
+                squared += best * best;
             }
         }
         for (var i = 0; i < 6; i++) output[2 + i] = (byte)(bits >> (8 * i));
+        return squared;
     }
 }

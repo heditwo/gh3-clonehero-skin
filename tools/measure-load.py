@@ -3,7 +3,8 @@
 Usage: measure-load.py --game DIR --out DIR [--song CHART] [--timeout S] [--env NAME=VALUE ...] STEP ...
 
 Steps (in order):
-  wait:REGEX       wait for a new loader log line that matches REGEX
+  wait:REGEX       wait for a loader log line that matches REGEX after the line of the last wait step
+  seen:REGEX       wait for a loader log line that matches REGEX anywhere in the log
   sleep:SECONDS    wait
   key:NAME[:HOLD]  send a key press to the game window (X keysym names: Return, Escape, Down, F6, ...)
   shot:NAME        save the display as OUT/NAME.png
@@ -120,31 +121,35 @@ try:
             files = len(os.listdir(f"/proc/{pid}/fd"))
         except OSError:
             return
-        rss = int(re.search(r"VmRSS:\s+(\d+)", status).group(1)) / 1024
-        peak = int(re.search(r"VmHWM:\s+(\d+)", status).group(1)) / 1024
+        rss_match, peak_match = re.search(r"VmRSS:\s+(\d+)", status), re.search(r"VmHWM:\s+(\d+)", status)
+        if not rss_match or not peak_match:
+            return
+        rss, peak = int(rss_match.group(1)) / 1024, int(peak_match.group(1)) / 1024
         samples.write(f"{time.time() - started:.2f},{rss:.0f},{peak:.0f},{io['syscr']},{int(io['rchar']) / 1e6:.0f},{files}\n")
 
-    def lines():
-        nonlocal_seen = lines.seen
-        text = log_path.read_text(errors="replace")
-        rows = text.splitlines()
-        new = rows[nonlocal_seen:]
-        lines.seen = len(rows)
-        return new
+    # Each wait step starts after the line that matched the step before it.
+    def matched(pattern, anywhere=False):
+        rows = log_path.read_text(errors="replace").splitlines()
+        for index in range(0 if anywhere else matched.seen, len(rows)):
+            if pattern.search(rows[index]):
+                if not anywhere:
+                    matched.seen = index + 1
+                return True
+        return False
 
-    lines.seen = 0
+    matched.seen = 0
     last_sample = 0.0
     for step in args.steps:
         kind, _, value = step.partition(":")
         events.append({"step": step, "at": round(time.time() - started, 2)})
-        if kind == "wait":
+        if kind in ("wait", "seen"):
             pattern = re.compile(value)
             while True:
                 if time.time() - started > args.timeout:
                     raise SystemExit(f"timeout at step {step}")
                 if game_process.poll() is not None:
                     raise SystemExit(f"the game stopped at step {step}")
-                if any(pattern.search(line) for line in lines()):
+                if matched(pattern, kind == "seen"):
                     break
                 if time.time() - last_sample > 0.25:
                     sample()

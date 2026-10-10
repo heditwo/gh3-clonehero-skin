@@ -129,6 +129,14 @@ internal static class PackageLogicTests
         var bc3 = BlockCompression.Encode(rgba, 16, 16, alpha: true);
         var error = BlockCompression.MeanSquaredError(rgba, 16, 16, bc3, alpha: true);
         Check(bc3.Length == 16 * 16 && 10 * Math.Log10(255.0 * 255 / error) > 40, $"BC3 keeps a smooth gradient (PSNR {10 * Math.Log10(255.0 * 255 / error):0.0} dB)");
+        var noise = new byte[32 * 16 * 4];
+        new Random(7).NextBytes(noise);
+        foreach (var withAlpha in new[] { false, true })
+        {
+            var blocks = BlockCompression.Encode(noise, 32, 16, withAlpha, out var squared);
+            Check(Math.Abs(squared / (32.0 * 16 * (withAlpha ? 4 : 3)) - BlockCompression.MeanSquaredError(noise, 32, 16, blocks, withAlpha)) < 1e-9,
+                "the encoder's block error equals the decoded mean squared error");
+        }
         var solid = Enumerable.Range(0, 64).SelectMany(_ => new byte[] { 200, 101, 37, 255 }).ToArray();
         var bc1 = BlockCompression.Encode(solid, 4, 4, alpha: false);
         Check(BlockCompression.MeanSquaredError(solid, 4, 4, bc1, alpha: false) < 1, "BC1 reproduces a single colour within one step");

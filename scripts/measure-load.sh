@@ -37,11 +37,11 @@ measure() {
 for flow in "${flows[@]}"; do
   for ((run = 1; run <= runs; run++)); do
     case "$flow" in
-      warm-menu) measure "$flow-$run" "wait:frame 30 of scene Main Menu" "wait:package imports finished" sleep:3 ;;
-      cold-menu) rm -rf "$cache"; measure "$flow-$run" "wait:frame 30 of scene Main Menu" "wait:package imports finished" sleep:2 ;;
+      warm-menu) measure "$flow-$run" "wait:frame 30 of scene Main Menu" "seen:package imports finished" sleep:3 ;;
+      cold-menu) rm -rf "$cache"; measure "$flow-$run" "wait:frame 30 of scene Main Menu" "seen:package imports finished" sleep:2 ;;
       warm-song) measure "$flow-$run" --song "$song" --env "GH3_SKIN_STAGE=$stage" "wait:song time 0" sleep:1 ;;
       cold-song) rm -rf "$cache"; measure "$flow-$run" --song "$song" --env "GH3_SKIN_STAGE=$stage" "wait:timing.*stage loaded" sleep:1 ;;
-      picker) measure "$flow-$run" --env "GH3_SKIN_PICKER_TEST=ready;wait 1;open;wait 2;close;quit" "wait:picker preview of" sleep:3 ;;
+      picker) measure "$flow-$run" --env "GH3_SKIN_PICKER_TEST=ready;wait 1;open;wait 2;close;quit" "seen:picker preview of" sleep:3 ;;
       reload) measure "$flow-$run" --song "$song" --env "GH3_SKIN_STAGE=$stage" --env GH3_SKIN_TIMING_RELOADS=4 \
         "wait:song time 0" "wait:song time 0" "wait:song time 0" "wait:song time 0" "wait:song time 0" sleep:1 ;;
       reload-random) measure "$flow-$run" --song "$song" --env GH3_SKIN_STAGE=random --env GH3_SKIN_TIMING_RELOADS=8 \
