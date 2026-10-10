@@ -42,6 +42,8 @@ LIBRARY_SCHEMAS = {"catalog": "catalog.schema.json", "band": "band.schema.json",
                    "audio": "audio.schema.json", "scripts": "scripts.schema.json", "songs": "songs.schema.json"}
 EFFECT_SCHEMAS = {"effects/particle-materials.json": "particle-materials.schema.json", "effects/tesla-material.json": "tesla-material.schema.json"}
 KNOWN_EXTENSIONS = {"KHR_materials_unlit"}
+# Texture references in gh3Toon (PACKAGE-FORMAT 6.5).
+TOON_TEXTURES = ("shadeTexture", "shadeMaskTexture", "sphereTexture")
 IGNORED_EXTENSIONS = {"KHR_lights_punctual", "KHR_materials_emissive_strength", "KHR_texture_transform", "KHR_materials_specular", "KHR_materials_ior"}
 STATIC_ATTRIBUTES = {"POSITION", "NORMAL", "TEXCOORD_0", "TEXCOORD_1", "TEXCOORD_2", "TEXCOORD_3", "COLOR_0", "TANGENT",
                      *(f"_GH3_UV{i}" for i in range(6)), "_GH3_BINORMAL", "_GH3_POSITION1", "_GH3_BINORMAL1"}
@@ -314,6 +316,14 @@ class Validator:
             for message in self.schemas_validate(extras, "material"):
                 self.report.error(name, f"{label} extras{message}")
             refs = [extras.get("gh3MaskTexture"), extras.get("gh3LayerTexture")]
+            toon = extras.get("gh3Toon")
+            if isinstance(toon, dict): refs += [toon.get(key) for key in TOON_TEXTURES]
+            if self.kind not in ("chchar", "chinst") and (extras.get("gh3Shading") == "toon" or "gh3Toon" in extras or "gh3HairLayer" in extras):
+                self.report.error(name, f"{label}: toon shading and hair layers are only for characters and instruments")
+            if "gh3Toon" in extras and extras.get("gh3Shading") != "toon":
+                self.report.warn(name, f"{label}: gh3Toon has no effect without gh3Shading 'toon'")
+            if "gh3HairLayer" in extras and "gh3Shading" not in extras:
+                self.report.warn(name, f"{label}: gh3HairLayer has no effect without gh3Shading")
             shader = extras.get("gh3Shader")
             if isinstance(shader, dict) and isinstance(shader.get("textures"), list):
                 refs += shader["textures"]

@@ -119,7 +119,8 @@ def convert(game, output, kind='screen-color', windows_game=WINDOWS_GAME):
         '_Gh3SH0', '_Gh3SH1', '_Gh3SH2', '_Gh3SH3', '_Gh3Maps', '_Gh3Eye') if particle else (
         '_Gh3TeslaAnimation', '_Gh3TeslaShape', '_Gh3TeslaColor') if tesla else (
         '_Color', '_Gh3Surface', '_Gh3LightIndex', '_Gh3CamRight', '_Gh3CamUp',
-        '_Gh3UvWibble', '_Gh3UvPivot', '_Gh3LayerColor', '_Gh3Layers', '_Gh3Template', *templates) if surface else (
+        '_Gh3UvWibble', '_Gh3UvPivot', '_Gh3LayerColor', '_Gh3Layers', '_Gh3Template',
+        '_Gh3Toon', '_Gh3ToonShade', '_Gh3ToonRim', '_Gh3ToonOutline', '_Gh3ToonOptions', *templates) if surface else (
         '_Gh3Red', '_Gh3Green', '_Gh3Blue')
     properties_names = names
     # Per-frame values shared by every stage surface; they stay out of the material properties so the global values apply.
@@ -159,7 +160,8 @@ def convert(game, output, kind='screen-color', windows_game=WINDOWS_GAME):
     if outline or particle or tesla or surface:
         blend_properties = [('_SrcBlend', 5), ('_DstBlend', 10)]
         if particle or tesla: blend_properties += [('_SrcBlendAlpha', 5), ('_DstBlendAlpha', 10), ('_BlendOp', 0), ('_BlendOpAlpha', 0), ('_Cull', 0)]
-        if surface: blend_properties = [('_SrcBlend', 1), ('_DstBlend', 0), ('_BlendOp', 0), ('_ZWrite', 1), ('_ZTest', 4), ('_Cull', 0)]
+        if surface: blend_properties = [('_SrcBlend', 1), ('_DstBlend', 0), ('_BlendOp', 0), ('_ZWrite', 1), ('_ZTest', 4), ('_Cull', 0),
+                                        ('_StencilRef', 0), ('_StencilReadMask', 255), ('_StencilWriteMask', 255), ('_StencilComp', 8), ('_StencilPass', 0)]
         for name, value in blend_properties:
             prop = deepcopy(color)
             prop.update(m_Name=name, m_Description=name, m_Type=2)
@@ -209,6 +211,13 @@ def convert(game, output, kind='screen-color', windows_game=WINDOWS_GAME):
                 state['rtBlend0']['srcBlend'].update(val=1, name='_SrcBlend')
                 state['rtBlend0']['destBlend'].update(val=0, name='_DstBlend')
                 state['rtBlend0']['blendOp'].update(val=0, name='_BlendOp')
+                # Character features drawn over the hair (StageAssets): the default (always, keep) leaves the stencil unchanged.
+                state['stencilRef'].update(val=0, name='_StencilRef')
+                state['stencilReadMask'].update(val=255, name='_StencilReadMask')
+                state['stencilWriteMask'].update(val=255, name='_StencilWriteMask')
+                for stencil in ('stencilOp', 'stencilOpFront', 'stencilOpBack'):
+                    state[stencil]['comp'].update(val=8, name='_StencilComp')
+                    state[stencil]['pass'].update(val=0, name='_StencilPass')
         if particle or tesla:
             for shader_pass in sub['m_Passes']:
                 state = shader_pass['m_State']

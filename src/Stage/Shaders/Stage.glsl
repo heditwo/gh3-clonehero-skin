@@ -8,6 +8,9 @@ uniform vec4 _Gh3CamRight;
 uniform vec4 _Gh3CamUp;
 uniform vec4 _Gh3UvWibble;
 uniform vec4 _Gh3UvPivot;
+uniform vec4 _Gh3Surface;
+uniform vec4 _Gh3ToonOutline;
+uniform vec4 _Gh3ViewEye;
 in vec4 in_POSITION0;
 in vec3 in_NORMAL0;
 in vec4 in_TANGENT0;
@@ -34,6 +37,7 @@ out vec2 surfaceMaskUv;
 out vec3 surfaceNormal;
 #endif
 // GH3_TEMPLATE_VERTEX
+#define surfaceWorld gh3_T4
 void stage_main()
 {
     mat4 model = mat4(hlslcc_mtx4x4unity_ObjectToWorld[0], hlslcc_mtx4x4unity_ObjectToWorld[1], hlslcc_mtx4x4unity_ObjectToWorld[2], hlslcc_mtx4x4unity_ObjectToWorld[3]);
@@ -45,7 +49,13 @@ void stage_main()
         vec3 offset = in_POSITION0.xyz - in_NORMAL0;
         world = model * vec4(in_NORMAL0, 1.0) + vec4(_Gh3CamRight.xyz * offset.x + _Gh3CamUp.xyz * offset.y, 0.0);
     }
+    surfaceNormal = mat3(model) * in_NORMAL0;
+    // Toon outline material: the back faces of an inverted hull, pushed out along the normal. The width is in metres at 1 m
+    // from the camera; from 0.5 m to 4 m the line keeps its screen width.
+    if (_Gh3Surface.x > 3.5)
+        world.xyz += normalize(surfaceNormal) * (_Gh3ToonOutline.w * clamp(length(world.xyz - _Gh3ViewEye.xyz), 0.5, 4.0));
     gl_Position = viewProjection * world;
+    surfaceWorld = vec4(world.xyz, 1.0);
     surfaceColor = in_COLOR0;
     vec2 uv = in_TEXCOORD0;
     // GH3 Wibble_Simple turns and scrolls the diffuse UV in its top-down V convention.
@@ -59,7 +69,6 @@ void stage_main()
     surfaceLightmapUv = in_TEXCOORD1;
     surfaceLayerUv = in_TEXCOORD2;
     surfaceMaskUv = in_TEXCOORD3;
-    surfaceNormal = mat3(model) * in_NORMAL0;
 }
 // _Gh3Template.x selects a translated GH3 material template; zero keeps the stage surface model above.
 void main()
@@ -83,6 +92,13 @@ uniform sampler2D _Gh3LayerTex;
 uniform sampler2D _Gh3MaskTex;
 uniform vec4 _Gh3LayerColor;
 uniform vec4 _Gh3Layers;
+uniform vec4 _Gh3Toon;
+uniform vec4 _Gh3ToonShade;
+uniform vec4 _Gh3ToonRim;
+uniform vec4 _Gh3ToonOutline;
+uniform vec4 _Gh3ToonOptions;
+uniform vec4 _Gh3ViewRight;
+uniform vec4 _Gh3ViewUp;
 #ifdef GH3_D3D11
 #define surfaceColor gh3_T0
 #define surfaceUv gh3_T1.xy
@@ -106,6 +122,44 @@ vec4 Light(int column)
     return texture(_Gh3LightData, (vec2(float(column), _Gh3LightIndex.x) + 0.5) / size);
 }
 // GH3_TEMPLATE_FRAGMENT
+#define surfaceWorld gh3_T4
+// Toon textures use template samplers: a toon material has no GH3 template.
+#define _Gh3ToonShadeTex _Gh3Tex6
+#define _Gh3ToonMaskTex _Gh3Tex7
+#define _Gh3ToonSphereTex _Gh3Tex8
+// The color of the ambient and key lights, without the GH3 over-brightness (GH3 textures are darker than toon textures):
+// the strongest channel is at most 1, so the hue of the venue light stays.
+vec3 toonLight()
+{
+    vec3 light = Light(0).xyz + Light(3).xyz + Light(2).xyz;
+    return light / max(1.0, max(light.r, max(light.g, light.b)));
+}
+// Cel shading lit by the stage: the key light direction selects the base or the shade color, and both take the color of
+// the ambient and key lights, so the character keeps the mood of the venue.
+vec3 toon(vec4 color)
+{
+    vec3 normal = normalize(surfaceNormal);
+    vec3 view = normalize(_Gh3ViewEye.xyz - surfaceWorld.xyz);
+    vec4 keyColor = Light(2);
+    float lambert = dot(normal, -Light(1).xyz) * 0.5 + 0.5;
+    // Mask red: 0 always shade, 0.5 by the light, 1 always lit.
+    if (_Gh3Toon.w > 0.5) lambert += texture(_Gh3ToonMaskTex, surfaceUv).r * 2.0 - 1.0;
+    float lit = smoothstep(_Gh3Toon.x - _Gh3Toon.y, _Gh3Toon.x + _Gh3Toon.y, lambert);
+    vec3 shade = (_Gh3Toon.z > 0.5 ? texture(_Gh3ToonShadeTex, surfaceUv).rgb * _Color.rgb * surfaceColor.rgb : color.rgb) * _Gh3ToonShade.rgb;
+    vec3 result = mix(shade, color.rgb, lit);
+    if (_Gh3ToonShade.w > 0.5)
+    {
+        vec3 sphere = texture(_Gh3ToonSphereTex, vec2(dot(normal, _Gh3ViewRight.xyz), dot(normal, _Gh3ViewUp.xyz)) * 0.5 + 0.5).rgb;
+        result = _Gh3ToonShade.w > 1.5 ? result + sphere : result * sphere;
+    }
+    result *= toonLight();
+    if (_Gh3ToonRim.w > 0.0)
+    {
+        float rim = smoothstep(1.0 - _Gh3ToonRim.w, 1.0, 1.0 - clamp(dot(normal, view), 0.0, 1.0));
+        result += _Gh3ToonRim.rgb * keyColor.xyz / max(1.0, max(keyColor.r, max(keyColor.g, keyColor.b))) * rim * lit;
+    }
+    return result;
+}
 void stage_main()
 {
     vec4 albedo = texture(_MainTex, surfaceUv) * _Color;
@@ -119,7 +173,11 @@ void stage_main()
     }
     else color.a *= mask;
     if (_Gh3Surface.y > 0.0 && color.a <= _Gh3Surface.y) discard;
-    if (_Gh3Surface.x > 1.5)
+    // A feature drawn over the hair marks the stencil only where it faces the camera, never through the back of the head.
+    if (_Gh3ToonOptions.y > 0.5 && dot(normalize(surfaceNormal), normalize(_Gh3ViewEye.xyz - surfaceWorld.xyz)) < 0.3) discard;
+    if (_Gh3Surface.x > 3.5) color.rgb = (_Gh3ToonOptions.x > 0.5 ? color.rgb : vec3(1.0)) * _Gh3ToonOutline.rgb * toonLight();
+    else if (_Gh3Surface.x > 2.5) color.rgb = toon(color);
+    else if (_Gh3Surface.x > 1.5)
     {
         vec3 normal = normalize(surfaceNormal);
         vec3 lightmap = _Gh3Surface.z > 0.0 ? texture(_Gh3Lightmap, surfaceLightmapUv).rgb : vec3(1.0);

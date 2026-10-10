@@ -39,7 +39,7 @@
           "enum": [
             "gh3Additive", "gh3AlphaCutoff", "gh3Billboard", "gh3ColorScale", "gh3CrowdAtlas", "gh3CrowdRole",
             "gh3LayerColor", "gh3LayerTexture", "gh3MaskTexture", "gh3MovieSlot", "gh3Shader", "gh3Shading",
-            "gh3SourceMaterial", "gh3TextureAnimation", "gh3UvWibble", "gh3SortedTransparency"
+            "gh3SourceMaterial", "gh3TextureAnimation", "gh3UvWibble", "gh3SortedTransparency", "gh3Toon", "gh3HairLayer"
           ]
         }
       },
@@ -60,7 +60,7 @@
         "gh3MaskTexture": { "$ref": "common.schema.json#/$defs/textureRef" },
         "gh3MovieSlot": { "type": "integer", "minimum": -1, "maximum": 31 },
         "gh3Shader": { "$ref": "#/$defs/shader" },
-        "gh3Shading": { "enum": ["lit", "ambient", "unlit"] },
+        "gh3Shading": { "enum": ["lit", "ambient", "unlit", "toon"] },
         "gh3SourceMaterial": { "$ref": "common.schema.json#/$defs/name" },
         "gh3TextureAnimation": {
           "type": "object",
@@ -79,9 +79,43 @@
           "minItems": 11,
           "maxItems": 11
         },
-        "gh3SortedTransparency": { "type": "boolean" }
+        "gh3SortedTransparency": { "type": "boolean" },
+        "gh3Toon": { "$ref": "#/$defs/toon" },
+        "gh3HairLayer": { "enum": ["overHair", "hair"] }
       },
       "dependentRequired": { "gh3LayerTexture": ["gh3LayerColor"] }
+    },
+    "toon": {
+      "description": "Toon (cel) shading of a character or instrument material with gh3Shading 'toon'. Colors are linear multipliers (0-4).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "softness": { "type": "number", "minimum": 0, "maximum": 0.5 },
+        "shadeTexture": { "$ref": "common.schema.json#/$defs/textureRef" },
+        "shadeColor": { "$ref": "#/$defs/toonColor" },
+        "shadeMaskTexture": { "$ref": "common.schema.json#/$defs/textureRef" },
+        "rimColor": { "$ref": "#/$defs/toonColor" },
+        "rimWidth": { "type": "number", "minimum": 0, "maximum": 1 },
+        "sphereTexture": { "$ref": "common.schema.json#/$defs/textureRef" },
+        "sphereMode": { "enum": ["add", "multiply"] },
+        "outline": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["width"],
+          "properties": {
+            "width": { "type": "number", "minimum": 0, "maximum": 0.05 },
+            "color": { "$ref": "#/$defs/toonColor" },
+            "textured": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "toonColor": {
+      "type": "array",
+      "items": { "type": "number", "minimum": 0, "maximum": 4 },
+      "minItems": 3,
+      "maxItems": 3
     },
     "shader": {
       "description": "Original GH3 material record: template checksum, constant banks, sampler textures, and render state.",

@@ -78,14 +78,15 @@ def stage_glb(texture="#lightmap", fixture="beam-1"):
     return glb.bytes()
 
 
-def skinned_glb(offset=0.0, ibm_offset=0.0, scale_key=1.0):
+def skinned_glb(offset=0.0, ibm_offset=0.0, scale_key=1.0, material=None):
     glb = GlbBuilder()
     root = glb.node({"name": "bone-00000001", "translation": [0, 1, 0], "children": [1]})
     glb.node({"name": "bone-00000002", "translation": [0, 0.5 + offset, 0]}, root=False)
     ibm = [np.linalg.inv(m).T.reshape(-1) for m in (np.array([[1, 0, 0, 0], [0, 1, 0, 1], [0, 0, 1, 0], [0, 0, 0, 1.0]]),
                                                     np.array([[1, 0, 0, 0], [0, 1, 0, 1.5 + ibm_offset], [0, 0, 1, 0], [0, 0, 0, 1.0]]))]
     glb.json["skins"] = [{"joints": [0, 1], "inverseBindMatrices": glb.accessor(ibm, "MAT4")}]
-    glb.json["materials"].append({"name": "skin"})
+    glb.json["materials"].append(material or {"name": "skin"})
+    if material: glb.image("shade")
     glb.node({"name": "model", "mesh": glb.triangle(0, skinned=True), "skin": 0})
     times = glb.accessor([0, 1], "SCALAR")
     glb.json["animations"] = [{"name": "idle", "samplers": [
@@ -320,6 +321,25 @@ class CharacterPackageTests(unittest.TestCase):
         self.assertTrue(any("joint positions differ" in e for e in errors_of(self.character(skinned_glb(offset=0.001, ibm_offset=0.001)), library=self.library)))
         self.assertTrue(any("unknown profile" in e for e in errors_of(self.character(skinned_glb(), profile="gh3-keytarist-v1"), library=self.library)))
         self.assertTrue(any("hair material" in e for e in errors_of(self.character(skinned_glb(), hair=["hair"]), library=self.library)))
+
+    def test_toon_material_and_hair_layer(self):
+        toon = {"threshold": 0.45, "softness": 0.05, "shadeTexture": "#shade", "shadeColor": [0.8, 0.8, 0.9], "rimColor": [0.3, 0.3, 0.3], "rimWidth": 0.2,
+                "sphereTexture": "#shade", "sphereMode": "multiply", "outline": {"width": 0.0015, "color": [0, 0, 0], "textured": True}}
+        material = {"name": "skin", "extras": {"gh3Shading": "toon", "gh3Toon": toon, "gh3HairLayer": "overHair"}}
+        report = validate(self.character(skinned_glb(material=material)), library=self.library)
+        self.assertEqual(report.errors, [])
+        for bad, text in (({"gh3Toon": {**toon, "outline": {"width": 0.5}}}, "width"), ({"gh3Toon": {**toon, "shadeTexture": "#missing"}}, "no GLB image named"),
+                          ({"gh3HairLayer": "brow"}, "gh3HairLayer"), ({"gh3Toon": {**toon, "ramp": 1}}, "ramp")):
+            broken = {"name": "skin", "extras": {**material["extras"], **bad}}
+            self.assertTrue(any(text in e for e in errors_of(self.character(skinned_glb(material=broken)), library=self.library)), bad)
+        lit = {"name": "skin", "extras": {"gh3Shading": "lit", "gh3Toon": toon}}
+        self.assertTrue(any("without gh3Shading 'toon'" in w for w in validate(self.character(skinned_glb(material=lit)), library=self.library).warnings))
+
+    def test_toon_is_only_for_characters(self):
+        glb = GlbBuilder()
+        glb.json["materials"].append({"name": "floor", "extras": {"gh3Shading": "toon"}})
+        glb.node({"name": "floor", "mesh": glb.triangle(0)})
+        self.assertTrue(any("only for characters" in e for e in errors_of(package(self.folder, stage_files(**{"stage.glb": glb.bytes()})))))
 
 
 class ClipTests(unittest.TestCase):

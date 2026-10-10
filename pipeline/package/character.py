@@ -69,6 +69,8 @@ def texture_reference_names(material):
     """Image names of the '#<name>' texture references of a material (PACKAGE-FORMAT 6.6)."""
     extras = material.get("extras", {}) if isinstance(material.get("extras"), dict) else {}
     refs = [extras.get("gh3MaskTexture"), extras.get("gh3LayerTexture")]
+    toon = extras.get("gh3Toon")
+    if isinstance(toon, dict): refs += [toon.get(key) for key in ("shadeTexture", "shadeMaskTexture", "sphereTexture")]
     shader = extras.get("gh3Shader")
     if isinstance(shader, dict) and isinstance(shader.get("textures"), list): refs += shader["textures"]
     return {ref[1:] for ref in refs if isinstance(ref, str) and ref.startswith("#")}

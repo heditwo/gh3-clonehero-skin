@@ -411,6 +411,17 @@ internal sealed class GameplayStage
             camera.transform.position = new Vector3(eye.X, eye.Y, eye.Z);
             camera.transform.LookAt(new Vector3(target.X, target.Y, target.Z), new Vector3(up.X, up.Y, up.Z));
         }
+        if (headMode == "through" && _band?.Anchor("guitarist", "ddec28af") is { } front && _band.Anchor("bassist", "ddec28af") is { } back)
+        {
+            // The bassist's face behind the guitarist's head: the camera is view[0] metres past the guitarist's head on the
+            // line from the bassist's head, raised by view[1] metres and moved view[2] metres to the side (checks of draw
+            // order between band members).
+            var away = System.Numerics.Vector3.Normalize(front.Position - back.Position);
+            var side = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.Cross(System.Numerics.Vector3.UnitY, away));
+            var eye = front.Position + away * view[0] + System.Numerics.Vector3.UnitY * view[1] + side * view[2];
+            camera.transform.position = new Vector3(eye.X, eye.Y, eye.Z);
+            camera.transform.LookAt(new Vector3(back.Position.X, back.Position.Y + view[1] * 0.2f, back.Position.Z));
+        }
         camera.fieldOfView = view[6];
         foreach (var (other, _) in _cameras) other.cullingMask = 0;
         if (_playerCamera != null) _playerCamera.cullingMask = 0;

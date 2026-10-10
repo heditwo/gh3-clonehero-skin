@@ -236,7 +236,7 @@ internal static class PickerLogicTests
         return library;
     }
 
-    private static byte[] CharacterGlb(float jointOffset = 0, float bindOffset = 0)
+    private static byte[] CharacterGlb(float jointOffset = 0, float bindOffset = 0, JsonObject? extras = null)
     {
         var glb = new GlbBuilder();
         var position = glb.Floats(new float[] { 0, 0, 0, 1, 0, 0, 0, 2, 0 }, "VEC3", 3);
@@ -252,6 +252,7 @@ internal static class PickerLogicTests
         glb.Json["materials"] = new JsonArray(new JsonObject
         {
             ["name"] = "body", ["pbrMetallicRoughness"] = new JsonObject { ["baseColorTexture"] = new JsonObject { ["index"] = 0 } },
+            ["extras"] = extras == null ? new JsonObject() : JsonNode.Parse(extras.ToJsonString()),
         });
         glb.Json["meshes"] = new JsonArray(new JsonObject
         {
@@ -275,6 +276,8 @@ internal static class PickerLogicTests
     {
         var folder = Path.Combine(root, name + ".chchar");
         Directory.CreateDirectory(folder);
+        Directory.CreateDirectory(Path.Combine(folder, "textures"));
+        File.WriteAllBytes(Path.Combine(folder, "textures", "shade.png"), Png4());
         File.WriteAllBytes(Path.Combine(folder, "character.glb"), glb);
         File.WriteAllText(Path.Combine(folder, "character.json"), "{\"version\":1,\"library\":\"gh3-band-v1\",\"profile\":\"gh3-singer-male-v1\",\"hairMaterials\":[\"body\"]" +
             (attachments.Length > 0 ? ",\"attachments\":" + attachments : "") + "}");
@@ -331,6 +334,47 @@ internal static class PickerLogicTests
             "an unknown instrument gives a warning and the default");
         error = ImportCharacter(CharacterPackage(root, "badslot", CharacterGlb(), "{\"hat\":\"x\"}"), library, Path.Combine(root, "badslot-cache"));
         Check(error.Contains("hat"), "an unknown attachment slot is rejected: " + error);
+        CheckToon(root, library);
+    }
+
+    private static void CheckToon(string root, string library)
+    {
+        var extras = (JsonObject)JsonNode.Parse("{\"gh3Shading\":\"toon\",\"gh3HairLayer\":\"overHair\",\"gh3Toon\":{\"threshold\":0.4,\"shadeTexture\":\"#skin\"," +
+            "\"shadeMaskTexture\":\"textures/shade.png\",\"sphereTexture\":\"textures/shade.png\",\"sphereMode\":\"multiply\",\"outline\":{\"width\":0.002}}}")!;
+        var output = Path.Combine(root, "toon-cache");
+        var error = ImportCharacter(CharacterPackage(root, "toon", CharacterGlb(extras: extras)), library, output);
+        Check(error == "", "a toon character imports: " + error);
+        var material = (JsonObject)((JsonObject)PackageJson.Object(File.ReadAllBytes(Path.Combine(output, "stage.json")))["materials"]!)[Gh3Checksum.Of("material-body")]!;
+        // StageAssets reads the row with these options.
+        var toon = System.Text.Json.JsonSerializer.Deserialize<StageToon>(material["toon"]!.ToJsonString(), new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        toon.Validate();
+        var file = Gh3Checksum.Of("file-textures/shade.png");
+        Check(PackageJson.Text(material["shading"]) == "toon" && PackageJson.Text(material["hairLayer"]) == "overHair" && toon.Threshold == 0.4f && toon.Softness == 0.05f && toon.ShadeColor.SequenceEqual(new[] { 1f, 1, 1 }),
+            "the toon row keeps the values and fills the defaults");
+        Check(toon.ShadeTexture == Gh3Checksum.Of("image-0") && toon.ShadeMaskTexture == file && toon.SphereTexture == file &&
+            File.Exists(Path.Combine(output, "textures", file + ".tex")), "toon texture references become cache textures (one file for two references)");
+        Check(toon.Outline is { Width: 0.002f, Textured: false } && toon.Outline.Color.All(c => c == 0) && toon.Shade.W == 1 && toon.Parameters.Z == 1 && toon.Parameters.W == 1,
+            "outline defaults and shader parameters");
+        extras["gh3Toon"]!["outline"]!["width"] = 0.5;
+        error = ImportCharacter(CharacterPackage(root, "wide", CharacterGlb(extras: extras)), library, Path.Combine(root, "wide-cache"));
+        Check(error.Contains("outline.width"), "an outline wider than 5 cm is rejected: " + error);
+        extras["gh3Toon"]!["outline"]!["width"] = 0.002;
+        extras["gh3HairLayer"] = "brows";
+        error = ImportCharacter(CharacterPackage(root, "layer", CharacterGlb(extras: extras)), library, Path.Combine(root, "layer-cache"));
+        Check(error.Contains("gh3HairLayer"), "an unknown hair layer is rejected: " + error);
+        Check(StageHairLayer.Queue("overHair", 2450) == 2001 && StageHairLayer.Queue("hair", 2000) == 2002 && StageHairLayer.Queue("hair", 3000) == 3000 &&
+            StageHairLayer.Queue("", 2000) == 2000, "features draw after the opaque parts and before the hair; transparent hair keeps its queue");
+        var values = Enumerable.Range(0, StageHairLayer.Characters).Select(StageHairLayer.StencilValue).ToArray();
+        Check(values.Distinct().Count() == StageHairLayer.Characters && values.All(v => v != 0 && (v & ~StageHairLayer.StencilMask) == 0),
+            "each character gets its own stencil value, outside the outline bit");
+        Check(!Throws(() => new StageToon().Validate()) && Throws(() => new StageToon { SphereMode = "screen" }.Validate()) &&
+            Throws(() => new StageToon { ShadeColor = new[] { 1f, 1 } }.Validate()), "toon validation");
+    }
+
+    private static bool Throws(Action action)
+    {
+        try { action(); return false; }
+        catch (InvalidDataException) { return true; }
     }
 
     private static void CheckSamplerOnlyImage(string root)

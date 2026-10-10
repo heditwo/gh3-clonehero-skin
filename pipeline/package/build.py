@@ -86,7 +86,9 @@ def texture_index_references(glb_bytes):
     for material in Glb(glb_bytes).list("materials"):
         extras = material.get("extras", {})
         shader = extras.get("gh3Shader", {})
-        found += sum(isinstance(ref, int) for ref in [extras.get("gh3MaskTexture"), extras.get("gh3LayerTexture"), *shader.get("textures", [])])
+        toon = extras.get("gh3Toon", {})
+        found += sum(isinstance(ref, int) for ref in [extras.get("gh3MaskTexture"), extras.get("gh3LayerTexture"), *shader.get("textures", []),
+                                                      *(toon.get(key) for key in ("shadeTexture", "shadeMaskTexture", "sphereTexture"))])
     return found
 
 

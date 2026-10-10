@@ -224,7 +224,12 @@ internal sealed class CharacterImporter
             }
             if (!reference.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || !_package.Contains(reference)) throw new PackageException($"invalid texture reference {reference}");
             var name = Key("file-" + reference);
-            referenced.TryAdd(name, () => _package.Read(reference));
+            // Read on this thread: the texture jobs run in parallel and the package source is not thread-safe.
+            if (!referenced.ContainsKey(name))
+            {
+                var png = _package.Read(reference);
+                referenced.Add(name, () => png);
+            }
             return name;
         }
         var used = parts.Select(p => p.Material).ToHashSet();
@@ -265,6 +270,15 @@ internal sealed class CharacterImporter
                 row["gh3"] = gh3;
             }
             if (extras["gh3Shading"] != null) row["shading"] = Clone(extras["gh3Shading"]);
+            if (Text(extras["gh3Shading"]) == "toon") row["toon"] = Toon(extras["gh3Toon"], Texture);
+            else if (extras["gh3Toon"] != null) Warnings.Add($"material {Text(material["name"])} has gh3Toon but its gh3Shading is not toon; the toon settings are ignored");
+            if (extras["gh3HairLayer"] != null)
+            {
+                var layer = Text(extras["gh3HairLayer"]);
+                if (layer is not ("overHair" or "hair")) throw new PackageException($"material {Text(material["name"])}: gh3HairLayer must be overHair or hair");
+                if (extras["gh3Shading"] == null) Warnings.Add($"material {Text(material["name"])} has gh3HairLayer without gh3Shading; the mod ignores the hair layer");
+                row["hairLayer"] = layer;
+            }
             if (Bool(extras["gh3SortedTransparency"]) == true || hair.Contains(Text(material["name"]) ?? "\0")) row["sortedTransparency"] = true;
             if (pbr["baseColorFactor"] is JsonArray factor)
             {
@@ -290,6 +304,44 @@ internal sealed class CharacterImporter
                 for (var r = 0; r < 4; r++) for (var c = 0; c < 4; c++) writer.Write((float)matrix[r, c]);
         }
         return (names, parts);
+    }
+
+    // gh3Toon (PACKAGE-FORMAT.md section 6.5) as the stage.json `toon` row (StageToon): the texture references become runtime
+    // texture names.
+    private static JsonObject Toon(JsonNode? node, Func<string?, string> texture)
+    {
+        var toon = node as JsonObject ?? new JsonObject();
+        if (node != null && node is not JsonObject) throw new PackageException("gh3Toon must be an object");
+        Fields(toon, "gh3Toon", new[] { "threshold", "softness", "shadeTexture", "shadeColor", "shadeMaskTexture", "rimColor", "rimWidth", "sphereTexture", "sphereMode", "outline" });
+        JsonArray Color(JsonNode? value, double[] fallback, string what) =>
+            Array(value == null ? fallback : Vector(value, 3, what).Select(v => Number(JsonValue.Create(v), 0, 4, what)));
+        string Reference(string key) => toon[key] == null ? "" : texture(Text(toon[key]) ?? throw new PackageException($"gh3Toon.{key} must be a texture reference"));
+        var mode = Text(toon["sphereMode"]) ?? "add";
+        if (mode is not ("add" or "multiply")) throw new PackageException("gh3Toon.sphereMode must be add or multiply");
+        var row = new JsonObject
+        {
+            ["threshold"] = toon["threshold"] == null ? 0.5 : Number(toon["threshold"], 0, 1, "gh3Toon.threshold"),
+            ["softness"] = toon["softness"] == null ? 0.05 : Number(toon["softness"], 0, 0.5, "gh3Toon.softness"),
+            ["shadeTexture"] = Reference("shadeTexture"),
+            ["shadeColor"] = Color(toon["shadeColor"], new[] { 1.0, 1, 1 }, "gh3Toon.shadeColor"),
+            ["shadeMaskTexture"] = Reference("shadeMaskTexture"),
+            ["rimColor"] = Color(toon["rimColor"], new[] { 0.0, 0, 0 }, "gh3Toon.rimColor"),
+            ["rimWidth"] = toon["rimWidth"] == null ? 0 : Number(toon["rimWidth"], 0, 1, "gh3Toon.rimWidth"),
+            ["sphereTexture"] = Reference("sphereTexture"),
+            ["sphereMode"] = mode,
+        };
+        if (toon["outline"] is JsonObject outline)
+        {
+            Fields(outline, "gh3Toon.outline", new[] { "width", "color", "textured" }, "width");
+            row["outline"] = new JsonObject
+            {
+                ["width"] = Number(outline["width"], 0, 0.05, "gh3Toon.outline.width"),
+                ["color"] = Color(outline["color"], new[] { 0.0, 0, 0 }, "gh3Toon.outline.color"),
+                ["textured"] = Bool(outline["textured"]) == true,
+            };
+        }
+        else if (toon["outline"] != null) throw new PackageException("gh3Toon.outline must be an object");
+        return row;
     }
 
     // attachments.instrument: a library instrument ID (band/band.json `instrument`), or "" for the default. StageBand

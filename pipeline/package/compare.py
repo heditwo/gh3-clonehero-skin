@@ -123,6 +123,10 @@ def resolved_extras(extras, images):
     extras = json.loads(json.dumps(extras))
     for key in ("gh3MaskTexture", "gh3LayerTexture"):
         if key in extras: extras[key] = images.reference(extras[key])
+    toon = extras.get("gh3Toon")
+    if isinstance(toon, dict):
+        for key in ("shadeTexture", "shadeMaskTexture", "sphereTexture"):
+            if key in toon: toon[key] = images.reference(toon[key])
     shader = extras.get("gh3Shader")
     if isinstance(shader, dict) and isinstance(shader.get("textures"), list):
         shader["textures"] = [images.reference(ref) for ref in shader["textures"]]

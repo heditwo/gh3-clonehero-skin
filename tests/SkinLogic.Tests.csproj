@@ -63,6 +63,7 @@
     <Compile Include="../src/Stage/Effects/StageScreenColor.cs" Link="StageScreenColor.cs" />
     <Compile Include="../src/Stage/Rendering/StageTextureAnimation.cs" Link="StageTextureAnimation.cs" />
     <Compile Include="../src/Stage/Rendering/StageGh3Material.cs" Link="StageGh3Material.cs" />
+    <Compile Include="../src/Stage/Rendering/StageToon.cs" Link="StageToon.cs" />
     <Compile Include="../src/Stage/Rendering/StageUvWibble.cs" Link="StageUvWibble.cs" />
     <Compile Include="../src/Stage/Effects/StageMovieClip.cs" Link="StageMovieClip.cs" />
     <Compile Include="../src/Stage/Effects/StageMovieState.cs" Link="StageMovieState.cs" />

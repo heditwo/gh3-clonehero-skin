@@ -44,7 +44,9 @@ internal sealed class StageMaterial
     public float[] UvWibble { get; set; } = Array.Empty<float>();
     public StageGh3Material? Gh3 { get; set; }
     public float[] Color { get; set; } = Array.Empty<float>();
-    public int ShadingMode => Shading switch { "unlit" => 0, "ambient" => 1, "lit" => 2, "" => -1, _ => throw new InvalidDataException("Unknown stage shading mode") };
+    public StageToon? Toon { get; set; }
+    public string HairLayer { get; set; } = "";
+    public int ShadingMode => Shading switch { "unlit" => 0, "ambient" => 1, "lit" => 2, "toon" => 3, "" => -1, _ => throw new InvalidDataException("Unknown stage shading mode") };
 }
 
 internal sealed class StageAssets : IDisposable
@@ -81,6 +83,11 @@ internal sealed class StageAssets : IDisposable
     private static readonly string[] SamplerNames = { "_MainTex", "_Gh3Lightmap", "_Gh3NormalTex", "_Gh3SpecularTex", "_Gh3LayerTex", "_Gh3MaskTex",
         "_Gh3Tex6", "_Gh3Tex7", "_Gh3Tex8", "_Gh3Tex9" };
     private static readonly int TemplateId = Shader.PropertyToID("_Gh3Template");
+    // Each loaded model with hair layers gets the next stencil value (StageHairLayer).
+    private static int _hairLayerModels;
+    // Check aid: GH3_SKIN_DEBUG_HAIR_LAYER=mark draws the over-hair features in one flat color for each model (magenta, green,
+    // yellow); `off` also ignores the hair layers.
+    private static readonly string DebugHairLayer = Environment.GetEnvironmentVariable("GH3_SKIN_DEBUG_HAIR_LAYER") ?? "";
     private static readonly HashSet<string> ReportedFallbacks = new();
 
     public void SetVisible(string group, bool? visible)
@@ -213,6 +220,63 @@ internal sealed class StageAssets : IDisposable
     private static readonly int LayerColorId = Shader.PropertyToID("_Gh3LayerColor");
     private static readonly int LayersId = Shader.PropertyToID("_Gh3Layers");
 
+    private static readonly int ToonId = Shader.PropertyToID("_Gh3Toon");
+    private static readonly int ToonShadeId = Shader.PropertyToID("_Gh3ToonShade");
+    private static readonly int ToonRimId = Shader.PropertyToID("_Gh3ToonRim");
+    private static readonly int ToonOutlineId = Shader.PropertyToID("_Gh3ToonOutline");
+    private static readonly int ToonOptionsId = Shader.PropertyToID("_Gh3ToonOptions");
+    private static readonly int SurfaceId = Shader.PropertyToID("_Gh3Surface");
+    private const int OutlineMode = 4;
+
+    private static Vector4 Unity(System.Numerics.Vector4 v) => new() { x = v.X, y = v.Y, z = v.Z, w = v.W };
+
+    // Toon shading (Stage.glsl toon()): the shade, mask, and sphere textures use the template samplers 6-8.
+    private static void ConfigureToon(Material material, StageToon toon, Func<string, Texture2D> load)
+    {
+        toon.Validate();
+        material.SetVector(ToonId, Unity(toon.Parameters));
+        material.SetVector(ToonShadeId, Unity(toon.Shade));
+        material.SetVector(ToonRimId, Unity(toon.Rim));
+        if (toon.ShadeTexture.Length > 0) material.SetTexture("_Gh3Tex6", load(toon.ShadeTexture));
+        if (toon.ShadeMaskTexture.Length > 0) material.SetTexture("_Gh3Tex7", load(toon.ShadeMaskTexture));
+        if (toon.SphereTexture.Length > 0) material.SetTexture("_Gh3Tex8", load(toon.SphereTexture));
+    }
+
+    // The inverted hull of a toon outline: a second material on the same renderer draws the back faces, pushed out along the
+    // normal (Stage.glsl), opaque, with the alpha test of the base texture.
+    private Material MakeOutlineMaterial(Shader shader, StageMaterial source, Material main, StageToonOutline outline)
+    {
+        var material = Own(new Material(shader));
+        material.SetInt("_SrcBlend", (int)BlendMode.One);
+        material.SetInt("_DstBlend", (int)BlendMode.Zero);
+        material.SetInt("_ZWrite", 1);
+        material.SetInt("_Cull", (int)CullMode.Front);
+        var cutoff = source.Cutoff > 0 ? source.Cutoff : source.Blend != 0 ? 0.5f : 0;
+        material.SetVector(SurfaceId, new Vector4 { x = OutlineMode, y = cutoff, w = 1 });
+        material.SetVector(ToonOutlineId, Unity(outline.Parameters));
+        material.SetVector(ToonOptionsId, new Vector4 { x = outline.Textured ? 1 : 0 });
+        material.mainTexture = main.mainTexture;
+        material.color = main.color;
+        // A transparent surface writes no depth: its hull must draw first, so the surface blends over it.
+        material.renderQueue = source.Blend != 0 ? main.renderQueue - 1 : main.renderQueue;
+        return material;
+    }
+
+    private static void ConfigureHairLayer(Material material, string layer, int stencil)
+    {
+        material.SetInt("_StencilRef", stencil);
+        material.SetInt("_StencilReadMask", StageHairLayer.StencilMask);
+        material.SetInt("_StencilWriteMask", StageHairLayer.StencilMask);
+        if (layer == StageHairLayer.OverHair)
+        {
+            material.SetInt("_StencilComp", (int)CompareFunction.Always);
+            material.SetInt("_StencilPass", (int)StencilOp.Replace);
+            material.SetVector(ToonOptionsId, new Vector4 { y = 1 });
+        }
+        else material.SetInt("_StencilComp", (int)CompareFunction.NotEqual);
+        material.renderQueue = StageHairLayer.Queue(layer, material.renderQueue);
+    }
+
     // GH3 two-layer and masked templates (D_3ChkBox_Pass0_Pass1, D_3ChkBox_Pass1, Wibble_Simple); see pipeline/gh3/scene.py.
     private void ConfigureLayers(Material material, StageMaterial source, Func<string, Texture2D> load)
     {
@@ -292,6 +356,9 @@ internal sealed class StageAssets : IDisposable
             return texture;
         }
         var materials = new Dictionary<uint, Material>();
+        var outlines = new Dictionary<uint, Material>();
+        if (Definition.Materials.Values.Any(m => !StageHairLayer.Valid(m.HairLayer))) throw new InvalidDataException("Unknown hair layer");
+        var hairStencil = surfaceShader != null && Definition.Materials.Values.Any(m => m.HairLayer.Length > 0) ? StageHairLayer.StencilValue(_hairLayerModels++) : 0;
         // A part subset (a band model's attachment) loads only the materials and textures of its parts.
         var partMaterials = parts == null ? null : Packages.BandAttachments.PartMaterials(meshPath);
         var usedMaterials = partMaterials == null ? null : parts!.Where(p => p >= 0 && p < partMaterials.Length).Select(p => partMaterials[p]).ToHashSet();
@@ -350,6 +417,23 @@ internal sealed class StageAssets : IDisposable
             if (source.Texture.Length > 0) material.mainTexture = LoadTexture(source.Texture, TextureWrapMode.Repeat);
             if (shaded && source.Lightmap.Length > 0) material.SetTexture("_Gh3Lightmap", LoadTexture(source.Lightmap, TextureWrapMode.Clamp));
             if (shaded) ConfigureLayers(material, source, name => LoadTexture(name, TextureWrapMode.Repeat));
+            if (shaded && source.ShadingMode == 3) ConfigureToon(material, source.Toon ?? new StageToon(), name => LoadTexture(name, TextureWrapMode.Repeat));
+            var hairLayer = DebugHairLayer == "off" ? "" : source.HairLayer;
+            if (shaded && hairLayer.Length > 0) ConfigureHairLayer(material, hairLayer, hairStencil);
+            if (shaded && source.HairLayer == StageHairLayer.OverHair && DebugHairLayer is "mark" or "off")
+            {
+                material.mainTexture = Texture2D.whiteTexture;
+                // One color for each model: magenta, green, yellow, ...
+                material.color = hairStencil switch { 2 => new Color(1, 0, 1, 1), 4 => new Color(0, 1, 0, 1), _ => new Color(1, 1, 0, 1) };
+                material.SetVector(SurfaceId, new Vector4 { w = 1 });
+            }
+            if (shaded && source.ShadingMode == 3 && source.Toon?.Outline is { Width: > 0 } line)
+            {
+                var outline = MakeOutlineMaterial(surfaceShader!, source, material, line);
+                outline.name = "GH3 Stage Outline " + key;
+                if (hairLayer == StageHairLayer.Hair) ConfigureHairLayer(outline, hairLayer, hairStencil);
+                outlines.Add(Convert.ToUInt32(key, 16), outline);
+            }
             materials.Add(Convert.ToUInt32(key, 16), material);
             SurfaceMaterials.Add(material);
             if (source.Crowd) CrowdMaterials.Add(material);
@@ -562,6 +646,8 @@ internal sealed class StageAssets : IDisposable
                 if (sorted) TransparentMeshes.Add(new(this, skin, vertexCount, indices));
             }
             renderer.sharedMaterial = material;
+            if (outlines.TryGetValue(materialId, out var outlineMaterial))
+                renderer.sharedMaterials = new Il2CppReferenceArray<Material>(new[] { material, outlineMaterial });
             if (shadedMode > 0) ShadedSurfaces.Add(new(renderer, shadedMode, bones != null ? lightGroup ?? Gh3Checksum.Of("Band") :
                 Definition.LightGroups.Length == 0 ? "" : Definition.LightGroups[part], bones != null || objectId.Length > 0, lightAt));
             var sourceMaterial = Definition.Materials[materialId.ToString("x8")].Source;
