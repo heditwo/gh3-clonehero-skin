@@ -330,9 +330,9 @@ internal sealed class PerformancePlayer
 
     public Segment At(double time)
     {
-        if (!double.IsFinite(time) || time > 86400) throw new ArgumentOutOfRangeException(nameof(time));
+        if (!double.IsFinite(time) || time > StageLimits.MaximumSeconds) throw new ArgumentOutOfRangeException(nameof(time));
         time = Math.Max(_timeline.Start, time);
-        while ((_segments.Count == 0 || _segments[^1].End <= time + 3) && _segments.Count < 100000) AddSegment();
+        while ((_segments.Count == 0 || _segments[^1].End <= time + 3) && _segments.Count < StageLimits.MaximumCount) AddSegment();
         return _segments[Math.Max(0, StageTimeline.UpperBound(_segments, time, s => s.Time) - 1)];
     }
 

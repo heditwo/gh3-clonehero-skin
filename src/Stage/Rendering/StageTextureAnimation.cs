@@ -11,7 +11,7 @@ internal sealed class StageTextureAnimation
 
     public void Validate()
     {
-        if (Columns is < 1 or > 256 || Rows is < 1 or > 256 || !float.IsFinite(Fps) || Math.Abs(Fps) > 100000 || !float.IsFinite(Offset) || Math.Abs(Offset) > 100000)
+        if (Columns is < 1 or > 256 || Rows is < 1 or > 256 || !float.IsFinite(Fps) || Math.Abs(Fps) > StageLimits.MaximumMagnitude || !float.IsFinite(Offset) || Math.Abs(Offset) > StageLimits.MaximumMagnitude)
             throw new InvalidDataException("Invalid texture animation");
     }
 

@@ -198,7 +198,7 @@ internal sealed class StageLightShowState
         if (Is("LightShow_SetTime"))
         {
             if (parameters.Flag("default")) _blend = Gh3CommandDispatch.DefaultLightBlend;
-            if (parameters.Field("time") is { Type: 1 or 2 } time) _blend = Gh3ScriptRuntime.Numeric(time);
+            if (parameters.Field("time") is { Type: Gh3QbType.Integer or Gh3QbType.Float } time) _blend = Gh3ScriptRuntime.Numeric(time);
             if (!double.IsFinite(_blend) || _blend is < 0 or > 600) throw new InvalidDataException("Invalid lightshow blend");
             if (parameters.Field("enable") is { } enabled) _blendEnabled = Enabled(enabled);
             return new(true);

@@ -274,12 +274,12 @@ internal sealed class StageLighting
     public void PlaySnapshot(string name, double time, double blend, string? color, Gh3QbValue parameters, bool positions)
     {
         if (!_scriptControl || !Bank.Snapshots.ContainsKey(name)) throw new InvalidDataException("Script lighting snapshot is missing: " + name);
-        if (_scriptFrames.Count >= 100000) throw new InvalidDataException("Too many script lighting changes");
+        if (_scriptFrames.Count >= StageLimits.MaximumCount) throw new InvalidDataException("Too many script lighting changes");
         var frame = At(time);
         var from = frame.Sample(time);
         var snapshot = Bank.Snapshots[name];
         var target = Values(name, color, previous: frame.To);
-        if (parameters.Field("intensity") is { Type: 1 or 2 } intensity)
+        if (parameters.Field("intensity") is { Type: Gh3QbType.Integer or Gh3QbType.Float } intensity)
             for (var i = 0; i < target.Lights.Length; i++)
             {
                 var setting = snapshot.Lights[i];
@@ -287,7 +287,7 @@ internal sealed class StageLighting
                 var rgb = color != null && Bank.Lights[i].OverrideColor ? StageLightingBank.Vector(Bank.Colors[color]) : StageLightingBank.Vector(setting.Color);
                 target.Lights[i] = target.Lights[i] with { Color = rgb, Intensity = (float)Gh3ScriptRuntime.Numeric(intensity) };
             }
-        if (parameters.Field("specularintensity") is { Type: 1 or 2 } specular)
+        if (parameters.Field("specularintensity") is { Type: Gh3QbType.Integer or Gh3QbType.Float } specular)
             for (var i = 0; i < target.Lights.Length; i++)
                 if (!snapshot.Lights[i].Inherit) target.Lights[i] = target.Lights[i] with { Specular = (float)Gh3ScriptRuntime.Numeric(specular) };
         var motion = positions ? frame.Motion.Select((item, i) => snapshot.Beams[BeamIds[i]].Inherit ? item : item.Retarget(time, blend, target.Beams[i])).ToArray() : frame.Motion;
@@ -306,7 +306,7 @@ internal sealed class StageLighting
     public void SetBeam(int index, double time, StageBeamValue value)
     {
         if (!_scriptControl || index < 0 || index >= BeamIds.Length) throw new InvalidDataException("Script light volume is missing");
-        if (_scriptFrames.Count >= 100000) throw new InvalidDataException("Too many script lighting changes");
+        if (_scriptFrames.Count >= StageLimits.MaximumCount) throw new InvalidDataException("Too many script lighting changes");
         var frame = At(time);
         var from = frame.Sample(time);
         var beams = frame.To.Beams.ToArray();

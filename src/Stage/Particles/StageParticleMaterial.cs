@@ -40,7 +40,7 @@ internal sealed record StageParticleMaterial
         bool Flag(string name) => source?.Flag(name) == true;
         uint Key(string name, uint fallback = 0) => source?.Field(name)?.Integer ?? fallback;
         int Integer(string name, int fallback = 0) => unchecked((int)Key(name, unchecked((uint)fallback)));
-        float Number(string name, float fallback = 0) => source == null ? fallback : (float)StageParticleDefinition.Number(source, name, fallback, -100000, 100000);
+        float Number(string name, float fallback = 0) => source == null ? fallback : (float)StageParticleDefinition.Number(source, name, fallback, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude);
         Layout = Key("TextureLayout", Gh3Checksum.Value(Flag("QuadTextures") ? "Layout2x2" : "Layout1x1"));
         Blend = Key("BlendMode", Gh3Checksum.Value("add"));
         Texture = Flag("DiffuseTextureEnabled") ? Key("DiffuseTexture") : 0;

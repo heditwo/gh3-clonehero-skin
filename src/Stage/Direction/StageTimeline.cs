@@ -89,8 +89,8 @@ internal sealed class StageTimeline
         }
         _commandDiagnostics = diagnostics.Select(item => $"{item.Key} ({item.Value} events; source data retained).").ToArray();
         var ordered = playback.ToArray();
-        if (authored.Length > 100000 || authored.Concat(ordered).Any(cue => !double.IsFinite(cue.Time) || Math.Abs(cue.Time) > 86400 ||
-                !double.IsFinite(cue.Duration) || cue.Duration < 0 || cue.Duration > 86400 || cue.Count is < 1 or > 100 ||
+        if (authored.Length > StageLimits.MaximumCount || authored.Concat(ordered).Any(cue => !double.IsFinite(cue.Time) || Math.Abs(cue.Time) > StageLimits.MaximumSeconds ||
+                !double.IsFinite(cue.Duration) || cue.Duration < 0 || cue.Duration > StageLimits.MaximumSeconds || cue.Count is < 1 or > 100 ||
                 cue.DisableArms is < 0 or > 2 || cue.Velocity is < 0 or > 127))
             throw new InvalidDataException("Invalid stage cue time or count");
         CueCount = authored.Length;

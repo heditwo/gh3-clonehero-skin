@@ -99,7 +99,7 @@ internal sealed class StageObjectState
                 if (rate <= 0) throw new InvalidDataException("Object motion speed must be positive");
                 seconds = Vector3.Distance(from, to) / rate;
             }
-            if (!double.IsFinite(seconds) || seconds is < 0 or > 86400) throw new InvalidDataException("Invalid object motion duration");
+            if (!double.IsFinite(seconds) || seconds is < 0 or > StageLimits.MaximumSeconds) throw new InvalidDataException("Invalid object motion duration");
             return seconds;
         }
         if (Is("Hide") || Is("Unhide")) { Visible = Is("Unhide"); return new(true); }
@@ -145,7 +145,7 @@ internal sealed class StageObjectState
             var angle = StageSoundBank.Number(Field("angle"), 0);
             var speed = StageSoundBank.Number(Field("speed"), 0);
             var duration = StageSoundBank.Number(Field("time"), 0);
-            if (!double.IsFinite(angle) || !double.IsFinite(speed) || !double.IsFinite(duration) || duration is < 0 or > 86400)
+            if (!double.IsFinite(angle) || !double.IsFinite(speed) || !double.IsFinite(duration) || duration is < 0 or > StageLimits.MaximumSeconds)
                 throw new InvalidDataException("Invalid axis rotation");
             if (Field("angle") != null && Field("speed") != null)
             {
@@ -174,7 +174,7 @@ internal sealed class StageObjectState
         {
             var target = Vector(Field(Is("Obj_ApplyScaling") ? "scale" : "target_scale"));
             var duration = StageSoundBank.Number(Field("blend_duration"), 0);
-            if (!double.IsFinite(duration) || duration is < 0 or > 86400) throw new InvalidDataException("Invalid object scaling duration");
+            if (!double.IsFinite(duration) || duration is < 0 or > StageLimits.MaximumSeconds) throw new InvalidDataException("Invalid object scaling duration");
             _scaling = new(_scaling.At(time), target, time, time + duration);
             return new(true);
         }

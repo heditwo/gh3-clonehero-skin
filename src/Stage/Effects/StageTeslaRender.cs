@@ -4,6 +4,7 @@ namespace Gh3Skin;
 
 internal sealed record StageTeslaDraw(Vector3[] Positions, Vector3[] Coordinates, Vector4 Animation, Vector4 Shape, Vector4 Color);
 
+// Builds the vertex strip and the shader constants of one Tesla arc.
 internal static class StageTeslaRender
 {
     public static StageTeslaDraw Build(StageTeslaEffect effect, Vector3 forward, uint milliseconds, bool tapered = true)
@@ -14,19 +15,24 @@ internal static class StageTeslaRender
         var delta = to - from;
         var direction = delta.LengthSquared() > 0 ? Vector3.Normalize(delta) : Vector3.Zero;
         var side = Vector3.Cross(Reflect(forward), direction) * (effect.Width * .5f);
+        // GH3: the tapered strip of the native Tesla renderer: half width at the ends, full width from 20 % to 80 % of the
+        // arc (tests/TeslaRenderTests.cs compares it with the native oracle).
         var positions = tapered ? new[] {
             from - side * .5f, from + side * .5f,
             from + delta * .2f - side, from + delta * .2f + side,
             from + delta * .8f - side, from + delta * .8f + side,
             to - side * .5f, to + side * .5f
         } : new[] { from - side, from + side, to + side, to - side };
+        // GH3: the texture coordinates of the same strip.
         var coordinates = tapered ? new[] {
             new Vector3(0, .25f, 0), new Vector3(0, .75f, 0),
             new Vector3(.2f, 0, 1), new Vector3(.2f, 1, 1),
             new Vector3(.8f, 0, 1), new Vector3(.8f, 1, 1),
             new Vector3(1, .25f, 0), new Vector3(1, .75f, 0)
         } : new[] { new Vector3(0, 0, 0), new Vector3(0, 1, 0), new Vector3(1, 1, 0), new Vector3(1, 0, 0) };
+        // GH3: the shader phase from the millisecond clock; the first animation term repeats every 11 phases.
         var phase = (float)(milliseconds * (double).001f) * effect.Speed;
+        // GH3: see above.
         return new(positions.Select(Reflect).ToArray(), coordinates, new(phase * (1f / 11), phase - MathF.Truncate(phase), effect.Scale, 1),
             new(tapered ? (1 - effect.LightWidth) * .5f : effect.Amplitude, effect.LightWidth, effect.FadeOut, effect.FalloffAlpha), new(effect.Color, 1));
     }

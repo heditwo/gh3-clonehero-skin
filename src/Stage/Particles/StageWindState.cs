@@ -17,7 +17,7 @@ internal sealed record StageWindField
 
     public StageWindField Apply(Gh3QbValue parameters)
     {
-        float Number(string name, float previous) => (float)StageParticleDefinition.Number(parameters, name, previous, -100000, 100000);
+        float Number(string name, float previous) => (float)StageParticleDefinition.Number(parameters, name, previous, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude);
         var field = this with {
             Position = StageParticleDefinition.Vector(parameters, parameters.Field("pos") != null ? "pos" : "position", Position, false),
             Velocity = StageParticleDefinition.Vector(parameters, parameters.Field("velocity") != null ? "velocity" : "vel", Velocity, false),
@@ -84,7 +84,7 @@ internal sealed class StageWindState
             BlendTime = 0;
             return true;
         }
-        if (parameters.Field("create") is { Type: 10 } create)
+        if (parameters.Field("create") is { Type: Gh3QbType.Structure } create)
         {
             var field = new StageWindField { Id = create.Field("name")?.Integer ?? Gh3Checksum.Value("localwind") }.Apply(create);
             var index = _fields.FindIndex(value => value.Id == field.Id);
@@ -92,7 +92,7 @@ internal sealed class StageWindState
             else if (_fields.Count <= 50) _fields.Add(field);
             return true;
         }
-        if (parameters.Field("modify") is { Type: 10 } modify)
+        if (parameters.Field("modify") is { Type: Gh3QbType.Structure } modify)
         {
             if (modify.Field("name") is { } name)
             {

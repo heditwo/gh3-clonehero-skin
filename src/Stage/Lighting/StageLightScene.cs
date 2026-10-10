@@ -61,7 +61,7 @@ internal sealed class StageLightScene
                     var source = rows?.FirstOrDefault(row => row.Field("LightChecksum")?.Integer == Lights[index].Id);
                     if (source != null && source.Field("SpecularIntensity") == null && appended.Field("SpecularIntensity") == null)
                         target = target with { Specular = previous.Specular };
-                    if ((appended.Field("ShadowIntensity") ?? source?.Field("ShadowIntensity")) is { Type: 1 or 2 } shadow)
+                    if ((appended.Field("ShadowIntensity") ?? source?.Field("ShadowIntensity")) is { Type: Gh3QbType.Integer or Gh3QbType.Float } shadow)
                         target = target with { Shadow = (float)Gh3ScriptRuntime.Numeric(shadow) };
                     _changed[index] = true;
                     _transitions[index].Begin(target, (float)blend, Clock(time));
@@ -179,7 +179,7 @@ internal sealed class StageLightScene
             }
             else
             {
-                float Angle(string name) => parameters.Field(name) is { Type: 1 or 2 } value ? (float)Gh3ScriptRuntime.Numeric(value) * .01745329238474369f : 0;
+                float Angle(string name) => parameters.Field(name) is { Type: Gh3QbType.Integer or Gh3QbType.Float } value ? (float)Gh3ScriptRuntime.Numeric(value) * .01745329238474369f : 0;
                 var heading = Angle("heading");
                 var pitch = Angle("pitch");
                 transform = transform with { Direction = new(-(float)Math.Sin(heading) * (float)Math.Cos(pitch), -(float)Math.Sin(pitch),
@@ -212,7 +212,7 @@ internal sealed class StageLightScene
         if (Is("CreateLightGroup"))
         {
             if (id != 0 && _groups.ContainsKey(id)) return new(false);
-            var weight = parameters.Field("Brightness") is { Type: 1 or 2 } value ? (float)Gh3ScriptRuntime.Numeric(value) : 100;
+            var weight = parameters.Field("Brightness") is { Type: Gh3QbType.Integer or Gh3QbType.Float } value ? (float)Gh3ScriptRuntime.Numeric(value) : 100;
             var flags = _groups.TryGetValue(id, out var previous) ? previous.Flags : 3u;
             if (!parameters.Flag("CreatedAtStart")) flags &= ~2u;
             if (!parameters.Flag("Global")) flags &= ~1u;
@@ -224,7 +224,7 @@ internal sealed class StageLightScene
             if (id == 0 || !_groups.TryGetValue(id, out var group)) return new(false);
             if (Is("GetLightGroupIntensity")) return new(true, new[] { new Gh3QbField(Gh3Checksum.Value("i"), Gh3ScriptRuntime.Number(group.Weight)) });
             if (Is("SetLightGroupIntensity"))
-                _groups[id] = group with { Weight = parameters.Field("i") is { Type: 1 or 2 } value ? (float)Gh3ScriptRuntime.Numeric(value) : 1 };
+                _groups[id] = group with { Weight = parameters.Field("i") is { Type: Gh3QbType.Integer or Gh3QbType.Float } value ? (float)Gh3ScriptRuntime.Numeric(value) : 1 };
             else _groups[id] = group with { Flags = Is("EnableLightGroup") ? group.Flags | 2 : group.Flags & ~2u };
             return new(true);
         }

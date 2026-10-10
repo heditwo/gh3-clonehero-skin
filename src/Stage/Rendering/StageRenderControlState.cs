@@ -51,7 +51,7 @@ internal sealed class StageRenderControlState
     public Gh3ScriptCallResult? Execute(Gh3ScriptContext context, uint command, Gh3QbValue parameters, double time)
     {
         bool Is(string name) => command == Gh3Checksum.Value(name);
-        float Number(string name, float fallback) => parameters.Field(name) is { Type: 1 or 2 } value && double.IsFinite(Gh3ScriptRuntime.Numeric(value)) ?
+        float Number(string name, float fallback) => parameters.Field(name) is { Type: Gh3QbType.Integer or Gh3QbType.Float } value && double.IsFinite(Gh3ScriptRuntime.Numeric(value)) ?
             (float)Gh3ScriptRuntime.Numeric(value) : fallback;
         if (Is("SetShadowDirFromLight"))
         {
@@ -59,7 +59,7 @@ internal sealed class StageRenderControlState
             var light = _lighting?.Bank.Lights.FirstOrDefault(light => light.Object.Length > 0 && Gh3QbText.Key(light.Object) == name);
             if (light == null || !_exists(name)) return new(false);
             var direction = light.Forward;
-            if (parameters.Field("pos") is { Type: 6, Data: float[] { Length: 3 } position })
+            if (parameters.Field("pos") is { Type: Gh3QbType.Vector, Data: float[] { Length: 3 } position })
             {
                 direction = new Vector3(position[0], position[1], -position[2]) - light.Location;
                 if (direction.LengthSquared() > .000001f) direction = Vector3.Normalize(direction);
@@ -102,7 +102,7 @@ internal sealed class StageRenderControlState
             if (Is("ScreenFX_RemoveFXInstance")) return new(_screenEffects.Remove(target));
             if (Is("ScreenFX_UpdateFXInstanceParams") && !exists) return new(false);
             var duration = Number("time", 0);
-            if (duration is < 0 or > 86400) throw new InvalidDataException("Invalid screen effect duration");
+            if (duration is < 0 or > StageLimits.MaximumSeconds) throw new InvalidDataException("Invalid screen effect duration");
             var from = previous?.Sample(time) ?? (parameters.Field("Type")?.Integer == StageScreenColor.Type ? StageScreenColor.Defaults : parameters);
             var to = Gh3ScriptRuntime.Structure(from.Fields.Where(field => parameters.Field(field.Name) == null).Concat(parameters.Fields));
             _screenEffects[target] = new(time, Math.Truncate(duration * 1000) / 1000, from, to);

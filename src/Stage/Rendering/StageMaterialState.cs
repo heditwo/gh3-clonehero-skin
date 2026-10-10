@@ -40,8 +40,8 @@ internal sealed class StageMaterialState
         else throw new InvalidDataException("Invalid material value");
         var targets = parameters.Field("object") is { } obj ? new[] { obj.Integer } :
             parameters.Field("prefix") is { } prefix ? _bank.PrefixValues.GetValueOrDefault(prefix.Integer, Array.Empty<uint>()) : throw new InvalidDataException("Material target is missing");
-        var seconds = parameters.Field("time") is { Type: 1 or 2 } duration ? Math.Truncate(Gh3ScriptRuntime.Numeric(duration)) : 0;
-        if (!double.IsFinite(seconds) || Math.Abs(seconds) > 86400) throw new InvalidDataException("Invalid material hold time");
+        var seconds = parameters.Field("time") is { Type: Gh3QbType.Integer or Gh3QbType.Float } duration ? Math.Truncate(Gh3ScriptRuntime.Numeric(duration)) : 0;
+        if (!double.IsFinite(seconds) || Math.Abs(seconds) > StageLimits.MaximumSeconds) throw new InvalidDataException("Invalid material hold time");
         var first = new StageMaterialTarget(targets.FirstOrDefault(), material, parameter);
         var previous = _properties.TryGetValue(first, out var current) ? current : _original?.Invoke(first);
         foreach (var target in targets)

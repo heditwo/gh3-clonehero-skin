@@ -71,12 +71,12 @@ internal sealed class CrowdAnimationPlayer
 
     public Segment At(double time)
     {
-        if (!double.IsFinite(time) || time > 86400) throw new ArgumentOutOfRangeException(nameof(time));
+        if (!double.IsFinite(time) || time > StageLimits.MaximumSeconds) throw new ArgumentOutOfRangeException(nameof(time));
         time = Math.Max(_timeline.Start, time);
         if (_revision != _state.Revision) { _segments.Clear(); _revision = _state.Revision; }
         while (_segments.Count == 0 || _segments[^1].End <= time)
         {
-            if (_segments.Count >= 100000) throw new InvalidDataException("Too many crowd animation segments.");
+            if (_segments.Count >= StageLimits.MaximumCount) throw new InvalidDataException("Too many crowd animation segments.");
             Add();
         }
         return _segments[Math.Max(0, StageTimeline.UpperBound(_segments, time, segment => segment.Time) - 1)];

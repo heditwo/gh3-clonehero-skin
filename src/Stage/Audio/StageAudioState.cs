@@ -44,7 +44,7 @@ internal sealed class StageAudioState
     private void Reset()
     {
         _runtime?.Dispose();
-        _runtime = new(_bank.RuntimeValues, Native, time: -86400) { Failed = (_, error) => _diagnostics.Add(error.Message) };
+        _runtime = new(_bank.RuntimeValues, Native, time: -StageLimits.MaximumSeconds) { Failed = (_, error) => _diagnostics.Add(error.Message) };
         _runtime.Set(Gh3Checksum.Value("CrowdLevelForSurges"), Gh3ScriptRuntime.Number(_bank.Constants.GetValueOrDefault("CrowdLevelForSurges", 1.66)));
         _events = new(_bank);
         _queue.Clear();
@@ -74,7 +74,7 @@ internal sealed class StageAudioState
 
     public void Update(double time, float rock)
     {
-        if (!double.IsFinite(time) || Math.Abs(time) > 86400) throw new ArgumentOutOfRangeException(nameof(time));
+        if (!double.IsFinite(time) || Math.Abs(time) > StageLimits.MaximumSeconds) throw new ArgumentOutOfRangeException(nameof(time));
         rock = Math.Clamp(float.IsFinite(rock) ? rock : .5f, 0, 1);
         var rebuild = time < _lastTime;
         if (rebuild) _health.RemoveAll(change => change.Time > time);
@@ -182,7 +182,7 @@ internal sealed class StageAudioState
         if (Is("SetSoundBussParams"))
         {
             var duration = StageSoundBank.Number(parameters.Field("time"), 0);
-            if (!double.IsFinite(duration) || duration is < 0 or > 86400) throw new InvalidDataException("Invalid sound bus fade duration");
+            if (!double.IsFinite(duration) || duration is < 0 or > StageLimits.MaximumSeconds) throw new InvalidDataException("Invalid sound bus fade duration");
             foreach (var field in parameters.Fields.Where(field => field.Value.Type == Gh3QbType.Structure))
             {
                 if (_lockedBusses.Contains(field.Name)) continue;

@@ -42,7 +42,7 @@ internal sealed class StageLightTransition
             }
         }
         var motion = parameters.Field("motion")?.Integer switch { 0xf221474c => 0, 0x8addac1f => 1, 0xb3eaf72e => 2, 0x26b6e535 => 3, _ => Motion };
-        var duration = parameters.Field("time") is { Type: 1 or 2 } seconds ? (float)Gh3ScriptRuntime.Numeric(seconds) : 0;
+        var duration = parameters.Field("time") is { Type: Gh3QbType.Integer or Gh3QbType.Float } seconds ? (float)Gh3ScriptRuntime.Numeric(seconds) : 0;
         Begin(target, duration, time, motion);
     }
 

@@ -38,7 +38,7 @@ internal sealed class StageCrowdState
 
     public void Update(double time, float rock)
     {
-        if (!double.IsFinite(time) || Math.Abs(time) > 86400) throw new ArgumentOutOfRangeException(nameof(time));
+        if (!double.IsFinite(time) || Math.Abs(time) > StageLimits.MaximumSeconds) throw new ArgumentOutOfRangeException(nameof(time));
         var changed = false;
         if (time < _lastTime) changed = _skills.RemoveAll(sample => sample.Time > time) > 0;
         var skill = Skill(rock);

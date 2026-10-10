@@ -375,7 +375,7 @@ internal sealed class StageHair
 
     public void Sample(double time)
     {
-        if (!double.IsFinite(time) || time > 86400) throw new ArgumentOutOfRangeException(nameof(time));
+        if (!double.IsFinite(time) || time > StageLimits.MaximumSeconds) throw new ArgumentOutOfRangeException(nameof(time));
         var frame = Math.Max(0, time) * Rate;
         var target = (int)Math.Ceiling(frame);
         if (_tick < 0) Advance(0);

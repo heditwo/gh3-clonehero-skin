@@ -126,7 +126,7 @@ internal sealed class StageScriptState : IDisposable
 
     public void Update(double time, float rock = .5f)
     {
-        if (!double.IsFinite(time) || Math.Abs(time) > 86400) throw new ArgumentOutOfRangeException(nameof(time));
+        if (!double.IsFinite(time) || Math.Abs(time) > StageLimits.MaximumSeconds) throw new ArgumentOutOfRangeException(nameof(time));
         rock = Math.Clamp(float.IsFinite(rock) ? rock : .5f, 0, 1);
         var rebuild = time < _time;
         if (rebuild)
@@ -220,7 +220,7 @@ internal sealed class StageScriptState : IDisposable
 
     private static StageBeamValue ApplyBeam(Gh3QbValue parameters, StageBeamValue value)
     {
-        float Number(string name, float fallback) => (float)StageParticleDefinition.Number(parameters, name, fallback, 0, 100000);
+        float Number(string name, float fallback) => (float)StageParticleDefinition.Number(parameters, name, fallback, 0, StageLimits.MaximumMagnitude);
         var color = parameters.Field("VolumeColor")?.Items;
         return value with { Density = Number("VolumeDensity", value.Density), Range = Number("Range", value.Range),
             StartRadius = Number("StartRadius", value.StartRadius), EndRadius = Number("EndRadius", value.EndRadius),
@@ -432,7 +432,7 @@ internal sealed class StageScriptState : IDisposable
             var events = parameters.Field("events")?.Items.Select(value => value.Integer).ToArray() ?? throw new InvalidDataException("Pulse events are missing");
             var amount = (float)StageSoundBank.Number(parameters.Field("amount"), 1.12);
             var duration = StageSoundBank.Number(parameters.Field("time"), .1);
-            if (!float.IsFinite(amount) || amount < 0 || !double.IsFinite(duration) || duration is < 0 or > 86400) throw new InvalidDataException("Invalid object pulse");
+            if (!float.IsFinite(amount) || amount < 0 || !double.IsFinite(duration) || duration is < 0 or > StageLimits.MaximumSeconds) throw new InvalidDataException("Invalid object pulse");
             _pulses.Add(new(context.Object, events, _objects[context.Object].Sample(_runtime.Time).Scale, amount, duration));
             return new(true);
         }

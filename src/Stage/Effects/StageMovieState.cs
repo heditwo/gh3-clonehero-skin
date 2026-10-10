@@ -1,17 +1,24 @@
 namespace Gh3Skin;
 
+// A playing movie: its clip, start time, rate, and loop range.
 internal sealed record StageMoviePlayback(string Name, StageMovieClip Clip, double Start, double Rate, int First, int LoopStart, int LoopEnd, bool Loop, bool Hold)
 {
+    // Absorbs rounding of the song clock at exact frame times.
+    private const double FrameTolerance = 1e-9;
+
     public int Frame(double time)
     {
-        var frame = First + (long)Math.Floor(Math.Max(0, time - Start) * Rate + 1e-9);
+        var frame = First + (long)Math.Floor(Math.Max(0, time - Start) * Rate + FrameTolerance);
         if (Loop && frame > LoopEnd) frame = LoopStart + (frame - LoopEnd - 1) % (LoopEnd - LoopStart + 1);
         return frame >= Clip.Frames ? Hold ? Clip.Frames - 1 : -1 : (int)frame;
     }
 }
 
+// The movie texture slots of GH3's PlayMovie scripts.
 internal sealed class StageMovieState : IDisposable
 {
+    // GH3: movie texture slots 0-31.
+    private const int MaximumSlot = 31;
     private readonly StageScriptBank _bank;
     private readonly Dictionary<string, StageMovieClip> _clips = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<int, StageMoviePlayback> _slots = new();
@@ -26,7 +33,7 @@ internal sealed class StageMovieState : IDisposable
         if (!Is("PlayMovie") && !Is("KillMovie")) return null;
         if (parameters.Field("textureSlot") is not { } slotValue) return new(false);
         var slot = checked((int)Gh3ScriptRuntime.Numeric(slotValue));
-        if (slot is < 0 or > 31) throw new InvalidDataException("Invalid movie texture slot");
+        if (slot is < 0 or > MaximumSlot) throw new InvalidDataException("Invalid movie texture slot");
         if (Is("KillMovie")) { _slots.Remove(slot); return new(true); }
         var name = parameters.Field("movie")?.Data as string ?? throw new InvalidDataException("Movie name is missing");
         if (!_clips.TryGetValue(name, out var clip))
@@ -45,7 +52,7 @@ internal sealed class StageMovieState : IDisposable
         if (loopEnd < loopStart) throw new InvalidDataException("Movie loop is reversed");
         var rate = parameters.Field("frameRate") is { } fps ? Gh3ScriptRuntime.Numeric(fps) : clip.FrameRate;
         if (rate == -1) rate = clip.FrameRate;
-        if (!double.IsFinite(rate) || rate <= 0 || rate > 240) throw new InvalidDataException("Invalid movie frame rate");
+        if (!double.IsFinite(rate) || rate <= 0 || rate > StageLimits.MaximumFrameRate) throw new InvalidDataException("Invalid movie frame rate");
         var playback = new StageMoviePlayback(name, clip, runtime.Time, rate, first, loopStart, loopEnd, !parameters.Flag("no_looping"), !parameters.Flag("no_hold"));
         _slots[slot] = playback;
         foreach (var field in parameters.Fields)

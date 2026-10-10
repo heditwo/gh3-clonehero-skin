@@ -321,7 +321,7 @@ internal sealed class StageParticleState
         if (emitter.EmissionStopped) return;
         var slot = emitter.Live.Count;
         if (slot >= d.Maximum) return;
-        if (_liveCount >= 100000) throw new InvalidDataException("Too many live particles");
+        if (_liveCount >= StageLimits.MaximumCount) throw new InvalidDataException("Too many live particles");
         var pose = Pose(emitter, _runtime.Time);
         var path = emitter.PathPosition - pose.Position;
         var pathLength = path.Y * path.Y + path.Z * path.Z + path.X * path.X;
@@ -437,11 +437,11 @@ internal sealed class StageParticleState
         if (Is("SetLODParams")) { emitter.Lod.Set(parameters); return new(true); }
         if (Is("LightGroup"))
         {
-            if (parameters.Field("group") is { Type: 13 } lightGroup) emitter.LightGroup = lightGroup.Integer;
+            if (parameters.Field("group") is { Type: Gh3QbType.Checksum } lightGroup) emitter.LightGroup = lightGroup.Integer;
             return new(true);
         }
         if (emitter.Shape.Execute(command, parameters)) return new(true);
-        float Number(string name, float fallback = 0) => (float)StageParticleDefinition.Number(parameters, name, fallback, -100000, 100000);
+        float Number(string name, float fallback = 0) => (float)StageParticleDefinition.Number(parameters, name, fallback, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude);
         Vector3 Vector(string name) => parameters.Field(name) != null ? StageParticleDefinition.Vector(parameters, name, Vector3.Zero) : new(Number("x"), Number("y"), -Number("z"));
         if (Is("SetPos")) { emitter.Placement = emitter.Placement with { Position = Vector("pos") }; return new(true); }
         if (Is("SetEmitRange")) { emitter.Range = new(Number("width"), Number("height", Number("width")), Number("depth")); return new(true); }
@@ -467,7 +467,7 @@ internal sealed class StageParticleState
         }
         if (Is("Emit"))
         {
-            var count = (int)StageParticleDefinition.Number(parameters, "num", 1, 0, 100000);
+            var count = (int)StageParticleDefinition.Number(parameters, "num", 1, 0, StageLimits.MaximumMagnitude);
             for (var index = 0; index < count; index++) Emit(emitter);
             return new(true);
         }
@@ -486,7 +486,7 @@ internal sealed class StageParticleState
         }
         if (Is("EmitRate"))
         {
-            emitter.Rate = StageParticleDefinition.Number(parameters, "rate", 1, 0, 100000);
+            emitter.Rate = StageParticleDefinition.Number(parameters, "rate", 1, 0, StageLimits.MaximumMagnitude);
             return new(true);
         }
         if (Is("Destroy") || Is("Kill") || Is("SafeKill") || Is("Die"))

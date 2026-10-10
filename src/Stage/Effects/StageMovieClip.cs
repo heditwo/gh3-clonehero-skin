@@ -1,7 +1,11 @@
 namespace Gh3Skin;
 
+// A GH3VID01 movie frame bank (PNG frames with an offset table), read one frame at a time.
 internal sealed class StageMovieClip : IDisposable
 {
+    private const int MaximumSize = 4096;
+    private const int MaximumFrameBytes = 64000000;
+
     private readonly BinaryReader _reader;
     private readonly long[] _offsets;
     public int Width { get; }
@@ -19,11 +23,11 @@ internal sealed class StageMovieClip : IDisposable
             var frames = _reader.ReadInt32();
             var numerator = _reader.ReadUInt32(); var denominator = _reader.ReadUInt32();
             FrameRate = numerator / (double)denominator;
-            if (Width is < 1 or > 4096 || Height is < 1 or > 4096 || frames is < 1 or > 100000 || !double.IsFinite(FrameRate) || FrameRate <= 0 || FrameRate > 240 || frames / FrameRate > 86400)
+            if (Width is < 1 or > MaximumSize || Height is < 1 or > MaximumSize || frames is < 1 or > StageLimits.MaximumCount || !double.IsFinite(FrameRate) || FrameRate <= 0 || FrameRate > StageLimits.MaximumFrameRate || frames / FrameRate > StageLimits.MaximumSeconds)
                 throw new InvalidDataException("Invalid movie frame dimensions or rate");
             _offsets = Enumerable.Range(0, frames + 1).Select(_ => _reader.ReadInt64()).ToArray();
             if (_offsets[0] != _reader.BaseStream.Position || _offsets[^1] != _reader.BaseStream.Length ||
-                _offsets.Skip(1).Where((offset, i) => offset <= _offsets[i] || offset - _offsets[i] > 64000000).Any())
+                _offsets.Skip(1).Where((offset, i) => offset <= _offsets[i] || offset - _offsets[i] > MaximumFrameBytes).Any())
                 throw new InvalidDataException("Invalid movie frame offsets");
         }
         catch { _reader.Dispose(); throw; }

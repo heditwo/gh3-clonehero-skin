@@ -68,37 +68,37 @@ internal sealed class StageParticleDefinition
         Life = Pair(source, "LifeRange", Vector2.Zero, 0, 600);
         Speed = Pair(source, "SpeedRange", Vector2.Zero, -10000, 10000);
         RotationSpeed = Pair(source, "RotVel", Vector2.Zero, -10000, 10000);
-        RotationTimeScale = (float)Number(source, "RotVelTimeScale", 1, -100000, 100000);
+        RotationTimeScale = (float)Number(source, "RotVelTimeScale", 1, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude);
         var size = source.Field("SizeRange")?.Items;
         var start = Size(size?.ElementAtOrDefault(0));
         var end = Size(size?.ElementAtOrDefault(1));
         Width = new(start.X, end.X);
         Height = new(start.Y, end.Y);
         Depth = Pair(source, "DepthRange", Vector2.Zero, 0, 1000);
-        SizeScale = (float)Number(source, "SizeScale", 1, -100000, 100000);
+        SizeScale = (float)Number(source, "SizeScale", 1, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude);
         Range = Vector(source, "EmitRangeDims", Vector3.Zero, false);
         Force = Vector(source, "Force", Vector3.Zero);
-        WindCoefficient = (float)Number(source, "WindCoeff", 0, -100000, 100000);
-        LocalWindCoefficient = (float)Number(source, "LocalWindCoeff", 0, -100000, 100000);
+        WindCoefficient = (float)Number(source, "WindCoeff", 0, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude);
+        LocalWindCoefficient = (float)Number(source, "LocalWindCoeff", 0, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude);
         PerParticleWind = source.Flag("PerParticleWind");
         Bounce = source.Field("BounceHeight") != null;
-        BounceHeight = (float)Number(source, "BounceHeight", 0, -100000, 100000);
-        BounceCoefficient = (float)Number(source, "BounceCoeff", .5, -100000, 100000);
+        BounceHeight = (float)Number(source, "BounceHeight", 0, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude);
+        BounceCoefficient = (float)Number(source, "BounceCoeff", .5, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude);
         BounceCallback = source.Field("BounceCallback")?.Integer ?? 0;
-        BounceCallbackRate = (float)Number(source, "BounceCallbackRate", 0, -100000, 100000);
+        BounceCallbackRate = (float)Number(source, "BounceCallbackRate", 0, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude);
         Position = Vector(source, "Pos", Vector3.Zero);
         var angles = Vector(source, "Angles", Vector3.Zero, false);
         Rotation = Quaternion.CreateFromYawPitchRoll(-angles.Y, -angles.X, angles.Z);
-        Rate = Number(source, "Emit_Rate", 0, 0, 100000);
+        Rate = Number(source, "Emit_Rate", 0, 0, StageLimits.MaximumMagnitude);
         EmitFunction = source.Field("EmitFunction")?.Integer ?? Gh3Checksum.Value("constant");
-        EmitPeriod = (float)Number(source, "EmitPeriod", 1, .000001, 86400);
-        Lifetime = Number(source, "Lifetime", 0, 0, 86400);
-        Delay = Number(source, "EmitDelayStart", 0, 0, 86400);
-        TimeSeed = (float)Number(source, "TimeSeed", 0, 0, 86400);
+        EmitPeriod = (float)Number(source, "EmitPeriod", 1, .000001, StageLimits.MaximumSeconds);
+        Lifetime = Number(source, "Lifetime", 0, 0, StageLimits.MaximumSeconds);
+        Delay = Number(source, "EmitDelayStart", 0, 0, StageLimits.MaximumSeconds);
+        TimeSeed = (float)Number(source, "TimeSeed", 0, 0, StageLimits.MaximumSeconds);
         EmitCount = (int)Number(source, "EmitNum", 0, 0, 1000000);
-        Maximum = (int)Number(source, "Max", 1, 0, 100000);
+        Maximum = (int)Number(source, "Max", 1, 0, StageLimits.MaximumMagnitude);
         if (Maximum == 0) Maximum = EmitCount > 0 ? EmitCount : (int)((float)Rate * Math.Max(Life.X, Life.Y) + .5f);
-        if (Maximum > 100000) throw new InvalidDataException("Too many particles in one emitter");
+        if (Maximum > StageLimits.MaximumCount) throw new InvalidDataException("Too many particles in one emitter");
         Follow = 1;
         foreach (var field in source.Fields)
         {
@@ -110,13 +110,13 @@ internal sealed class StageParticleDefinition
                 if (independent is 0 or 1) Follow = independent == 1 ? 0 : 1;
             }
         }
-        if (!float.IsFinite(Follow) || Math.Abs(Follow) > 100000) throw new InvalidDataException("Invalid particle emitter follow value");
-        EmitterVelocityWeight = (float)Number(source, "EmitterVelocityWeight", 0, -100000, 100000);
+        if (!float.IsFinite(Follow) || Math.Abs(Follow) > StageLimits.MaximumMagnitude) throw new InvalidDataException("Invalid particle emitter follow value");
+        EmitterVelocityWeight = (float)Number(source, "EmitterVelocityWeight", 0, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude);
         FillPath = source.Flag("FillPath");
         AlignWithPath = source.Flag("AlignWithPath");
         Rotate3d = source.Flag("Rotate3D");
         AlignTo = Vector(source, "align_to", Vector3.Zero, false);
-        PathFollowTime = (float)Number(source, "PathFollowTime", 0, -100000, 100000);
+        PathFollowTime = (float)Number(source, "PathFollowTime", 0, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude);
         Type = source.Field("Type")?.Integer ?? Gh3Checksum.Value("flat");
         LightGroup = source.Field("LightGroup")?.Integer ?? defaultLightGroup;
         UpdateScript = source.Field("UpdateScript")?.Integer ?? 0;
@@ -135,7 +135,7 @@ internal sealed class StageParticleDefinition
     public StageParticleShape CreateShape()
     {
         var shape = new StageParticleShape { Radiate = Source.Flag("Radiate"), Circular = Source.Flag("DoCircularEmit"), RandomAngle = Source.Flag("UseRandomAngle"),
-            TargetPosition = Source.Field("TargetPosition") == null ? null : (float)Number(Source, "TargetPosition", 0, -100000, 100000) };
+            TargetPosition = Source.Field("TargetPosition") == null ? null : (float)Number(Source, "TargetPosition", 0, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude) };
         shape.SetElevation(0, 1);
         shape.SetSweep(0, 1);
         foreach (var field in Source.Fields)
@@ -143,7 +143,7 @@ internal sealed class StageParticleDefinition
             if (field.Name == Gh3Checksum.Value("AngleSpread")) shape.SourceSpread((float)Gh3ScriptRuntime.Numeric(field.Value));
             else if (field.Name == Gh3Checksum.Value("ElevSpread") || field.Name == Gh3Checksum.Value("SweepSpread"))
             {
-                var pair = Pair(field.Value, Vector2.Zero, -100000, 100000) * .0055555556900799274f - Vector2.One;
+                var pair = Pair(field.Value, Vector2.Zero, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude) * .0055555556900799274f - Vector2.One;
                 if (field.Name == Gh3Checksum.Value("ElevSpread")) shape.SetElevation(pair.X, pair.Y);
                 else shape.SetSweep(pair.X, pair.Y);
             }
@@ -187,7 +187,7 @@ internal sealed class StageParticleDefinition
     public static Vector3 Vector(Gh3QbValue value, string field, Vector3 fallback, bool reflect = true)
     {
         if (value.Field(field) is not { } item) return fallback;
-        if (item.Data is not float[] values || values.Length != 3 || values.Any(v => !float.IsFinite(v) || Math.Abs(v) > 100000))
+        if (item.Data is not float[] values || values.Length != 3 || values.Any(v => !float.IsFinite(v) || Math.Abs(v) > StageLimits.MaximumMagnitude))
             throw new InvalidDataException("Invalid particle vector " + field);
         return new(values[0], values[1], reflect ? -values[2] : values[2]);
     }

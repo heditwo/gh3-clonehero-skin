@@ -121,7 +121,8 @@ internal static class LiteralGuardTests
             var previous = code[start - 1].TrimEnd();
             if (previous.Length == 0 && comments[start - 1].Length == 0) break;
             if (previous.Length == 0) { start--; continue; }
-            if (previous.EndsWith(';') || previous.EndsWith('{') || previous.EndsWith('}')) break;
+            // Braces of blocks are on their own lines (Allman style); a brace after code continues an expression.
+            if (previous.EndsWith(';') || previous.Trim() is "{" or "}") break;
             start--;
         }
         for (var line = start; line <= i; line++)

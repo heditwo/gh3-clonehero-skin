@@ -23,7 +23,7 @@ internal sealed class StageLightNative
 
     public StageLightNative(Gh3QbValue source)
     {
-        float Number(string name, float fallback) => source.Field(name) is { Type: 1 or 2 } value ? (float)Gh3ScriptRuntime.Numeric(value) : fallback;
+        float Number(string name, float fallback) => source.Field(name) is { Type: Gh3QbType.Integer or Gh3QbType.Float } value ? (float)Gh3ScriptRuntime.Numeric(value) : fallback;
         Vector3 Vector(uint name, Vector3 fallback) => source.Field(name)?.Data is float[] { Length: 3 } values ? new(values[0], values[1], values[2]) : fallback;
         Id = source.Field("Name")?.Integer ?? 0;
         Group = source.Field("LightGroup")?.Integer ?? 0x8aebf027;
@@ -57,7 +57,7 @@ internal sealed class StageLightNative
         BoundsPosition = Vector(0x4c1d24af, Type is 1 or 3 ? position + direction * (Radius * .5f) : position);
         BoundsExtent = Vector(0x0dd3f28f, new Vector3(Type is 1 or 3 ? Radius * .5f : Radius));
         var keys = new uint[] { 0x8ee38f1a, 0xf9e4bf8c, 0x60edee36, 0x17eadea0, 0x898e4b03, 0xfe897b95, 0x67802a2f, 0x10871ab9, 0x80380728 };
-        Harmonics = keys.Select(key => Type == 4 && source.Field(key) is { Type: 12 } field && field.Items.Count >= 3 ?
+        Harmonics = keys.Select(key => Type == 4 && source.Field(key) is { Type: Gh3QbType.Array } field && field.Items.Count >= 3 ?
             new Vector4((float)Gh3ScriptRuntime.Numeric(field.Items[0]), (float)Gh3ScriptRuntime.Numeric(field.Items[1]), (float)Gh3ScriptRuntime.Numeric(field.Items[2]), 0) : Vector4.Zero).ToArray();
     }
 

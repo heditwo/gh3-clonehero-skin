@@ -54,7 +54,7 @@ internal sealed class StageScriptBank
             if (!values.TryGetValue(Gh3QbText.Key(name), out var nodes) || nodes.Type != Gh3QbType.Array || nodes.Items.Count > 10000)
                 throw new InvalidDataException("Stage node array is missing or invalid: " + name);
         bank.NodeValues = bank.Nodes.SelectMany(name => values[Gh3QbText.Key(name)].Items).ToDictionary(row => row.Field("Name")?.Integer ?? throw new InvalidDataException("Stage node name is missing"));
-        if (bank.Prefixes.Count > 100000 || bank.Prefixes.Values.Sum(members => (long)members.Length) > 1000000) throw new InvalidDataException("Too many node prefix entries");
+        if (bank.Prefixes.Count > StageLimits.MaximumCount || bank.Prefixes.Values.Sum(members => (long)members.Length) > 1000000) throw new InvalidDataException("Too many node prefix entries");
         bank.PrefixValues = bank.Prefixes.ToDictionary(pair => Gh3QbText.Key(pair.Key), pair => pair.Value.Select(Gh3QbText.Key).ToArray());
         if (bank.PrefixValues.Values.SelectMany(members => members).Any(id => !bank.NodeValues.ContainsKey(id))) throw new InvalidDataException("Node prefix member is missing");
         if (bank.LightVolumes.Count > 1024 || bank.LightVolumes.Keys.Any(id => !bank.NodeValues.ContainsKey(Gh3QbText.Key(id))))

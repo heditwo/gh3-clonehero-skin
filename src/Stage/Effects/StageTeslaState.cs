@@ -2,6 +2,7 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// One Tesla arc. The defaults are GH3's for omitted parameters (PARITY-NOTES.md#particles-and-tesla).
 internal sealed record StageTeslaEffect(uint Id, double Start, double End)
 {
     public int Slot { get; init; }
@@ -12,10 +13,10 @@ internal sealed record StageTeslaEffect(uint Id, double Start, double End)
     public float Width { get; init; } = 1;
     public float Speed { get; init; } = .5f;
     public float Scale { get; init; } = 1;
-    public float LightWidth { get; init; } = .3f;
-    public float FadeOut { get; init; } = .8f;
+    public float LightWidth { get; init; } = .3f; // GH3: default
+    public float FadeOut { get; init; } = .8f; // GH3: default
     public float Amplitude { get; init; } = .5f;
-    public float FalloffAlpha { get; init; } = .3f;
+    public float FalloffAlpha { get; init; } = .3f; // GH3: default
     public uint Blend { get; init; } = Gh3Checksum.Value("add");
 }
 
@@ -50,7 +51,7 @@ internal sealed class StageTeslaState
             return new(true);
         }
         var effect = _effects[slot] ?? new(id, _runtime.Time, double.PositiveInfinity) { Slot = slot };
-        float Number(string field, float fallback) => (float)StageParticleDefinition.Number(parameters, field, fallback, -100000, 100000);
+        float Number(string field, float fallback) => (float)StageParticleDefinition.Number(parameters, field, fallback, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude);
         effect = effect with {
             From = StageParticleDefinition.Vector(parameters, "start", effect.From), To = StageParticleDefinition.Vector(parameters, "end", effect.To),
             Color = StageParticleDefinition.Vector(parameters, "Color", effect.Color, false), Width = Number("width", effect.Width),
@@ -61,7 +62,7 @@ internal sealed class StageTeslaState
         if (parameters.Field("time") is { } duration)
         {
             var seconds = (float)Gh3ScriptRuntime.Numeric(duration);
-            if (!float.IsFinite(seconds) || Math.Abs(seconds) > 86400) throw new InvalidDataException("Invalid Tesla lifetime");
+            if (!float.IsFinite(seconds) || Math.Abs(seconds) > StageLimits.MaximumSeconds) throw new InvalidDataException("Invalid Tesla lifetime");
             effect = effect with { Remaining = seconds, End = seconds <= 0 ? double.PositiveInfinity : _runtime.Time + seconds };
         }
         _effects[slot] = effect;

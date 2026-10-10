@@ -58,7 +58,7 @@ internal sealed class StageScriptActorState
             var reference = parameters.Field("anim") ?? parameters.Fields.FirstOrDefault(field => field.Name == 0 && field.Value.Type == Gh3QbType.Checksum)?.Value;
             var key = reference?.Data is string name ? Gh3Checksum.Value(name) : reference?.Integer ?? 0;
             if (!_clips.TryGetValue(key, out var clip)) throw new InvalidDataException("Actor animation is missing: " + Gh3QbText.Key(key));
-            double Number(string field, double fallback) => parameters.Field(field) is { Type: 1 or 2 } value ? Gh3ScriptRuntime.Numeric(value) : fallback;
+            double Number(string field, double fallback) => parameters.Field(field) is { Type: Gh3QbType.Integer or Gh3QbType.Float } value ? Gh3ScriptRuntime.Numeric(value) : fallback;
             var rate = Number("speed", 1);
             var offset = Number("starttime", 0);
             var blend = Number("BlendDuration", .1);

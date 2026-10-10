@@ -51,7 +51,7 @@ internal sealed class StageParticleShape
     public bool Execute(uint command, Gh3QbValue parameters)
     {
         bool Is(string name) => command == Gh3Checksum.Value(name);
-        float Number(string name) => (float)StageParticleDefinition.Number(parameters, name, 0, -100000, 100000);
+        float Number(string name) => (float)StageParticleDefinition.Number(parameters, name, 0, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude);
         Vector3 Vector(string name) => parameters.Field(name) != null ? StageParticleDefinition.Vector(parameters, name, Vector3.Zero, false) : new(Number("x"), Number("y"), Number("z"));
         if (Is("SetAngleSpread"))
         {
@@ -149,7 +149,7 @@ internal sealed class StageParticleShape
 
     private static Vector2 Pair(Gh3QbValue value)
     {
-        if (value.Data is not float[] values || values.Length != 2 || values.Any(value => !float.IsFinite(value) || Math.Abs(value) > 100000))
+        if (value.Data is not float[] values || values.Length != 2 || values.Any(value => !float.IsFinite(value) || Math.Abs(value) > StageLimits.MaximumMagnitude))
             throw new InvalidDataException("Invalid particle angle range");
         return new(values[0], values[1]);
     }

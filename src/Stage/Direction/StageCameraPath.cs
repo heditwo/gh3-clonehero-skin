@@ -130,7 +130,7 @@ internal sealed class StageCameraPath
             _selector = new() { Array = "cameras" };
             _random = new(Seed);
         }
-        while (_next <= time && _cuts.Count < 100000) AddCut(timeline);
+        while (_next <= time && _cuts.Count < StageLimits.MaximumCount) AddCut(timeline);
         var index = StageTimeline.UpperBound(_cuts, time, c => c.Time) - 1;
         if (index < 0) return _fixed;
         var cut = _cuts[index];

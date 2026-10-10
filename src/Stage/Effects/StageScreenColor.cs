@@ -2,8 +2,12 @@ using System.Numerics;
 
 namespace Gh3Skin;
 
+// GH3's bright_sat screen effect (brightness, contrast, saturation, hue, channel mix) as one color matrix.
 internal static class StageScreenColor
 {
+    // The luminance weights of the saturation matrix (Haeberli, "Matrix Operations for Image Processing").
+    private const float RedLuminance = .3086f, GreenLuminance = .6094f, BlueLuminance = .082f;
+
     public static uint Type => Gh3Checksum.Value("bright_sat");
     public static Gh3QbValue Defaults => Gh3ScriptRuntime.Structure(new[] {
         Field("ON", Gh3ScriptRuntime.Number(1)), Field("brightness", Gh3ScriptRuntime.Number(1)),
@@ -16,7 +20,7 @@ internal static class StageScreenColor
 
     public static Matrix4x4 Matrix(Gh3QbValue parameters)
     {
-        float Number(string name, float fallback) => parameters.Field(name) is { Type: 1 or 2 } value ? (float)Gh3ScriptRuntime.Numeric(value) : fallback;
+        float Number(string name, float fallback) => parameters.Field(name) is { Type: Gh3QbType.Integer or Gh3QbType.Float } value ? (float)Gh3ScriptRuntime.Numeric(value) : fallback;
         if (Number("ON", 1) <= 0) return Matrix4x4.Identity;
         Vector3 Channels(string name, Vector3 fallback)
         {
@@ -30,7 +34,7 @@ internal static class StageScreenColor
         var blue = Channels("blue_mix", Vector3.UnitZ);
         var mix = new Matrix4x4(red.X, green.X, blue.X, 0, red.Y, green.Y, blue.Y, 0, red.Z, green.Z, blue.Z, 0, 0, 0, 0, 1);
         var amount = Number("saturation", 1);
-        var weights = new Vector3(.3086f, .6094f, .082f) * (1 - amount);
+        var weights = new Vector3(RedLuminance, GreenLuminance, BlueLuminance) * (1 - amount);
         var saturation = new Matrix4x4(weights.X + amount, weights.Y, weights.Z, 0,
             weights.X, weights.Y + amount, weights.Z, 0, weights.X, weights.Y, weights.Z + amount, 0, 0, 0, 0, 1);
         var rotation = Matrix4x4.Transpose(Matrix4x4.CreateFromAxisAngle(Vector3.Normalize(Vector3.One), Number("hue", 0) * (2 * MathF.PI)));

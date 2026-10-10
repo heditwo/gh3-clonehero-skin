@@ -154,7 +154,7 @@ internal static class StageChartReader
     {
         if (file == null || file.Version is not (1 or 2) || !double.IsFinite(file.OffsetSeconds) || file.Events == null ||
             file.SourceSong == null || file.SourceSong.Length > 128 || file.Countoff == null || file.Countoff.Length > 128 ||
-            file.Events.Length > 100000 || file.Events.Any(cue => cue == null))
+            file.Events.Length > StageLimits.MaximumCount || file.Events.Any(cue => cue == null))
             throw new InvalidDataException("Invalid stage event file");
         var types = new HashSet<string> { "pyro", "sparks", "fireworks", "smoke", "flash", "lighting", "color", "blend", "snapshot", "strobe-toggle", "gh3-note", "camera",
             "gh3-camera", "gh3-script", "gh3-scripts-note", "gh3-triggers-note", "fret", "drum", "vocal", "crowd", "stance", "perform", "face", "clip", "walk", "strum-style", "arms", "strum", "beat", "tempo",

@@ -31,8 +31,8 @@ internal sealed class StageParticleLod
     public void Set(Gh3QbValue parameters)
     {
         Minimum = (int)StageParticleDefinition.Number(parameters, "min_particles", 0, int.MinValue, int.MaxValue);
-        Distances = new((float)StageParticleDefinition.Number(parameters, "lod_dist1", 0, -100000, 100000),
-            (float)StageParticleDefinition.Number(parameters, "lod_dist2", 0, -100000, 100000));
+        Distances = new((float)StageParticleDefinition.Number(parameters, "lod_dist1", 0, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude),
+            (float)StageParticleDefinition.Number(parameters, "lod_dist2", 0, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude));
     }
 
     public float? Advance(float duration, float? distance, bool visible, bool enabled, float time, float maximumLife, float lifetime, bool stopped, bool burst, bool exempt = false)
