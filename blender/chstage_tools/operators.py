@@ -7,13 +7,25 @@ from bpy.types import Operator
 from bpy_extras.io_utils import ExportHelper, ImportHelper
 from mathutils import Vector
 
-from . import actor_tools, camera_tools, groups, lighting_tools, package_export, package_open, scripts_ui, sidecars, template, toon
+from . import (
+    actor_tools,
+    camera_tools,
+    groups,
+    lighting_tools,
+    package_export,
+    package_open,
+    scripts_ui,
+    sidecars,
+    template,
+    toon,
+)
 
 OWNERS = {"SCENE": lambda c: c.scene, "OBJECT": lambda c: c.object, "MATERIAL": lambda c: c.material}
 
 
 class CHSTAGE_OT_list_edit(Operator):
     """Add or remove an item of a list"""
+
     bl_idname = "chstage.list_edit"
     bl_label = "Edit list"
     bl_options = {"REGISTER", "UNDO", "INTERNAL"}
@@ -24,52 +36,67 @@ class CHSTAGE_OT_list_edit(Operator):
 
     def execute(self, context):
         data = OWNERS[self.owner](context)
-        if data is None: return {"CANCELLED"}
+        if data is None:
+            return {"CANCELLED"}
         holder, _, name = self.path.rpartition(".")
         parent = data.path_resolve(holder) if holder else data
         collection = getattr(parent, name)
         index_name = f"{name}_index"
         if self.action == "ADD":
             collection.add()
-            if hasattr(parent, index_name): setattr(parent, index_name, len(collection) - 1)
+            if hasattr(parent, index_name):
+                setattr(parent, index_name, len(collection) - 1)
         elif len(collection):
             index = min(getattr(parent, index_name, len(collection) - 1), len(collection) - 1)
             collection.remove(index)
-            if hasattr(parent, index_name): setattr(parent, index_name, max(0, index - 1))
+            if hasattr(parent, index_name):
+                setattr(parent, index_name, max(0, index - 1))
         return {"FINISHED"}
 
 
 class CHSTAGE_OT_new_stage(Operator):
     """Make a new scene with a minimal stage: scenery, band placements, cameras, lights, and lighting moods"""
+
     bl_idname = "chstage.new_stage"
     bl_label = "New Stage from Template"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
         scene = template.create()
-        if context.window is not None: context.window.scene = scene
+        if context.window is not None:
+            context.window.scene = scene
         self.report({"INFO"}, f"Made the scene '{scene.name}'")
         return {"FINISHED"}
 
 
 class CHSTAGE_OT_add_marker(Operator):
     """Add a band placement (with a proxy body), a waypoint, or an effect emitter at the 3D cursor"""
+
     bl_idname = "chstage.add_marker"
     bl_label = "Add Stage Marker"
     bl_options = {"REGISTER", "UNDO"}
 
-    kind: EnumProperty(name="Kind", items=[("BAND", "Band placement", ""), ("WAYPOINT", "Waypoint", ""), ("EFFECT", "Effect emitter", "")])
+    kind: EnumProperty(
+        name="Kind",
+        items=[("BAND", "Band placement", ""), ("WAYPOINT", "Waypoint", ""), ("EFFECT", "Effect emitter", "")],
+    )
     role: EnumProperty(name="Role", items=[(r, r.title(), "") for r in sidecars.ROLES])
     effect: EnumProperty(name="Effect", items=[(e, e.title(), "") for e in sidecars.EFFECTS])
 
     def execute(self, context):
-        scene = context.scene; location = scene.cursor.location.copy()
-        if self.kind == "BAND": obj = template.add_band_marker(scene, self.role, location)
-        elif self.kind == "WAYPOINT": obj = template.add_waypoint(scene, f"{self.role}_walk01", location)
-        else: obj = template.add_effect(scene, self.effect, location)
-        for other in scene.objects: other.select_set(False)
+        scene = context.scene
+        location = scene.cursor.location.copy()
+        if self.kind == "BAND":
+            obj = template.add_band_marker(scene, self.role, location)
+        elif self.kind == "WAYPOINT":
+            obj = template.add_waypoint(scene, f"{self.role}_walk01", location)
+        else:
+            obj = template.add_effect(scene, self.effect, location)
+        for other in scene.objects:
+            other.select_set(False)
         obj.select_set(True)
-        if context.view_layer: context.view_layer.objects.active = obj
+        if context.view_layer:
+            context.view_layer.objects.active = obj
         return {"FINISHED"}
 
 
@@ -85,6 +112,7 @@ def store_issues(scene, issues):
 
 class CHSTAGE_OT_validate(Operator):
     """Check the stage with the package validator. Click an issue to select its object"""
+
     bl_idname = "chstage.validate"
     bl_label = "Validate"
     bl_options = {"REGISTER"}
@@ -110,50 +138,82 @@ def custom_stages_folder(context):
 
 class CHSTAGE_OT_export(Operator, ExportHelper):
     """Write the stage as a venue package (.chstage). The add-on validates the package and writes it only when it is valid"""
+
     bl_idname = "chstage.export_package"
     bl_label = "Export .chstage"
     bl_options = {"REGISTER"}
 
     filename_ext = ".chstage"
     filter_glob: StringProperty(default="*.chstage", options={"HIDDEN"})
-    write_folder: BoolProperty(name="Development folder", default=False,
-                               description="Also write the unpacked package to unpacked/<name>.chstage next to the zip")
-    copy_to_game: BoolProperty(name="Copy to Custom/Stages", default=False,
-                               description="Also copy the package into the Custom/Stages folder of the add-on preferences")
-    custom_folder: StringProperty(name="Custom/Stages folder", subtype="DIR_PATH", description="Empty: the folder of the add-on preferences")
-    keep_source: BoolProperty(name="Keep unchanged source rows", default=True, options={"HIDDEN"},
-                              description="Write the rows of the opened package again where the Blender data did not change (tests turn it off)")
-    actor_models: EnumProperty(name="Actor models", options={"HIDDEN"}, default="SETTING",
-                               items=[("SETTING", "Actor setting", ""), ("PACKED", "Packed GLB", ""), ("BLENDER", "Blender model", "")])
+    write_folder: BoolProperty(
+        name="Development folder",
+        default=False,
+        description="Also write the unpacked package to unpacked/<name>.chstage next to the zip",
+    )
+    copy_to_game: BoolProperty(
+        name="Copy to Custom/Stages",
+        default=False,
+        description="Also copy the package into the Custom/Stages folder of the add-on preferences",
+    )
+    custom_folder: StringProperty(
+        name="Custom/Stages folder", subtype="DIR_PATH", description="Empty: the folder of the add-on preferences"
+    )
+    keep_source: BoolProperty(
+        name="Keep unchanged source rows",
+        default=True,
+        options={"HIDDEN"},
+        description="Write the rows of the opened package again where the Blender data did not change (tests turn it off)",
+    )
+    actor_models: EnumProperty(
+        name="Actor models",
+        options={"HIDDEN"},
+        default="SETTING",
+        items=[("SETTING", "Actor setting", ""), ("PACKED", "Packed GLB", ""), ("BLENDER", "Blender model", "")],
+    )
 
     def invoke(self, context, event):
         scene = context.scene
-        folder = Path(bpy.path.abspath(scene.chstage.export_path)).parent if scene.chstage.export_path else Path(bpy.path.abspath("//") or Path.home())
-        self.filepath = str(folder/package_export.package_file_name(scene))
-        if not self.custom_folder: self.custom_folder = custom_stages_folder(context)
+        folder = (
+            Path(bpy.path.abspath(scene.chstage.export_path)).parent
+            if scene.chstage.export_path
+            else Path(bpy.path.abspath("//") or Path.home())
+        )
+        self.filepath = str(folder / package_export.package_file_name(scene))
+        if not self.custom_folder:
+            self.custom_folder = custom_stages_folder(context)
         return ExportHelper.invoke(self, context, event)
 
     def draw(self, context):
         layout = self.layout
         layout.prop(self, "write_folder")
         layout.prop(self, "copy_to_game")
-        if self.copy_to_game: layout.prop(self, "custom_folder", text="")
+        if self.copy_to_game:
+            layout.prop(self, "custom_folder", text="")
         layout.prop(context.scene.chstage.package, "preview_mode")
 
     def execute(self, context):
         scene = context.scene
         target = Path(bpy.path.abspath(self.filepath))
-        if target.suffix != ".chstage": target = target.with_name(target.name + ".chstage")
+        if target.suffix != ".chstage":
+            target = target.with_name(target.name + ".chstage")
         custom = None
         if self.copy_to_game:
             custom = bpy.path.abspath(self.custom_folder or custom_stages_folder(context))
             if not custom:
-                self.report({"WARNING"}, "Set the Custom/Stages folder in the add-on preferences or in the export options")
+                self.report(
+                    {"WARNING"}, "Set the Custom/Stages folder in the add-on preferences or in the export options"
+                )
                 return {"CANCELLED"}
         keeper = sidecars.Keeper("keep" if self.keep_source else "compute")
         try:
-            issues, written = package_export.export_package(scene, target, package_export.development_folder(target) if self.write_folder else None,
-                                                            custom, keeper, None if self.actor_models == "SETTING" else self.actor_models)
+            issues, written = package_export.export_package(
+                scene,
+                target,
+                package_export.development_folder(target) if self.write_folder else None,
+                custom,
+                keeper,
+                None if self.actor_models == "SETTING" else self.actor_models,
+            )
         except Exception as error:
             traceback.print_exc()
             self.report({"ERROR"}, f"Export stopped: {error}")
@@ -168,6 +228,7 @@ class CHSTAGE_OT_export(Operator, ExportHelper):
 
 class CHSTAGE_OT_open(Operator, ImportHelper):
     """Make a new scene from a venue package (.chstage zip, or the manifest.json of a development folder)"""
+
     bl_idname = "chstage.open_package"
     bl_label = "Open .chstage"
     # No undo step: the open makes a new scene, and an undo step of a whole venue costs much memory.
@@ -179,12 +240,15 @@ class CHSTAGE_OT_open(Operator, ImportHelper):
     def execute(self, context):
         prefs = camera_tools.preferences()
         try:
-            scene, issues = package_open.open_package(bpy.path.abspath(self.filepath), all_clips=bool(prefs and prefs.import_all_clips))
+            scene, issues = package_open.open_package(
+                bpy.path.abspath(self.filepath), all_clips=bool(prefs and prefs.import_all_clips)
+            )
         except Exception as error:
             traceback.print_exc()
             self.report({"ERROR"}, f"Open stopped: {error}")
             return {"CANCELLED"}
-        if context.window is not None: context.window.scene = scene
+        if context.window is not None:
+            context.window.scene = scene
         store_issues(scene, issues)
         scene.chstage.validated = bool(issues)
         self.report({"INFO"}, f"Opened '{scene.name}' ({len(issues)} messages)")
@@ -193,6 +257,7 @@ class CHSTAGE_OT_open(Operator, ImportHelper):
 
 class CHSTAGE_OT_select_issue(Operator):
     """Select the object of this issue"""
+
     bl_idname = "chstage.select_issue"
     bl_label = "Select"
     bl_options = {"REGISTER", "UNDO", "INTERNAL"}
@@ -207,18 +272,25 @@ class CHSTAGE_OT_select_issue(Operator):
             self.report({"WARNING"}, "This issue has no object")
             return {"CANCELLED"}
         view_layer = context.view_layer if context.view_layer in scene.view_layers.values() else scene.view_layers[0]
-        for other in scene.objects: other.select_set(False, view_layer=view_layer)
-        if obj.hide_get(view_layer=view_layer): obj.hide_set(False, view_layer=view_layer)
+        for other in scene.objects:
+            other.select_set(False, view_layer=view_layer)
+        if obj.hide_get(view_layer=view_layer):
+            obj.hide_set(False, view_layer=view_layer)
         obj.select_set(True, view_layer=view_layer)
         view_layer.objects.active = obj
         if issue.material_name:
-            index = next((i for i, s in enumerate(obj.material_slots) if s.material and s.material.name == issue.material_name), None)
-            if index is not None: obj.active_material_index = index
+            index = next(
+                (i for i, s in enumerate(obj.material_slots) if s.material and s.material.name == issue.material_name),
+                None,
+            )
+            if index is not None:
+                obj.active_material_index = index
         return {"FINISHED"}
 
 
 class CHSTAGE_OT_snapshot(Operator):
     """Capture the light settings into the active snapshot, or apply the snapshot to the lights"""
+
     bl_idname = "chstage.snapshot"
     bl_label = "Snapshot"
     bl_options = {"REGISTER", "UNDO"}
@@ -227,23 +299,28 @@ class CHSTAGE_OT_snapshot(Operator):
 
     def execute(self, context):
         props = context.scene.chstage
-        if not props.snapshots: return {"CANCELLED"}
+        if not props.snapshots:
+            return {"CANCELLED"}
         entry = props.snapshots[min(props.snapshots_index, len(props.snapshots) - 1)]
-        if self.action == "CAPTURE": template.capture_snapshot(entry, context.scene)
-        else: template.apply_snapshot(entry)
+        if self.action == "CAPTURE":
+            template.capture_snapshot(entry, context.scene)
+        else:
+            template.apply_snapshot(entry)
         lighting_tools.refresh(context.scene)
         return {"FINISHED"}
 
 
 class CHSTAGE_OT_add_shot_point(Operator):
     """Add an empty as the next point of the active camera shot"""
+
     bl_idname = "chstage.add_shot_point"
     bl_label = "Add Point"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
         camera = context.object
-        if camera is None or camera.type != "CAMERA": return {"CANCELLED"}
+        if camera is None or camera.type != "CAMERA":
+            return {"CANCELLED"}
         point = bpy.data.objects.new(f"{camera.name}-point{len(camera.chstage.shot.more_points) + 2}", None)
         point.empty_display_type = "CONE"
         point.matrix_world = camera.matrix_world.copy()
@@ -262,28 +339,36 @@ def view_layer_of(context, scene):
 def select_only(context, scene, objects):
     view_layer = view_layer_of(context, scene)
     for other in scene.objects:
-        if other.select_get(view_layer=view_layer): other.select_set(False, view_layer=view_layer)
+        if other.select_get(view_layer=view_layer):
+            other.select_set(False, view_layer=view_layer)
     for obj in objects:
-        if obj.name not in view_layer.objects: continue
-        if obj.hide_get(view_layer=view_layer): obj.hide_set(False, view_layer=view_layer)
+        if obj.name not in view_layer.objects:
+            continue
+        if obj.hide_get(view_layer=view_layer):
+            obj.hide_set(False, view_layer=view_layer)
         obj.select_set(True, view_layer=view_layer)
-    if objects: view_layer.objects.active = objects[0]
+    if objects:
+        view_layer.objects.active = objects[0]
 
 
 def frame_selected(context):
     """Show the selection in the 3D views of the window (not in background mode)."""
     screen = context.screen
-    for area in (screen.areas if screen else []):
-        if area.type != "VIEW_3D": continue
+    for area in screen.areas if screen else []:
+        if area.type != "VIEW_3D":
+            continue
         region = next((r for r in area.regions if r.type == "WINDOW"), None)
-        if region is None: continue
-        if area.spaces.active.region_3d.view_perspective == "CAMERA": area.spaces.active.region_3d.view_perspective = "PERSP"
+        if region is None:
+            continue
+        if area.spaces.active.region_3d.view_perspective == "CAMERA":
+            area.spaces.active.region_3d.view_perspective = "PERSP"
         with context.temp_override(area=area, region=region):
             bpy.ops.view3d.view_selected()
 
 
 class CHSTAGE_OT_make_actor(Operator):
     """Make an actor (animated scenery) of the selected armature and its skinned meshes: a new actor root becomes their parent"""
+
     bl_idname = "chstage.make_actor"
     bl_label = "Make Actor"
     bl_options = {"REGISTER", "UNDO"}
@@ -304,6 +389,7 @@ class CHSTAGE_OT_make_actor(Operator):
 
 class CHSTAGE_OT_actor_clips(Operator):
     """Import the packed actor GLB again with all its clips (or only the clips that actors.json uses). Changes to the Blender model of this actor are lost"""
+
     bl_idname = "chstage.actor_clips"
     bl_label = "Load All Clips"
     bl_options = {"REGISTER", "UNDO"}
@@ -322,6 +408,7 @@ class CHSTAGE_OT_actor_clips(Operator):
 
 class CHSTAGE_OT_actor_play_clip(Operator):
     """Show this clip on the actor (the active action of its armature)"""
+
     bl_idname = "chstage.actor_play_clip"
     bl_label = "Show Clip"
     bl_options = {"REGISTER", "UNDO", "INTERNAL"}
@@ -330,17 +417,23 @@ class CHSTAGE_OT_actor_play_clip(Operator):
 
     def execute(self, context):
         root = actor_tools.actor_root(context.object)
-        if root is None: return {"CANCELLED"}
+        if root is None:
+            return {"CANCELLED"}
         for obj in actor_tools.descendants(root):
-            if obj.type == "ARMATURE" and obj.animation_data: actor_tools.set_active_clip(obj, self.clip)
+            if obj.type == "ARMATURE" and obj.animation_data:
+                actor_tools.set_active_clip(obj, self.clip)
         action = actor_tools.clip_action(root, self.clip)
         if action is not None:
-            context.scene.frame_start, context.scene.frame_end = int(action.frame_range[0]), max(int(action.frame_range[0]) + 1, int(action.frame_range[1]))
+            context.scene.frame_start, context.scene.frame_end = (
+                int(action.frame_range[0]),
+                max(int(action.frame_range[0]) + 1, int(action.frame_range[1])),
+            )
         return {"FINISHED"}
 
 
 class CHSTAGE_OT_select_actor(Operator):
     """Select this actor"""
+
     bl_idname = "chstage.select_actor"
     bl_label = "Select Actor"
     bl_options = {"REGISTER", "UNDO", "INTERNAL"}
@@ -349,13 +442,15 @@ class CHSTAGE_OT_select_actor(Operator):
 
     def execute(self, context):
         obj = context.scene.objects.get(self.name)
-        if obj is None: return {"CANCELLED"}
+        if obj is None:
+            return {"CANCELLED"}
         select_only(context, context.scene, [obj])
         return {"FINISHED"}
 
 
 class CHSTAGE_OT_scripts(Operator):
     """Read scripts.json again (after an edit in the text editor)"""
+
     bl_idname = "chstage.scripts_reload"
     bl_label = "Reload Script Bank"
     bl_options = {"REGISTER"}
@@ -367,6 +462,7 @@ class CHSTAGE_OT_scripts(Operator):
 
 class CHSTAGE_OT_script_jump(Operator):
     """Select the Blender objects of this script object and show them"""
+
     bl_idname = "chstage.script_jump"
     bl_label = "Jump to Object"
     bl_options = {"REGISTER", "UNDO", "INTERNAL"}
@@ -388,6 +484,7 @@ class CHSTAGE_OT_script_jump(Operator):
 
 class CHSTAGE_OT_script_set(Operator):
     """Write the value into scripts.json. Only simple typed values (numbers, text, vectors, checksums) can change"""
+
     bl_idname = "chstage.script_set"
     bl_label = "Set Value"
     bl_options = {"REGISTER", "UNDO", "INTERNAL"}
@@ -410,6 +507,7 @@ class CHSTAGE_OT_script_set(Operator):
 
 class CHSTAGE_OT_preview_shot(Operator):
     """Look through this camera shot in the 3D view"""
+
     bl_idname = "chstage.preview_shot"
     bl_label = "Preview Shot"
     bl_options = {"REGISTER", "INTERNAL"}
@@ -419,15 +517,19 @@ class CHSTAGE_OT_preview_shot(Operator):
     def execute(self, context):
         scene = context.scene
         obj = scene.objects.get(self.name) or context.object
-        if obj is None or obj.type != "CAMERA": return {"CANCELLED"}
+        if obj is None or obj.type != "CAMERA":
+            return {"CANCELLED"}
         index = scene.objects.find(obj.name)
-        if scene.chstage.shots_index != index: scene.chstage.shots_index = index
-        else: camera_tools.preview_index(context, scene)
+        if scene.chstage.shots_index != index:
+            scene.chstage.shots_index = index
+        else:
+            camera_tools.preview_index(context, scene)
         return {"FINISHED"}
 
 
 class CHSTAGE_OT_shot_group(Operator):
     """Show only the shots of a camera group"""
+
     bl_idname = "chstage.shot_group"
     bl_label = "Camera Group"
     bl_options = {"REGISTER", "INTERNAL"}
@@ -436,7 +538,9 @@ class CHSTAGE_OT_shot_group(Operator):
     _items = []
 
     def group_items(self, context):
-        CHSTAGE_OT_shot_group._items[:] = [("*", "All groups", "")] + [(g, g, "") for g in camera_tools.shot_groups(context.scene)]
+        CHSTAGE_OT_shot_group._items[:] = [("*", "All groups", "")] + [
+            (g, g, "") for g in camera_tools.shot_groups(context.scene)
+        ]
         return CHSTAGE_OT_shot_group._items
 
     group: EnumProperty(items=group_items)
@@ -448,6 +552,7 @@ class CHSTAGE_OT_shot_group(Operator):
 
 class CHSTAGE_OT_preview_point(Operator):
     """Look through a later point of the active shot (an empty uses the default lens)"""
+
     bl_idname = "chstage.preview_point"
     bl_label = "Preview Point"
     bl_options = {"REGISTER", "INTERNAL"}
@@ -456,13 +561,15 @@ class CHSTAGE_OT_preview_point(Operator):
 
     def execute(self, context):
         obj = context.scene.objects.get(self.name)
-        if obj is None: return {"CANCELLED"}
+        if obj is None:
+            return {"CANCELLED"}
         camera_tools.view_through(context, context.scene, obj)
         return {"FINISHED"}
 
 
 class CHSTAGE_OT_rigs(Operator):
     """Load the GH3 band rigs of the library as proxies at the band placements: bone-anchored cameras then follow the rig bones (first frame of the first clip)"""
+
     bl_idname = "chstage.rigs"
     bl_label = "GH3 Rig Proxies"
     bl_options = {"REGISTER", "UNDO"}
@@ -489,6 +596,7 @@ class CHSTAGE_OT_rigs(Operator):
 
 class CHSTAGE_OT_preview_step(Operator):
     """Show the next snapshot of the previewed mood"""
+
     bl_idname = "chstage.preview_step"
     bl_label = "Next Snapshot"
     bl_options = {"REGISTER", "INTERNAL"}
@@ -500,11 +608,14 @@ class CHSTAGE_OT_preview_step(Operator):
 
 class CHSTAGE_OT_group(Operator):
     """Show, hide, or select the objects of a group (the viewport eye; export does not change)"""
+
     bl_idname = "chstage.group"
     bl_label = "Group"
     bl_options = {"REGISTER", "UNDO", "INTERNAL"}
 
-    kind: EnumProperty(items=[("VISIBILITY", "Visibility group", ""), ("LIGHT", "Light group", ""), ("FLAG", "Node flag", "")])
+    kind: EnumProperty(
+        items=[("VISIBILITY", "Visibility group", ""), ("LIGHT", "Light group", ""), ("FLAG", "Node flag", "")]
+    )
     name: StringProperty()
     action: EnumProperty(items=[("TOGGLE", "Show or hide", ""), ("SELECT", "Select", ""), ("ISOLATE", "Show only", "")])
 
@@ -524,6 +635,7 @@ class CHSTAGE_OT_group(Operator):
 
 class CHSTAGE_OT_start_state(Operator):
     """Show the scenery as the game starts it (hide the objects that start hidden or not created), or show all scenery"""
+
     bl_idname = "chstage.start_state"
     bl_label = "Start State"
     bl_options = {"REGISTER", "UNDO"}
@@ -533,17 +645,21 @@ class CHSTAGE_OT_start_state(Operator):
     def execute(self, context):
         scene = context.scene
         view_layer = view_layer_of(context, scene)
-        if self.action == "START": groups.show_start_state(scene, view_layer)
-        else: groups.set_hidden(view_layer, groups.scenery(scene), False)
+        if self.action == "START":
+            groups.show_start_state(scene, view_layer)
+        else:
+            groups.set_hidden(view_layer, groups.scenery(scene), False)
         return {"FINISHED"}
 
 
 def chosen_materials(context, scope):
-    if scope == "ACTIVE": return [context.material] if context.material is not None else []
+    if scope == "ACTIVE":
+        return [context.material] if context.material is not None else []
     found = {}
     for obj in context.selected_objects:
         for slot in obj.material_slots:
-            if slot.material is not None: found[slot.material.name] = slot.material
+            if slot.material is not None:
+                found[slot.material.name] = slot.material
     return list(found.values())
 
 
@@ -553,6 +669,7 @@ SCOPES = [("SELECTED", "Selected objects", "All materials of the selected object
 class CHSTAGE_OT_toon_preview(Operator):
     """Show the toon settings in the viewport (Material Preview or Rendered, EEVEE), or show the glTF material again.
     Export always writes the glTF material"""
+
     bl_idname = "chstage.toon_preview"
     bl_label = "Toon Preview"
     bl_options = {"REGISTER", "UNDO"}
@@ -569,6 +686,7 @@ class CHSTAGE_OT_toon_preview(Operator):
 class CHSTAGE_OT_toon_from_mmd(Operator):
     """Make toon materials from the MMD Tools data: the toon texture gives the threshold, softness, and shade color; the
     sphere map and the edge (color, size) carry over"""
+
     bl_idname = "chstage.toon_from_mmd"
     bl_label = "Toon from MMD"
     bl_options = {"REGISTER", "UNDO"}
@@ -579,25 +697,53 @@ class CHSTAGE_OT_toon_from_mmd(Operator):
         converted, skipped = 0, []
         for material in chosen_materials(context, self.scope):
             notes = toon.from_mmd(material)
-            if notes is None: skipped.append(material.name); continue
+            if notes is None:
+                skipped.append(material.name)
+                continue
             converted += 1
-            for note in notes: self.report({"INFO"}, f"{material.name}: {note}")
+            for note in notes:
+                self.report({"INFO"}, f"{material.name}: {note}")
             toon.refresh(material)
-        if skipped: self.report({"WARNING"}, f"no MMD data (MMD Tools): {', '.join(skipped[:5])}")
+        if skipped:
+            self.report({"WARNING"}, f"no MMD data (MMD Tools): {', '.join(skipped[:5])}")
         self.report({"INFO"}, f"{converted} toon materials from MMD")
         return {"FINISHED"} if converted else {"CANCELLED"}
 
 
-CLASSES = (CHSTAGE_OT_list_edit, CHSTAGE_OT_new_stage, CHSTAGE_OT_add_marker, CHSTAGE_OT_validate, CHSTAGE_OT_export, CHSTAGE_OT_open,
-           CHSTAGE_OT_select_issue, CHSTAGE_OT_snapshot, CHSTAGE_OT_add_shot_point, CHSTAGE_OT_make_actor, CHSTAGE_OT_actor_clips,
-           CHSTAGE_OT_actor_play_clip, CHSTAGE_OT_select_actor, CHSTAGE_OT_scripts, CHSTAGE_OT_script_jump, CHSTAGE_OT_script_set,
-           CHSTAGE_OT_preview_shot, CHSTAGE_OT_shot_group, CHSTAGE_OT_preview_point, CHSTAGE_OT_rigs, CHSTAGE_OT_preview_step, CHSTAGE_OT_group, CHSTAGE_OT_start_state,
-           CHSTAGE_OT_toon_preview, CHSTAGE_OT_toon_from_mmd)
+CLASSES = (
+    CHSTAGE_OT_list_edit,
+    CHSTAGE_OT_new_stage,
+    CHSTAGE_OT_add_marker,
+    CHSTAGE_OT_validate,
+    CHSTAGE_OT_export,
+    CHSTAGE_OT_open,
+    CHSTAGE_OT_select_issue,
+    CHSTAGE_OT_snapshot,
+    CHSTAGE_OT_add_shot_point,
+    CHSTAGE_OT_make_actor,
+    CHSTAGE_OT_actor_clips,
+    CHSTAGE_OT_actor_play_clip,
+    CHSTAGE_OT_select_actor,
+    CHSTAGE_OT_scripts,
+    CHSTAGE_OT_script_jump,
+    CHSTAGE_OT_script_set,
+    CHSTAGE_OT_preview_shot,
+    CHSTAGE_OT_shot_group,
+    CHSTAGE_OT_preview_point,
+    CHSTAGE_OT_rigs,
+    CHSTAGE_OT_preview_step,
+    CHSTAGE_OT_group,
+    CHSTAGE_OT_start_state,
+    CHSTAGE_OT_toon_preview,
+    CHSTAGE_OT_toon_from_mmd,
+)
 
 
 def register():
-    for cls in CLASSES: bpy.utils.register_class(cls)
+    for cls in CLASSES:
+        bpy.utils.register_class(cls)
 
 
 def unregister():
-    for cls in reversed(CLASSES): bpy.utils.unregister_class(cls)
+    for cls in reversed(CLASSES):
+        bpy.utils.unregister_class(cls)

@@ -24,8 +24,12 @@ def combine_hair(meshes, materials, texture_directory):
     if len(names) > 1:
         tiles = []
         for name in names:
-            uv = [struct.unpack_from("<2f", data, i * stride + 24)
-                  for key, count, data, _ in selected if materials[key]["texture"] == name for i in range(count)]
+            uv = [
+                struct.unpack_from("<2f", data, i * stride + 24)
+                for key, count, data, _ in selected
+                if materials[key]["texture"] == name
+                for i in range(count)
+            ]
             low = [math.floor(min(v[k] for v in uv)) for k in range(2)]
             high = [math.floor(max(v[k] for v in uv)) + 1 for k in range(2)]
             with Image.open(directory / f"{name}.png") as source:
@@ -45,11 +49,14 @@ def combine_hair(meshes, materials, texture_directory):
         top = 0
         for name, tile, low, high, width, height, pad in tiles:
             atlas.paste(tile, (0, top))
-            transforms[name] = (width / atlas_width, height / atlas_height,
-                                (pad - low[0] * width) / atlas_width,
-                                1 - (top + pad + high[1] * height) / atlas_height)
+            transforms[name] = (
+                width / atlas_width,
+                height / atlas_height,
+                (pad - low[0] * width) / atlas_width,
+                1 - (top + pad + high[1] * height) / atlas_height,
+            )
             top += tile.height
-        texture = f'{key("gh3_sorted_hair_" + "_".join(names)):08x}'
+        texture = f"{key('gh3_sorted_hair_' + '_'.join(names)):08x}"
         if texture in names:
             raise ValueError("Hair atlas texture ID collision")
         atlas.save(directory / f"{texture}.png")

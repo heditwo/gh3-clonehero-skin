@@ -27,15 +27,20 @@ def summarize(path):
             rows.append((float(match[1]), int(match[2]), int(match[3]), pairs(match[4]), pairs(match[5])))
     if not rows:
         return None
+
     def mean(selected, index):
         names = {name for row in selected for name in row[index]}
         return {name: statistics.mean(row[index].get(name, 0) for row in selected) for name in names}
+
     normal = [row for row in rows if not 44 <= row[0] <= 56] or rows
     burst = [row for row in rows if 44 <= row[0] <= 56] or rows
     return {
         "fps": (statistics.median(row[1] for row in normal), min(row[1] for row in rows)),
         "gen0": statistics.mean(row[2] for row in rows),
-        "normal": mean(normal, 3), "burst": mean(burst, 3), "alloc": mean(normal, 4), "burstAlloc": mean(burst, 4),
+        "normal": mean(normal, 3),
+        "burst": mean(burst, 3),
+        "alloc": mean(normal, 4),
+        "burstAlloc": mean(burst, 4),
     }
 
 
@@ -48,7 +53,9 @@ for path in sys.argv[1:]:
     if summary is None:
         print(f"{path}: no samples")
         continue
-    print(f"{path.split('/')[-1].split('.')[0]:11s} median {summary['fps'][0]:.0f} fps, min {summary['fps'][1]} fps, gen0 GCs/s {summary['gen0']:.1f}")
+    print(
+        f"{path.split('/')[-1].split('.')[0]:11s} median {summary['fps'][0]:.0f} fps, min {summary['fps'][1]} fps, gen0 GCs/s {summary['gen0']:.1f}"
+    )
     print(f"    normal ms: {top(summary['normal'])}")
     print(f"    burst  ms: {top(summary['burst'])}")
     print(f"    normal KB: {top(summary['alloc'])}")

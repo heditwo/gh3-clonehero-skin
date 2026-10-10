@@ -15,7 +15,8 @@ def script_item(scene):
 
 def _cached(scene):
     item = script_item(scene)
-    if item is None: return None
+    if item is None:
+        return None
     text = item.text.as_string()
     key = item.text.as_pointer()
     cached = _CACHE.get(key)
@@ -36,8 +37,10 @@ def bank(scene):
 
 def index_of(scene):
     cached = _cached(scene)
-    if cached is None: return None
-    if cached["index"] is None: cached["index"] = script_bank.ScriptIndex(cached["data"], names=[obj.name for obj in scene.objects])
+    if cached is None:
+        return None
+    if cached["index"] is None:
+        cached["index"] = script_bank.ScriptIndex(cached["data"], names=[obj.name for obj in scene.objects])
     return cached["index"]
 
 
@@ -50,14 +53,22 @@ def object_links(scene):
         ids = []
         if props.script_object:
             ids.append(props.script_object)
-            if props.object_script: events.append(("object startup", props.script_object, "gh3ObjectScript", props.object_script))
-        if props.fixture_object: ids.append(props.fixture_object)
-        if obj.type == "LIGHT" and props.light.script_object: ids.append(props.light.script_object)
+            if props.object_script:
+                events.append(("object startup", props.script_object, "gh3ObjectScript", props.object_script))
+        if props.fixture_object:
+            ids.append(props.fixture_object)
+        if obj.type == "LIGHT" and props.light.script_object:
+            ids.append(props.light.script_object)
         if props.marker == "ACTOR":
             actor = props.actor
-            if actor.script_object: ids.append(actor.script_object)
-            if actor.script: events.append(("actor script", actor.script_object, "script", actor.script))
-            if actor.animation_events: events.append(("actor animation events", actor.script_object, "animationEvents", actor.animation_events))
+            if actor.script_object:
+                ids.append(actor.script_object)
+            if actor.script:
+                events.append(("actor script", actor.script_object, "script", actor.script))
+            if actor.animation_events:
+                events.append(
+                    ("actor animation events", actor.script_object, "animationEvents", actor.animation_events)
+                )
         for value in ids:
             links.setdefault(value.lower(), []).append(obj.name)
     return links, sorted(set(events))
@@ -69,7 +80,8 @@ def rebuild(scene):
     rows = props.script_rows
     rows.clear()
     data = bank(scene)
-    if data is None: return
+    if data is None:
+        return
     links, scene_events = object_links(scene)
     index = index_of(scene)
     if props.script_view == "OBJECTS":
@@ -94,7 +106,14 @@ def rebuild(scene):
             row.info = ", ".join(value) if isinstance(value, list) else value
         for path, label, kind, value, editable in index.simple_values():
             row = rows.add()
-            row.kind, row.label, row.path, row.value_type, row.info, row.editable = "VALUE", label, path, kind, value, editable
+            row.kind, row.label, row.path, row.value_type, row.info, row.editable = (
+                "VALUE",
+                label,
+                path,
+                kind,
+                value,
+                editable,
+            )
     props.script_rows_index = min(props.script_rows_index, max(0, len(rows) - 1))
 
 
@@ -122,18 +141,21 @@ def select_objects(context, scene, names):
     view_layer = context.view_layer if context.view_layer in scene.view_layers.values() else scene.view_layers[0]
     objects = [scene.objects[n] for n in names if n in scene.objects]
     for other in scene.objects:
-        if other.select_get(view_layer=view_layer): other.select_set(False, view_layer=view_layer)
+        if other.select_get(view_layer=view_layer):
+            other.select_set(False, view_layer=view_layer)
     for obj in objects:
-        if obj.hide_get(view_layer=view_layer): obj.hide_set(False, view_layer=view_layer)
+        if obj.hide_get(view_layer=view_layer):
+            obj.hide_set(False, view_layer=view_layer)
         obj.select_set(True, view_layer=view_layer)
-    if objects: view_layer.objects.active = objects[0]
+    if objects:
+        view_layer.objects.active = objects[0]
     return objects
 
 
 def node_rows(scene, node_id):
     """Value rows (path, label, type, value, editable) of a node of the bank."""
     index = index_of(scene)
-    if index is None: return []
+    if index is None:
+        return []
     node = index.node(node_id)
     return index.simple_values(node) if node is not None else []
-

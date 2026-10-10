@@ -1,4 +1,5 @@
 """Send key presses to GH3 and save a screenshot. Usage: keys.py <shot-name> [key[:hold_seconds] | sleep:N ...]"""
+
 import subprocess
 import sys
 import time

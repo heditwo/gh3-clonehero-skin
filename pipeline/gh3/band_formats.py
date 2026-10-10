@@ -9,9 +9,13 @@ from pipeline.gh3.formats import values, word
 
 def rotation(q):
     x, y, z, w = q / np.linalg.norm(q)
-    return np.array([[1 - 2 * (y*y + z*z), 2 * (x*y - z*w), 2 * (x*z + y*w)],
-                     [2 * (x*y + z*w), 1 - 2 * (x*x + z*z), 2 * (y*z - x*w)],
-                     [2 * (x*z - y*w), 2 * (y*z + x*w), 1 - 2 * (x*x + y*y)]])
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )
 
 
 def skeleton(data):
@@ -23,7 +27,11 @@ def skeleton(data):
     parents = [names.index(parent) if parent in names else -1 for parent in values(data, parents_at, f"{count}I")]
     positions = np.array([values(data, positions_at + i * 16, "4f")[:3] for i in range(count)])
     rotations = np.array([values(data, rotations_at + i * 16, "4f") for i in range(count)])
-    bind = np.array([values(data, matrices_at + i * 64, "16f") for i in range(count)]).reshape(count, 4, 4).transpose(0, 2, 1)
+    bind = (
+        np.array([values(data, matrices_at + i * 64, "16f") for i in range(count)])
+        .reshape(count, 4, 4)
+        .transpose(0, 2, 1)
+    )
     if not all(np.isfinite(array).all() for array in (positions, rotations, bind)):
         raise ValueError("Non-finite skeleton")
     world, visiting = {}, set()
@@ -48,10 +56,17 @@ def skeleton(data):
 
 def remap_animation(clip, source_names, target_names):
     source = {name: i for i, name in enumerate(source_names)}
-    if len(source) != len(source_names) or len(set(target_names)) != len(target_names): raise ValueError("Duplicate animation bone names")
+    if len(source) != len(source_names) or len(set(target_names)) != len(target_names):
+        raise ValueError("Duplicate animation bone names")
     indices = {source[name]: i for i, name in enumerate(target_names) if name in source}
-    if not indices: raise ValueError("Animation and actor do not share any bones")
-    return clip[0], {indices[i]: frames for i, frames in clip[1].items() if i in indices}, {indices[i]: frames for i, frames in clip[2].items() if i in indices}, clip[3]
+    if not indices:
+        raise ValueError("Animation and actor do not share any bones")
+    return (
+        clip[0],
+        {indices[i]: frames for i, frames in clip[1].items() if i in indices},
+        {indices[i]: frames for i, frames in clip[2].items() if i in indices},
+        clip[3],
+    )
 
 
 def animation(data, expected_bones):
@@ -183,10 +198,17 @@ def sample_animation(clip, positions, rotations, times):
 
 def quaternion(matrix):
     m = matrix[:3, :3]
-    k = np.array([[m[0, 0] - m[1, 1] - m[2, 2], m[1, 0] + m[0, 1], m[2, 0] + m[0, 2], m[2, 1] - m[1, 2]],
-                  [m[1, 0] + m[0, 1], m[1, 1] - m[0, 0] - m[2, 2], m[2, 1] + m[1, 2], m[0, 2] - m[2, 0]],
-                  [m[2, 0] + m[0, 2], m[2, 1] + m[1, 2], m[2, 2] - m[0, 0] - m[1, 1], m[1, 0] - m[0, 1]],
-                  [m[2, 1] - m[1, 2], m[0, 2] - m[2, 0], m[1, 0] - m[0, 1], np.trace(m)]]) / 3
+    k = (
+        np.array(
+            [
+                [m[0, 0] - m[1, 1] - m[2, 2], m[1, 0] + m[0, 1], m[2, 0] + m[0, 2], m[2, 1] - m[1, 2]],
+                [m[1, 0] + m[0, 1], m[1, 1] - m[0, 0] - m[2, 2], m[2, 1] + m[1, 2], m[0, 2] - m[2, 0]],
+                [m[2, 0] + m[0, 2], m[2, 1] + m[1, 2], m[2, 2] - m[0, 0] - m[1, 1], m[1, 0] - m[0, 1]],
+                [m[2, 1] - m[1, 2], m[0, 2] - m[2, 0], m[1, 0] - m[0, 1], np.trace(m)],
+            ]
+        )
+        / 3
+    )
     eigenvalues, eigenvectors = np.linalg.eigh(k)
     return eigenvectors[:, np.argmax(eigenvalues)]
 

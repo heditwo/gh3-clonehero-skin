@@ -17,13 +17,49 @@ from pipeline.paths import GH3_DATA, HIT_EFFECTS
 
 # Material, texture, output, texture size, and (columns, rows, frames per second) for animated materials.
 MATERIALS = [
-    ("sys_note_hit01_sys_note_hit01", "tex\\models\\highway\\note_hit01.dds", "gh3-note-hit.png", (512, 1024), (4, 4, 60)),
+    (
+        "sys_note_hit01_sys_note_hit01",
+        "tex\\models\\highway\\note_hit01.dds",
+        "gh3-note-hit.png",
+        (512, 1024),
+        (4, 4, 60),
+    ),
     ("sys_note_hit_blue_01_sys_note_hit_blue_01", 0x9E700D1C, "gh3-note-hit-star.png", (512, 1024), (4, 4, 60)),
-    ("sys_whammy_hold01_sys_whammy_hold01", "tex\\models\\highway\\whammy_hold_01.dds", "gh3-whammy-hold.png", (512, 512), (4, 4, 30)),
-    ("sys_big_bolt01_sys_big_bolt01", "tex\\models\\highway\\big_lighning01.dds", "gh3-big-bolt.png", (1024, 512), (8, 1, 15)),
-    ("sys_particle_spark01_sys_particle_spark01", "tex\\models\\highway\\lil_spark.dds", "gh3-particle-spark.png", (32, 32), None),
-    ("sys_particle_star01_sys_particle_star01", "tex\\models\\highway\\lil_star.dds", "gh3-particle-star.png", (64, 64), None),
-    ("sys_particle_star02_sys_particle_star02", "tex\\models\\highway\\lil_star2.dds", "gh3-particle-star2.png", (64, 64), None),
+    (
+        "sys_whammy_hold01_sys_whammy_hold01",
+        "tex\\models\\highway\\whammy_hold_01.dds",
+        "gh3-whammy-hold.png",
+        (512, 512),
+        (4, 4, 30),
+    ),
+    (
+        "sys_big_bolt01_sys_big_bolt01",
+        "tex\\models\\highway\\big_lighning01.dds",
+        "gh3-big-bolt.png",
+        (1024, 512),
+        (8, 1, 15),
+    ),
+    (
+        "sys_particle_spark01_sys_particle_spark01",
+        "tex\\models\\highway\\lil_spark.dds",
+        "gh3-particle-spark.png",
+        (32, 32),
+        None,
+    ),
+    (
+        "sys_particle_star01_sys_particle_star01",
+        "tex\\models\\highway\\lil_star.dds",
+        "gh3-particle-star.png",
+        (64, 64),
+        None,
+    ),
+    (
+        "sys_particle_star02_sys_particle_star02",
+        "tex\\models\\highway\\lil_star2.dds",
+        "gh3-particle-star2.png",
+        (64, 64),
+        None,
+    ),
 ]
 ANIMATED_UI = key("AnimatedTexture_UI")
 IMMEDIATE_UI = key("ImmediateMode_UI")
@@ -40,7 +76,9 @@ def materials(scene):
             "template": word(scene, offset + 160),
             "textures": values(scene, offset + sample_offset, f"{sample_count}I"),
             "blend": word(scene, offset + 216),
-            "constants": [values(scene, offset + constant_offset + 16 * index, "f")[0] for index in range(constant_count)],
+            "constants": [
+                values(scene, offset + constant_offset + 16 * index, "f")[0] for index in range(constant_count)
+            ],
         }
         offset += word(scene, offset + 196)
     return found
@@ -51,7 +89,7 @@ def textures(bundle):
     for index in range(count):
         header = table + 40 * index
         start, size = unpack_from(">II", bundle, header + 28)
-        yield unpack_from(">I", bundle, header + 4)[0], bundle[start:start + size]
+        yield unpack_from(">I", bundle, header + 4)[0], bundle[start : start + size]
 
 
 def convert(source, output):
@@ -72,7 +110,10 @@ def convert(source, output):
         if animation is None:
             if material["template"] != IMMEDIATE_UI:
                 raise ValueError(f"{material_name} is not an ImmediateMode_UI material")
-        elif material["template"] != ANIMATED_UI or tuple(round(value) for value in material["constants"][:3]) != animation:
+        elif (
+            material["template"] != ANIMATED_UI
+            or tuple(round(value) for value in material["constants"][:3]) != animation
+        ):
             raise ValueError(f"{material_name} has an unexpected texture animation")
         image = Image.open(BytesIO(images[texture_id])).convert("RGBA")
         if image.size != size:

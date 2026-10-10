@@ -20,10 +20,13 @@ def store(name, data):
     """A text block that holds the bytes (an existing one with the same bytes, or a new one)."""
     sha256 = hashlib.sha256(data).hexdigest()
     text = find(sha256)
-    if text is not None: return text
+    if text is not None:
+        return text
     text = bpy.data.texts.new(name)
-    text.from_string(f"CH Stage Tools: packed package file '{name}' ({len(data)} bytes, SHA-256 {sha256}).\n"
-                     "Export writes it into the package. Do not edit or delete this text block.\n")
+    text.from_string(
+        f"CH Stage Tools: packed package file '{name}' ({len(data)} bytes, SHA-256 {sha256}).\n"
+        "Export writes it into the package. Do not edit or delete this text block.\n"
+    )
     text[DATA] = bytes(data)
     text[SHA256] = sha256
     text.use_fake_user = True
@@ -32,7 +35,8 @@ def store(name, data):
 
 def load(text):
     """The bytes of a packed text block, or None."""
-    if text is None or DATA not in text: return None
+    if text is None or DATA not in text:
+        return None
     return bytes(text[DATA])
 
 

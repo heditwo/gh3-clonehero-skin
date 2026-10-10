@@ -12,8 +12,12 @@ from pipeline.hud.highway_overlay import warp
 from pipeline.paths import GH3_SKIN_ASSETS, ROOT, STAR_POWER_HIGHWAY
 
 parser = argparse.ArgumentParser(prog="python -m pipeline.hud.star_power", description=__doc__)
-parser.add_argument("--video", type=Path, default=ROOT/"gh3-long-star-power-1600x900.mp4",
-                    help="The owner's 1600 x 900 GH3 Star Power reference recording")
+parser.add_argument(
+    "--video",
+    type=Path,
+    default=ROOT / "gh3-long-star-power-1600x900.mp4",
+    help="The owner's 1600 x 900 GH3 Star Power reference recording",
+)
 video = parser.parse_args().video
 source = GH3_SKIN_ASSETS / "global-gfx-png"
 target = STAR_POWER_HIGHWAY
@@ -31,15 +35,18 @@ def sample(image, u, v):
 models = []
 for frame in range(8):
     image = np.zeros((*x.shape, 3), dtype=np.float32)
-    bolt = bolts[:, frame * 128:(frame + 1) * 128]
+    bolt = bolts[:, frame * 128 : (frame + 1) * 128]
     for right in (False, True):
         angle = np.deg2rad(-27.5 if right else 27.5)
         anchor_x = 1187 if right else 421
         normal = (x - anchor_x) * np.cos(angle) + (y - 936) * np.sin(angle)
         along = -(x - anchor_x) * np.sin(angle) + (y - 936) * np.cos(angle)
         outside = normal > 0 if right else normal < 0
-        halo = sample(glow, (normal - (68.75 if right else -68.75)) / (-1.25 if right else 1.25) + 63.5,
-                      (along - 68.75) / 1.375 + 511.5)
+        halo = sample(
+            glow,
+            (normal - (68.75 if right else -68.75)) / (-1.25 if right else 1.25) + 63.5,
+            (along - 68.75) / 1.375 + 511.5,
+        )
         broad = sample(bolt, normal / -2.48 + 63.5, along / -1.106)
         core = sample(bolt, normal / (-0.62 if right else 0.62) + 63.5, along / -1.106)
         halo *= np.clip((y - 394) / 598, 0, 1)[:, :, None]
@@ -52,9 +59,26 @@ right = 904 + 0.52 * (y - 400)
 class_mask = (x < left - 22) & (x > left - 100) & (y > 450) & (y < 585)
 templates = np.array([image[class_mask] for image in models])
 samples = [[] for _ in models]
-command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-ss", "11", "-i",
-           str(video), "-t", "8", "-vf", "fps=60,crop=1600:520:0:380",
-           "-pix_fmt", "rgb24", "-f", "rawvideo", "-"]
+command = [
+    "ffmpeg",
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-nostdin",
+    "-ss",
+    "11",
+    "-i",
+    str(video),
+    "-t",
+    "8",
+    "-vf",
+    "fps=60,crop=1600:520:0:380",
+    "-pix_fmt",
+    "rgb24",
+    "-f",
+    "rawvideo",
+    "-",
+]
 with subprocess.Popen(command, stdout=subprocess.PIPE) as process:
     while data := process.stdout.read(1600 * 520 * 3):
         if len(data) != 1600 * 520 * 3:
@@ -66,7 +90,8 @@ with subprocess.Popen(command, stdout=subprocess.PIPE) as process:
         raise RuntimeError("Could not decode the GH3 highway reference")
 
 visible = ((x < left + 6) & ((y < 583) | (x > 495) | (y > 820))) | (
-    (x > right - 6) & ((y < 541) | (x < 1093) | (y > 805)))
+    (x > right - 6) & ((y < 541) | (x < 1093) | (y > 805))
+)
 visible &= (x > 315) | (y < 810)
 weight = np.clip(cv2.distanceTransform(visible.astype(np.uint8), cv2.DIST_L2, 5) / 12, 0, 1)
 rail = (np.abs(x - left) < 9) | (np.abs(x - right) < 9)

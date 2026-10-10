@@ -65,11 +65,16 @@ def encode(levels: list[np.ndarray], name: str) -> bytes:
 
 def psnr(name: str, data: bytes, level: np.ndarray) -> float:
     height, width = level.shape[:2]
-    decoded = np.frombuffer(DECODERS[name](data[: (width // 4) * (height // 4) * FORMATS[name][1]], width, height),
-                            dtype=np.uint8).reshape(height, width, 4)[..., [2, 1, 0, 3]].astype(np.float64)
+    decoded = (
+        np.frombuffer(
+            DECODERS[name](data[: (width // 4) * (height // 4) * FORMATS[name][1]], width, height), dtype=np.uint8
+        )
+        .reshape(height, width, 4)[..., [2, 1, 0, 3]]
+        .astype(np.float64)
+    )
     channels = [0, 1] if name == "bc5" else [0, 1, 2]
     error = np.mean((decoded[..., channels] - level[..., channels].astype(np.float64)) ** 2)
-    return float("inf") if error == 0 else 10 * np.log10(255 ** 2 / error)
+    return float("inf") if error == 0 else 10 * np.log10(255**2 / error)
 
 
 def main() -> None:
@@ -86,9 +91,16 @@ def main() -> None:
     mip_seconds = time.perf_counter() - started
     rgba = b"".join(level.tobytes() for level in levels)
     (arguments.out / "rgba32.gh3tex").write_bytes(
-        b"GH3T" + struct.pack("<iiiii", 1, 4, image.width, image.height, len(levels)) + rgba)
-    report = {"source": str(arguments.png), "width": image.width, "height": image.height, "mips": len(levels),
-              "mipChainSeconds": mip_seconds, "formats": {}}
+        b"GH3T" + struct.pack("<iiiii", 1, 4, image.width, image.height, len(levels)) + rgba
+    )
+    report = {
+        "source": str(arguments.png),
+        "width": image.width,
+        "height": image.height,
+        "mips": len(levels),
+        "mipChainSeconds": mip_seconds,
+        "formats": {},
+    }
     for name, (unity_format, _, _) in FORMATS.items():
         timings, cpu = [], []
         for _ in range(arguments.runs):
@@ -97,10 +109,15 @@ def main() -> None:
             timings.append(time.perf_counter() - started)
             cpu.append(time.process_time() - started_cpu)
         (arguments.out / f"{name}.gh3tex").write_bytes(
-            b"GH3T" + struct.pack("<iiiii", 1, unity_format, image.width, image.height, len(levels)) + data)
-        report["formats"][name] = {"bytes": len(data), "encodeSeconds": timings, "cpuSeconds": cpu,
-                                   "medianSeconds": statistics.median(timings),
-                                   "psnrTopLevel": psnr(name, data, levels[0])}
+            b"GH3T" + struct.pack("<iiiii", 1, unity_format, image.width, image.height, len(levels)) + data
+        )
+        report["formats"][name] = {
+            "bytes": len(data),
+            "encodeSeconds": timings,
+            "cpuSeconds": cpu,
+            "medianSeconds": statistics.median(timings),
+            "psnrTopLevel": psnr(name, data, levels[0]),
+        }
     json.dump(report, sys.stdout, indent=2)
     print()
 

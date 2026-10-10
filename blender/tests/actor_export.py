@@ -12,7 +12,7 @@ from pathlib import Path
 
 import bpy
 
-args = sys.argv[sys.argv.index("--") + 1:]
+args = sys.argv[sys.argv.index("--") + 1 :]
 archive, output, packages = Path(args[0]), Path(args[1]), [Path(p) for p in args[2:]]
 output.mkdir(parents=True, exist_ok=True)
 module = "bl_ext.user_default.chstage_tools"
@@ -29,9 +29,20 @@ for package in packages:
     with bpy.context.temp_override(scene=scene, view_layer=scene.view_layers[0]):
         status = bpy.ops.chstage.export_package(filepath=str(target), actor_models="BLENDER")
     report = validate.validate(target) if target.is_file() else None
-    print("CHSTAGE-ACTORS " + json.dumps({"package": package.name, "blender": bpy.app.version_string, "status": sorted(status),
-                                          "openSeconds": round(opened, 1), "exportSeconds": round(time.perf_counter() - started, 1),
-                                          "issues": [(i.severity, i.message) for i in scene.chstage.issues],
-                                          "errors": report.errors if report else None, "warnings": report.warnings if report else None,
-                                          "maxRssMB": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024)}))
+    print(
+        "CHSTAGE-ACTORS "
+        + json.dumps(
+            {
+                "package": package.name,
+                "blender": bpy.app.version_string,
+                "status": sorted(status),
+                "openSeconds": round(opened, 1),
+                "exportSeconds": round(time.perf_counter() - started, 1),
+                "issues": [(i.severity, i.message) for i in scene.chstage.issues],
+                "errors": report.errors if report else None,
+                "warnings": report.warnings if report else None,
+                "maxRssMB": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024),
+            }
+        )
+    )
     bpy.data.scenes.remove(scene)

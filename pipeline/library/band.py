@@ -20,14 +20,42 @@ from pipeline.gh3.hair_mesh import combine_hair
 from pipeline.gh3.mesh_cutout import trim_prop_cutouts
 
 BAND = [
-    ("singer", "Singer_Male", "GH3_singer_male", "Microphone001", "Vocalist",
-     ["gh3_singer_male_med_singidle2", "gh3_singer_male_fast_singidle3"], "Singer_Male_Anims"),
-    ("guitarist", "axel_1", "GH3_guitarist_axel", "SG_Black", "Guitarist",
-     ["gh3_guit_axel_a_fst_idle1", "gh3_guit_axel_a_med_idle2"], "axel_1_anims"),
-    ("bassist", "Bassist", "GH3_bassist", "tobB4", "Bassist",
-     ["gh3_bassist_a_med_idle01", "gh3_bassist_a_fst_idle02"], "Bassist_anims"),
-    ("drummer", "Drummer", "GH3_drummer", "Drum_Set001", "Drummer",
-     ["gh3_drummer_med_idle_01", "gh3_drummer_fst_idle_01"], "Drummer_anims"),
+    (
+        "singer",
+        "Singer_Male",
+        "GH3_singer_male",
+        "Microphone001",
+        "Vocalist",
+        ["gh3_singer_male_med_singidle2", "gh3_singer_male_fast_singidle3"],
+        "Singer_Male_Anims",
+    ),
+    (
+        "guitarist",
+        "axel_1",
+        "GH3_guitarist_axel",
+        "SG_Black",
+        "Guitarist",
+        ["gh3_guit_axel_a_fst_idle1", "gh3_guit_axel_a_med_idle2"],
+        "axel_1_anims",
+    ),
+    (
+        "bassist",
+        "Bassist",
+        "GH3_bassist",
+        "tobB4",
+        "Bassist",
+        ["gh3_bassist_a_med_idle01", "gh3_bassist_a_fst_idle02"],
+        "Bassist_anims",
+    ),
+    (
+        "drummer",
+        "Drummer",
+        "GH3_drummer",
+        "Drum_Set001",
+        "Drummer",
+        ["gh3_drummer_med_idle_01", "gh3_drummer_fst_idle_01"],
+        "Drummer_anims",
+    ),
 ]
 
 
@@ -50,8 +78,12 @@ def convert(data_dir, output, shared=False):
     nodes = {}
     if not shared:
         venue = load("ZONES/z_budokan.pak.xen")
-        nodes = next(array for _, _, data in venue if len(data) > 28 and data[8:12] == bytes.fromhex("1c080204")
-                     if (array := find_array(data, "z_budokan_NodeArray")) is not None)
+        nodes = next(
+            array
+            for _, _, data in venue
+            if len(data) > 28 and data[8:12] == bytes.fromhex("1c080204")
+            if (array := find_array(data, "z_budokan_NodeArray")) is not None
+        )
         nodes = {node[key("Name")]: node for node in nodes if key("Name") in node}
     members = []
     for role, model, rig, instrument, waypoint, clip_names, anim_pak in BAND:
@@ -85,16 +117,24 @@ def convert(data_dir, output, shared=False):
                 stream.write(vertices)
                 for face in faces:
                     stream.write(struct.pack("<3I", *face))
-        (directory / "stage.json").write_text(json.dumps({
-            "version": 1, "name": model, "cameraPosition": [0, 0, 0], "cameraTarget": [0, 1, 0],
-            "materials": materials,
-        }, indent=2) + "\n")
+        (directory / "stage.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "name": model,
+                    "cameraPosition": [0, 0, 0],
+                    "cameraTarget": [0, 1, 0],
+                    "materials": materials,
+                },
+                indent=2,
+            )
+            + "\n"
+        )
         clips = {name: data for kind, name, data in load(f"PAK/{anim_pak}.pak.xen") if kind == key(".ska")}
         with (directory / "animation.bin").open("wb") as stream:
             stream.write(b"GH3ANM01" + struct.pack("<II", len(names), len(clip_names)))
             for i, parent in enumerate(parents):
-                stream.write(struct.pack("<i7f", parent, *(positions[i] * [1, 1, -1]),
-                                         *(rotations[i] * [1, 1, -1, 1])))
+                stream.write(struct.pack("<i7f", parent, *(positions[i] * [1, 1, -1]), *(rotations[i] * [1, 1, -1, 1])))
             for clip_name in clip_names:
                 clip = animation(clips[key(clip_name)], len(names))
                 duration = clip[0]
@@ -112,7 +152,9 @@ def convert(data_dir, output, shared=False):
                 if role in ("guitarist", "bassist"):
                     chord = animation(hands[key("gh3_hnd_guit_chord_med_e_d")], len(names))
                     fret = animation(hands[key("gh3_hnd_guit_fret_med_05_d")], len(names))
-                    strum_name = "gh3_hnd_guit_strum_norm_s01_d" if role == "guitarist" else "gh3_hnd_bass_strum_pick_01_d"
+                    strum_name = (
+                        "gh3_hnd_guit_strum_norm_s01_d" if role == "guitarist" else "gh3_hnd_bass_strum_pick_01_d"
+                    )
                     strum = animation(hands[key(strum_name)], len(names))
                     overlay(chord, np.zeros(len(times)), True)
                     overlay(fret, np.zeros(len(times)), True)
@@ -132,11 +174,24 @@ def convert(data_dir, output, shared=False):
                 if not np.isfinite(packed).all():
                     raise ValueError("Invalid sampled pose")
                 stream.write(packed.astype("<f4").tobytes())
-        node = nodes.get(key(f"Z_Budokan_TRG_Waypoint_{waypoint}_Start"), {key("Pos"): [0, 0, 0], key("Angles"): [0, 0, 0]})
+        node = nodes.get(
+            key(f"Z_Budokan_TRG_Waypoint_{waypoint}_Start"), {key("Pos"): [0, 0, 0], key("Angles"): [0, 0, 0]}
+        )
         x, y, z = node[key("Pos")]
-        members.append({"role": role, "model": model, "instrument": instrument,
-                        "position": [x, y, -z], "yaw": -node[key("Angles")][1] * 180 / np.pi,
-                        "clips": clip_names, "bones": len(names), "vertices": sum(m[1] for m in meshes)})
+        members.append(
+            {
+                "role": role,
+                "model": model,
+                "instrument": instrument,
+                "position": [x, y, -z],
+                "yaw": -node[key("Angles")][1] * 180 / np.pi,
+                "clips": clip_names,
+                "bones": len(names),
+                "vertices": sum(m[1] for m in meshes),
+            }
+        )
         print(f"{role}: {model}, {instrument or 'venue drum kit'}, {len(names)} bones, {len(meshes)} meshes")
-    (output / "band.json").write_text(json.dumps({"version": 1, "members": members, "sources": sources}, indent=2) + "\n")
+    (output / "band.json").write_text(
+        json.dumps({"version": 1, "members": members, "sources": sources}, indent=2) + "\n"
+    )
     print(output)

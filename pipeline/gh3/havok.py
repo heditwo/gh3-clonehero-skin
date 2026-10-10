@@ -13,25 +13,35 @@ class Ragdoll:
         self.sections = [struct.unpack_from("<7I", data, 84 + i * 48) for i in range(3)]
         self.refs, self.types, self.classes = {}, {}, {}
         for section, (base, local, glob, virt, exports, imports, end) in enumerate(self.sections):
-            if not 208 <= base <= len(data) or not 0 <= local <= glob <= virt <= exports <= imports <= end <= len(data) - base:
+            if (
+                not 208 <= base <= len(data)
+                or not 0 <= local <= glob <= virt <= exports <= imports <= end <= len(data) - base
+            ):
                 raise ValueError("Invalid Havok section bounds")
             for offset in range(local, glob, 8):
-                if self.unpack((section, offset), "I")[0] == 0xffffffff: continue
+                if self.unpack((section, offset), "I")[0] == 0xFFFFFFFF:
+                    continue
                 a, b = self.unpack((section, offset), "2I")
-                if a != 0xffffffff: self.refs[(section, a)] = (section, b)
+                if a != 0xFFFFFFFF:
+                    self.refs[(section, a)] = (section, b)
             for offset in range(glob, virt, 12):
-                if self.unpack((section, offset), "I")[0] == 0xffffffff: continue
+                if self.unpack((section, offset), "I")[0] == 0xFFFFFFFF:
+                    continue
                 a, target, b = self.unpack((section, offset), "3I")
-                if a != 0xffffffff: self.refs[(section, a)] = (target, b)
+                if a != 0xFFFFFFFF:
+                    self.refs[(section, a)] = (target, b)
             for offset in range(virt, exports, 12):
-                if self.unpack((section, offset), "I")[0] == 0xffffffff: continue
+                if self.unpack((section, offset), "I")[0] == 0xFFFFFFFF:
+                    continue
                 a, target, b = self.unpack((section, offset), "3I")
-                if a != 0xffffffff: self.types[(section, a)] = self.string((target, b))
+                if a != 0xFFFFFFFF:
+                    self.types[(section, a)] = self.string((target, b))
         names = {p: self.string(self.refs[p]) for p, kind in self.types.items() if kind == "hkClass"}
         for (section, offset), name in names.items():
             record = {"parent": names.get(self.refs.get((section, offset + 4))), "fields": {}}
             count = self.unpack((section, offset + 28), "I")[0]
-            if count > 256: raise ValueError("Invalid Havok field count")
+            if count > 256:
+                raise ValueError("Invalid Havok field count")
             if count:
                 ms, mo = self.refs[(section, offset + 24)]
                 for i in range(count):
@@ -53,25 +63,32 @@ class Ragdoll:
         section, offset = address
         start = self.sections[section][0] + offset
         end = self.data.find(b"\0", start, min(start + 1024, self.sections[section][0] + self.sections[section][-1]))
-        if end < 0: raise ValueError("Unterminated Havok string")
+        if end < 0:
+            raise ValueError("Unterminated Havok string")
         return self.data[start:end].decode("ascii")
 
     def field(self, address, cls, name):
         for _ in range(32):
-            if cls not in self.classes: raise ValueError(f"Missing Havok field {name}")
+            if cls not in self.classes:
+                raise ValueError(f"Missing Havok field {name}")
             record = self.classes[cls]
-            if name in record["fields"]: break
+            if name in record["fields"]:
+                break
             cls = record["parent"]
         else:
             raise ValueError("Havok class parent cycle")
         kind, length, offset, member_class = record["fields"][name]
         at = address[0], address[1] + offset
-        if kind == 29: return self.string(self.refs[at]) if at in self.refs else ""
-        if kind == 25: return at, member_class
+        if kind == 29:
+            return self.string(self.refs[at]) if at in self.refs else ""
+        if kind == 25:
+            return at, member_class
         if kind == 20:
-            if length: return [self.refs.get((at[0], at[1] + 4 * i)) for i in range(length)]
+            if length:
+                return [self.refs.get((at[0], at[1] + 4 * i)) for i in range(length)]
             return self.refs.get(at)
         fmt = {1: "B", 3: "b", 4: "B", 6: "H", 8: "I", 11: "f", 12: "4f", 13: "4f", 18: "16f"}.get(kind)
-        if fmt is None: raise ValueError(f"Unsupported Havok field type {kind}")
+        if fmt is None:
+            raise ValueError(f"Unsupported Havok field type {kind}")
         value = self.unpack(at, fmt)
         return value if len(value) > 1 else value[0]

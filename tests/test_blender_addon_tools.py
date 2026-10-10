@@ -36,11 +36,13 @@ script_bank = addon_module("script_bank")
 def close(test, a, b, path=""):
     if isinstance(a, dict):
         test.assertEqual(set(a), set(b), path)
-        for key in a: close(test, a[key], b[key], f"{path}.{key}")
+        for key in a:
+            close(test, a[key], b[key], f"{path}.{key}")
     elif isinstance(a, list):
         test.assertEqual(len(a), len(b), path)
         sign = -1 if len(a) == 4 and all(isinstance(v, (int, float)) for v in a) and np.dot(a, b) < 0 else 1
-        for i, (x, y) in enumerate(zip(a, b)): close(test, x, sign * y if isinstance(y, (int, float)) and not isinstance(y, bool) else y, f"{path}[{i}]")
+        for i, (x, y) in enumerate(zip(a, b)):
+            close(test, x, sign * y if isinstance(y, (int, float)) and not isinstance(y, bool) else y, f"{path}[{i}]")
     elif isinstance(a, (int, float)) and not isinstance(a, bool):
         test.assertAlmostEqual(a, b, delta=1e-5, msg=path)
     else:
@@ -51,7 +53,14 @@ class GlbBuilder:
     """A small GLB: nodes, one skin, float accessors, animations."""
 
     def __init__(self):
-        self.gltf = {"asset": {"version": "2.0"}, "buffers": [{"byteLength": 0}], "bufferViews": [], "accessors": [], "nodes": [], "scenes": [{"nodes": []}]}
+        self.gltf = {
+            "asset": {"version": "2.0"},
+            "buffers": [{"byteLength": 0}],
+            "bufferViews": [],
+            "accessors": [],
+            "nodes": [],
+            "scenes": [{"nodes": []}],
+        }
         self.binary = bytearray()
 
     def accessor(self, values, kind):
@@ -59,22 +68,32 @@ class GlbBuilder:
         self.binary.extend(b"\0" * (-len(self.binary) % 4))
         self.gltf["bufferViews"].append({"buffer": 0, "byteOffset": len(self.binary), "byteLength": array.nbytes})
         self.binary.extend(array.tobytes())
-        self.gltf["accessors"].append({"bufferView": len(self.gltf["bufferViews"]) - 1, "componentType": 5126, "count": len(array), "type": kind})
+        self.gltf["accessors"].append(
+            {"bufferView": len(self.gltf["bufferViews"]) - 1, "componentType": 5126, "count": len(array), "type": kind}
+        )
         return len(self.gltf["accessors"]) - 1
 
     def node(self, name, parent=None, **fields):
         self.gltf["nodes"].append({"name": name, **fields})
         index = len(self.gltf["nodes"]) - 1
-        if parent is None: self.gltf["scenes"][0]["nodes"].append(index)
-        else: self.gltf["nodes"][parent].setdefault("children", []).append(index)
+        if parent is None:
+            self.gltf["scenes"][0]["nodes"].append(index)
+        else:
+            self.gltf["nodes"][parent].setdefault("children", []).append(index)
         return index
 
     def animation(self, name, channels):
         animation = {"name": name, "channels": [], "samplers": []}
         for node, path, times, values in channels:
-            animation["samplers"].append({"input": self.accessor(np.reshape(times, (-1, 1)), "SCALAR"),
-                                          "output": self.accessor(values, {3: "VEC3", 4: "VEC4"}[np.shape(values)[1]])})
-            animation["channels"].append({"sampler": len(animation["samplers"]) - 1, "target": {"node": node, "path": path}})
+            animation["samplers"].append(
+                {
+                    "input": self.accessor(np.reshape(times, (-1, 1)), "SCALAR"),
+                    "output": self.accessor(values, {3: "VEC3", 4: "VEC4"}[np.shape(values)[1]]),
+                }
+            )
+            animation["channels"].append(
+                {"sampler": len(animation["samplers"]) - 1, "target": {"node": node, "path": path}}
+            )
         self.gltf.setdefault("animations", []).append(animation)
 
     def bytes(self):
@@ -88,7 +107,10 @@ def two_bone_rig():
     root = builder.node("bone-00000001", translation=[0, 0, 0])
     builder.node(head, root, translation=[0, 1.5, 0.25])
     turn = [0, math.sin(math.pi / 4), 0, math.cos(math.pi / 4)]
-    builder.animation("idle", [(root, "rotation", [0, 1], [turn, [0, 0, 0, 1]]), (root, "scale", [0, 1], [[1, 1, 1], [1.00001, 1, 1]])])
+    builder.animation(
+        "idle",
+        [(root, "rotation", [0, 1], [turn, [0, 0, 0, 1]]), (root, "scale", [0, 1], [[1, 1, 1], [1.00001, 1, 1]])],
+    )
     builder.animation("other", [(root, "translation", [0, 1], [[0, 0, 0], [1, 0, 0]])])
     return builder.bytes(), head
 
@@ -111,7 +133,8 @@ class RigTests(unittest.TestCase):
 
     def test_library_rig_head_is_at_head_height(self):
         model = UNPACKED / "gh3-band-v1.chlib" / "band" / "guitarist" / "model.glb"
-        if not model.is_file(): self.skipTest("assets/packages is not generated")
+        if not model.is_file():
+            self.skipTest("assets/packages is not generated")
         frames = rig.anchor_frames(model.read_bytes())
         position, _ = rig.frame_of(frames[sidecars.joint_name("head")])
         self.assertTrue(1.3 < position[1] < 2.0, position)
@@ -120,9 +143,21 @@ class RigTests(unittest.TestCase):
     def test_bone_anchor_uses_the_rig_frame(self):
         data, head = two_bone_rig()
         anchors = {"guitarist": rig.anchor_frames(data)}
-        placements = {"version": 1, "band": {"guitarist": {"position": [2, 0, 1], "rotation": [0, 0.3826834, 0, 0.9238795]}}}
-        point = {"anchor": "guitarist.head", "position": [0.1, 0.2, -0.4], "rotation": [0.1, 0.2, 0.0, 0.9746794], "horizontalFov": 40}
-        cameras = {"version": 1, "shots": {"face": {"type": "closeup", "control": "TwoCam", "points": [point]}}, "groups": {"wide": ["face"]}}
+        placements = {
+            "version": 1,
+            "band": {"guitarist": {"position": [2, 0, 1], "rotation": [0, 0.3826834, 0, 0.9238795]}},
+        }
+        point = {
+            "anchor": "guitarist.head",
+            "position": [0.1, 0.2, -0.4],
+            "rotation": [0.1, 0.2, 0.0, 0.9746794],
+            "horizontalFov": 40,
+        }
+        cameras = {
+            "version": 1,
+            "shots": {"face": {"type": "closeup", "control": "TwoCam", "points": [point]}},
+            "groups": {"wide": ["face"]},
+        }
         markers = [{**m, "object": "band"} for m in sidecars.open_placements(placements)[0]]
         shots, _ = sidecars.open_cameras(cameras, placements, anchors)
         opened = shots[0]["points"][0]
@@ -131,8 +166,22 @@ class RigTests(unittest.TestCase):
         self.assertTrue(exact)
         world, _ = sidecars.runtime_frame(opened["matrix"], looks=True)
         np.testing.assert_allclose(world, origin + axes @ point["position"], atol=1e-9)
-        row = {**shots[0], "object": "face", "interpolation": None,
-               "points": [{"object": "face", "matrix": opened["matrix"], "fov": 40, "anchor": "guitarist.head", "lookAt": None, "useRotation": True, "screenOffset": None}]}
+        row = {
+            **shots[0],
+            "object": "face",
+            "interpolation": None,
+            "points": [
+                {
+                    "object": "face",
+                    "matrix": opened["matrix"],
+                    "fov": 40,
+                    "anchor": "guitarist.head",
+                    "lookAt": None,
+                    "useRotation": True,
+                    "screenOffset": None,
+                }
+            ],
+        }
         issues = sidecars.Issues()
         built = sidecars.build_cameras([row], [], markers, issues, anchors=anchors)
         close(self, point, built["shots"]["face"]["points"][0])
@@ -145,7 +194,9 @@ class RigTests(unittest.TestCase):
     def test_reanchor_keeps_the_offset(self):
         data, _ = two_bone_rig()
         anchors = {"guitarist": rig.anchor_frames(data)}
-        band = sidecars.band_frames([{"kind": "BAND", "role": "guitarist", "matrix": sidecars.blender_matrix([1, 0, 2], [0, 0, 0, 1])}])
+        band = sidecars.band_frames(
+            [{"kind": "BAND", "role": "guitarist", "matrix": sidecars.blender_matrix([1, 0, 2], [0, 0, 0, 1])}]
+        )
         matrix = sidecars.blender_matrix([3, 1.7, 0], [0, 0.2, 0, 0.98], looks=True)
         point = {"anchor": "guitarist.head", "matrix": matrix}
         position, rotation = sidecars.point_offset(point, band, {})
@@ -158,7 +209,8 @@ class RigTests(unittest.TestCase):
 class ActorTests(unittest.TestCase):
     def actor_files(self):
         files = sorted(UNPACKED.glob("*.chstage/actors.json"))
-        if not files: self.skipTest("assets/packages is not generated")
+        if not files:
+            self.skipTest("assets/packages is not generated")
         return files
 
     def test_actors_json_round_trip(self):
@@ -177,11 +229,27 @@ class ActorTests(unittest.TestCase):
                     close(self, expected, built["actors"][name])
 
     def test_edited_actor_row(self):
-        opened = sidecars.open_actors({"version": 1, "actors": {"sign": {"model": "sign.glb", "transform": {"position": [0, 3, 6], "rotation": [0, 0, 0, 1]}, "clip": "turn"}}})
+        opened = sidecars.open_actors(
+            {
+                "version": 1,
+                "actors": {
+                    "sign": {
+                        "model": "sign.glb",
+                        "transform": {"position": [0, 3, 6], "rotation": [0, 0, 0, 1]},
+                        "clip": "turn",
+                    }
+                },
+            }
+        )
         actor = {**opened[0], "object": "sign", "role": "sign/1", "playback": "hold", "created": False}
-        matrix = np.asarray(actor["matrix"]); matrix[:3, :3] *= 2; actor["matrix"] = matrix
+        matrix = np.asarray(actor["matrix"])
+        matrix[:3, :3] *= 2
+        actor["matrix"] = matrix
         built = sidecars.build_actors([actor], sidecars.Issues())["actors"]["sign"]
-        self.assertEqual((built["role"], built["playback"], built["created"], built["scale"]), ("sign/1", "hold", False, [2.0, 2.0, 2.0]))
+        self.assertEqual(
+            (built["role"], built["playback"], built["created"], built["scale"]),
+            ("sign/1", "hold", False, [2.0, 2.0, 2.0]),
+        )
         self.assertEqual(built["transform"]["position"], [0.0, 3.0, 6.0])
 
     def test_runtime_scale_axes(self):
@@ -225,10 +293,12 @@ class ActorGlbTests(unittest.TestCase):
         gltf, _ = glb_tools.read_glb(without)
         # The exported model has other node indices: put a new node first.
         gltf["nodes"].insert(0, {"name": "Armature", "children": [1]})
-        gltf["nodes"][1].pop("children", None); gltf["nodes"][1]["children"] = [2]
+        gltf["nodes"][1].pop("children", None)
+        gltf["nodes"][1]["children"] = [2]
         gltf["scenes"][0]["nodes"] = [0]
         for animation in gltf["animations"]:
-            for channel in animation["channels"]: channel["target"]["node"] += 1
+            for channel in animation["channels"]:
+                channel["target"]["node"] += 1
         _, binary = glb_tools.read_glb(without)
         merged, problems = glb_tools.merge_animations(glb_tools.write_glb(gltf, binary), data, {"other"})
         self.assertEqual(problems, [])
@@ -242,7 +312,9 @@ class ActorGlbTests(unittest.TestCase):
     def test_add_images_and_references(self):
         data, _ = two_bone_rig()
         gltf, binary = glb_tools.read_glb(data)
-        gltf["materials"] = [{"name": "m", "extras": {"gh3Shader": {"textures": ["#a", "", "#b"]}, "gh3MaskTexture": "#c"}}]
+        gltf["materials"] = [
+            {"name": "m", "extras": {"gh3Shader": {"textures": ["#a", "", "#b"]}, "gh3MaskTexture": "#c"}}
+        ]
         data = glb_tools.write_glb(gltf, binary)
         self.assertEqual(glb_tools.texture_reference_names(gltf), {"a", "b", "c"})
         png = glb_tools.PNG_SIGNATURE + glb_tools.png_chunk(b"IEND", b"")
@@ -252,7 +324,8 @@ class ActorGlbTests(unittest.TestCase):
     def test_package_actor_glbs(self):
         files = sorted(UNPACKED.glob("*.chstage/*.glb"))
         files = [f for f in files if f.name != "stage.glb"]
-        if not files: self.skipTest("assets/packages is not generated")
+        if not files:
+            self.skipTest("assets/packages is not generated")
         for path in files:
             data = path.read_bytes()
             self.assertEqual(glb_tools.drop_unit_scale_channels(data), (data, 0, []), path)
@@ -263,7 +336,8 @@ class ActorGlbTests(unittest.TestCase):
 class ScriptBankTests(unittest.TestCase):
     def bank(self, venue):
         path = UNPACKED / f"{venue}.chstage" / "scripts.json"
-        if not path.is_file(): self.skipTest("assets/packages is not generated")
+        if not path.is_file():
+            self.skipTest("assets/packages is not generated")
         return json.loads(path.read_text())
 
     def test_index_of_a_venue(self):
@@ -289,14 +363,20 @@ class ScriptBankTests(unittest.TestCase):
         name = next(r for r in rows if r[1].startswith("name "))
         self.assertFalse(name[4])
         script_bank.set_value(bank, json.loads(position[0]), "1, 2, 3")
-        self.assertEqual(script_bank.ScriptIndex(bank).nodes[0]["fields"][json.loads(position[0])[3]], [6, [1.0, 2.0, 3.0]])
-        with self.assertRaises(ValueError): script_bank.set_value(bank, json.loads(name[0]), "other")
-        with self.assertRaises(ValueError): script_bank.set_value(bank, json.loads(position[0]), "1, 2")
+        self.assertEqual(
+            script_bank.ScriptIndex(bank).nodes[0]["fields"][json.loads(position[0])[3]], [6, [1.0, 2.0, 3.0]]
+        )
+        with self.assertRaises(ValueError):
+            script_bank.set_value(bank, json.loads(name[0]), "other")
+        with self.assertRaises(ValueError):
+            script_bank.set_value(bank, json.loads(position[0]), "1, 2")
         script_kind = next(k for k, v in bank["definitions"].items() if v[0] == 7)
-        with self.assertRaises(ValueError): script_bank.set_value(bank, ["definition", script_kind], "x")
+        with self.assertRaises(ValueError):
+            script_bank.set_value(bank, ["definition", script_kind], "x")
         self.assertEqual(script_bank.parse_value(13, "triggerscript"), "0x2ca8a299")
         self.assertEqual(script_bank.parse_value(1, "0x10"), 16)
-        with self.assertRaises(ValueError): script_bank.parse_value(2, "nan")
+        with self.assertRaises(ValueError):
+            script_bank.parse_value(2, "nan")
 
     def test_top_level_settings(self):
         bank = {"version": 1, "definitions": {"248b0a48": [7, "AAAA"]}, "startup": ["z_dive_Setup"]}
@@ -305,7 +385,8 @@ class ScriptBankTests(unittest.TestCase):
         self.assertEqual(script_bank.problems(bank), ["startup script 'other' is missing"])
         script_bank.set_top_level(bank, "performanceChanged", "")
         self.assertNotIn("performanceChanged", bank)
-        with self.assertRaises(ValueError): script_bank.set_top_level(bank, "definitions", {})
+        with self.assertRaises(ValueError):
+            script_bank.set_top_level(bank, "definitions", {})
 
 
 class LightingPreviewTests(unittest.TestCase):
@@ -316,7 +397,7 @@ class LightingPreviewTests(unittest.TestCase):
         self.assertEqual(sidecars.preview_light("Dir", 1.5, 0, 7), (4.5, 0.0))
         power, _ = sidecars.preview_light("Point", 0.5, 0, 4)
         # Inverse square law: the irradiance at 2 m (the middle of 0-4 m) is the GH3 intensity.
-        self.assertAlmostEqual(power / (4 * math.pi ** 2 * 2 ** 2), 0.5)
+        self.assertAlmostEqual(power / (4 * math.pi**2 * 2**2), 0.5)
 
 
 if __name__ == "__main__":

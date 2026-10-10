@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-FIXTURE = r'''#!/usr/bin/env python3
+FIXTURE = r"""#!/usr/bin/env python3
 import json
 import os
 from pathlib import Path
@@ -34,7 +34,7 @@ elif name == "run-gh3-skin.sh":
     for index, value in enumerate(os.environ["GH3_SKIN_CAPTURE_TIMES"].split(',')):
         (frames / f"frame-{index:02}.png").write_bytes(value.encode())
     signal.pause()
-'''
+"""
 
 
 class CaptureContractTests(unittest.TestCase):
@@ -55,18 +55,27 @@ class CaptureContractTests(unittest.TestCase):
             path.write_text(FIXTURE)
             path.chmod(0o755)
         self.env = {name: value for name, value in os.environ.items() if not name.startswith("GH3_")}
-        self.env.update({
-            "MISE_QUIET": "1", "PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
-            "FIXTURE_STATE": str(self.root), "GH3_CLONE_HERO_DIR": str(self.game),
-            "GH3_SKIN_PREVIEW_SONG": str(ROOT / "charts/GH3 Gem Matrix"),
-            "GH3_SKIN_CAPTURE_TIMES": "3.2,5.2,7.2,9.2,11.2,13.2,15.2,17.2,19.2",
-            "GH3_SKIN_CAPTURE_DIR": str(self.frames),
-            "GH3_SKIN_SCREENSHOT": str(self.root / "preview.png"),
-        })
+        self.env.update(
+            {
+                "MISE_QUIET": "1",
+                "PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
+                "FIXTURE_STATE": str(self.root),
+                "GH3_CLONE_HERO_DIR": str(self.game),
+                "GH3_SKIN_PREVIEW_SONG": str(ROOT / "charts/GH3 Gem Matrix"),
+                "GH3_SKIN_CAPTURE_TIMES": "3.2,5.2,7.2,9.2,11.2,13.2,15.2,17.2,19.2",
+                "GH3_SKIN_CAPTURE_DIR": str(self.frames),
+                "GH3_SKIN_SCREENSHOT": str(self.root / "preview.png"),
+            }
+        )
 
     def run_capture(self):
-        return subprocess.run(["bash", str(self.root / "scripts/capture-preview.sh")], env=self.env,
-                              capture_output=True, text=True, timeout=20)
+        return subprocess.run(
+            ["bash", str(self.root / "scripts/capture-preview.sh")],
+            env=self.env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
 
     def test_supplied_times_and_output_folder_survive_capture(self):
         result = self.run_capture()

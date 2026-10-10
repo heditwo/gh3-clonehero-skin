@@ -21,10 +21,22 @@ def frames(path, size=None, start=None, count=None):
 
 
 def dimensions(path):
-    result = json.loads(subprocess.check_output([
-        "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-        "stream=width,height,r_frame_rate", "-of", "json", str(path),
-    ]))["streams"][0]
+    result = json.loads(
+        subprocess.check_output(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height,r_frame_rate",
+                "-of",
+                "json",
+                str(path),
+            ]
+        )
+    )["streams"][0]
     if result["r_frame_rate"] != "60/1":
         raise ValueError("Comparison requires 60 fps videos")
     return result["width"], result["height"]
@@ -48,16 +60,26 @@ def main():
     indices = np.array([round(time * 60) for time in times])
     if indices.max() + 90 >= min(len(before), len(after)):
         raise ValueError("Sample times must leave 1.5 seconds at the end of both videos")
-    offset = min(range(-60, 61), key=lambda shift: np.abs(
-        before[indices, 45:103, 60:140].astype(np.int16) -
-        after[indices + shift, 45:103, 60:140].astype(np.int16)).mean())
+    offset = min(
+        range(-60, 61),
+        key=lambda shift: np.abs(
+            before[indices, 45:103, 60:140].astype(np.int16) - after[indices + shift, 45:103, 60:140].astype(np.int16)
+        ).mean(),
+    )
     regions = {
-        "full": (0, 0, 1600, 900), "score_counter": (260, 580, 490, 820),
-        "rock_bulbs": (1080, 540, 1350, 810), "highway": (440, 370, 1170, 900),
+        "full": (0, 0, 1600, 900),
+        "score_counter": (260, 580, 490, 820),
+        "rock_bulbs": (1080, 540, 1350, 810),
+        "highway": (440, 370, 1170, 900),
         "ready_banner": (350, 100, 1250, 370),
     }
-    report = {"before": str(args.before), "after": str(args.after), "offset_seconds": offset / 60,
-              "note": "Encoded, independently timed captures; these metrics do not prove pixel identity.", "samples": []}
+    report = {
+        "before": str(args.before),
+        "after": str(args.after),
+        "offset_seconds": offset / 60,
+        "note": "Encoded, independently timed captures; these metrics do not prove pixel identity.",
+        "samples": [],
+    }
     sheet = Image.new("RGB", (1600, len(times) * 470), "#151515")
     draw = ImageDraw.Draw(sheet)
     for row, (time, index) in enumerate(zip(times, indices)):

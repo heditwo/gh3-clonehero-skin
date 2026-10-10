@@ -15,16 +15,19 @@ PNG_VOLATILE = {b"tEXt", b"zTXt", b"iTXt", b"tIME"}
 def read_glb(data):
     """(glTF JSON, binary chunk) of GLB bytes."""
     magic, version, length = struct.unpack_from("<3I", data)
-    if magic != GLB_MAGIC or version != 2 or length != len(data): raise ValueError("not a glTF 2.0 GLB")
+    if magic != GLB_MAGIC or version != 2 or length != len(data):
+        raise ValueError("not a glTF 2.0 GLB")
     size, kind = struct.unpack_from("<2I", data, 12)
-    if kind != JSON_CHUNK: raise ValueError("the first GLB chunk is not JSON")
-    gltf = json.loads(bytes(data[20:20 + size]).decode("utf-8"))
+    if kind != JSON_CHUNK:
+        raise ValueError("the first GLB chunk is not JSON")
+    gltf = json.loads(bytes(data[20 : 20 + size]).decode("utf-8"))
     binary = b""
     cursor = 20 + size
     if cursor < len(data):
         size, kind = struct.unpack_from("<2I", data, cursor)
-        if kind != BIN_CHUNK: raise ValueError("the second GLB chunk is not binary")
-        binary = bytes(data[cursor + 8:cursor + 8 + size])
+        if kind != BIN_CHUNK:
+            raise ValueError("the second GLB chunk is not binary")
+        binary = bytes(data[cursor + 8 : cursor + 8 + size])
     return gltf, binary
 
 
@@ -53,19 +56,31 @@ def fill_texcoord_gaps(data):
         for primitive in mesh.get("primitives", []):
             attributes = primitive.get("attributes", {})
             sets = [int(name[9:]) for name in attributes if name.startswith("TEXCOORD_") and name[9:].isdigit()]
-            if not sets: continue
+            if not sets:
+                continue
             count = accessors[attributes["POSITION"]]["count"]
             for index in range(max(sets)):
-                if f"TEXCOORD_{index}" in attributes: continue
+                if f"TEXCOORD_{index}" in attributes:
+                    continue
                 if count not in zeros:
                     padding = -len(binary) % 4
                     binary += b"\0" * (padding + 8 * count)
-                    gltf.setdefault("bufferViews", []).append({"buffer": 0, "byteOffset": len(binary) - 8 * count, "byteLength": 8 * count})
-                    accessors.append({"bufferView": len(gltf["bufferViews"]) - 1, "componentType": 5126, "count": count, "type": "VEC2"})
+                    gltf.setdefault("bufferViews", []).append(
+                        {"buffer": 0, "byteOffset": len(binary) - 8 * count, "byteLength": 8 * count}
+                    )
+                    accessors.append(
+                        {
+                            "bufferView": len(gltf["bufferViews"]) - 1,
+                            "componentType": 5126,
+                            "count": count,
+                            "type": "VEC2",
+                        }
+                    )
                     zeros[count] = len(accessors) - 1
                 attributes[f"TEXCOORD_{index}"] = zeros[count]
                 added += 1
-    if not added: return data, 0
+    if not added:
+        return data, 0
     gltf["accessors"] = accessors
     gltf["buffers"][0]["byteLength"] = len(binary)
     return write_glb(gltf, binary), added
@@ -79,6 +94,7 @@ INDEX_TYPES = {5121: "<u1", 5123: "<u2", 5125: "<u4"}
 def accessor_rows(gltf, binary, index):
     """The elements of an accessor as raw bytes: one row of bytes for each element."""
     import numpy as np
+
     accessor = gltf["accessors"][index]
     view = gltf["bufferViews"][accessor["bufferView"]]
     width = COMPONENT_SIZE[accessor["componentType"]] * COMPONENT_COUNT[accessor["type"]]
@@ -100,6 +116,7 @@ def separate_faces(data):
     The glTF exporter merges equal vertices again. Returns (GLB bytes, count of triangles).
     """
     import numpy as np
+
     gltf, binary = read_glb(data)
     binary = bytearray(binary)
     total = 0
@@ -116,19 +133,31 @@ def separate_faces(data):
 
     for mesh in gltf.get("meshes", []):
         for primitive in mesh.get("primitives", []):
-            if primitive.get("mode", 4) != 4 or "indices" not in primitive: continue
+            if primitive.get("mode", 4) != 4 or "indices" not in primitive:
+                continue
             accessor = gltf["accessors"][primitive["indices"]]
-            faces = accessor_rows(gltf, bytes(binary), primitive["indices"]).view(INDEX_TYPES[accessor["componentType"]]).reshape(-1, 3).astype(np.int64)
+            faces = (
+                accessor_rows(gltf, bytes(binary), primitive["indices"])
+                .view(INDEX_TYPES[accessor["componentType"]])
+                .reshape(-1, 3)
+                .astype(np.int64)
+            )
             positions = accessor_rows(gltf, bytes(binary), primitive["attributes"]["POSITION"])
             corners = positions[faces]
-            degenerate = np.flatnonzero((corners[:, 0] == corners[:, 1]).all(1) | (corners[:, 1] == corners[:, 2]).all(1)
-                                        | (corners[:, 0] == corners[:, 2]).all(1))
+            degenerate = np.flatnonzero(
+                (corners[:, 0] == corners[:, 1]).all(1)
+                | (corners[:, 1] == corners[:, 2]).all(1)
+                | (corners[:, 0] == corners[:, 2]).all(1)
+            )
             seen, duplicates = set(), set(degenerate.tolist())
             for number, face in enumerate(map(tuple, faces)):
                 key = tuple(sorted(face))
-                if key in seen: duplicates.add(number)
-                else: seen.add(key)
-            if not duplicates: continue
+                if key in seen:
+                    duplicates.add(number)
+                else:
+                    seen.add(key)
+            if not duplicates:
+                continue
             duplicates = sorted(duplicates)
             count = len(positions)
             copies = faces[duplicates].reshape(-1)
@@ -139,7 +168,8 @@ def separate_faces(data):
             indices = faces.reshape(-1).astype("<u4").view(np.uint8).reshape(-1, 4)
             primitive["indices"] = add(indices, {"componentType": 5125, "type": "SCALAR"})
             total += len(duplicates)
-    if not total: return data, 0
+    if not total:
+        return data, 0
     gltf["buffers"][0]["byteLength"] = len(binary)
     return write_glb(gltf, bytes(binary)), total
 
@@ -151,19 +181,25 @@ def normalize_normals(data):
     Blender 4.2 importer turns their custom normals wrong (up to 38 degrees), while their directions are correct.
     """
     import numpy as np
+
     gltf, binary = read_glb(data)
     binary = bytearray(binary)
     changed = {}
     for mesh in gltf.get("meshes", []):
         for primitive in mesh.get("primitives", []):
             index = primitive.get("attributes", {}).get("NORMAL")
-            if index is None: continue
+            if index is None:
+                continue
             if index not in changed:
                 accessor = gltf["accessors"][index]
-                if accessor["componentType"] != 5126 or accessor["type"] != "VEC3" or "sparse" in accessor: changed[index] = index; continue
+                if accessor["componentType"] != 5126 or accessor["type"] != "VEC3" or "sparse" in accessor:
+                    changed[index] = index
+                    continue
                 normals = accessor_rows(gltf, bytes(binary), index).view("<f4").reshape(-1, 3).astype(np.float64)
                 length = np.linalg.norm(normals, axis=1)
-                if np.abs(length - 1).max(initial=0) <= 1e-4 or not length.all(): changed[index] = index; continue
+                if np.abs(length - 1).max(initial=0) <= 1e-4 or not length.all():
+                    changed[index] = index
+                    continue
                 rows = (normals / length[:, None]).astype("<f4")
                 binary += b"\0" * (-len(binary) % 4)
                 gltf["bufferViews"].append({"buffer": 0, "byteOffset": len(binary), "byteLength": rows.nbytes})
@@ -173,7 +209,8 @@ def normalize_normals(data):
                 changed[index] = len(gltf["accessors"]) - 1
             primitive["attributes"]["NORMAL"] = changed[index]
     count = sum(1 for old, new in changed.items() if old != new)
-    if not count: return data, 0
+    if not count:
+        return data, 0
     gltf["buffers"][0]["byteLength"] = len(binary)
     return write_glb(gltf, bytes(binary)), count
 
@@ -181,18 +218,20 @@ def normalize_normals(data):
 def image_bytes(gltf, binary, index):
     view = gltf["bufferViews"][gltf["images"][index]["bufferView"]]
     start = view.get("byteOffset", 0)
-    return binary[start:start + view["byteLength"]]
+    return binary[start : start + view["byteLength"]]
 
 
 def strip_png_text(data):
     """PNG bytes without text and time chunks. Other bytes are returned without a change."""
-    if not data.startswith(PNG_SIGNATURE): return data
+    if not data.startswith(PNG_SIGNATURE):
+        return data
     out = bytearray(PNG_SIGNATURE)
     cursor = len(PNG_SIGNATURE)
     while cursor + 8 <= len(data):
         length, kind = struct.unpack_from(">I4s", data, cursor)
         end = cursor + 12 + length
-        if kind not in PNG_VOLATILE: out += data[cursor:end]
+        if kind not in PNG_VOLATILE:
+            out += data[cursor:end]
         cursor = end
     return bytes(out)
 
@@ -215,9 +254,14 @@ def keep_animations(data, names):
     gltf, binary = read_glb(data)
     by_name = {a.get("name", ""): a for a in gltf.get("animations", [])}
     kept = [by_name[name] for name in names if name in by_name]
-    if len(kept) == len(gltf.get("animations", [])) and [a.get("name", "") for a in gltf.get("animations", [])] == list(names): return data
-    if kept: gltf["animations"] = kept
-    else: gltf.pop("animations", None)
+    if len(kept) == len(gltf.get("animations", [])) and [a.get("name", "") for a in gltf.get("animations", [])] == list(
+        names
+    ):
+        return data
+    if kept:
+        gltf["animations"] = kept
+    else:
+        gltf.pop("animations", None)
     return write_glb(gltf, binary)
 
 
@@ -235,9 +279,11 @@ def rename_animations(data, names):
 
 def float_rows(gltf, binary, index):
     import numpy as np
+
     accessor = gltf["accessors"][index]
     rows = accessor_rows(gltf, binary, index)
-    if accessor["componentType"] != 5126: raise ValueError("animation data is not float32")
+    if accessor["componentType"] != 5126:
+        raise ValueError("animation data is not float32")
     return rows.view("<f4").reshape(accessor["count"], COMPONENT_COUNT[accessor["type"]]).astype(np.float64)
 
 
@@ -245,6 +291,7 @@ def drop_unit_scale_channels(data):
     """Remove the scale channels whose keys are all within 1e-4 of 1 (Blender writes one for each joint; the importer
     drops them, PACKAGE-FORMAT 6.7). Returns (GLB bytes, dropped count, messages for other scale channels)."""
     import numpy as np
+
     gltf, binary = read_glb(data)
     dropped, problems = 0, []
     nodes = gltf.get("nodes", [])
@@ -258,13 +305,16 @@ def drop_unit_scale_channels(data):
                     dropped += 1
                     continue
                 node = channel["target"].get("node")
-                problems.append(f"clip '{animation.get('name', '')}' scales the joint '{nodes[node].get('name', node) if node is not None else '?'}' "
-                                f"(|scale - 1| = {error:.3g}); animate only translation and rotation")
+                problems.append(
+                    f"clip '{animation.get('name', '')}' scales the joint '{nodes[node].get('name', node) if node is not None else '?'}' "
+                    f"(|scale - 1| = {error:.3g}); animate only translation and rotation"
+                )
             channels.append(channel)
         used = sorted({c["sampler"] for c in channels})
         renumber = {old: new for new, old in enumerate(used)}
         animation["samplers"] = [animation["samplers"][old] for old in used]
-        for channel in channels: channel["sampler"] = renumber[channel["sampler"]]
+        for channel in channels:
+            channel["sampler"] = renumber[channel["sampler"]]
         animation["channels"] = channels
     return (write_glb(gltf, binary) if dropped else data), dropped, problems
 
@@ -275,7 +325,8 @@ def _append(gltf, binary, payload, accessor=None):
     gltf.setdefault("bufferViews", []).append({"buffer": 0, "byteOffset": len(binary), "byteLength": len(payload)})
     binary += payload
     view = len(gltf["bufferViews"]) - 1
-    if accessor is None: return view
+    if accessor is None:
+        return view
     copy = {key: value for key, value in accessor.items() if key not in ("byteOffset", "sparse")}
     copy["bufferView"] = view
     gltf.setdefault("accessors", []).append(copy)
@@ -294,7 +345,8 @@ def merge_animations(data, source, names):
     problems = []
     for animation in source_gltf.get("animations", []):
         name = animation.get("name", "")
-        if name not in names or name in existing: continue
+        if name not in names or name in existing:
+            continue
         copies, samplers, channels = {}, [], []
         for channel in animation["channels"]:
             node_name = source_nodes[channel["target"]["node"]].get("name")
@@ -306,20 +358,35 @@ def merge_animations(data, source, names):
             for key in ("input", "output"):
                 index = sampler[key]
                 if index not in copies:
-                    copies[index] = _append(gltf, binary, accessor_rows(source_gltf, source_binary, index).tobytes(), source_gltf["accessors"][index])
+                    copies[index] = _append(
+                        gltf,
+                        binary,
+                        accessor_rows(source_gltf, source_binary, index).tobytes(),
+                        source_gltf["accessors"][index],
+                    )
                 new[key] = copies[index]
             samplers.append(new)
-            channels.append({"sampler": len(samplers) - 1, "target": {"node": target_nodes[node_name], "path": channel["target"]["path"]}})
-        if channels: gltf.setdefault("animations", []).append({"name": name, "channels": channels, "samplers": samplers})
-    if gltf.get("buffers"): gltf["buffers"][0]["byteLength"] = len(binary)
+            channels.append(
+                {
+                    "sampler": len(samplers) - 1,
+                    "target": {"node": target_nodes[node_name], "path": channel["target"]["path"]},
+                }
+            )
+        if channels:
+            gltf.setdefault("animations", []).append({"name": name, "channels": channels, "samplers": samplers})
+    if gltf.get("buffers"):
+        gltf["buffers"][0]["byteLength"] = len(binary)
     return write_glb(gltf, bytes(binary)), problems
 
 
 def image_bytes_by_name(data):
     """{image name: PNG bytes} of the named images of a GLB."""
     gltf, binary = read_glb(data)
-    return {image["name"]: bytes(image_bytes(gltf, binary, index)) for index, image in enumerate(gltf.get("images", []))
-            if image.get("name") and "bufferView" in image}
+    return {
+        image["name"]: bytes(image_bytes(gltf, binary, index))
+        for index, image in enumerate(gltf.get("images", []))
+        if image.get("name") and "bufferView" in image
+    }
 
 
 def restore_names(data, materials=(), nodes=()):
@@ -327,9 +394,14 @@ def restore_names(data, materials=(), nodes=()):
     the name is in use in the .blend file; texture references '#name' then have no image. materials, nodes: the names
     of the package GLB."""
     import re
+
     gltf, binary = read_glb(data)
     changed = False
-    for kind, wanted in (("images", texture_reference_names(gltf)), ("materials", set(materials)), ("nodes", set(nodes))):
+    for kind, wanted in (
+        ("images", texture_reference_names(gltf)),
+        ("materials", set(materials)),
+        ("nodes", set(nodes)),
+    ):
         names = {item.get("name") for item in gltf.get(kind, [])}
         for item in gltf.get(kind, []):
             base = re.sub(r"(\.\d{3,})+$", "", item.get("name", ""))
@@ -343,18 +415,21 @@ def restore_names(data, materials=(), nodes=()):
 def add_images(data, images):
     """Embed PNG or GH3TEX02 images with the given names (texture references '#<name>' to images that a material socket does not use).
     Each image also gets a glTF texture: the pipeline compiler finds '#<name>' through the textures."""
-    if not images: return data
+    if not images:
+        return data
     gltf, binary = read_glb(data)
     binary = bytearray(binary)
     present = {image.get("name") for image in gltf.get("images", [])}
     for name, payload in sorted(images.items()):
-        if name in present: continue
+        if name in present:
+            continue
         view = _append(gltf, binary, payload)
         # Pre-encoded GH3TEX02 images (PACKAGE-FORMAT.md section 7) keep their media type.
         mime = "image/vnd-gh3.tex" if payload[:8] == b"GH3TEX02" else "image/png"
         gltf.setdefault("images", []).append({"name": name, "mimeType": mime, "bufferView": view})
         gltf.setdefault("textures", []).append({"source": len(gltf["images"]) - 1})
-    if not gltf.get("buffers"): gltf["buffers"] = [{}]
+    if not gltf.get("buffers"):
+        gltf["buffers"] = [{}]
     gltf["buffers"][0]["byteLength"] = len(binary)
     return write_glb(gltf, bytes(binary))
 
@@ -364,13 +439,25 @@ def texture_reference_names(gltf):
     names = set()
 
     def visit(value):
-        if isinstance(value, str) and value.startswith("#"): names.add(value[1:])
+        if isinstance(value, str) and value.startswith("#"):
+            names.add(value[1:])
         elif isinstance(value, list):
-            for item in value: visit(item)
+            for item in value:
+                visit(item)
         elif isinstance(value, dict):
             for key, item in value.items():
-                if key in ("gh3MaskTexture", "gh3LayerTexture", "gh3Shader", "textures", "gh3Toon", "shadeTexture", "shadeMaskTexture",
-                           "sphereTexture"): visit(item)
+                if key in (
+                    "gh3MaskTexture",
+                    "gh3LayerTexture",
+                    "gh3Shader",
+                    "textures",
+                    "gh3Toon",
+                    "shadeTexture",
+                    "shadeMaskTexture",
+                    "sphereTexture",
+                ):
+                    visit(item)
 
-    for material in gltf.get("materials", []): visit(material.get("extras", {}))
+    for material in gltf.get("materials", []):
+        visit(material.get("extras", {}))
     return names

@@ -2,14 +2,14 @@
 
 blender --window-geometry 0 0 1600 900 --python blender/tests/screenshots_guide.py -- ZIP OUTPUT_DIR LIBRARY VENUE
 
-The stage and character shots use the example .blend files in examples/. """
+The stage and character shots use the example .blend files in examples/."""
 
 import sys
 from pathlib import Path
 
 import bpy
 
-args = sys.argv[sys.argv.index("--") + 1:]
+args = sys.argv[sys.argv.index("--") + 1 :]
 archive, output, library, venue = Path(args[0]), Path(args[1]), Path(args[2]), Path(args[3])
 output.mkdir(parents=True, exist_ok=True)
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,32 +30,48 @@ def area(kind):
 
 
 def our_panels():
-    return [c for c in (*sys.modules[module + ".panels"].CLASSES, *sys.modules[module + ".character_ui"].CLASSES) if issubclass(c, bpy.types.Panel)]
+    return [
+        c
+        for c in (*sys.modules[module + ".panels"].CLASSES, *sys.modules[module + ".character_ui"].CLASSES)
+        if issubclass(c, bpy.types.Panel)
+    ]
 
 
 def panels(*names, opened=()):
     """Show only these sidebar panels of the add-on (in their own tab), the `opened` ones open. The API cannot select a
     sidebar tab, so the other sidebar panels are removed (screenshots only)."""
     for cls in list(bpy.types.Panel.__subclasses__()):
-        if getattr(cls, "bl_space_type", "") == "VIEW_3D" and getattr(cls, "bl_region_type", "") == "UI" and getattr(cls, "is_registered", False):
+        if (
+            getattr(cls, "bl_space_type", "") == "VIEW_3D"
+            and getattr(cls, "bl_region_type", "") == "UI"
+            and getattr(cls, "is_registered", False)
+        ):
             bpy.utils.unregister_class(cls)
     for cls in our_panels():
-        if cls.bl_space_type != "VIEW_3D" or cls.__name__ not in names: continue
-        if cls.__name__ in opened: cls.bl_options = set()
+        if cls.bl_space_type != "VIEW_3D" or cls.__name__ not in names:
+            continue
+        if cls.__name__ in opened:
+            cls.bl_options = set()
         bpy.utils.register_class(cls)
 
 
 def material_panels():
     for cls in list(bpy.types.Panel.__subclasses__()):
-        if (getattr(cls, "bl_context", "") == "material" and cls.__name__ != "CHSTAGE_PT_material" and "context_material" not in cls.__name__
-                and getattr(cls, "is_registered", False)):
+        if (
+            getattr(cls, "bl_context", "") == "material"
+            and cls.__name__ != "CHSTAGE_PT_material"
+            and "context_material" not in cls.__name__
+            and getattr(cls, "is_registered", False)
+        ):
             bpy.utils.unregister_class(cls)
 
 
 def select(objects):
     view_layer = window().view_layer
-    for obj in scene().objects: obj.select_set(False)
-    for obj in objects: obj.select_set(True)
+    for obj in scene().objects:
+        obj.select_set(False)
+    for obj in objects:
+        obj.select_set(True)
     view_layer.objects.active = objects[0] if objects else None
 
 
@@ -188,16 +204,36 @@ def character_package():
     view(perspective="PERSP")
 
 
-steps = [setup, lambda: None, lambda: shot("addon-preferences"),
-         stage, lambda: None, lambda: shot("stage-package"),
-         band_marker, lambda: shot("stage-band-marker"),
-         material, material_tab, lambda: shot("stage-material"),
-         camera, lambda: shot("stage-camera"),
-         lighting, lambda: None, lambda: None, lambda: None, lambda: shot("stage-lighting"),
-         character, lambda: None, lambda: shot("character-weights"),
-         character_package, lambda: None, lambda: shot("character-package"),
-         venue_open, lambda: None, lambda: shot("venue-open"),
-         lambda: bpy.ops.wm.quit_blender()]
+steps = [
+    setup,
+    lambda: None,
+    lambda: shot("addon-preferences"),
+    stage,
+    lambda: None,
+    lambda: shot("stage-package"),
+    band_marker,
+    lambda: shot("stage-band-marker"),
+    material,
+    material_tab,
+    lambda: shot("stage-material"),
+    camera,
+    lambda: shot("stage-camera"),
+    lighting,
+    lambda: None,
+    lambda: None,
+    lambda: None,
+    lambda: shot("stage-lighting"),
+    character,
+    lambda: None,
+    lambda: shot("character-weights"),
+    character_package,
+    lambda: None,
+    lambda: shot("character-package"),
+    venue_open,
+    lambda: None,
+    lambda: shot("venue-open"),
+    lambda: bpy.ops.wm.quit_blender(),
+]
 
 
 def tick():
@@ -206,6 +242,7 @@ def tick():
         step()
     except Exception:
         import traceback
+
         traceback.print_exc()
     return 2.0 if steps else None
 

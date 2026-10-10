@@ -9,7 +9,7 @@ from pathlib import Path
 
 import bpy
 
-args = sys.argv[sys.argv.index("--") + 1:]
+args = sys.argv[sys.argv.index("--") + 1 :]
 archive, output = Path(args[0]), Path(args[1])
 output.mkdir(parents=True, exist_ok=True)
 module = "bl_ext.user_default.chstage_tools"
@@ -28,18 +28,25 @@ def open_panels(*names):
     panels = sys.modules[module + ".panels"]
     ours = set(panels.CLASSES)
     for cls in list(bpy.types.Panel.__subclasses__()):
-        if (cls not in ours and getattr(cls, "bl_space_type", "") == "VIEW_3D" and getattr(cls, "bl_region_type", "") == "UI"
-                and getattr(cls, "is_registered", False)):
+        if (
+            cls not in ours
+            and getattr(cls, "bl_space_type", "") == "VIEW_3D"
+            and getattr(cls, "bl_region_type", "") == "UI"
+            and getattr(cls, "is_registered", False)
+        ):
             bpy.utils.unregister_class(cls)
-    for cls in reversed(panels.CLASSES): bpy.utils.unregister_class(cls)
+    for cls in reversed(panels.CLASSES):
+        bpy.utils.unregister_class(cls)
     for cls in panels.CLASSES:
-        if cls.__name__ in names: cls.bl_options = set()
+        if cls.__name__ in names:
+            cls.bl_options = set()
         bpy.utils.register_class(cls)
 
 
 def select(name):
     scene = bpy.context.window_manager.windows[0].scene
-    for obj in scene.objects: obj.select_set(False)
+    for obj in scene.objects:
+        obj.select_set(False)
     obj = scene.objects[name]
     obj.select_set(True)
     bpy.context.window_manager.windows[0].view_layer.objects.active = obj
@@ -81,10 +88,15 @@ def hide_manifest():
 def material_tab():
     """Show the add-on material panel near the top of the material tab (screenshots only)."""
     for cls in list(bpy.types.Panel.__subclasses__()):
-        if (getattr(cls, "bl_context", "") == "material" and cls.__name__ != "CHSTAGE_PT_material" and "context_material" not in cls.__name__
-                and getattr(cls, "is_registered", False)):
+        if (
+            getattr(cls, "bl_context", "") == "material"
+            and cls.__name__ != "CHSTAGE_PT_material"
+            and "context_material" not in cls.__name__
+            and getattr(cls, "is_registered", False)
+        ):
             bpy.utils.unregister_class(cls)
-    for area in areas("PROPERTIES")[1]: area.spaces.active.context = "MATERIAL"
+    for area in areas("PROPERTIES")[1]:
+        area.spaces.active.context = "MATERIAL"
 
 
 steps = [

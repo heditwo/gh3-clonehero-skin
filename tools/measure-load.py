@@ -12,6 +12,7 @@ Steps (in order):
 The game runs with GH3_SKIN_TIMING=1. OUT gets Latest.log, samples.csv (time, resident and peak memory, read calls and
 bytes, open file count of the game process), and run.json. Run it under the record lock (docs/VERIFICATION.md).
 """
+
 import argparse
 import json
 import os
@@ -67,14 +68,22 @@ def stop_all():
         time.sleep(0.5)
 
 
-xwayland = subprocess.Popen(["Xwayland", display, "-noreset", "-geometry", f"{args.width}x{args.height}"],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                            env={**os.environ, "WAYLAND_DISPLAY": os.environ.get("WAYLAND_DISPLAY", "wayland-1")})
+xwayland = subprocess.Popen(
+    ["Xwayland", display, "-noreset", "-geometry", f"{args.width}x{args.height}"],
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+    env={**os.environ, "WAYLAND_DISPLAY": os.environ.get("WAYLAND_DISPLAY", "wayland-1")},
+)
 game_process = None
 started = time.time()
 try:
     for _ in range(50):
-        if subprocess.run(["xrandr", "--query"], env={**os.environ, "DISPLAY": display}, capture_output=True).returncode == 0:
+        if (
+            subprocess.run(
+                ["xrandr", "--query"], env={**os.environ, "DISPLAY": display}, capture_output=True
+            ).returncode
+            == 0
+        ):
             break
         time.sleep(0.2)
     address = ""
@@ -85,15 +94,23 @@ try:
             break
         time.sleep(0.2)
     if address:
-        for command in (f"hl.dsp.window.float({{ action = 'on', window = 'address:{address}' }})",
-                        f"hl.dsp.window.resize({{ x = {args.width}, y = {args.height}, window = 'address:{address}' }})",
-                        f"hl.dsp.window.move({{ x = 3840, y = 90, window = 'address:{address}' }})"):
+        for command in (
+            f"hl.dsp.window.float({{ action = 'on', window = 'address:{address}' }})",
+            f"hl.dsp.window.resize({{ x = {args.width}, y = {args.height}, window = 'address:{address}' }})",
+            f"hl.dsp.window.move({{ x = 3840, y = 90, window = 'address:{address}' }})",
+        ):
             subprocess.run(["hyprctl", "-i", instance, "dispatch", command], capture_output=True)
     from Xlib import X, XK, display as xdisplay
     from Xlib import protocol
 
     log_path.write_text("")
-    env = {**os.environ, "WAYLAND_DISPLAY": "", "DISPLAY": display, "GH3_CLONE_HERO_DIR": str(game), "GH3_SKIN_TIMING": "1"}
+    env = {
+        **os.environ,
+        "WAYLAND_DISPLAY": "",
+        "DISPLAY": display,
+        "GH3_CLONE_HERO_DIR": str(game),
+        "GH3_SKIN_TIMING": "1",
+    }
     for item in args.env:
         name, _, value = item.partition("=")
         env[name] = value
@@ -125,7 +142,9 @@ try:
         if not rss_match or not peak_match:
             return
         rss, peak = int(rss_match.group(1)) / 1024, int(peak_match.group(1)) / 1024
-        samples.write(f"{time.time() - started:.2f},{rss:.0f},{peak:.0f},{io['syscr']},{int(io['rchar']) / 1e6:.0f},{files}\n")
+        samples.write(
+            f"{time.time() - started:.2f},{rss:.0f},{peak:.0f},{io['syscr']},{int(io['rchar']) / 1e6:.0f},{files}\n"
+        )
 
     # Each wait step starts after the line that matched the step before it.
     def matched(pattern, anywhere=False):
@@ -167,6 +186,7 @@ try:
                 for child in parent.query_tree().children:
                     yield child
                     yield from windows(child)
+
             name, _, hold = value.partition(":")
             code = x.keysym_to_keycode(XK.string_to_keysym(name))
             if code == 0:
@@ -174,9 +194,26 @@ try:
             window = next(w for w in windows(x.screen().root) if (w.get_wm_class() or ("",))[0] == "clonehero")
             window.set_input_focus(X.RevertToParent, X.CurrentTime)
             x.sync()
-            for event_type, hold_time in ((protocol.event.KeyPress, float(hold) if hold else 0.08), (protocol.event.KeyRelease, 0)):
-                window.send_event(event_type(time=X.CurrentTime, root=x.screen().root, window=window, same_screen=1, child=X.NONE,
-                                             root_x=10, root_y=10, event_x=10, event_y=10, state=0, detail=code), propagate=True)
+            for event_type, hold_time in (
+                (protocol.event.KeyPress, float(hold) if hold else 0.08),
+                (protocol.event.KeyRelease, 0),
+            ):
+                window.send_event(
+                    event_type(
+                        time=X.CurrentTime,
+                        root=x.screen().root,
+                        window=window,
+                        same_screen=1,
+                        child=X.NONE,
+                        root_x=10,
+                        root_y=10,
+                        event_x=10,
+                        event_y=10,
+                        state=0,
+                        detail=code,
+                    ),
+                    propagate=True,
+                )
                 x.sync()
                 time.sleep(hold_time)
         elif kind == "shot":
@@ -184,15 +221,28 @@ try:
             geometry = root.get_geometry()
             image = root.get_image(0, 0, geometry.width, geometry.height, X.ZPixmap, 0xFFFFFFFF)
             from PIL import Image
-            Image.frombytes("RGB", (geometry.width, geometry.height), image.data, "raw", "BGRX").save(out / f"{value}.png")
+
+            Image.frombytes("RGB", (geometry.width, geometry.height), image.data, "raw", "BGRX").save(
+                out / f"{value}.png"
+            )
         elif kind == "run":
             subprocess.run(value, shell=True, env={**os.environ, "DISPLAY": display, "GAME_PID": str(game_process.pid)})
         else:
             raise SystemExit(f"unknown step {step}")
     sample()
     samples.close()
-    (out / "run.json").write_text(json.dumps({"game": str(game), "song": str(args.song or ""), "env": args.env,
-                                              "steps": events, "seconds": round(time.time() - started, 2)}, indent=2))
+    (out / "run.json").write_text(
+        json.dumps(
+            {
+                "game": str(game),
+                "song": str(args.song or ""),
+                "env": args.env,
+                "steps": events,
+                "seconds": round(time.time() - started, 2),
+            },
+            indent=2,
+        )
+    )
 finally:
     stop_all()
     if game_process:

@@ -18,7 +18,7 @@ def alpha_region(image, cutoff):
     rectangles = []
     for y in range(height):
         x = 0
-        for visible, run in groupby(alpha[y * width:(y + 1) * width], lambda a: a / 255 >= cutoff):
+        for visible, run in groupby(alpha[y * width : (y + 1) * width], lambda a: a / 255 >= cutoff):
             length = sum(1 for _ in run)
             if not visible:
                 rectangles.append(box(x, y, x + length, y + 1))
@@ -38,7 +38,7 @@ def trim_mesh(mesh, image, cutoff, region=None):
     region = alpha_region(image, cutoff) if region is None else region
     if region.is_empty:
         return mesh
-    packed = [bytes(vertices[i * stride:(i + 1) * stride]) for i in range(count)]
+    packed = [bytes(vertices[i * stride : (i + 1) * stride]) for i in range(count)]
     indices = {vertex: i for i, vertex in enumerate(packed)}
     result = []
     tiles = {}
@@ -51,13 +51,22 @@ def trim_mesh(mesh, image, cutoff, region=None):
                 result.append(face)
             continue
         bounds = polygon.bounds
-        tile = (math.floor(bounds[0] / width), math.floor(bounds[1] / height),
-                math.floor(bounds[2] / width), math.floor(bounds[3] / height))
+        tile = (
+            math.floor(bounds[0] / width),
+            math.floor(bounds[1] / height),
+            math.floor(bounds[2] / width),
+            math.floor(bounds[3] / height),
+        )
         if tile not in tiles:
             if (tile[2] - tile[0] + 1) * (tile[3] - tile[1] + 1) > 64:
                 raise ValueError("Cutout UV range is too large")
-            tiles[tile] = union_all([translate(region, x * width, y * height)
-                                     for x in range(tile[0], tile[2] + 1) for y in range(tile[1], tile[3] + 1)])
+            tiles[tile] = union_all(
+                [
+                    translate(region, x * width, y * height)
+                    for x in range(tile[0], tile[2] + 1)
+                    for y in range(tile[1], tile[3] + 1)
+                ]
+            )
         hidden = tiles[tile]
         if not polygon.intersects(hidden):
             result.append(face)
@@ -83,7 +92,9 @@ def trim_mesh(mesh, image, cutoff, region=None):
             if stride in (44, 60, 144):
                 channels = (stride - 36) // 4
                 extra = [struct.unpack_from(f"<{channels}f", packed[i], 36) for i in face]
-                data += struct.pack(f"<{channels}f", *(sum(w * row[k] for w, row in zip(weights, extra)) for k in range(channels)))
+                data += struct.pack(
+                    f"<{channels}f", *(sum(w * row[k] for w, row in zip(weights, extra)) for k in range(channels))
+                )
             if stride in (56, 128):
                 influences = {}
                 for w, i in zip(weights, face):
@@ -91,12 +102,19 @@ def trim_mesh(mesh, image, cutoff, region=None):
                     bone_weights = struct.unpack_from("<4f", packed[i], 40)
                     for bone, amount in zip(bone_indices, bone_weights):
                         influences[bone] = influences.get(bone, 0) + max(0, w) * amount
-                influences = sorted(((bone, weight) for bone, weight in influences.items() if weight > 1e-7), key=lambda p: -p[1])
+                influences = sorted(
+                    ((bone, weight) for bone, weight in influences.items() if weight > 1e-7), key=lambda p: -p[1]
+                )
                 if len(influences) > 4 or not influences:
                     raise ValueError("Cutout interpolation exceeds the skin weight limit")
                 total = sum(w for _, w in influences)
-                data += struct.pack("<4B4f", *(i for i, _ in influences), *([0] * (4 - len(influences))),
-                                    *(w / total for _, w in influences), *([0] * (4 - len(influences))))
+                data += struct.pack(
+                    "<4B4f",
+                    *(i for i, _ in influences),
+                    *([0] * (4 - len(influences))),
+                    *(w / total for _, w in influences),
+                    *([0] * (4 - len(influences))),
+                )
             if stride == 128:
                 extra = [struct.unpack_from("<18f", packed[i], 56) for i in face]
                 data += struct.pack("<18f", *(sum(w * row[k] for w, row in zip(weights, extra)) for k in range(18)))

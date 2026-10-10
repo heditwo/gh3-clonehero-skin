@@ -41,7 +41,8 @@ class _OrderedSet(dict):
         self[item] = None
 
     def update(self, items):
-        for item in items: self[item] = None
+        for item in items:
+            self[item] = None
 
 
 def fix_custom_attribute_import():
@@ -82,7 +83,9 @@ def set_frame_rate(scene, fps):
 def import_glb(path, fps=None, **overrides):
     """Import a GLB with the safe options. Set fps to the clip rate of the file (30 for band clips, 60 for venue actors)."""
     import bpy
-    if fps: set_frame_rate(bpy.context.scene, fps)
+
+    if fps:
+        set_frame_rate(bpy.context.scene, fps)
     fix_custom_attribute_import()
     operator = bpy.ops.import_scene.gltf
     return operator(filepath=str(path), **_supported(operator, {**IMPORT_OPTIONS, **overrides}))
@@ -91,6 +94,8 @@ def import_glb(path, fps=None, **overrides):
 def export_glb(path, fps=None, **overrides):
     """Export a GLB with the safe options. Blender samples clips at the scene rate, so fps must be the clip rate."""
     import bpy
-    if fps: set_frame_rate(bpy.context.scene, fps)
+
+    if fps:
+        set_frame_rate(bpy.context.scene, fps)
     operator = bpy.ops.export_scene.gltf
     return operator(filepath=str(path), **_supported(operator, {**EXPORT_OPTIONS, **overrides}))

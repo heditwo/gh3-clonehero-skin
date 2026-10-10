@@ -47,7 +47,7 @@ MOVIE_FORMAT = "png-frames"
 
 # Venue preview images (manifest `preview`): `<id>.png` in this folder, 512 × 288, made from an in-game capture
 # (docs/PIPELINE.md, venue previews). A venue without an image gets no preview.
-VENUE_PREVIEWS = Path(__file__).resolve().parents[2]/"assets"/"previews"
+VENUE_PREVIEWS = Path(__file__).resolve().parents[2] / "assets" / "previews"
 PREVIEW_SIZE = (512, 288)
 
 PACKAGE_VERSION = "1.0.0"

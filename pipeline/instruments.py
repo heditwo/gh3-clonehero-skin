@@ -37,8 +37,16 @@ from pipeline.gh3.formats import find_array, key, values
 from pipeline.paths import GH3_DATA, INSTRUMENTS
 from pipeline.stagepack.gltf import SKINNED_GH3_VERTEX
 
-STORE_LISTS = ("Free_Guitars", "Bonus_Guitars", "Bonus_Guitar_Finishes", "Secret_Guitars",
-               "Free_Basses", "Bonus_Basses", "Bonus_Bass_Finishes", "Secret_Basses")
+STORE_LISTS = (
+    "Free_Guitars",
+    "Bonus_Guitars",
+    "Bonus_Guitar_Finishes",
+    "Secret_Guitars",
+    "Free_Basses",
+    "Bonus_Basses",
+    "Bonus_Bass_Finishes",
+    "Secret_Basses",
+)
 # The rig profile that the package GLB is bound to. The game binds an instrument to the rest pose of the performer that
 # holds it, as GH3 does with the skeleton of the band member.
 PROFILES = {"guitar": "gh3-guitarist-axel-v1", "bass": "gh3-bassist-v1"}
@@ -83,20 +91,34 @@ def inventory(data_directory):
     instruments = []
     for row in rows:
         kind = {key("guitar"): "guitar", key("bass"): "bass"}.get(row.get(key("Type")))
-        if kind is None: continue
+        if kind is None:
+            continue
         desc_name = text(row.get(key("desc_name")))
         fields = {f: " ".join(text(row.get(key(f))).split()) for f in ("logo", "name", "name2", "finish")}
         listed, price = store.get(row[key("desc_id")], ("", 0))
-        instruments.append({
-            "id": f"gh3.{slug(desc_name)}", "descName": desc_name, "descId": f"{row[key('desc_id')]:08x}", "kind": kind,
-            "name": display_name(fields["logo"], fields["name"], fields["name2"], fields["finish"]),
-            "brand": fields["logo"], "model": fields["name"], "series": fields["name2"], "finish": fields["finish"],
-            "description": "\n".join(line.strip() for line in text(row.get(key("blurb"))).replace("\\n", "\n").strip().split("\n")),
-            "pak": pak_file(source.directory, text(row[key("pak")])).name, "profile": PROFILES[kind],
-            "store": listed or "none", "price": price,
-        })
+        instruments.append(
+            {
+                "id": f"gh3.{slug(desc_name)}",
+                "descName": desc_name,
+                "descId": f"{row[key('desc_id')]:08x}",
+                "kind": kind,
+                "name": display_name(fields["logo"], fields["name"], fields["name2"], fields["finish"]),
+                "brand": fields["logo"],
+                "model": fields["name"],
+                "series": fields["name2"],
+                "finish": fields["finish"],
+                "description": "\n".join(
+                    line.strip() for line in text(row.get(key("blurb"))).replace("\\n", "\n").strip().split("\n")
+                ),
+                "pak": pak_file(source.directory, text(row[key("pak")])).name,
+                "profile": PROFILES[kind],
+                "store": listed or "none",
+                "price": price,
+            }
+        )
     ids = [i["id"] for i in instruments]
-    if len(set(ids)) != len(ids): raise ValueError("two GH3 instruments have the same package ID")
+    if len(set(ids)) != len(ids):
+        raise ValueError("two GH3 instruments have the same package ID")
     return source, scripts, instruments
 
 
@@ -107,10 +129,16 @@ def guitarist_profiles(scripts):
     bodies = {r[key("desc_id")]: r for r in qb_items(script(scripts, "guitar_band_profile_data"))[key("musician_body")]}
     result = []
     for profile in profiles:
-        if profile.get(key("debug_only")): continue
+        if profile.get(key("debug_only")):
+            continue
         name = text(profile[key("name")])
-        desc = key(f"Guitarist_{name}_Outfit1_Style1") if profile.get(key("outfits")) else profile[key("musician_body")][key("desc_id")]
-        if desc in bodies: result.append((name, text(bodies[desc][key("pak")])))
+        desc = (
+            key(f"Guitarist_{name}_Outfit1_Style1")
+            if profile.get(key("outfits"))
+            else profile[key("musician_body")][key("desc_id")]
+        )
+        if desc in bodies:
+            result.append((name, text(bodies[desc][key("pak")])))
     return result
 
 
@@ -120,8 +148,10 @@ def pak_tex_entries(data):
     offset = 0
     while offset + 32 <= len(data):
         kind, relative, size, _, _, file_name, _, flags = values(data, offset, "8I")
-        if kind == key(".last"): return
-        if kind == key(".tex"): yield file_name, data[offset + relative:offset + relative + size]
+        if kind == key(".last"):
+            return
+        if kind == key(".tex"):
+            yield file_name, data[offset + relative : offset + relative + size]
         offset += 192 if flags & 0x20 else 32
 
 
@@ -129,35 +159,53 @@ def highway(source, profile_name, model_pak):
     """The highway image of a guitarist profile: <name>_1_Highway.tex of its model PAK (one 512 x 1024 image), or None
     when the model PAK has no highway (the singers, the bassist, and the drummer)."""
     path = pak_file(source.directory, model_pak)
-    data = (source.directory/"PAK"/path.name).read_bytes()
+    data = (source.directory / "PAK" / path.name).read_bytes()
     found = [t for name, t in pak_tex_entries(data) if name == key(f"{profile_name}_1_highway")]
-    if not found: return path.name, None
+    if not found:
+        return path.name, None
     # The file can hold a small extra texture (RockGod_1: a 32 x 32 image); the highway is the 512 x 1024 image.
     images = [image for blob in found for _, image in scene.textures(blob) if image.size == HIGHWAY_SIZE]
-    if len(images) != 1: raise ValueError(f"{path.name}: no {profile_name}_1_Highway image of {HIGHWAY_SIZE}")
+    if len(images) != 1:
+        raise ValueError(f"{path.name}: no {profile_name}_1_Highway image of {HIGHWAY_SIZE}")
     return path.name, images[0].convert("RGBA")
 
 
 def export(instrument, source, output):
-    directory = output/instrument["id"]
-    if directory.exists(): shutil.rmtree(directory)
-    (directory/"textures").mkdir(parents=True)
+    directory = output / instrument["id"]
+    if directory.exists():
+        shutil.rmtree(directory)
+    (directory / "textures").mkdir(parents=True)
     materials, meshes = load_models(source, [instrument["pak"]], directory, "guitarist")
     for _, _, vertices, _ in meshes:
         rows = np.frombuffer(bytes(vertices), dtype=SKINNED_GH3_VERTEX)
         if not np.all((rows["joints"] == 119) | (rows["weights"] == 0)):
             raise ValueError(f"{instrument['pak']}: a vertex follows a bone other than bone_guitar_body")
-    with (directory/"meshes.bin").open("wb") as stream:
+    with (directory / "meshes.bin").open("wb") as stream:
         stream.write(b"GH3BND02" + struct.pack("<I", len(meshes)))
         for material, count, vertices, faces in meshes:
             stream.write(struct.pack("<III", int(material, 16), count, len(faces) * 3))
             stream.write(vertices)
             stream.write(np.asarray(faces, dtype="<u4").tobytes())
-    (directory/"stage.json").write_text(json.dumps({"version": 1, "name": instrument["id"], "cameraPosition": [0, 0, 0],
-                                                    "cameraTarget": [0, 1, 0], "materials": materials}, indent=2) + "\n")
-    info = {**instrument, "vertices": sum(m[1] for m in meshes), "parts": len(meshes),
-            "templates": sorted({m["gh3"]["template"] for m in materials.values() if "gh3" in m})}
-    (directory/"instrument.json").write_text(json.dumps(info, indent=2) + "\n")
+    (directory / "stage.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "name": instrument["id"],
+                "cameraPosition": [0, 0, 0],
+                "cameraTarget": [0, 1, 0],
+                "materials": materials,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+    info = {
+        **instrument,
+        "vertices": sum(m[1] for m in meshes),
+        "parts": len(meshes),
+        "templates": sorted({m["gh3"]["template"] for m in materials.values() if "gh3" in m}),
+    }
+    (directory / "instrument.json").write_text(json.dumps(info, indent=2) + "\n")
     return info
 
 
@@ -171,25 +219,34 @@ def main(argv=None):
     args.output.mkdir(parents=True, exist_ok=True)
     exported = []
     for instrument in instruments:
-        if args.only and instrument["id"] not in args.only: continue
+        if args.only and instrument["id"] not in args.only:
+            continue
         info = export(instrument, source, args.output)
         exported.append(info["id"])
         print(f"{info['id']}: {info['name']} ({info['kind']}), {info['vertices']} vertices, {info['parts']} parts")
     highways = {}
-    (args.output/"highways").mkdir(exist_ok=True)
+    (args.output / "highways").mkdir(exist_ok=True)
     for name, pak in guitarist_profiles(scripts):
         pak_name, image = highway(source, name, pak)
-        if image is None: continue
-        target = args.output/"highways"/f"{SLUGS.get(name, name.lower())}.png"
+        if image is None:
+            continue
+        target = args.output / "highways" / f"{SLUGS.get(name, name.lower())}.png"
         image.save(target)
-        highways[name] = {"file": f"highways/{target.name}", "source": pak_name, "sha256": hashlib.sha256(image.tobytes()).hexdigest()}
+        highways[name] = {
+            "file": f"highways/{target.name}",
+            "source": pak_name,
+            "sha256": hashlib.sha256(image.tobytes()).hexdigest(),
+        }
         print(f"highway of {name}: {pak_name}")
     if not args.only:
         wanted = {i["id"] for i in instruments} | {"highways"}
         for folder in args.output.iterdir():
-            if folder.is_dir() and folder.name not in wanted: shutil.rmtree(folder)
-    (args.output/"inventory.json").write_text(json.dumps({"version": 1, "instruments": instruments, "highways": highways,
-                                                          "sources": source.hashes}, indent=2) + "\n")
+            if folder.is_dir() and folder.name not in wanted:
+                shutil.rmtree(folder)
+    (args.output / "inventory.json").write_text(
+        json.dumps({"version": 1, "instruments": instruments, "highways": highways, "sources": source.hashes}, indent=2)
+        + "\n"
+    )
     print(f"{len(exported)} instruments and {len(highways)} highways in {args.output}")
 
 

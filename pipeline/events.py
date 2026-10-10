@@ -11,8 +11,12 @@ from pipeline.gh3.formats import find_struct, key, pak_entries
 
 
 def extract(source, song_id):
-    result = subprocess.run(["dotnet", str(songtool.path()), "events-stdin", song_id], input=source,
-                            capture_output=True, env={**os.environ, "MISE_QUIET": "1"})
+    result = subprocess.run(
+        ["dotnet", str(songtool.path()), "events-stdin", song_id],
+        input=source,
+        capture_output=True,
+        env={**os.environ, "MISE_QUIET": "1"},
+    )
     if result.returncode:
         raise ValueError(result.stderr.decode(errors="replace").strip())
     return json.loads(result.stdout)
@@ -27,8 +31,13 @@ def export_library(data_directory, destination):
             for section in ("permanent_songlist_props", "download_songlist_props"):
                 properties = find_struct(data, section)
                 if properties:
-                    metadata.update({song[key("Name")]: song for song in properties.values()
-                                     if isinstance(song, dict) and key("Name") in song})
+                    metadata.update(
+                        {
+                            song[key("Name")]: song
+                            for song in properties.values()
+                            if isinstance(song, dict) and key("Name") in song
+                        }
+                    )
     destination.mkdir(parents=True, exist_ok=True)
     songs = []
     missing_metadata = []
@@ -47,17 +56,22 @@ def export_library(data_directory, destination):
         exported += 1
         pyro += sum(event["type"] == "gh3-note" and event["value"] == "56" for event in result["events"])
     (destination / "index.json").write_text(json.dumps({"version": 1, "songs": songs}, indent=2) + "\n")
-    (destination / "export-report.json").write_text(json.dumps({"exported": exported, "indexed": len(songs),
-        "missingMetadata": missing_metadata}, indent=2) + "\n")
+    (destination / "export-report.json").write_text(
+        json.dumps({"exported": exported, "indexed": len(songs), "missingMetadata": missing_metadata}, indent=2) + "\n"
+    )
     print(f"Exported {exported} original song direction tracks with {pyro} pyro triggers to {destination}")
     if missing_metadata:
-        print(f"{len(missing_metadata)} exports need title/artist metadata for automatic lookup. See export-report.json.")
+        print(
+            f"{len(missing_metadata)} exports need title/artist metadata for automatic lookup. See export-report.json."
+        )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="python -m pipeline.events", description=__doc__)
     parser.add_argument("song_pak", type=Path, help="A song PAK, or the GH3 DATA folder with --library")
-    parser.add_argument("--library", action="store_true", help="Export all song direction tracks and a title/artist index")
+    parser.add_argument(
+        "--library", action="store_true", help="Export all song direction tracks and a title/artist index"
+    )
     parser.add_argument("--song-id", help="GH3 internal song name; defaults to the PAK filename prefix")
     parser.add_argument("--output", required=True, type=Path, help="stage-events.json in the Clone Hero song folder")
     parser.add_argument("--offset", type=float, default=0, help="Cue offset in seconds for an audio edit")

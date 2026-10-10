@@ -27,17 +27,51 @@ FORMAT = "chchar/1.0"
 MODEL_FILE = "character.glb"
 CHARACTER_FILE = "character.json"
 ROLE_PROFILES = {role: profile for profile, role in PROFILES.items()}
-ATTACHMENTS = {"guitarist": "guitar", "bassist": "bass", "singer": "microphone and stand", "drummer": "drum kit and sticks"}
+ATTACHMENTS = {
+    "guitarist": "guitar",
+    "bassist": "bass",
+    "singer": "microphone and stand",
+    "drummer": "drum kit and sticks",
+}
 MAX_INFLUENCES = 4
 # A primitive is hair when this part of its vertices has weight on the hair joints of the profile (band/hair.json).
 HAIR_SHARE = 0.3
 # GH3 bone names that the rigs use (the joints are named by checksum). Labels for the add-on panels only.
 BONE_NAMES = (
-    "control_root", "bone_pelvis", "bone_stomach_lower", "bone_stomach_upper", "bone_chest", "bone_neck", "bone_head", "bone_jaw",
-    "bone_collar_l", "bone_collar_r", "bone_bicep_l", "bone_bicep_r", "bone_forearm_l", "bone_forearm_r", "bone_palm_l", "bone_palm_r",
-    "bone_thigh_l", "bone_thigh_r", "bone_knee_l", "bone_knee_r", "bone_ankle_l", "bone_ankle_r", "bone_toe_l", "bone_toe_r",
-    "bone_twist_bicep_top_l", "bone_split_ass_l", "bone_lip_upper_mid", "bone_brow_l", "bone_eye_l", "bone_cheek_l", "bone_tongue",
-    "bone_guitar_body", "bone_guitar_neck", "bone_mic",
+    "control_root",
+    "bone_pelvis",
+    "bone_stomach_lower",
+    "bone_stomach_upper",
+    "bone_chest",
+    "bone_neck",
+    "bone_head",
+    "bone_jaw",
+    "bone_collar_l",
+    "bone_collar_r",
+    "bone_bicep_l",
+    "bone_bicep_r",
+    "bone_forearm_l",
+    "bone_forearm_r",
+    "bone_palm_l",
+    "bone_palm_r",
+    "bone_thigh_l",
+    "bone_thigh_r",
+    "bone_knee_l",
+    "bone_knee_r",
+    "bone_ankle_l",
+    "bone_ankle_r",
+    "bone_toe_l",
+    "bone_toe_r",
+    "bone_twist_bicep_top_l",
+    "bone_split_ass_l",
+    "bone_lip_upper_mid",
+    "bone_brow_l",
+    "bone_eye_l",
+    "bone_cheek_l",
+    "bone_tongue",
+    "bone_guitar_body",
+    "bone_guitar_neck",
+    "bone_mic",
 )
 BONE_LABELS = {f"{gh3_key(name):08x}": name for name in BONE_NAMES}
 GLB_MAGIC, JSON_CHUNK, BIN_CHUNK = 0x46546C67, 0x4E4F534A, 0x004E4942
@@ -69,28 +103,34 @@ def texture_reference_names(material):
     extras = material.get("extras", {}) if isinstance(material.get("extras"), dict) else {}
     refs = [extras.get("gh3MaskTexture"), extras.get("gh3LayerTexture")]
     toon = extras.get("gh3Toon")
-    if isinstance(toon, dict): refs += [toon.get(key) for key in ("shadeTexture", "shadeMaskTexture", "sphereTexture")]
+    if isinstance(toon, dict):
+        refs += [toon.get(key) for key in ("shadeTexture", "shadeMaskTexture", "sphereTexture")]
     shader = extras.get("gh3Shader")
-    if isinstance(shader, dict) and isinstance(shader.get("textures"), list): refs += shader["textures"]
+    if isinstance(shader, dict) and isinstance(shader.get("textures"), list):
+        refs += shader["textures"]
     return {ref[1:] for ref in refs if isinstance(ref, str) and ref.startswith("#")}
 
 
 def _texture_indices(value, found):
     if isinstance(value, dict):
         for key, item in value.items():
-            if key.endswith("Texture") and isinstance(item, dict) and isinstance(item.get("index"), int): found.add(item["index"])
+            if key.endswith("Texture") and isinstance(item, dict) and isinstance(item.get("index"), int):
+                found.add(item["index"])
             _texture_indices(item, found)
     elif isinstance(value, list):
-        for item in value: _texture_indices(item, found)
+        for item in value:
+            _texture_indices(item, found)
 
 
 def _renumber_textures(value, mapping):
     if isinstance(value, dict):
         for key, item in value.items():
-            if key.endswith("Texture") and isinstance(item, dict) and isinstance(item.get("index"), int): item["index"] = mapping[item["index"]]
+            if key.endswith("Texture") and isinstance(item, dict) and isinstance(item.get("index"), int):
+                item["index"] = mapping[item["index"]]
             _renumber_textures(item, mapping)
     elif isinstance(value, list):
-        for item in value: _renumber_textures(item, mapping)
+        for item in value:
+            _renumber_textures(item, mapping)
 
 
 def compact(gltf, binary):
@@ -102,12 +142,17 @@ def compact(gltf, binary):
     gltf["materials"] = [gltf["materials"][i] for i in used]
     for mesh in meshes:
         for primitive in mesh.get("primitives", []):
-            if "material" in primitive: primitive["material"] = mapping[primitive["material"]]
+            if "material" in primitive:
+                primitive["material"] = mapping[primitive["material"]]
     textures, images = gltf.get("textures", []), gltf.get("images", [])
     referenced = set().union(*(texture_reference_names(m) for m in gltf["materials"])) if gltf["materials"] else set()
     used_textures = set()
     _texture_indices(gltf["materials"], used_textures)
-    used_textures |= {i for i, t in enumerate(textures) if t.get("source") is not None and images[t["source"]].get("name") in referenced}
+    used_textures |= {
+        i
+        for i, t in enumerate(textures)
+        if t.get("source") is not None and images[t["source"]].get("name") in referenced
+    }
     used_images = {textures[i]["source"] for i in used_textures if "source" in textures[i]}
     used_images |= {i for i, image in enumerate(images) if image.get("name") in referenced}
     texture_map = {old: new for new, old in enumerate(sorted(used_textures))}
@@ -117,26 +162,38 @@ def compact(gltf, binary):
     new_textures = []
     for old in sorted(used_textures):
         texture = dict(textures[old])
-        if "source" in texture: texture["source"] = image_map[texture["source"]]
-        if "sampler" in texture: texture["sampler"] = sampler_map[texture["sampler"]]
+        if "source" in texture:
+            texture["source"] = image_map[texture["source"]]
+        if "sampler" in texture:
+            texture["sampler"] = sampler_map[texture["sampler"]]
         new_textures.append(texture)
     _renumber_textures(gltf["materials"], texture_map)
-    for key, values in (("textures", new_textures), ("images", [images[i] for i in sorted(used_images)]),
-                        ("samplers", [gltf.get("samplers", [])[i] for i in sampler_list])):
-        if values: gltf[key] = values
-        else: gltf.pop(key, None)
-    if not gltf["materials"]: gltf.pop("materials")
+    for key, values in (
+        ("textures", new_textures),
+        ("images", [images[i] for i in sorted(used_images)]),
+        ("samplers", [gltf.get("samplers", [])[i] for i in sampler_list]),
+    ):
+        if values:
+            gltf[key] = values
+        else:
+            gltf.pop(key, None)
+    if not gltf["materials"]:
+        gltf.pop("materials")
 
     accessors = set()
     for mesh in meshes:
         for primitive in mesh.get("primitives", []):
             accessors.update(primitive.get("attributes", {}).values())
-            if "indices" in primitive: accessors.add(primitive["indices"])
-            for target in primitive.get("targets", []): accessors.update(target.values())
+            if "indices" in primitive:
+                accessors.add(primitive["indices"])
+            for target in primitive.get("targets", []):
+                accessors.update(target.values())
     for skin in gltf.get("skins", []):
-        if "inverseBindMatrices" in skin: accessors.add(skin["inverseBindMatrices"])
+        if "inverseBindMatrices" in skin:
+            accessors.add(skin["inverseBindMatrices"])
     for animation in gltf.get("animations", []):
-        for sampler in animation.get("samplers", []): accessors.update((sampler["input"], sampler["output"]))
+        for sampler in animation.get("samplers", []):
+            accessors.update((sampler["input"], sampler["output"]))
     accessor_map = {old: new for new, old in enumerate(sorted(accessors))}
     views = {gltf["accessors"][i]["bufferView"] for i in accessors if "bufferView" in gltf["accessors"][i]}
     views |= {image["bufferView"] for image in gltf.get("images", []) if "bufferView" in image}
@@ -146,24 +203,30 @@ def compact(gltf, binary):
         start = view.get("byteOffset", 0)
         out += b"\0" * (-len(out) % 4)
         view["byteOffset"] = len(out)
-        out += binary[start:start + view["byteLength"]]
+        out += binary[start : start + view["byteLength"]]
         view_map[old] = len(new_views)
         new_views.append(view)
     gltf["accessors"] = [dict(gltf["accessors"][i]) for i in sorted(accessors)]
     for accessor in gltf["accessors"]:
-        if "bufferView" in accessor: accessor["bufferView"] = view_map[accessor["bufferView"]]
+        if "bufferView" in accessor:
+            accessor["bufferView"] = view_map[accessor["bufferView"]]
     gltf["bufferViews"] = new_views
     for image in gltf.get("images", []):
-        if "bufferView" in image: image["bufferView"] = view_map[image["bufferView"]]
+        if "bufferView" in image:
+            image["bufferView"] = view_map[image["bufferView"]]
     for mesh in meshes:
         for primitive in mesh.get("primitives", []):
             primitive["attributes"] = {k: accessor_map[v] for k, v in primitive["attributes"].items()}
-            if "indices" in primitive: primitive["indices"] = accessor_map[primitive["indices"]]
-            if "targets" in primitive: primitive["targets"] = [{k: accessor_map[v] for k, v in t.items()} for t in primitive["targets"]]
+            if "indices" in primitive:
+                primitive["indices"] = accessor_map[primitive["indices"]]
+            if "targets" in primitive:
+                primitive["targets"] = [{k: accessor_map[v] for k, v in t.items()} for t in primitive["targets"]]
     for skin in gltf.get("skins", []):
-        if "inverseBindMatrices" in skin: skin["inverseBindMatrices"] = accessor_map[skin["inverseBindMatrices"]]
+        if "inverseBindMatrices" in skin:
+            skin["inverseBindMatrices"] = accessor_map[skin["inverseBindMatrices"]]
     for animation in gltf.get("animations", []):
-        for sampler in animation.get("samplers", []): sampler["input"], sampler["output"] = accessor_map[sampler["input"]], accessor_map[sampler["output"]]
+        for sampler in animation.get("samplers", []):
+            sampler["input"], sampler["output"] = accessor_map[sampler["input"]], accessor_map[sampler["output"]]
     gltf["buffers"] = [{"byteLength": len(out)}]
     return gltf, bytes(out)
 
@@ -179,17 +242,22 @@ def keep_morphs(gltf, binary, names):
         for primitive in mesh.get("primitives", []):
             targets = primitive.get("targets", [])
             kept = [{"POSITION": targets[i]["POSITION"]} for i in keep if i < len(targets) and "POSITION" in targets[i]]
-            if kept: primitive["targets"] = kept
-            else: primitive.pop("targets", None)
+            if kept:
+                primitive["targets"] = kept
+            else:
+                primitive.pop("targets", None)
         if keep and any("targets" in p for p in mesh.get("primitives", [])):
             extras["targetNames"] = [target_names[i] for i in keep]
-            if "weights" in mesh: mesh["weights"] = [mesh["weights"][i] for i in keep if i < len(mesh["weights"])]
+            if "weights" in mesh:
+                mesh["weights"] = [mesh["weights"][i] for i in keep if i < len(mesh["weights"])]
             mesh["extras"] = extras
         else:
             extras.pop("targetNames", None)
             mesh.pop("weights", None)
-            if extras: mesh["extras"] = extras
-            else: mesh.pop("extras", None)
+            if extras:
+                mesh["extras"] = extras
+            else:
+                mesh.pop("extras", None)
     return compact(gltf, binary)
 
 
@@ -198,7 +266,8 @@ class Rig:
     """The joints of a skinned GLB: names ('bone-<checksum>'), parent joint indices, and glTF local matrices."""
 
     def __init__(self, glb=None):
-        if glb is None: return
+        if glb is None:
+            return
         nodes = glb.list("nodes")
         skin = glb.list("skins")[0]
         self.nodes = list(skin["joints"])
@@ -286,13 +355,17 @@ def primitive_kinds(glb, rig, hair):
         for index, primitive in enumerate(mesh.get("primitives", [])):
             attributes = primitive.get("attributes", {})
             if "JOINTS_0" not in attributes:
-                kinds[mesh_index, index] = "attachment"; continue
+                kinds[mesh_index, index] = "attachment"
+                continue
             joints = glb.accessor(attributes["JOINTS_0"]).astype(int)
             weights = glb.accessor(attributes["WEIGHTS_0"])
             dominant = joints[np.arange(len(joints)), weights.argmax(1)]
-            if np.mean([j not in body for j in dominant]) > 0.5: kinds[mesh_index, index] = "attachment"
-            elif hair and np.mean(((np.isin(joints, list(hair))) & (weights > 0)).any(1)) > HAIR_SHARE: kinds[mesh_index, index] = "hair"
-            else: kinds[mesh_index, index] = "body"
+            if np.mean([j not in body for j in dominant]) > 0.5:
+                kinds[mesh_index, index] = "attachment"
+            elif hair and np.mean(((np.isin(joints, list(hair))) & (weights > 0)).any(1)) > HAIR_SHARE:
+                kinds[mesh_index, index] = "hair"
+            else:
+                kinds[mesh_index, index] = "body"
     return kinds
 
 
@@ -310,10 +383,12 @@ def keep_primitives(data, keep, animations=False):
         for node in gltf.get("nodes", []):
             if "mesh" in node:
                 if node["mesh"] in empty:
-                    node.pop("mesh"); node.pop("skin", None)
+                    node.pop("mesh")
+                    node.pop("skin", None)
                 else:
                     node["mesh"] = mesh_map[node["mesh"]]
-    if not animations: gltf.pop("animations", None)
+    if not animations:
+        gltf.pop("animations", None)
     gltf, binary = compact(gltf, glb.binary)
     return write_glb(gltf, binary)
 
@@ -324,7 +399,8 @@ class Library:
     def __init__(self, path):
         report = Report()
         self.source = Source(Path(path), report)
-        if report.errors or "manifest.json" not in self.source.set: raise ValueError(f"{path}: not a library package ({'; '.join(report.errors) or 'no manifest.json'})")
+        if report.errors or "manifest.json" not in self.source.set:
+            raise ValueError(f"{path}: not a library package ({'; '.join(report.errors) or 'no manifest.json'})")
         self.path = Path(path)
         self.manifest = json.loads(self.source.read("manifest.json"))
         self._json = {}
@@ -336,7 +412,8 @@ class Library:
 
     def model(self, role):
         name = f"band/{role}/model.glb"
-        if name not in self.source.set: raise ValueError(f"the library has no {name}")
+        if name not in self.source.set:
+            raise ValueError(f"the library has no {name}")
         return self.source.read(name)
 
     def member(self, role):
@@ -360,7 +437,8 @@ class CharacterLibrary:
         self.path = Path(path)
         self.manifest = json.loads(self.source.read("manifest.json"))
         entry = self.manifest.get("entry", {}).get("characters")
-        if entry not in self.source.set: raise ValueError(f"{path}: not a character library (no 'characters' entry)")
+        if entry not in self.source.set:
+            raise ValueError(f"{path}: not a character library (no 'characters' entry)")
         self.data = json.loads(self.source.read(entry))
         self.id = self.data.get("library") or self.manifest.get("id", "")
         self._rigs = {}
@@ -411,11 +489,13 @@ class CharacterLibrary:
         clipRig rest position of the bone with the same name (zero without one), runtime coordinates (CharacterMotion.RestOffsets)."""
         row, clip_rig = self.profiles[profile], self.data["clipRig"]
         index = {}
-        for i, bone in enumerate(clip_rig["bones"]): index.setdefault(bone, i)
+        for i, bone in enumerate(clip_rig["bones"]):
+            index.setdefault(bone, i)
         bind, other = np.asarray(row["bind"], dtype=np.float64), np.asarray(clip_rig["bind"], dtype=np.float64)
         offsets = np.zeros((len(row["bones"]), 3))
         for i, bone in enumerate(row["bones"]):
-            if bone in index: offsets[i] = bind[i, :3] - other[index[bone], :3]
+            if bone in index:
+                offsets[i] = bind[i, :3] - other[index[bone], :3]
         return offsets
 
 
@@ -450,13 +530,22 @@ def split_model(data, hair):
     rig = Rig(glb)
     kinds = primitive_kinds(glb, rig, hair)
     materials = glb.list("materials")
-    hair_materials = sorted({materials[glb.list("meshes")[m]["primitives"][p]["material"]].get("name", "") for (m, p), kind in kinds.items()
-                             if kind == "hair" and "material" in glb.list("meshes")[m]["primitives"][p]})
+    hair_materials = sorted(
+        {
+            materials[glb.list("meshes")[m]["primitives"][p]["material"]].get("name", "")
+            for (m, p), kind in kinds.items()
+            if kind == "hair" and "material" in glb.list("meshes")[m]["primitives"][p]
+        }
+    )
     attachment = None
     if any(kind == "attachment" for kind in kinds.values()):
         attachment = keep_primitives(data, lambda m, p: kinds[m, p] == "attachment")
-    return {"body": keep_primitives(data, lambda m, p: kinds[m, p] != "attachment"), "attachment": attachment,
-            "hairMaterials": hair_materials, "kinds": kinds}
+    return {
+        "body": keep_primitives(data, lambda m, p: kinds[m, p] != "attachment"),
+        "attachment": attachment,
+        "hairMaterials": hair_materials,
+        "kinds": kinds,
+    }
 
 
 # Clips.
@@ -464,14 +553,17 @@ def clip_items(catalog, band, role):
     """(clip ID, label, duration, frame count) of every library clip of a role, sorted by label. The label is the GH3
     clip name for the start clips of band.json, else the first action group of the clip (catalog.json groups)."""
     member = (catalog or {}).get("members", {}).get(role)
-    if not member: return []
+    if not member:
+        return []
     names = {}
     for item in (band or {}).get("members", []):
         if item["role"] == role:
-            for name in item.get("clips", []): names[f"{gh3_key(name):08x}"] = name
+            for name in item.get("clips", []):
+                names[f"{gh3_key(name):08x}"] = name
     groups = {}
     for group, clips in member.get("groups", {}).items():
-        for clip in clips: groups.setdefault(clip, group)
+        for clip in clips:
+            groups.setdefault(clip, group)
     items = []
     for clip, info in member.get("clips", {}).items():
         label = names.get(clip) or (f"{groups[clip]} ({clip})" if clip in groups else clip)
@@ -486,7 +578,8 @@ def clip_local_poses(decoded, rig, role=None, offsets=None):
     offsets: the position offsets of a character library profile (CharacterLibrary.clip_offsets), added to the
     position tracks."""
     header, positions, rotations = decoded
-    if header["bones"] != len(rig.names): raise ValueError(f"the clip has {header['bones']} bones, the rig {len(rig.names)}")
+    if header["bones"] != len(rig.names):
+        raise ValueError(f"the clip has {header['bones']} bones, the rig {len(rig.names)}")
     frames = header["frames"]
     # Clips and the game use Unity runtime coordinates: glTF negates z of positions and x, y of rotations (PACKAGE-FORMAT 5).
     flip_t, flip_q = np.array([1, 1, -1]), np.array([-1, -1, 1, 1])
@@ -495,10 +588,13 @@ def clip_local_poses(decoded, rig, role=None, offsets=None):
     translations = np.repeat(bind_t[None], frames, 0)
     quaternions = np.repeat(bind_q[None], frames, 0)
     for track, (bone, mask) in enumerate(header["tracks"]):
-        if mask & 1: translations[:, bone] = positions[:, track] + (offsets[bone] if offsets is not None else 0)
-        if mask & 2: quaternions[:, bone] = rotations[:, track]
+        if mask & 1:
+            translations[:, bone] = positions[:, track] + (offsets[bone] if offsets is not None else 0)
+        if mask & 2:
+            quaternions[:, bone] = rotations[:, track]
     target = IK_TARGETS.get(role)
-    if target: GuitarRig(rig, target).apply(translations, quaternions)
+    if target:
+        GuitarRig(rig, target).apply(translations, quaternions)
     return translations * flip_t, quaternions * flip_q
 
 
@@ -507,21 +603,35 @@ def clip_local_poses(decoded, rig, role=None, offsets=None):
 IK_TARGETS = {"guitarist": "Bone_IK_Hand_Guitar", "bassist": "Bone_IK_Hand_Guitar", "drummer": "Bone_IK_Hand_Slave"}
 COS_ARM, COS_LEG = (-0.97, 0.97), (-0.98999995, 0.97)
 TWIST_CONSTRAINTS = (
-    (4, "Bone_Twist_Wrist_L", "Bone_Palm_L", 0.5), (4, "Bone_Twist_Wrist_R", "Bone_Palm_R", 0.5),
-    (3, "Bone_Twist_Bicep_Mid_R", "Bone_Bicep_R", 0.5), (3, "Bone_Twist_Bicep_Mid_L", "Bone_Bicep_L", 0.5),
-    (3, "Bone_Twist_Bicep_Top_R", "Bone_Bicep_R", 1), (3, "Bone_Twist_Bicep_Top_L", "Bone_Bicep_L", 1),
-    (3, "Bone_Twist_Thigh_R", "Bone_Thigh_R", 0.5), (3, "Bone_Twist_Thigh_L", "Bone_Thigh_L", 0.5),
-    (1, "Bone_Split_Knee_R", "Bone_Knee_R", 0.5), (1, "Bone_Split_Knee_L", "Bone_Knee_L", 0.5),
-    (2, "Bone_Split_Ass_R", "Bone_Twist_Thigh_R", 0.5), (2, "Bone_Split_Ass_L", "Bone_Twist_Thigh_L", 0.5),
-    (1, "Bone_Split_Elbow_R", "Bone_Forearm_R", 0.5), (1, "Bone_Split_Elbow_L", "Bone_Forearm_L", 0.5),
+    (4, "Bone_Twist_Wrist_L", "Bone_Palm_L", 0.5),
+    (4, "Bone_Twist_Wrist_R", "Bone_Palm_R", 0.5),
+    (3, "Bone_Twist_Bicep_Mid_R", "Bone_Bicep_R", 0.5),
+    (3, "Bone_Twist_Bicep_Mid_L", "Bone_Bicep_L", 0.5),
+    (3, "Bone_Twist_Bicep_Top_R", "Bone_Bicep_R", 1),
+    (3, "Bone_Twist_Bicep_Top_L", "Bone_Bicep_L", 1),
+    (3, "Bone_Twist_Thigh_R", "Bone_Thigh_R", 0.5),
+    (3, "Bone_Twist_Thigh_L", "Bone_Thigh_L", 0.5),
+    (1, "Bone_Split_Knee_R", "Bone_Knee_R", 0.5),
+    (1, "Bone_Split_Knee_L", "Bone_Knee_L", 0.5),
+    (2, "Bone_Split_Ass_R", "Bone_Twist_Thigh_R", 0.5),
+    (2, "Bone_Split_Ass_L", "Bone_Twist_Thigh_L", 0.5),
+    (1, "Bone_Split_Elbow_R", "Bone_Forearm_R", 0.5),
+    (1, "Bone_Split_Elbow_L", "Bone_Forearm_L", 0.5),
 )
 
 
 def qmul(a, b):
     ax, ay, az, aw = np.moveaxis(a, -1, 0)
     bx, by, bz, bw = np.moveaxis(b, -1, 0)
-    return np.stack([aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx,
-                     aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz], -1)
+    return np.stack(
+        [
+            aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw,
+            aw * bw - ax * bx - ay * by - az * bz,
+        ],
+        -1,
+    )
 
 
 def qconj(q):
@@ -556,9 +666,12 @@ def normalized(v):
 def roll(q, axis):
     """GH3 keeps one Euler angle of a ZYX decomposition and rebuilds a rotation about that axis only."""
     x, y, z, w = np.moveaxis(q, -1, 0)
-    if axis == 0: angle = np.arctan2(2 * (y * z + w * x), w * w - x * x - y * y + z * z)
-    elif axis == 1: angle = np.arcsin(np.clip(-2 * (x * z - y * w), -1, 1))
-    else: angle = np.arctan2(2 * (x * y + z * w), w * w + x * x - y * y - z * z)
+    if axis == 0:
+        angle = np.arctan2(2 * (y * z + w * x), w * w - x * x - y * y + z * z)
+    elif axis == 1:
+        angle = np.arcsin(np.clip(-2 * (x * z - y * w), -1, 1))
+    else:
+        angle = np.arctan2(2 * (x * y + z * w), w * w + x * x - y * y - z * z)
     result = np.zeros(q.shape)
     result[..., axis] = np.sin(angle / 2)
     result[..., 3] = np.cos(angle / 2)
@@ -577,22 +690,60 @@ class GuitarRig:
     def __init__(self, rig, hand_target):
         index = {name.removeprefix("bone-").lower(): i for i, name in enumerate(rig.names)}
 
-        def bone(name): return index.get(f"{gh3_key(name):08x}", -1)
+        def bone(name):
+            return index.get(f"{gh3_key(name):08x}", -1)
 
         self.parents = rig.parents
         self.bind_q = matrix_quaternions(rig.local[:, :3, :3]) * [-1, -1, 1, 1]
         hinge_arm, hinge_leg = np.array([0, 0, -1.0]), np.array([0, 0, 1.0])
-        chains = [(bone("Bone_Bicep_R"), bone("Bone_Forearm_R"), bone("Bone_Palm_R"), bone(hand_target + "_R"), hinge_arm, COS_ARM),
-                  (bone("Bone_Bicep_L"), bone("Bone_Forearm_L"), bone("Bone_Palm_L"), bone(hand_target + "_L"), hinge_arm, COS_ARM),
-                  (bone("Bone_Thigh_L"), bone("Bone_Knee_L"), bone("Bone_Ankle_L"), bone("Bone_IK_Foot_Slave_L"), hinge_leg, COS_LEG),
-                  (bone("Bone_Thigh_R"), bone("Bone_Knee_R"), bone("Bone_Ankle_R"), bone("Bone_IK_Foot_Slave_R"), hinge_leg, COS_LEG)]
-        self.chains = [c for c in chains if min(c[:4]) >= 0 and self.parents[c[1]] == c[0] and self.parents[c[2]] == c[1]]
-        self.constraints = [(kind, bone(a), bone(b), amount) for kind, a, b, amount in TWIST_CONSTRAINTS if bone(a) >= 0 and bone(b) >= 0]
+        chains = [
+            (
+                bone("Bone_Bicep_R"),
+                bone("Bone_Forearm_R"),
+                bone("Bone_Palm_R"),
+                bone(hand_target + "_R"),
+                hinge_arm,
+                COS_ARM,
+            ),
+            (
+                bone("Bone_Bicep_L"),
+                bone("Bone_Forearm_L"),
+                bone("Bone_Palm_L"),
+                bone(hand_target + "_L"),
+                hinge_arm,
+                COS_ARM,
+            ),
+            (
+                bone("Bone_Thigh_L"),
+                bone("Bone_Knee_L"),
+                bone("Bone_Ankle_L"),
+                bone("Bone_IK_Foot_Slave_L"),
+                hinge_leg,
+                COS_LEG,
+            ),
+            (
+                bone("Bone_Thigh_R"),
+                bone("Bone_Knee_R"),
+                bone("Bone_Ankle_R"),
+                bone("Bone_IK_Foot_Slave_R"),
+                hinge_leg,
+                COS_LEG,
+            ),
+        ]
+        self.chains = [
+            c for c in chains if min(c[:4]) >= 0 and self.parents[c[1]] == c[0] and self.parents[c[2]] == c[1]
+        ]
+        self.constraints = [
+            (kind, bone(a), bone(b), amount)
+            for kind, a, b, amount in TWIST_CONSTRAINTS
+            if bone(a) >= 0 and bone(b) >= 0
+        ]
         self.order = sorted(range(len(self.parents)), key=self.depth)
 
     def depth(self, joint):
         depth = 0
-        while self.parents[joint] >= 0: joint, depth = self.parents[joint], depth + 1
+        while self.parents[joint] >= 0:
+            joint, depth = self.parents[joint], depth + 1
         return depth
 
     def apply(self, translations, quaternions):
@@ -600,9 +751,12 @@ class GuitarRig:
         self.t, self.q = translations, quaternions
         self.position = np.zeros_like(translations)
         self.rotation = np.zeros_like(quaternions)
-        for joint in self.order: self.model(joint)
-        for chain in self.chains: self.solve(*chain)
-        for constraint in self.constraints: self.constrain(*constraint)
+        for joint in self.order:
+            self.model(joint)
+        for chain in self.chains:
+            self.solve(*chain)
+        for constraint in self.constraints:
+            self.constrain(*constraint)
 
     def model(self, joint):
         parent = self.parents[joint]
@@ -623,7 +777,9 @@ class GuitarRig:
         upper, lower = np.linalg.norm(a - b, axis=-1), np.linalg.norm(b - c, axis=-1)
         frames = (upper >= 1e-5) & (lower >= 1e-5)
         reach = np.sum((a - goal) ** 2, -1)
-        cosine = np.maximum(np.minimum((reach - upper ** 2 - lower ** 2) / np.where(frames, -2 * upper * lower, 1), limits[1]), limits[0])
+        cosine = np.maximum(
+            np.minimum((reach - upper**2 - lower**2) / np.where(frames, -2 * upper * lower, 1), limits[1]), limits[0]
+        )
         current = np.arccos(np.clip(np.sum(normalized(a - b) * normalized(c - b), -1), -1, 1))
         axis = normalized(qrotate(self.rotation[:, second], np.broadcast_to(hinge, a.shape)))
         half = (np.arccos(cosine) - current) / 2
@@ -661,10 +817,16 @@ class GuitarRig:
             driven = roll(qmul(source, qconj(gh3_quaternion(np.broadcast_to(self.bind_q[target], source.shape)))), 0)
         else:
             axis = self.t[:, target] * [1, 1, -1]
-            choice = np.where((axis[:, 0] >= axis[:, 1]) & (axis[:, 0] >= axis[:, 2]), 0, np.where((axis[:, 1] >= axis[:, 0]) & (axis[:, 1] >= axis[:, 2]), 1, 2))
+            choice = np.where(
+                (axis[:, 0] >= axis[:, 1]) & (axis[:, 0] >= axis[:, 2]),
+                0,
+                np.where((axis[:, 1] >= axis[:, 0]) & (axis[:, 1] >= axis[:, 2]), 1, 2),
+            )
             driven = np.choose(choice[:, None], [roll(source, 0), roll(source, 1), roll(source, 2)])
         identity = np.broadcast_to([0, 0, 0, 1.0], driven.shape)
-        result = qmul(np.broadcast_to(gh3_quaternion(self.bind_q[joint]), driven.shape), qslerp(identity, driven, amount))
+        result = qmul(
+            np.broadcast_to(gh3_quaternion(self.bind_q[joint]), driven.shape), qslerp(identity, driven, amount)
+        )
         self.q[:, joint] = qnormalize(gh3_quaternion(result))
 
 
@@ -675,7 +837,12 @@ def matrix_quaternions(matrices):
     m = m.reshape(-1, 3, 3)
     q = np.empty((len(m), 4))
     trace = m[:, 0, 0] + m[:, 1, 1] + m[:, 2, 2]
-    cases = [trace > 0, (m[:, 0, 0] >= m[:, 1, 1]) & (m[:, 0, 0] >= m[:, 2, 2]), m[:, 1, 1] >= m[:, 2, 2], np.ones(len(m), bool)]
+    cases = [
+        trace > 0,
+        (m[:, 0, 0] >= m[:, 1, 1]) & (m[:, 0, 0] >= m[:, 2, 2]),
+        m[:, 1, 1] >= m[:, 2, 2],
+        np.ones(len(m), bool),
+    ]
     done = np.zeros(len(m), bool)
     for case, select in enumerate(cases):
         rows = select & ~done
@@ -683,9 +850,13 @@ def matrix_quaternions(matrices):
         r = m[rows]
         if case == 0:
             s = np.sqrt(trace[rows] + 1) * 2
-            q[rows] = np.stack([(r[:, 2, 1] - r[:, 1, 2]) / s, (r[:, 0, 2] - r[:, 2, 0]) / s, (r[:, 1, 0] - r[:, 0, 1]) / s, s / 4], -1)
+            q[rows] = np.stack(
+                [(r[:, 2, 1] - r[:, 1, 2]) / s, (r[:, 0, 2] - r[:, 2, 0]) / s, (r[:, 1, 0] - r[:, 0, 1]) / s, s / 4], -1
+            )
             continue
-        i = case - 1; j = (i + 1) % 3; k = (i + 2) % 3
+        i = case - 1
+        j = (i + 1) % 3
+        k = (i + 2) % 3
         s = np.sqrt(np.maximum(0, 1 + r[:, i, i] - r[:, j, j] - r[:, k, k])) * 2
         values = np.empty((len(r), 4))
         values[:, i] = s / 4
@@ -700,9 +871,14 @@ def matrix_quaternions(matrices):
 def quaternion_matrices(q):
     """3x3 rotation matrices of quaternions [..., 4] ([x, y, z, w])."""
     x, y, z, w = (q[..., i] for i in range(4))
-    return np.stack([np.stack([1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)], -1),
-                     np.stack([2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)], -1),
-                     np.stack([2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)], -1)], -2)
+    return np.stack(
+        [
+            np.stack([1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)], -1),
+            np.stack([2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)], -1),
+            np.stack([2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)], -1),
+        ],
+        -2,
+    )
 
 
 def world_poses(rig, translations, quaternions):
@@ -735,15 +911,23 @@ def limit_weights(weights, limit=MAX_INFLUENCES):
 # character.json.
 def character_json(profile, hair_materials=(), instrument="", library=LIBRARY_ID, animations=""):
     value = {"version": 1, "library": library or LIBRARY_ID, "profile": profile}
-    if animations: value["animations"] = animations
-    if hair_materials: value["hairMaterials"] = list(hair_materials)
-    if instrument: value["attachments"] = {"instrument": instrument}
+    if animations:
+        value["animations"] = animations
+    if hair_materials:
+        value["hairMaterials"] = list(hair_materials)
+    if instrument:
+        value["attachments"] = {"instrument": instrument}
     return value
 
 
 def open_character_json(value):
-    return {"profile": value.get("profile", ""), "library": value.get("library", LIBRARY_ID), "animations": value.get("animations", ""),
-            "hairMaterials": list(value.get("hairMaterials", [])), "instrument": value.get("attachments", {}).get("instrument", "")}
+    return {
+        "profile": value.get("profile", ""),
+        "library": value.get("library", LIBRARY_ID),
+        "animations": value.get("animations", ""),
+        "hairMaterials": list(value.get("hairMaterials", [])),
+        "instrument": value.get("attachments", {}).get("instrument", ""),
+    }
 
 
 def package_format(library=LIBRARY_ID):
@@ -756,7 +940,8 @@ def complete_requirements(description, library=LIBRARY_ID):
     requires = description.setdefault("requires", [])
     needed = [LIBRARY_ID] + ([library] if library and library != LIBRARY_ID else [])
     for package in needed:
-        if not any(row.get("id") == package for row in requires): requires.append({"id": package, "version": decisions.LIBRARY_VERSION})
+        if not any(row.get("id") == package for row in requires):
+            requires.append({"id": package, "version": decisions.LIBRARY_VERSION})
     return description
 
 
@@ -767,12 +952,23 @@ def member_files(library, role):
     hair = hair_joints(library.json("band/hair.json"), role)
     parts = split_model(library.model(role), hair)
     member = library.member(role)
-    files = {MODEL_FILE: parts["body"], CHARACTER_FILE: container.json_bytes(character_json(ROLE_PROFILES[role], parts["hairMaterials"]))}
-    manifest = {"format": FORMAT, "id": f"gh3.{role}", "version": decisions.PACKAGE_VERSION,
-                "name": f"GH3 {role} ({member.get('model', role)})", "authors": [{"name": "Neversoft", "role": "original character"}],
-                "license": decisions.GH3_LICENSE, "permissions": dict(decisions.GH3_PERMISSIONS), "credits": [decisions.CONVERTER_CREDIT],
-                "requires": [{"id": LIBRARY_ID, "version": decisions.LIBRARY_VERSION}],
-                "entry": {"model": MODEL_FILE, "character": CHARACTER_FILE}, "files": {}}
+    files = {
+        MODEL_FILE: parts["body"],
+        CHARACTER_FILE: container.json_bytes(character_json(ROLE_PROFILES[role], parts["hairMaterials"])),
+    }
+    manifest = {
+        "format": FORMAT,
+        "id": f"gh3.{role}",
+        "version": decisions.PACKAGE_VERSION,
+        "name": f"GH3 {role} ({member.get('model', role)})",
+        "authors": [{"name": "Neversoft", "role": "original character"}],
+        "license": decisions.GH3_LICENSE,
+        "permissions": dict(decisions.GH3_PERMISSIONS),
+        "credits": [decisions.CONVERTER_CREDIT],
+        "requires": [{"id": LIBRARY_ID, "version": decisions.LIBRARY_VERSION}],
+        "entry": {"model": MODEL_FILE, "character": CHARACTER_FILE},
+        "files": {},
+    }
     return manifest, files
 
 
@@ -781,7 +977,8 @@ def write_member(library, role, output):
     manifest, files = member_files(library, role)
     folder = Path(output) / "unpacked" / f"gh3.{role}.chchar"
     folder.mkdir(parents=True, exist_ok=True)
-    for name, data in files.items(): (folder / name).write_bytes(data)
+    for name, data in files.items():
+        (folder / name).write_bytes(data)
     manifest["files"] = container.file_list(folder, files)
     (folder / "manifest.json").write_bytes(container.json_bytes(manifest))
     target = Path(output) / f"gh3.{role}.chchar"
@@ -790,7 +987,9 @@ def write_member(library, role, output):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog="python -m pipeline.package.character", description="Write library band members as character packages.")
+    parser = argparse.ArgumentParser(
+        prog="python -m pipeline.package.character", description="Write library band members as character packages."
+    )
     parser.add_argument("--library", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--role", action="append", choices=sorted(ROLE_PROFILES))

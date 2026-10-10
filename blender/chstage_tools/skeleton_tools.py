@@ -24,24 +24,58 @@ from .vendor.package_format import character, humanoid as humanoid_finder, q48, 
 
 CATEGORY = "CH Character"
 # Blender world (Z up) to runtime (glTF with z negated): (x, y, z) -> (x, z, y). A reflection; it is its own inverse.
-A = np.array([[1., 0, 0], [0, 0, 1], [0, 1, 0]])
+A = np.array([[1.0, 0, 0], [0, 0, 1], [0, 1, 0]])
 FACE_PROPS = {slot: f"face_{slot}" for slot in skeleton.FACE_SLOTS}
 PRESET_FORMAT = "chstage-humanoid-map/1"
 SURE, CHECK = 0.8, 0.5
 # Roles in the order of the map editor: the trunk, then each arm with its fingers, then each leg.
-ORDER = (("hips", "spine", "chest", "upperChest", "neck", "head", "jaw", "leftEye", "rightEye")
-         + tuple(f"{side}{part}" for side in ("left", "right") for part in
-                 ("Shoulder", "UpperArm", "UpperArmTwist", "LowerArm", "LowerArmTwist", "Hand",
-                  "ThumbMetacarpal", "ThumbProximal", "ThumbDistal", "IndexProximal", "IndexIntermediate", "IndexDistal",
-                  "MiddleProximal", "MiddleIntermediate", "MiddleDistal", "RingProximal", "RingIntermediate", "RingDistal",
-                  "LittleProximal", "LittleIntermediate", "LittleDistal"))
-         + tuple(f"{side}{part}" for side in ("left", "right") for part in ("UpperLeg", "LowerLeg", "Foot", "Toes")))
+ORDER = (
+    ("hips", "spine", "chest", "upperChest", "neck", "head", "jaw", "leftEye", "rightEye")
+    + tuple(
+        f"{side}{part}"
+        for side in ("left", "right")
+        for part in (
+            "Shoulder",
+            "UpperArm",
+            "UpperArmTwist",
+            "LowerArm",
+            "LowerArmTwist",
+            "Hand",
+            "ThumbMetacarpal",
+            "ThumbProximal",
+            "ThumbDistal",
+            "IndexProximal",
+            "IndexIntermediate",
+            "IndexDistal",
+            "MiddleProximal",
+            "MiddleIntermediate",
+            "MiddleDistal",
+            "RingProximal",
+            "RingIntermediate",
+            "RingDistal",
+            "LittleProximal",
+            "LittleIntermediate",
+            "LittleDistal",
+        )
+    )
+    + tuple(f"{side}{part}" for side in ("left", "right") for part in ("UpperLeg", "LowerLeg", "Foot", "Toes"))
+)
 # The clips that Check Clips plays (label parts, in order): idle, a stance change, solo, jump, kick, intro, walk.
-CHECK_CLIPS = ("stance_a/idle/good/slow", "stance_a/transitions", "stance_b/idle", "stance_a/solo", "stance_a/jump", "stance_a/kick",
-               "intro", "cycle_anim", "idle")
+CHECK_CLIPS = (
+    "stance_a/idle/good/slow",
+    "stance_a/transitions",
+    "stance_b/idle",
+    "stance_a/solo",
+    "stance_a/jump",
+    "stance_a/kick",
+    "intro",
+    "cycle_anim",
+    "idle",
+)
 
 
-def props(scene): return character_tools.props(scene)
+def props(scene):
+    return character_tools.props(scene)
 
 
 def own(scene):
@@ -57,7 +91,8 @@ def exported_bones(rig):
     parents = []
     for bone in bones:
         parent = bone.parent
-        while parent is not None and parent.name not in index: parent = parent.parent
+        while parent is not None and parent.name not in index:
+            parent = parent.parent
         parents.append(index[parent.name] if parent is not None else -1)
     return bones, names, parents
 
@@ -69,7 +104,9 @@ def rest_rows(rig):
     world = np.tile(np.eye(4), (len(bones), 1, 1))
     world[:, :3, :3] = A @ rest[:, :3, :3] @ A
     world[:, :3, 3] = rest[:, :3, 3] @ A.T
-    local = np.array([world[i] if p < 0 else np.linalg.inv(world[p]) @ world[i] for i, p in enumerate(parents)]).reshape(-1, 4, 4)
+    local = np.array(
+        [world[i] if p < 0 else np.linalg.inv(world[p]) @ world[i] for i, p in enumerate(parents)]
+    ).reshape(-1, 4, 4)
     rotation = local[:, :3, :3] / np.linalg.norm(local[:, :3, :3], axis=1, keepdims=True)
     bind = np.concatenate([local[:, :3, 3], character.matrix_quaternions(rotation)], -1)
     return names, parents, bind, rest
@@ -77,8 +114,13 @@ def rest_rows(rig):
 
 def model_meshes(scene, rig):
     """The meshes of a model: skinned to the armature (Armature modifier) or children of it."""
-    return [o for o in scene.objects if o.type == "MESH" and not character_tools.is_helper(o)
-            and (o.parent == rig or any(m.type == "ARMATURE" and m.object == rig for m in o.modifiers))]
+    return [
+        o
+        for o in scene.objects
+        if o.type == "MESH"
+        and not character_tools.is_helper(o)
+        and (o.parent == rig or any(m.type == "ARMATURE" and m.object == rig for m in o.modifiers))
+    ]
 
 
 def weight_counts(meshes):
@@ -96,7 +138,11 @@ def weight_counts(meshes):
 
 def weighted_bones(scene):
     rig = props(scene).rig
-    return {name for name in weight_counts(character_tools.character_meshes(scene)) if rig is not None and name in rig.data.bones}
+    return {
+        name
+        for name in weight_counts(character_tools.character_meshes(scene))
+        if rig is not None and name in rig.data.bones
+    }
 
 
 def mesh_points(meshes, limit=4000):
@@ -104,14 +150,17 @@ def mesh_points(meshes, limit=4000):
     parts = []
     for obj in meshes:
         count = len(obj.data.vertices)
-        if not count: continue
+        if not count:
+            continue
         co = np.empty(count * 3)
         obj.data.vertices.foreach_get("co", co)
         world = np.array(obj.matrix_world)
         parts.append(co.reshape(-1, 3) @ world[:3, :3].T + world[:3, 3])
-    if not parts: return np.zeros((0, 3))
+    if not parts:
+        return np.zeros((0, 3))
     points = np.concatenate(parts)
-    if len(points) > limit: points = points[np.random.default_rng(7).choice(len(points), limit, replace=False)]
+    if len(points) > limit:
+        points = points[np.random.default_rng(7).choice(len(points), limit, replace=False)]
     return points
 
 
@@ -128,7 +177,8 @@ def mmd_follower_rows(rig):
     rows = []
     for pose_bone in rig.pose.bones:
         mmd = getattr(pose_bone, "mmd_bone", None)
-        if mmd is None or not getattr(mmd, "has_additional_rotation", False) or not mmd.additional_transform_bone: continue
+        if mmd is None or not getattr(mmd, "has_additional_rotation", False) or not mmd.additional_transform_bone:
+            continue
         rows.append((pose_bone.name, mmd.additional_transform_bone, float(mmd.additional_transform_influence)))
     return rows
 
@@ -136,18 +186,21 @@ def mmd_follower_rows(rig):
 def vrm_map(rig):
     """The humanoid map of the VRM Add-on for Blender (VRM 1.0 or 0.x), when the armature has one."""
     extension = getattr(rig.data, "vrm_addon_extension", None)
-    if extension is None: return {}
+    if extension is None:
+        return {}
     result = {}
     try:
         for role, bone in extension.vrm1.humanoid.human_bones.items():
             name = getattr(bone, "node", None) and bone.node.bone_name
-            if name: result[role] = name
+            if name:
+                result[role] = name
     except AttributeError:
         pass
     if not result:
         try:
             for human in extension.vrm0.humanoid.human_bones:
-                if human.node.bone_name: result[human.bone] = human.node.bone_name
+                if human.node.bone_name:
+                    result[human.bone] = human.node.bone_name
         except AttributeError:
             pass
     renames = {"leftThumbIntermediate": "leftThumbProximal", "rightThumbIntermediate": "rightThumbProximal"}
@@ -204,7 +257,8 @@ def _apply(rig, meshes, matrix):
     _refresh_pose(rig)
     for obj in meshes:
         obj.data.transform(matrix, shape_keys=True)
-        if matrix.determinant() < 0 and hasattr(obj.data, "flip_normals"): obj.data.flip_normals()
+        if matrix.determinant() < 0 and hasattr(obj.data, "flip_normals"):
+            obj.data.flip_normals()
         obj.data.update()
 
 
@@ -212,13 +266,15 @@ def rigid_parts(scene, rig):
     """Meshes that follow one bone (bone parent, no weights) become skinned to that bone. Returns their names."""
     made = []
     for obj in scene.objects:
-        if obj.type != "MESH" or obj.parent != rig or obj.parent_type != "BONE" or not obj.parent_bone: continue
+        if obj.type != "MESH" or obj.parent != rig or obj.parent_type != "BONE" or not obj.parent_bone:
+            continue
         bone, world = obj.parent_bone, obj.matrix_world.copy()
         obj.parent = None
         obj.matrix_world = world
         group = obj.vertex_groups.get(bone) or obj.vertex_groups.new(name=bone)
         group.add(list(range(len(obj.data.vertices))), 1.0, "REPLACE")
-        if not any(m.type == "ARMATURE" and m.object == rig for m in obj.modifiers): obj.modifiers.new("Armature", "ARMATURE").object = rig
+        if not any(m.type == "ARMATURE" and m.object == rig for m in obj.modifiers):
+            obj.modifiers.new("Armature", "ARMATURE").object = rig
         obj.parent = rig
         obj.matrix_world = world
         made.append(obj.name)
@@ -229,7 +285,8 @@ def _bake_transforms(scene, rig):
     """The armature and its meshes without object transforms (the look stays). Returns the meshes."""
     meshes = model_meshes(scene, rig)
     for obj in meshes:
-        if obj.data.users > 1: obj.data = obj.data.copy()
+        if obj.data.users > 1:
+            obj.data = obj.data.copy()
     worlds = {obj: obj.matrix_world.copy() for obj in meshes}
     rig_world = rig.matrix_world.copy()
     rig.parent = None
@@ -240,7 +297,8 @@ def _bake_transforms(scene, rig):
     for obj in meshes:
         if not _identity(worlds[obj]):
             obj.data.transform(worlds[obj], shape_keys=True)
-            if worlds[obj].determinant() < 0 and hasattr(obj.data, "flip_normals"): obj.data.flip_normals()
+            if worlds[obj].determinant() < 0 and hasattr(obj.data, "flip_normals"):
+                obj.data.flip_normals()
         obj.parent = rig
         obj.parent_type = "OBJECT"
         obj.matrix_parent_inverse = Matrix.Identity(4)
@@ -253,7 +311,8 @@ def join_armatures(scene, main, others):
     armatures move so that their shared bones meet the bones of the main armature (the mean offset); their other
     bones and their meshes go to the main armature. Returns (bones added, shared bone names)."""
     view_layer = scene.view_layers[0]
-    if bpy.context.object is not None and bpy.context.object.mode != "OBJECT": bpy.ops.object.mode_set(mode="OBJECT")
+    if bpy.context.object is not None and bpy.context.object.mode != "OBJECT":
+        bpy.ops.object.mode_set(mode="OBJECT")
     rows, shared_all = [], set()
     for rig in [main] + list(others):
         for pose_bone in rig.pose.bones:
@@ -264,13 +323,28 @@ def join_armatures(scene, main, others):
     added = 0
     for other in others:
         shared = [b.name for b in other.data.bones if b.name in main.data.bones]
-        if not shared: raise ValueError(f"'{other.name}' has no bone with the name of a bone of '{main.name}': rename one shared bone (for example the neck)")
-        offset = np.mean([np.array(main.data.bones[n].head_local) - np.array(other.data.bones[n].head_local) for n in shared], axis=0)
+        if not shared:
+            raise ValueError(
+                f"'{other.name}' has no bone with the name of a bone of '{main.name}': rename one shared bone (for example the neck)"
+            )
+        offset = np.mean(
+            [np.array(main.data.bones[n].head_local) - np.array(other.data.bones[n].head_local) for n in shared], axis=0
+        )
         move = Matrix.Translation(offset.tolist())
         meshes = model_meshes(scene, other)
         _apply(other, meshes, move)
-        rows = [(b.name, tuple(b.head_local), tuple(b.tail_local), b.parent.name if b.parent else None, b.use_deform,
-                 np.array(b.matrix_local)) for b in other.data.bones if b.name not in main.data.bones]
+        rows = [
+            (
+                b.name,
+                tuple(b.head_local),
+                tuple(b.tail_local),
+                b.parent.name if b.parent else None,
+                b.use_deform,
+                np.array(b.matrix_local),
+            )
+            for b in other.data.bones
+            if b.name not in main.data.bones
+        ]
         view_layer.objects.active = main
         main.select_set(True)
         bpy.ops.object.mode_set(mode="EDIT")
@@ -281,11 +355,13 @@ def join_armatures(scene, main, others):
             bone.head, bone.tail = head, tail
             bone.use_deform = deform
         for name, _, _, parent, _, _ in rows:
-            if parent is not None and parent in edit: edit[name].parent = edit[parent]
+            if parent is not None and parent in edit:
+                edit[name].parent = edit[parent]
         bpy.ops.object.mode_set(mode="OBJECT")
         for obj in meshes:
             for modifier in obj.modifiers:
-                if modifier.type == "ARMATURE" and modifier.object == other: modifier.object = main
+                if modifier.type == "ARMATURE" and modifier.object == other:
+                    modifier.object = main
             obj.parent = main
             obj.matrix_parent_inverse = Matrix.Identity(4)
             obj.matrix_basis = Matrix.Identity(4)
@@ -315,19 +391,26 @@ def deform_parents(rig):
         ancestor = bone.parent
         while ancestor is not None and not ancestor.use_deform:
             head, tail = np.array(ancestor.head_local), np.array(ancestor.tail_local)
-            twins = [d for d in deform if d.name not in below and _on_segment(np.array(d.head_local), head, tail, 0.003 * size)
-                     and _on_segment(np.array(d.tail_local), head, tail, 0.003 * size)]
+            twins = [
+                d
+                for d in deform
+                if d.name not in below
+                and _on_segment(np.array(d.head_local), head, tail, 0.003 * size)
+                and _on_segment(np.array(d.tail_local), head, tail, 0.003 * size)
+            ]
             if twins:
                 plans[bone.name] = min(twins, key=lambda d: np.linalg.norm(np.array(d.tail_local) - tail)).name
                 break
             ancestor = ancestor.parent
-    if not plans: return []
+    if not plans:
+        return []
     view_layer = bpy.context.view_layer
     active = view_layer.objects.active
     view_layer.objects.active = rig
     bpy.ops.object.mode_set(mode="EDIT")
     edit = rig.data.edit_bones
-    for name, parent in plans.items(): edit[name].parent = edit[parent]
+    for name, parent in plans.items():
+        edit[name].parent = edit[parent]
     bpy.ops.object.mode_set(mode="OBJECT")
     view_layer.objects.active = active
     return sorted(plans)
@@ -335,11 +418,15 @@ def deform_parents(rig):
 
 def model_scale(height, target=0.0):
     """The scale that gives a model of this height a plausible height in metres (target: the height to use)."""
-    if height <= 0: return 1.0
-    if target > 0: return target / height
-    if 0.5 <= height <= 3.0: return 1.0
+    if height <= 0:
+        return 1.0
+    if target > 0:
+        return target / height
+    if 0.5 <= height <= 3.0:
+        return 1.0
     for factor in (100.0, 0.01, 10.0, 0.1, 1000.0, 0.001):
-        if 1.0 <= height * factor <= 2.2: return factor
+        if 1.0 <= height * factor <= 2.2:
+            return factor
     return 1.7 / height
 
 
@@ -350,47 +437,72 @@ def prepare(scene, rig, mirror="AUTO", height=0.0):
     in metres (height: the height to use, 0: find the unit). Returns (text of each change, the humanoid found)."""
     changes = []
     view_layer = scene.view_layers[0]
-    if bpy.context.object is not None and bpy.context.object.mode != "OBJECT": bpy.ops.object.mode_set(mode="OBJECT")
-    for name in rigid_parts(scene, rig): changes.append(f"'{name}' followed one bone: it is now skinned to that bone")
+    if bpy.context.object is not None and bpy.context.object.mode != "OBJECT":
+        bpy.ops.object.mode_set(mode="OBJECT")
+    for name in rigid_parts(scene, rig):
+        changes.append(f"'{name}' followed one bone: it is now skinned to that bone")
     view_layer.update()
-    if rig.parent is not None: changes.append(f"the armature is no longer a child of '{rig.parent.name}'")
-    if rig.animation_data is not None and rig.animation_data.action is not None: rig.animation_data.action = None
+    if rig.parent is not None:
+        changes.append(f"the armature is no longer a child of '{rig.parent.name}'")
+    if rig.animation_data is not None and rig.animation_data.action is not None:
+        rig.animation_data.action = None
     for pose_bone in rig.pose.bones:
         pose_bone.location, pose_bone.scale = (0, 0, 0), (1, 1, 1)
         pose_bone.rotation_quaternion, pose_bone.rotation_euler = (1, 0, 0, 0), (0, 0, 0)
     moved = not _identity(rig.matrix_world) or any(not _identity(o.matrix_world) for o in model_meshes(scene, rig))
     meshes = _bake_transforms(scene, rig)
-    if moved: changes.append("the object transforms (location, rotation, scale) are now in the bones and the meshes")
+    if moved:
+        changes.append("the object transforms (location, rotation, scale) are now in the bones and the meshes")
     repaired = deform_parents(rig)
-    if repaired: changes.append(f"{len(repaired)} deform bones had a control bone as parent (for example '{repaired[0]}'): "
-                                "they now have the deform bone at its place, so the exported skeleton is one tree")
+    if repaired:
+        changes.append(
+            f"{len(repaired)} deform bones had a control bone as parent (for example '{repaired[0]}'): "
+            "they now have the deform bone at its place, so the exported skeleton is one tree"
+        )
     view_layer.update()
     found = find(scene, rig, meshes)
     frame = found["frame"]
-    if frame is None: return changes, found
+    if frame is None:
+        return changes, found
     left, forward, up = (np.array(frame[k]) for k in ("left", "forward", "up"))
     turn = np.array([[1.0, 0, 0], [0, -1.0, 0], [0, 0, 1.0]]) @ np.array([left, forward, up])
     if np.abs(turn - np.eye(3)).max() > 1e-6:
-        changes.append("the model now stands on +Z and looks toward -Y (" + _axis_text(up) + " was up, " + _axis_text(forward) + " was the front)")
+        changes.append(
+            "the model now stands on +Z and looks toward -Y ("
+            + _axis_text(up)
+            + " was up, "
+            + _axis_text(forward)
+            + " was the front)"
+        )
     flip = found["mirrored"] if mirror == "AUTO" else mirror == "ON"
     if flip:
         turn = np.diag([-1.0, 1, 1]) @ turn
         changes.append("the model was mirrored (its 'left' bones were on its right side): it is mirrored back")
     points = mesh_points(meshes, 20000) @ turn.T
     # Quantiles: a small part far away (a prop at the origin of its file) does not change the height.
-    low, top = (np.quantile(points[:, 2], [0.002, 0.998]) if len(points) > 50 else (points[:, 2].min(), points[:, 2].max())) if len(points) else (0.0, frame["height"])
+    low, top = (
+        (np.quantile(points[:, 2], [0.002, 0.998]) if len(points) > 50 else (points[:, 2].min(), points[:, 2].max()))
+        if len(points)
+        else (0.0, frame["height"])
+    )
     tall = float(top - low)
     scale = model_scale(tall, height)
-    if abs(scale - 1) > 1e-4: changes.append(f"the model was {tall:.3g} units tall: it is now {tall * scale:.2f} m tall")
+    if abs(scale - 1) > 1e-4:
+        changes.append(f"the model was {tall:.3g} units tall: it is now {tall * scale:.2f} m tall")
     matrix = np.eye(4)
     matrix[:3, :3] = turn * scale
     hips = found["roles"].get("hips")
-    centre = (np.array(rig.matrix_world @ rig.data.bones[found["names"][hips]].head_local) @ turn.T * scale) if hips is not None else np.zeros(3)
+    centre = (
+        (np.array(rig.matrix_world @ rig.data.bones[found["names"][hips]].head_local) @ turn.T * scale)
+        if hips is not None
+        else np.zeros(3)
+    )
     floor = float(low) * scale
     matrix[:3, 3] = [-centre[0], -centre[1], -floor]
     if np.abs(matrix[:3, 3]).max() > 1e-3 * max(tall * scale, 1e-3):
         changes.append("the feet are on the floor and the hips above the origin")
-    if not _identity(matrix): _apply(rig, meshes, matrix)
+    if not _identity(matrix):
+        _apply(rig, meshes, matrix)
     view_layer.update()
     return changes, find(scene, rig, meshes)
 
@@ -417,11 +529,18 @@ def auto_map(scene):
     rows = skeleton.mmd_followers(mmd_follower_rows(rig), names, mapping)
     bones, _, parents = exported_bones(rig)
     counts = weight_counts(model_meshes(scene, rig))
-    rows += humanoid_finder.helper_followers(names, parents, [tuple(rig.matrix_world @ b.head_local) for b in bones],
-                                             [counts.get(n, 0) for n in names], mapping, {r["bone"] for r in rows})
+    rows += humanoid_finder.helper_followers(
+        names,
+        parents,
+        [tuple(rig.matrix_world @ b.head_local) for b in bones],
+        [counts.get(n, 0) for n in names],
+        mapping,
+        {r["bone"] for r in rows},
+    )
     p.followers = json.dumps(rows, ensure_ascii=False)
     face_map = skeleton.auto_face(shape_key_names(scene))
-    for slot, prop in FACE_PROPS.items(): setattr(p, prop, face_map.get(slot, ""))
+    for slot, prop in FACE_PROPS.items():
+        setattr(p, prop, face_map.get(slot, ""))
     p.map_notes = json.dumps(found["notes"], ensure_ascii=False)
     p.checks.clear()
     p.checked = False
@@ -433,8 +552,10 @@ def use_skeleton(scene, armature, prepare_model=True, mirror="AUTO", height=None
     """The armature of the model becomes the character's rig (own skeleton): Set Up Skeleton prepares the model and
     maps the roles. Returns the map."""
     p = props(scene)
-    if armature is None or armature.type != "ARMATURE": raise ValueError("select the armature of the model")
-    if p.source_rig is not None and armature == p.source_rig: raise ValueError("select the armature of the model, not the GH3 rig")
+    if armature is None or armature.type != "ARMATURE":
+        raise ValueError("select the armature of the model")
+    if p.source_rig is not None and armature == p.source_rig:
+        raise ValueError("select the armature of the model, not the GH3 rig")
     p.own_skeleton = True
     p.rig = armature
     changes = []
@@ -467,10 +588,13 @@ def face(scene):
 def instrument_row(scene):
     p = props(scene)
     row = {}
-    if p.instrument_bone: row["bone"] = p.instrument_bone
+    if p.instrument_bone:
+        row["bone"] = p.instrument_bone
     offset = np.array(p.instrument_offset)
-    if np.abs(offset).max() > 1e-6: row["offset"] = [round(float(v), 5) for v in A @ offset]
-    if p.instrument_scale >= 0.5: row["scale"] = round(float(p.instrument_scale), 4)
+    if np.abs(offset).max() > 1e-6:
+        row["offset"] = [round(float(v), 5) for v in A @ offset]
+    if p.instrument_scale >= 0.5:
+        row["scale"] = round(float(p.instrument_scale), 4)
     return row or None
 
 
@@ -478,9 +602,11 @@ def skeleton_rows(scene):
     """character.json skeleton and face."""
     row = {"humanoid": humanoid(scene)}
     rows = followers(scene)
-    if rows: row["followers"] = rows
+    if rows:
+        row["followers"] = rows
     instrument = instrument_row(scene)
-    if instrument: row["instrument"] = instrument
+    if instrument:
+        row["instrument"] = instrument
     return row, face(scene)
 
 
@@ -489,7 +615,8 @@ SIDE_WORDS = (("Left", "Right"), ("left", "right"), ("LEFT", "RIGHT"), ("左", "
 
 
 def _side_pattern(word):
-    if len(word) == 1 and word.isascii(): return rf"(?:(?<=[._\- :])|^){word}(?=$|[._\- 0-9])"
+    if len(word) == 1 and word.isascii():
+        return rf"(?:(?<=[._\- :])|^){word}(?=$|[._\- 0-9])"
     return re.escape(word)
 
 
@@ -498,19 +625,22 @@ def mirror_name(name, names):
     for a, b in SIDE_WORDS:
         for x, y in ((a, b), (b, a)):
             other = re.sub(_side_pattern(x), y, name)
-            if other != name and other in names: return other
+            if other != name and other in names:
+                return other
     return None
 
 
 def mirror_bone(rig, name, names):
     """The bone of the other side: by name, else the deform bone at the mirrored place (x to -x) within 2 cm."""
     by_name = mirror_name(name, names)
-    if by_name is not None: return by_name
+    if by_name is not None:
+        return by_name
     head = np.array(rig.data.bones[name].head_local) * [-1, 1, 1]
     best, distance = None, 0.02
     for other in names:
         d = float(np.linalg.norm(np.array(rig.data.bones[other].head_local) - head))
-        if d < distance and other != name: best, distance = other, d
+        if d < distance and other != name:
+            best, distance = other, d
     return best
 
 
@@ -522,10 +652,12 @@ def mirror_roles(scene, source="left"):
     rows = {row.role: row for row in p.roles}
     count = 0
     for role, row in rows.items():
-        if not role.startswith(source) or not row.bone: continue
+        if not role.startswith(source) or not row.bone:
+            continue
         other = mirror_bone(p.rig, row.bone, names)
-        mirrored = rows.get(target + role[len(source):])
-        if other is None or mirrored is None: continue
+        mirrored = rows.get(target + role[len(source) :])
+        if other is None or mirrored is None:
+            continue
         mirrored.bone, mirrored.confidence = other, row.confidence
         count += 1
     return count
@@ -534,7 +666,8 @@ def mirror_roles(scene, source="left"):
 def save_preset(scene, path):
     data = {"format": PRESET_FORMAT, "roles": humanoid(scene), "followers": followers(scene), "face": face(scene)}
     instrument = instrument_row(scene)
-    if instrument: data["instrument"] = instrument
+    if instrument:
+        data["instrument"] = instrument
     with open(path, "w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False, indent=1)
 
@@ -544,7 +677,8 @@ def load_preset(scene, path):
     p = props(scene)
     with open(path, encoding="utf-8") as file:
         data = json.load(file)
-    if data.get("format") != PRESET_FORMAT: raise ValueError("the file is not a humanoid map preset")
+    if data.get("format") != PRESET_FORMAT:
+        raise ValueError("the file is not a humanoid map preset")
     _, names, _ = exported_bones(p.rig)
     rows = {row.role: row for row in p.roles} if p.roles else {}
     if not rows:
@@ -552,12 +686,20 @@ def load_preset(scene, path):
         rows = {row.role: row for row in p.roles}
     done, missing = 0, []
     for role, bone in data.get("roles", {}).items():
-        if role not in rows: continue
-        if bone in names: rows[role].bone, rows[role].confidence = bone, 1.0; done += 1
-        else: missing.append(role)
-    if "followers" in data: p.followers = json.dumps([r for r in data["followers"] if r["bone"] in names and r["source"] in names], ensure_ascii=False)
+        if role not in rows:
+            continue
+        if bone in names:
+            rows[role].bone, rows[role].confidence = bone, 1.0
+            done += 1
+        else:
+            missing.append(role)
+    if "followers" in data:
+        p.followers = json.dumps(
+            [r for r in data["followers"] if r["bone"] in names and r["source"] in names], ensure_ascii=False
+        )
     for slot, name in data.get("face", {}).items():
-        if slot in FACE_PROPS: setattr(p, FACE_PROPS[slot], name)
+        if slot in FACE_PROPS:
+            setattr(p, FACE_PROPS[slot], name)
     return done, missing
 
 
@@ -566,27 +708,42 @@ def check(scene, issues):
     p = props(scene)
     rig = p.rig
     names, parents, bind, _ = rest_rows(rig)
-    if len(names) > 255: issues.error(f"the armature has {len(names)} deform bones (limit 255): turn off Deform on helper bones", rig.name)
+    if len(names) > 255:
+        issues.error(
+            f"the armature has {len(names)} deform bones (limit 255): turn off Deform on helper bones", rig.name
+        )
     mapping = humanoid(scene)
     missing = [r for r in skeleton.REQUIRED if r not in mapping]
     if missing:
-        issues.error(f"the humanoid map has no bone for {', '.join(missing)}: in Skeleton, select the role, select the bone in the viewport, "
-                     "and click Assign Active Bone (or click Set Up Skeleton)", rig.name)
+        issues.error(
+            f"the humanoid map has no bone for {', '.join(missing)}: in Skeleton, select the role, select the bone in the viewport, "
+            "and click Assign Active Bone (or click Set Up Skeleton)",
+            rig.name,
+        )
     errors, warnings, _ = skeleton.check_map(names, parents, bind, mapping, followers(scene), instrument_row(scene))
     for message in errors:
-        if "needs the roles" in message: continue
-        if "upright" in message or "swapped" in message or "toes are behind" in message: message += ": click Set Up Skeleton to turn the model"
-        if "must be a parent" in message: message += ": one of the two roles is on the wrong bone, or the bone has the wrong parent (Edit Mode)"
+        if "needs the roles" in message:
+            continue
+        if "upright" in message or "swapped" in message or "toes are behind" in message:
+            message += ": click Set Up Skeleton to turn the model"
+        if "must be a parent" in message:
+            message += ": one of the two roles is on the wrong bone, or the bone has the wrong parent (Edit Mode)"
         issues.error(message, rig.name)
-    for message in warnings: issues.warn(message, rig.name)
+    for message in warnings:
+        issues.warn(message, rig.name)
     for row in p.roles:
         if row.bone and row.confidence < CHECK and row.role in skeleton.REQUIRED:
-            issues.warn(f"{row.role}: the automatic map is not sure of '{row.bone}': check it in Skeleton (Show Map), then click Assign Active Bone", rig.name)
+            issues.warn(
+                f"{row.role}: the automatic map is not sure of '{row.bone}': check it in Skeleton (Show Map), then click Assign Active Bone",
+                rig.name,
+            )
     keys = set(shape_key_names(scene))
     for slot, name in face(scene).items():
-        if name not in keys: issues.error(f"face {slot}: no character mesh has the shape key '{name}'", rig.name)
+        if name not in keys:
+            issues.error(f"face {slot}: no character mesh has the shape key '{name}'", rig.name)
     for item in p.checks:
-        if item.severity == "ERROR": issues.warn(f"Check Clips: {item.message}. {item.fix}", rig.name)
+        if item.severity == "ERROR":
+            issues.warn(f"Check Clips: {item.message}. {item.fix}", rig.name)
 
 
 # Clip preview.
@@ -603,11 +760,17 @@ def _basis(rig, names, world_rt):
     for bone in sorted(rig.data.bones, key=lambda b: len(b.parent_recursive)):
         rest = np.array(bone.matrix_local)
         parent = bone.parent
-        if bone.name in exported: matrices[bone.name] = world[:, exported[bone.name]]
-        elif parent is None: matrices[bone.name] = np.broadcast_to(rest, (frames, 4, 4))
-        else: matrices[bone.name] = matrices[parent.name] @ np.linalg.inv(np.array(parent.matrix_local)) @ rest
-        if bone.name not in exported: continue
-        relative = np.array(parent.matrix_local) @ np.linalg.inv(matrices[parent.name]) if parent is not None else np.eye(4)
+        if bone.name in exported:
+            matrices[bone.name] = world[:, exported[bone.name]]
+        elif parent is None:
+            matrices[bone.name] = np.broadcast_to(rest, (frames, 4, 4))
+        else:
+            matrices[bone.name] = matrices[parent.name] @ np.linalg.inv(np.array(parent.matrix_local)) @ rest
+        if bone.name not in exported:
+            continue
+        relative = (
+            np.array(parent.matrix_local) @ np.linalg.inv(matrices[parent.name]) if parent is not None else np.eye(4)
+        )
         basis[:, exported[bone.name]] = np.linalg.inv(rest) @ relative @ matrices[bone.name]
     rotation = basis[..., :3, :3] / np.linalg.norm(basis[..., :3, :3], axis=-2, keepdims=True)
     q = np.roll(character.matrix_quaternions(rotation), 1, axis=-1)
@@ -632,11 +795,13 @@ def mute_constraints(rig):
 
 
 def restore_constraints(rig):
-    if rig is None or MUTED not in rig: return
+    if rig is None or MUTED not in rig:
+        return
     for bone, name in json.loads(rig[MUTED]):
         pose_bone = rig.pose.bones.get(bone)
         constraint = pose_bone.constraints.get(name) if pose_bone is not None else None
-        if constraint is not None: constraint.mute = False
+        if constraint is not None:
+            constraint.mute = False
     del rig[MUTED]
 
 
@@ -673,7 +838,8 @@ def fit_source_rig(scene):
     library, not this object. Returns the scale."""
     p = props(scene)
     source = p.source_rig
-    if source is None: return 1.0
+    if source is None:
+        return 1.0
     scale = 1.0
     if p.rig is not None and all(r in humanoid(scene) for r in ("leftUpperLeg", "rightUpperLeg")):
         try:
@@ -690,18 +856,37 @@ def retarget_for(scene):
     p = props(scene)
     role = character_tools.role_of(p.profile)
     clib, profile = character_tools.library_profile(scene)
-    rig_data = clib.rig(profile) if clib is not None else character_tools.profile_rig(character_tools.library(character_tools.library_path(scene)), role)
-    source_bind = np.concatenate([rig_data.local[:, :3, 3] * [1, 1, -1],
-                                  character.matrix_quaternions(rig_data.local[:, :3, :3]) * [-1, -1, 1, 1]], -1)
+    rig_data = (
+        clib.rig(profile)
+        if clib is not None
+        else character_tools.profile_rig(character_tools.library(character_tools.library_path(scene)), role)
+    )
+    source_bind = np.concatenate(
+        [
+            rig_data.local[:, :3, 3] * [1, 1, -1],
+            character.matrix_quaternions(rig_data.local[:, :3, :3]) * [-1, -1, 1, 1],
+        ],
+        -1,
+    )
     sources = [name.removeprefix("bone-") for name in rig_data.names]
     names, parents, bind, rest = rest_rows(p.rig)
     index = {name: i for i, name in enumerate(names)}
     rows = followers(scene)
     instrument = instrument_row(scene) or {}
-    retarget = skeleton.Retarget(sources, rig_data.parents, source_bind, names, parents, bind,
-                                 {role2: index[bone] for role2, bone in humanoid(scene).items() if bone in index},
-                                 [(index[r["bone"]], index[r["source"]], r["weight"]) for r in rows],
-                                 index.get(instrument.get("bone", ""), -1), instrument.get("offset", (0, 0, 0)), role, instrument.get("scale", 0.0))
+    retarget = skeleton.Retarget(
+        sources,
+        rig_data.parents,
+        source_bind,
+        names,
+        parents,
+        bind,
+        {role2: index[bone] for role2, bone in humanoid(scene).items() if bone in index},
+        [(index[r["bone"]], index[r["source"]], r["weight"]) for r in rows],
+        index.get(instrument.get("bone", ""), -1),
+        instrument.get("offset", (0, 0, 0)),
+        role,
+        instrument.get("scale", 0.0),
+    )
     return retarget, rig_data, (names, parents, bind, rest)
 
 
@@ -722,7 +907,8 @@ def source_poses(scene, clip, rig_data):
 def _display_attachments(retarget, out_t, scale):
     """The GH3 local translations for the GH3 rig helper at an object scale: the retarget puts the instrument (or the
     microphone) at the model, so its root moves by 1 / scale to stay at the same place in the scene."""
-    if abs(scale - 1.0) < 1e-9 or not retarget.attachments: return out_t
+    if abs(scale - 1.0) < 1e-9 or not retarget.attachments:
+        return out_t
     display = out_t.copy()
     for root, _ in retarget.attachments:
         parent = retarget.source_parents[root]
@@ -747,9 +933,11 @@ def clip_action(scene, clip):
     target_t, target_q, out_t, out_q = retarget.apply(source_t, source_q, *retarget.arm_gains(source_t, source_q))
     scale = fit_source_rig(scene)
     name = f"{profile or role} clip {clip} (retargeted)"
-    for action in character_tools.clip_actions(): bpy.data.actions.remove(action)
+    for action in character_tools.clip_actions():
+        bpy.data.actions.remove(action)
     for obj, label in ((p.rig, name), (p.source_rig, f"{name} GH3")):
-        if obj is None: continue
+        if obj is None:
+            continue
         obj.animation_data_create()
         action = bpy.data.actions.new(label)
         action[character_tools.PREVIEW] = label
@@ -761,18 +949,19 @@ def clip_action(scene, clip):
             _keys(action, obj, names, locations, rotations, frames)
         else:
             display_t = _display_attachments(retarget, out_t, scale)
-            locations, rotations = character_tools.clip_basis(obj, rig_data, display_t * [1, 1, -1], out_q * [-1, -1, 1, 1])
+            locations, rotations = character_tools.clip_basis(
+                obj, rig_data, display_t * [1, 1, -1], out_q * [-1, -1, 1, 1]
+            )
             _keys(action, obj, rig_data.names, locations, rotations, frames)
             # The instrument takes the size of the character (the arm length ratio), as in the game.
             for root, mode in retarget.attachments:
-                if mode == "chest": obj.pose.bones[rig_data.names[root]].scale = (retarget.instrument_scale / scale,) * 3
+                if mode == "chest":
+                    obj.pose.bones[rig_data.names[root]].scale = (retarget.instrument_scale / scale,) * 3
     scene.render.fps, scene.render.fps_base = character_tools.CLIP_FPS, 1.0
     scene.frame_start, scene.frame_end = 0, max(1, frames - 1)
     scene.frame_set(0)
     p.clip = clip
     return p.rig.animation_data.action
-
-
 
 
 # Check Clips.
@@ -782,12 +971,18 @@ def check_clip_ids(scene, limit=6):
     p = props(scene)
     chosen = []
     for part in CHECK_CLIPS:
-        hit = next((c for c in p.clips if part in c.label and c.frames > 2 and c.clip not in [x[0] for x in chosen]), None)
-        if hit is not None: chosen.append((hit.clip, hit.label))
-        if len(chosen) >= limit: break
+        hit = next(
+            (c for c in p.clips if part in c.label and c.frames > 2 and c.clip not in [x[0] for x in chosen]), None
+        )
+        if hit is not None:
+            chosen.append((hit.clip, hit.label))
+        if len(chosen) >= limit:
+            break
     for c in p.clips:
-        if len(chosen) >= limit: break
-        if c.frames > 2 and c.clip not in [x[0] for x in chosen]: chosen.append((c.clip, c.label))
+        if len(chosen) >= limit:
+            break
+        if c.frames > 2 and c.clip not in [x[0] for x in chosen]:
+            chosen.append((c.clip, c.label))
     return chosen
 
 
@@ -799,7 +994,8 @@ def mesh_sample(scene, names, edges_limit=12000):
     for obj in character_tools.character_meshes(scene):
         mesh = obj.data
         count = len(mesh.vertices)
-        if not count: continue
+        if not count:
+            continue
         co = np.empty(count * 3)
         mesh.vertices.foreach_get("co", co)
         world = np.array(obj.matrix_world)
@@ -807,8 +1003,12 @@ def mesh_sample(scene, names, edges_limit=12000):
         groups = {g.index: index.get(g.name, -1) for g in obj.vertex_groups}
         j, w = np.zeros((count, 4), int), np.zeros((count, 4))
         for vertex in mesh.vertices:
-            rows = sorted(((e.weight, groups.get(e.group, -1)) for e in vertex.groups if groups.get(e.group, -1) >= 0), reverse=True)[:4]
-            for k, (weight, bone) in enumerate(rows): j[vertex.index, k], w[vertex.index, k] = bone, weight
+            rows = sorted(
+                ((e.weight, groups.get(e.group, -1)) for e in vertex.groups if groups.get(e.group, -1) >= 0),
+                reverse=True,
+            )[:4]
+            for k, (weight, bone) in enumerate(rows):
+                j[vertex.index, k], w[vertex.index, k] = bone, weight
         total = w.sum(1, keepdims=True)
         w = np.where(total > 0, w / np.maximum(total, 1e-9), 0)
         joints.append(j)
@@ -817,12 +1017,19 @@ def mesh_sample(scene, names, edges_limit=12000):
         mesh.edges.foreach_get("vertices", pairs)
         edges.append(pairs.reshape(-1, 2) + offset)
         offset += count
-    if not positions: return None
+    if not positions:
+        return None
     edges = np.concatenate(edges)
-    if len(edges) > edges_limit: edges = edges[np.random.default_rng(3).choice(len(edges), edges_limit, replace=False)]
+    if len(edges) > edges_limit:
+        edges = edges[np.random.default_rng(3).choice(len(edges), edges_limit, replace=False)]
     weights = np.concatenate(weights)
     edges = edges[(weights[edges[:, 0]].sum(1) > 0) & (weights[edges[:, 1]].sum(1) > 0)]
-    return {"positions": np.concatenate(positions), "joints": np.concatenate(joints), "weights": weights, "edges": edges}
+    return {
+        "positions": np.concatenate(positions),
+        "joints": np.concatenate(joints),
+        "weights": weights,
+        "edges": edges,
+    }
 
 
 def run_checks(scene, limit=6, mesh=True):
@@ -840,7 +1047,14 @@ def run_checks(scene, limit=6, mesh=True):
     p.checks.clear()
     for f in findings:
         item = p.checks.add()
-        item.severity, item.kind, item.role, item.clip, item.message, item.fix = f["severity"], f["kind"], f["role"], f["clip"], f["message"], f["fix"]
+        item.severity, item.kind, item.role, item.clip, item.message, item.fix = (
+            f["severity"],
+            f["kind"],
+            f["role"],
+            f["clip"],
+            f["message"],
+            f["fix"],
+        )
     p.checked = True
     return findings
 
@@ -854,33 +1068,50 @@ def _links(mapping):
     has = lambda r: r in mapping
     for role in mapping:
         following = skeleton.next_role(role, has)
-        if following is not None and following in mapping: yield role, following
+        if following is not None and following in mapping:
+            yield role, following
     for side in ("left", "right"):
-        for a, b in (("Hand", "ThumbMetacarpal"), ("Hand", "ThumbProximal"), ("Hand", "IndexProximal"), ("Hand", "RingProximal"),
-                     ("Hand", "LittleProximal"), ("hips", "UpperLeg"), ("chest", "Shoulder"), ("upperChest", "Shoulder")):
+        for a, b in (
+            ("Hand", "ThumbMetacarpal"),
+            ("Hand", "ThumbProximal"),
+            ("Hand", "IndexProximal"),
+            ("Hand", "RingProximal"),
+            ("Hand", "LittleProximal"),
+            ("hips", "UpperLeg"),
+            ("chest", "Shoulder"),
+            ("upperChest", "Shoulder"),
+        ):
             first = a if a in ("hips", "chest", "upperChest") else side + a
-            if first in mapping and side + b in mapping: yield first, side + b
+            if first in mapping and side + b in mapping:
+                yield first, side + b
 
 
 def _draw_map():
     import gpu
     from gpu_extras.batch import batch_for_shader
+
     scene = bpy.context.scene
-    if scene is None or not getattr(scene, "chstage", None) or not own(scene): return
+    if scene is None or not getattr(scene, "chstage", None) or not own(scene):
+        return
     p = props(scene)
-    if not p.show_map or p.rig is None or p.rig.name not in scene.objects: return
+    if not p.show_map or p.rig is None or p.rig.name not in scene.objects:
+        return
     rig = p.rig
     rows = {row.role: row for row in p.roles if row.bone and row.bone in rig.pose.bones}
     mapping = {role: row.bone for role, row in rows.items()}
     groups = {key: [] for key in COLORS}
     points = {key: [] for key in COLORS}
 
-    def key(c): return "sure" if c >= SURE else "check" if c >= CHECK else "low"
+    def key(c):
+        return "sure" if c >= SURE else "check" if c >= CHECK else "low"
 
     world = rig.matrix_world
     for a, b in _links(mapping):
         c = min(rows[a].confidence, rows[b].confidence)
-        groups[key(c)] += [tuple(world @ rig.pose.bones[mapping[a]].head), tuple(world @ rig.pose.bones[mapping[b]].head)]
+        groups[key(c)] += [
+            tuple(world @ rig.pose.bones[mapping[a]].head),
+            tuple(world @ rig.pose.bones[mapping[b]].head),
+        ]
     for role, row in rows.items():
         points[key(row.confidence)].append(tuple(world @ rig.pose.bones[row.bone].head))
     shader = gpu.shader.from_builtin("UNIFORM_COLOR")
@@ -889,8 +1120,10 @@ def _draw_map():
     gpu.state.point_size_set(8.0)
     for name, color in COLORS.items():
         shader.uniform_float("color", color)
-        if groups[name]: batch_for_shader(shader, "LINES", {"pos": groups[name]}).draw(shader)
-        if points[name]: batch_for_shader(shader, "POINTS", {"pos": points[name]}).draw(shader)
+        if groups[name]:
+            batch_for_shader(shader, "LINES", {"pos": groups[name]}).draw(shader)
+        if points[name]:
+            batch_for_shader(shader, "POINTS", {"pos": points[name]}).draw(shader)
     gpu.state.line_width_set(1.0)
     gpu.state.point_size_set(1.0)
 
@@ -904,13 +1137,18 @@ def _draw_source():
     Pose and Edit Mode only). The lines follow the visibility of the rig, of its bone collections, and of the Bones overlay."""
     import gpu
     from gpu_extras.batch import batch_for_shader
+
     context = bpy.context
     scene = context.scene
-    if scene is None or not getattr(scene, "chstage", None) or not own(scene): return
+    if scene is None or not getattr(scene, "chstage", None) or not own(scene):
+        return
     source = props(scene).source_rig
     overlay_settings = getattr(context.space_data, "overlay", None)
-    if source is None or source.name not in scene.objects or not source.visible_get(): return
-    if overlay_settings is not None and not (overlay_settings.show_overlays and overlay_settings.show_bones): return
+    if source is None or source.name not in scene.objects or not source.visible_get():
+        return
+    if overlay_settings is not None and not (overlay_settings.show_overlays and overlay_settings.show_bones):
+        return
+
     def shown(bone):
         groups = getattr(bone.bone, "collections", None)
         return not bone.bone.hide and not (groups is not None and len(groups) and not any(g.is_visible for g in groups))
@@ -919,11 +1157,15 @@ def _draw_source():
     world = source.matrix_world
     lines = []
     for bone in source.pose.bones:
-        if not shown(bone): continue
+        if not shown(bone):
+            continue
         parent = bone.parent
-        while parent is not None and not shown(parent): parent = parent.parent
-        if parent is not None: lines += [tuple(world @ parent.head), tuple(world @ bone.head)]
-    if not lines: return
+        while parent is not None and not shown(parent):
+            parent = parent.parent
+        if parent is not None:
+            lines += [tuple(world @ parent.head), tuple(world @ bone.head)]
+    if not lines:
+        return
     shader = gpu.shader.from_builtin("UNIFORM_COLOR")
     gpu.state.depth_test_set("NONE")
     gpu.state.line_width_set(5.0)
@@ -935,16 +1177,23 @@ def _draw_source():
 def _draw_labels():
     import blf
     from bpy_extras.view3d_utils import location_3d_to_region_2d
+
     context = bpy.context
     scene = context.scene
-    if scene is None or not getattr(scene, "chstage", None) or not own(scene): return
+    if scene is None or not getattr(scene, "chstage", None) or not own(scene):
+        return
     p = props(scene)
-    if not p.show_map or p.rig is None or p.rig.name not in scene.objects: return
+    if not p.show_map or p.rig is None or p.rig.name not in scene.objects:
+        return
     selected = p.roles[p.roles_index].role if 0 <= p.roles_index < len(p.roles) else ""
     for row in p.roles:
-        if not row.bone or row.bone not in p.rig.pose.bones or (row.confidence >= SURE and row.role != selected): continue
-        place = location_3d_to_region_2d(context.region, context.region_data, p.rig.matrix_world @ p.rig.pose.bones[row.bone].head)
-        if place is None: continue
+        if not row.bone or row.bone not in p.rig.pose.bones or (row.confidence >= SURE and row.role != selected):
+            continue
+        place = location_3d_to_region_2d(
+            context.region, context.region_data, p.rig.matrix_world @ p.rig.pose.bones[row.bone].head
+        )
+        if place is None:
+            continue
         color = COLORS["sure" if row.confidence >= SURE else "check" if row.confidence >= CHECK else "low"]
         blf.color(0, *color)
         blf.size(0, 13)
@@ -956,36 +1205,57 @@ def overlay(on):
     """Turn the map overlay on or off (all 3D views)."""
     global _overlay
     if on and not _overlay and not bpy.app.background:
-        _overlay = [bpy.types.SpaceView3D.draw_handler_add(_draw_map, (), "WINDOW", "POST_VIEW"),
-                    bpy.types.SpaceView3D.draw_handler_add(_draw_labels, (), "WINDOW", "POST_PIXEL")]
+        _overlay = [
+            bpy.types.SpaceView3D.draw_handler_add(_draw_map, (), "WINDOW", "POST_VIEW"),
+            bpy.types.SpaceView3D.draw_handler_add(_draw_labels, (), "WINDOW", "POST_PIXEL"),
+        ]
     elif not on and _overlay:
-        for handle in _overlay: bpy.types.SpaceView3D.draw_handler_remove(handle, "WINDOW")
+        for handle in _overlay:
+            bpy.types.SpaceView3D.draw_handler_remove(handle, "WINDOW")
         _overlay = []
     for window in getattr(bpy.context.window_manager, "windows", []):
         for area in window.screen.areas:
-            if area.type == "VIEW_3D": area.tag_redraw()
+            if area.type == "VIEW_3D":
+                area.tag_redraw()
 
 
 # Operators and panel.
 def _active_bone(context, rig):
-    if context.mode == "EDIT_ARMATURE" and rig.data.edit_bones.active is not None: return rig.data.edit_bones.active.name
+    if context.mode == "EDIT_ARMATURE" and rig.data.edit_bones.active is not None:
+        return rig.data.edit_bones.active.name
     return rig.data.bones.active.name if rig.data.bones.active is not None else None
 
 
 class CHSTAGE_OT_use_skeleton(Operator):
     """Set up the selected armature (the skeleton of your model) for the character: apply the transforms, turn the model to stand on +Z and look toward -Y, mirror a mirrored export back, put the feet on the floor, fix the unit, and find the humanoid roles from the bones (any names). The game retargets the GH3 clips to it"""
+
     bl_idname = "chstage.use_skeleton"
     bl_label = "Set Up Skeleton"
     bl_options = {"REGISTER", "UNDO"}
 
-    prepare_model: BoolProperty(name="Prepare the model", default=True,
-                                description="Apply the transforms, turn the model, put the feet on the floor, and fix the unit. Off: only find the roles")
-    mirror: EnumProperty(name="Mirror", default="AUTO", items=[("AUTO", "Auto", "Mirror when the bone names say left where the body is right"),
-                                                               ("ON", "Mirror", "Mirror the model in X"), ("OFF", "Do not mirror", "")])
+    prepare_model: BoolProperty(
+        name="Prepare the model",
+        default=True,
+        description="Apply the transforms, turn the model, put the feet on the floor, and fix the unit. Off: only find the roles",
+    )
+    mirror: EnumProperty(
+        name="Mirror",
+        default="AUTO",
+        items=[
+            ("AUTO", "Auto", "Mirror when the bone names say left where the body is right"),
+            ("ON", "Mirror", "Mirror the model in X"),
+            ("OFF", "Do not mirror", ""),
+        ],
+    )
 
     @classmethod
     def poll(cls, context):
-        return context.scene is not None and props(context.scene).enabled and context.object is not None and context.object.type == "ARMATURE"
+        return (
+            context.scene is not None
+            and props(context.scene).enabled
+            and context.object is not None
+            and context.object.type == "ARMATURE"
+        )
 
     def execute(self, context):
         try:
@@ -996,8 +1266,10 @@ class CHSTAGE_OT_use_skeleton(Operator):
         missing = [r for r in skeleton.REQUIRED if r not in mapping]
         unsure = [row.role for row in props(context.scene).roles if row.bone and row.confidence < SURE]
         text = f"Mapped {len(mapping)} roles"
-        if missing: text += f"; not found: {', '.join(missing)}"
-        if unsure: text += f"; check: {', '.join(unsure[:6])}"
+        if missing:
+            text += f"; not found: {', '.join(missing)}"
+        if unsure:
+            text += f"; check: {', '.join(unsure[:6])}"
         self.report({"WARNING" if missing else "INFO"}, text)
         props(context.scene).show_map = True
         return {"FINISHED"}
@@ -1005,14 +1277,20 @@ class CHSTAGE_OT_use_skeleton(Operator):
 
 class CHSTAGE_OT_join_armatures(Operator):
     """Join the selected armatures into the active one (a body and a head that were exported apart): bones with the same name are one bone, and the other armatures move so that these bones meet"""
+
     bl_idname = "chstage.join_armatures"
     bl_label = "Join Armatures"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
     def poll(cls, context):
-        return (context.scene is not None and props(context.scene).enabled and context.object is not None and context.object.type == "ARMATURE"
-                and sum(1 for o in context.selected_objects if o.type == "ARMATURE") > 1)
+        return (
+            context.scene is not None
+            and props(context.scene).enabled
+            and context.object is not None
+            and context.object.type == "ARMATURE"
+            and sum(1 for o in context.selected_objects if o.type == "ARMATURE") > 1
+        )
 
     def execute(self, context):
         others = [o for o in context.selected_objects if o.type == "ARMATURE" and o != context.object]
@@ -1027,6 +1305,7 @@ class CHSTAGE_OT_join_armatures(Operator):
 
 class CHSTAGE_OT_auto_map(Operator):
     """Find the humanoid roles again from the bones (the model stays as it is), and the followers and face shape keys"""
+
     bl_idname = "chstage.auto_map"
     bl_label = "Auto Map"
     bl_options = {"REGISTER", "UNDO"}
@@ -1043,15 +1322,24 @@ class CHSTAGE_OT_auto_map(Operator):
 
 class CHSTAGE_OT_role_edit(Operator):
     """Edit the selected role of the humanoid map"""
+
     bl_idname = "chstage.role_edit"
     bl_label = "Edit Role"
     bl_options = {"REGISTER", "UNDO", "INTERNAL"}
 
-    action: EnumProperty(items=[("ASSIGN", "Assign Active Bone", "Give the selected role to the active bone (click the bone in Pose Mode or Edit Mode)"),
-                                ("SELECT", "Select Bone", "Make the bone of the selected role the active bone"),
-                                ("CLEAR", "Clear", "The selected role has no bone"),
-                                ("LEFT", "Mirror Left to Right", "Give the right roles the bones on the other side of the left roles"),
-                                ("RIGHT", "Mirror Right to Left", "Give the left roles the bones on the other side of the right roles")])
+    action: EnumProperty(
+        items=[
+            (
+                "ASSIGN",
+                "Assign Active Bone",
+                "Give the selected role to the active bone (click the bone in Pose Mode or Edit Mode)",
+            ),
+            ("SELECT", "Select Bone", "Make the bone of the selected role the active bone"),
+            ("CLEAR", "Clear", "The selected role has no bone"),
+            ("LEFT", "Mirror Left to Right", "Give the right roles the bones on the other side of the left roles"),
+            ("RIGHT", "Mirror Right to Left", "Give the left roles the bones on the other side of the right roles"),
+        ]
+    )
 
     @classmethod
     def poll(cls, context):
@@ -1072,27 +1360,35 @@ class CHSTAGE_OT_role_edit(Operator):
         if self.action == "CLEAR":
             row.bone, row.confidence = "", 0.0
         elif self.action == "SELECT":
-            if row.bone not in rig.data.bones: return {"CANCELLED"}
+            if row.bone not in rig.data.bones:
+                return {"CANCELLED"}
             rig.data.bones.active = rig.data.bones[row.bone]
-            for bone in rig.data.bones: bone.select = bone.name == row.bone
+            for bone in rig.data.bones:
+                bone.select = bone.name == row.bone
         else:
             name = _active_bone(context, rig)
             if name is None:
                 self.report({"WARNING"}, "Click a bone of the armature first (Pose Mode or Edit Mode)")
                 return {"CANCELLED"}
             if not rig.data.bones[name].use_deform:
-                self.report({"WARNING"}, f"'{name}' does not deform; the export writes deform bones only: turn on Deform in its Bone properties")
+                self.report(
+                    {"WARNING"},
+                    f"'{name}' does not deform; the export writes deform bones only: turn on Deform in its Bone properties",
+                )
                 return {"CANCELLED"}
             for other in p.roles:
-                if other.bone == name and other != row: other.bone, other.confidence = "", 0.0
+                if other.bone == name and other != row:
+                    other.bone, other.confidence = "", 0.0
             row.bone, row.confidence = name, 1.0
-            if p.roles_index + 1 < len(p.roles): p.roles_index += 1
+            if p.roles_index + 1 < len(p.roles):
+                p.roles_index += 1
         fit_source_rig(context.scene)
         return {"FINISHED"}
 
 
 class CHSTAGE_OT_map_preset(Operator, ExportHelper):
     """Save the humanoid map, the followers, and the face shape keys as a preset file (to use it for other models of the same rig family)"""
+
     bl_idname = "chstage.save_map_preset"
     bl_label = "Save Map Preset"
     filename_ext = ".json"
@@ -1110,6 +1406,7 @@ class CHSTAGE_OT_map_preset(Operator, ExportHelper):
 
 class CHSTAGE_OT_load_map_preset(Operator, ImportHelper):
     """Load a humanoid map preset: the roles whose bones this armature has"""
+
     bl_idname = "chstage.load_map_preset"
     bl_label = "Load Map Preset"
     filename_ext = ".json"
@@ -1126,19 +1423,28 @@ class CHSTAGE_OT_load_map_preset(Operator, ImportHelper):
             self.report({"WARNING"}, f"No preset: {error}")
             return {"CANCELLED"}
         fit_source_rig(context.scene)
-        self.report({"WARNING" if missing else "INFO"}, f"Set {done} roles" + (f"; no bone for {', '.join(missing)}" if missing else ""))
+        self.report(
+            {"WARNING" if missing else "INFO"},
+            f"Set {done} roles" + (f"; no bone for {', '.join(missing)}" if missing else ""),
+        )
         return {"FINISHED"}
 
 
 class CHSTAGE_OT_check_clips(Operator):
     """Play GH3 clips (idle, stance change, solo, jump, kick, intro, walk) with the retarget of the game and find problems: a hand far from the instrument, a bone that flips, a knee or elbow that bends the other way, a sliding foot, a twisted forearm, stretched mesh"""
+
     bl_idname = "chstage.check_clips"
     bl_label = "Check Clips"
     bl_options = {"REGISTER"}
 
     @classmethod
     def poll(cls, context):
-        return context.scene is not None and own(context.scene) and props(context.scene).rig is not None and len(props(context.scene).clips) > 0
+        return (
+            context.scene is not None
+            and own(context.scene)
+            and props(context.scene).rig is not None
+            and len(props(context.scene).clips) > 0
+        )
 
     def execute(self, context):
         missing = [r for r in skeleton.REQUIRED if r not in humanoid(context.scene)]
@@ -1151,7 +1457,10 @@ class CHSTAGE_OT_check_clips(Operator):
             self.report({"WARNING"}, f"No check: {error}")
             return {"CANCELLED"}
         errors = sum(1 for f in findings if f["severity"] == "ERROR")
-        self.report({"WARNING" if findings else "INFO"}, f"{errors} errors, {len(findings) - errors} warnings" if findings else "No problems in the clips")
+        self.report(
+            {"WARNING" if findings else "INFO"},
+            f"{errors} errors, {len(findings) - errors} warnings" if findings else "No problems in the clips",
+        )
         return {"FINISHED"}
 
 
@@ -1167,8 +1476,10 @@ class CHSTAGE_UL_roles(UIList):
             row.alert = item.confidence < CHECK
             mark = "CHECKMARK" if item.confidence >= SURE else "QUESTION" if item.confidence >= CHECK else "ERROR"
         row.label(text=item.role, icon=mark)
-        if rig is not None: row.prop_search(item, "bone", rig.data, "bones", text="")
-        else: row.prop(item, "bone", text="")
+        if rig is not None:
+            row.prop_search(item, "bone", rig.data, "bones", text="")
+        else:
+            row.prop(item, "bone", text="")
 
     def filter_items(self, context, data, propname):
         rows = getattr(data, propname)
@@ -1195,6 +1506,7 @@ class CHSTAGE_PT_character_skeleton(Panel):
 
     def draw(self, context):
         import textwrap
+
         layout = self.layout
         scene = context.scene
         p = props(scene)
@@ -1210,16 +1522,27 @@ class CHSTAGE_PT_character_skeleton(Panel):
             return
         box.label(text=f"Armature: {p.rig.name}")
         for line in notes(scene)[:8]:
-            for k, part in enumerate(textwrap.wrap(line, width)): box.label(text=part, icon="DOT" if k == 0 else "BLANK1")
+            for k, part in enumerate(textwrap.wrap(line, width)):
+                box.label(text=part, icon="DOT" if k == 0 else "BLANK1")
         box = layout.box()
         mapping = humanoid(scene)
         missing = [r for r in skeleton.REQUIRED if r not in mapping]
         unsure = sum(1 for row in p.roles if row.bone and row.confidence < SURE)
-        box.label(text="2. Check the map" + (f": {len(missing)} roles missing" if missing else f": {unsure} roles to check" if unsure else ": all roles sure"),
-                  icon="ERROR" if missing else "QUESTION" if unsure else "CHECKMARK")
+        box.label(
+            text="2. Check the map"
+            + (
+                f": {len(missing)} roles missing"
+                if missing
+                else f": {unsure} roles to check"
+                if unsure
+                else ": all roles sure"
+            ),
+            icon="ERROR" if missing else "QUESTION" if unsure else "CHECKMARK",
+        )
         row = box.row(align=True)
         row.prop(p, "show_map", toggle=True, icon="HIDE_OFF" if p.show_map else "HIDE_ON")
-        if p.source_rig is not None: row.prop(p, "show_source_rig", toggle=True, icon="HIDE_OFF" if p.show_source_rig else "HIDE_ON")
+        if p.source_rig is not None:
+            row.prop(p, "show_source_rig", toggle=True, icon="HIDE_OFF" if p.show_source_rig else "HIDE_ON")
         row.operator("chstage.auto_map", icon="FILE_REFRESH")
         box.template_list("CHSTAGE_UL_roles", "", p, "roles", p, "roles_index", rows=8)
         row = box.row(align=True)
@@ -1236,14 +1559,18 @@ class CHSTAGE_PT_character_skeleton(Panel):
         box.label(text="3. Preview and check the clips", icon="PLAY")
         row = box.row(align=True)
         for clip, label in check_clip_ids(scene, 4):
-            row.operator("chstage.preview_clip", text=label.split("/")[0].replace("stance_", "stance ")[:12]).clip = clip
+            row.operator(
+                "chstage.preview_clip", text=label.split("/")[0].replace("stance_", "stance ")[:12]
+            ).clip = clip
         box.operator("chstage.check_clips", icon="VIEWZOOM")
-        if p.checked and not p.checks: box.label(text="No problems in the check clips", icon="CHECKMARK")
+        if p.checked and not p.checks:
+            box.label(text="No problems in the check clips", icon="CHECKMARK")
         if p.checks:
             box.template_list("CHSTAGE_UL_checks", "", p, "checks", p, "checks_index", rows=3)
             if 0 <= p.checks_index < len(p.checks):
                 item = p.checks[p.checks_index]
-                for line in textwrap.wrap(item.fix, width): box.label(text=line)
+                for line in textwrap.wrap(item.fix, width):
+                    box.label(text=line)
         try:
             count = len(json.loads(p.followers or "[]"))
         except ValueError:
@@ -1253,8 +1580,10 @@ class CHSTAGE_PT_character_skeleton(Panel):
         box.label(text="Face shape keys (blink and mouth)")
         meshes = [o for o in character_tools.character_meshes(scene) if o.data.shape_keys]
         for slot, prop in FACE_PROPS.items():
-            if meshes: box.prop_search(p, prop, meshes[0].data.shape_keys, "key_blocks", text=slot)
-            else: box.prop(p, prop, text=slot)
+            if meshes:
+                box.prop_search(p, prop, meshes[0].data.shape_keys, "key_blocks", text=slot)
+            else:
+                box.prop(p, prop, text=slot)
         box = layout.box()
         box.label(text="Instrument")
         box.prop_search(p, "instrument_bone", p.rig.data, "bones")
@@ -1262,16 +1591,30 @@ class CHSTAGE_PT_character_skeleton(Panel):
         box.prop(p, "instrument_scale")
 
 
-CLASSES = (CHSTAGE_OT_use_skeleton, CHSTAGE_OT_join_armatures, CHSTAGE_OT_auto_map, CHSTAGE_OT_role_edit, CHSTAGE_OT_map_preset, CHSTAGE_OT_load_map_preset,
-           CHSTAGE_OT_check_clips, CHSTAGE_UL_roles, CHSTAGE_UL_checks, CHSTAGE_PT_character_skeleton)
+CLASSES = (
+    CHSTAGE_OT_use_skeleton,
+    CHSTAGE_OT_join_armatures,
+    CHSTAGE_OT_auto_map,
+    CHSTAGE_OT_role_edit,
+    CHSTAGE_OT_map_preset,
+    CHSTAGE_OT_load_map_preset,
+    CHSTAGE_OT_check_clips,
+    CHSTAGE_UL_roles,
+    CHSTAGE_UL_checks,
+    CHSTAGE_PT_character_skeleton,
+)
 
 
 def register():
-    for cls in CLASSES: bpy.utils.register_class(cls)
-    if not bpy.app.background: _source_overlay.append(bpy.types.SpaceView3D.draw_handler_add(_draw_source, (), "WINDOW", "POST_VIEW"))
+    for cls in CLASSES:
+        bpy.utils.register_class(cls)
+    if not bpy.app.background:
+        _source_overlay.append(bpy.types.SpaceView3D.draw_handler_add(_draw_source, (), "WINDOW", "POST_VIEW"))
 
 
 def unregister():
     overlay(False)
-    while _source_overlay: bpy.types.SpaceView3D.draw_handler_remove(_source_overlay.pop(), "WINDOW")
-    for cls in reversed(CLASSES): bpy.utils.unregister_class(cls)
+    while _source_overlay:
+        bpy.types.SpaceView3D.draw_handler_remove(_source_overlay.pop(), "WINDOW")
+    for cls in reversed(CLASSES):
+        bpy.utils.unregister_class(cls)

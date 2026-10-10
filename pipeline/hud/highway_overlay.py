@@ -37,4 +37,3 @@ def warp(image, top=0):
         for channel in range(4):
             result[row, :, channel] = np.interp(sample, x, source[row, :, channel], left=0, right=0)
     return Image.fromarray(result.round().astype(np.uint8), "RGBA")
-

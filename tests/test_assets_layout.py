@@ -9,7 +9,9 @@ GENERATED = {"stages", "stage-packs", "libraries", "characters", "instruments", 
 
 class AssetsLayoutTest(unittest.TestCase):
     def test_install_copies_every_skin_folder(self):
-        folders = re.search(r"^skin_folders=\(([^)]*)\)", (ROOT / "install.sh").read_text(), re.MULTILINE).group(1).split()
+        folders = (
+            re.search(r"^skin_folders=\(([^)]*)\)", (ROOT / "install.sh").read_text(), re.MULTILINE).group(1).split()
+        )
         tracked = {path.name for path in ASSETS.iterdir() if path.is_dir()} - GENERATED
         self.assertEqual(tracked, set(folders))
 

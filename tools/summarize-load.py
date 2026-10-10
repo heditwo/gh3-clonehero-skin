@@ -3,12 +3,15 @@
 Usage: summarize-load.py <output folder> [<second output folder>]
 With two folders, the table has a column for each (for example before and after a change).
 """
+
 import re
 import statistics
 import sys
 from pathlib import Path
 
-MARK = re.compile(r"\[timing\] ([\d.]+) s (.*?) \(\+\d+ ms; heap (\d+) MB, rss (\d+) MB.*?jit (\d+) methods in (\d+) ms\)")
+MARK = re.compile(
+    r"\[timing\] ([\d.]+) s (.*?) \(\+\d+ ms; heap (\d+) MB, rss (\d+) MB.*?jit (\d+) methods in (\d+) ms\)"
+)
 
 
 def marks(log):
@@ -16,7 +19,9 @@ def marks(log):
     for line in log.splitlines():
         match = MARK.search(line)
         if match:
-            rows.append((float(match.group(1)), match.group(2), int(match.group(3)), int(match.group(4)), int(match.group(6))))
+            rows.append(
+                (float(match.group(1)), match.group(2), int(match.group(3)), int(match.group(4)), int(match.group(6)))
+            )
     return rows
 
 
@@ -93,9 +98,13 @@ def metrics(folder):
         scenes = [row for row in rows if "scene Gameplay loaded" in row[1]]
         clocks = [row for row in rows if "song clock runs" in row[1]]
         if len(scenes) > 1 and len(clocks) == len(scenes):
-            result["next songs: gameplay scene to song clock, median (s)"] = round(statistics.median(c[0] - s[0] for s, c in zip(scenes[1:], clocks[1:])), 3)
+            result["next songs: gameplay scene to song clock, median (s)"] = round(
+                statistics.median(c[0] - s[0] for s, c in zip(scenes[1:], clocks[1:])), 3
+            )
         zeros = [row for row in rows if "song time 0" in row[1]]
-        counts = [re.search(r"(\d+) textures, (\d+) meshes, (\d+) materials, (\d+) game objects", row[1]) for row in zeros]
+        counts = [
+            re.search(r"(\d+) textures, (\d+) meshes, (\d+) materials, (\d+) game objects", row[1]) for row in zeros
+        ]
         if counts and counts[0]:
             result["Unity textures/meshes/materials at song time 0, first song"] = "/".join(counts[0].groups()[:3])
             result["Unity textures/meshes/materials at song time 0, last song"] = "/".join(counts[-1].groups()[:3])

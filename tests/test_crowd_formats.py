@@ -25,8 +25,23 @@ def crowd_fixture():
     struct.pack_into(">I", data, header + 92, indices - base - 32)
     for person in range(quads):
         for corner, (u, v) in enumerate([(0, 0), (0, 1), (1, 0), (1, 1)]):
-            struct.pack_into(">6f4B2f", data, vertices + (person * 4 + corner) * 36,
-                             person + u, 1 - v, 0, 0, 0, -1, 255, 255, 255, 255, u, v)
+            struct.pack_into(
+                ">6f4B2f",
+                data,
+                vertices + (person * 4 + corner) * 36,
+                person + u,
+                1 - v,
+                0,
+                0,
+                0,
+                -1,
+                255,
+                255,
+                255,
+                255,
+                u,
+                v,
+            )
         struct.pack_into(">6H", data, indices + person * 12, *(person * 4 + i for i in [0, 1, 2, 2, 1, 3]))
     return data, indices
 
@@ -37,7 +52,9 @@ class CrowdFormatTests(unittest.TestCase):
         vertices = meshes[0][2]
         for person, left, top in [(0, 0, 1), (7, 7 / 8, 1), (8, 0, 2 / 3), (23, 7 / 8, 1 / 3), (24, 0, 1)]:
             uv = [struct.unpack_from("<2f", vertices, (person * 4 + i) * scene.STATIC_STRIDE + 24) for i in range(4)]
-            for actual, expected in zip(uv, [(left, top), (left, top - 1 / 3), (left + 1 / 8, top), (left + 1 / 8, top - 1 / 3)]):
+            for actual, expected in zip(
+                uv, [(left, top), (left, top - 1 / 3), (left + 1 / 8, top), (left + 1 / 8, top - 1 / 3)]
+            ):
                 self.assertAlmostEqual(actual[0], expected[0], places=6)
                 self.assertAlmostEqual(actual[1], expected[1], places=6)
 

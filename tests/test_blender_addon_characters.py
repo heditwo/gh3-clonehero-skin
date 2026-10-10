@@ -48,9 +48,16 @@ class BrotliDecoderTests(unittest.TestCase):
 
     def test_decoder_equals_the_brotli_module(self):
         import brotli
+
         random.seed(7)
-        texts = [(ROOT / "docs" / "PACKAGE-FORMAT.md").read_bytes()[:60000], b"", b"x", "Grüße, ünïcode text. ".encode() * 200,
-                 bytes(random.getrandbits(8) for _ in range(3000)), bytes(range(256)) * 40]
+        texts = [
+            (ROOT / "docs" / "PACKAGE-FORMAT.md").read_bytes()[:60000],
+            b"",
+            b"x",
+            "Grüße, ünïcode text. ".encode() * 200,
+            bytes(random.getrandbits(8) for _ in range(3000)),
+            bytes(range(256)) * 40,
+        ]
         for text in texts:
             for quality in (0, 2, 5, 11):
                 for mode in (brotli.MODE_GENERIC, brotli.MODE_TEXT):
@@ -61,6 +68,7 @@ class BrotliDecoderTests(unittest.TestCase):
     @unittest.skipUnless(LIBRARY.exists(), "no library package")
     def test_library_clips(self):
         import brotli
+
         library = character.Library(LIBRARY)
         names = sorted(n for n in library.source.names if n.endswith(".q48.br"))
         for name in names[::60]:
@@ -69,9 +77,10 @@ class BrotliDecoderTests(unittest.TestCase):
 
     def test_damaged_stream(self):
         import brotli
+
         data = bytearray(brotli.compress(b"hello hello hello world" * 50, quality=11))
         with self.assertRaises(brotli_decode.BrotliError):
-            brotli_decode.decompress(bytes(data[:len(data) // 2]))
+            brotli_decode.decompress(bytes(data[: len(data) // 2]))
 
 
 class WeightTests(unittest.TestCase):
@@ -92,10 +101,21 @@ class WeightTests(unittest.TestCase):
 
     def test_character_json(self):
         value = character.character_json("gh3-singer-male-v1", ["hair"], "Microphone001")
-        self.assertEqual(value, {"version": 1, "library": "gh3-band-v1", "profile": "gh3-singer-male-v1", "hairMaterials": ["hair"],
-                                 "attachments": {"instrument": "Microphone001"}})
+        self.assertEqual(
+            value,
+            {
+                "version": 1,
+                "library": "gh3-band-v1",
+                "profile": "gh3-singer-male-v1",
+                "hairMaterials": ["hair"],
+                "attachments": {"instrument": "Microphone001"},
+            },
+        )
         self.assertEqual(character.open_character_json(value)["instrument"], "Microphone001")
-        self.assertEqual(character.character_json("gh3-drummer-v1"), {"version": 1, "library": "gh3-band-v1", "profile": "gh3-drummer-v1"})
+        self.assertEqual(
+            character.character_json("gh3-drummer-v1"),
+            {"version": 1, "library": "gh3-band-v1", "profile": "gh3-drummer-v1"},
+        )
 
     def test_bone_labels(self):
         self.assertEqual(character.bone_label(bone("bone_head")), "bone_head")
@@ -112,7 +132,12 @@ class LibraryCharacterTests(unittest.TestCase):
         return character.Rig(Glb(self.library.model(role)))
 
     def test_model_split(self):
-        expected = {"guitarist": ("guitar", 3), "bassist": ("bass", 2), "singer": ("microphone and stand", 2), "drummer": ("drum kit and sticks", 1)}
+        expected = {
+            "guitarist": ("guitar", 3),
+            "bassist": ("bass", 2),
+            "singer": ("microphone and stand", 2),
+            "drummer": ("drum kit and sticks", 1),
+        }
         for role in ROLES:
             data = self.library.model(role)
             glb = Glb(data)
@@ -122,9 +147,15 @@ class LibraryCharacterTests(unittest.TestCase):
             self.assertEqual(kinds.count("attachment"), expected[role][1], role)
             # The game splits the cache band model with the same rule (src/Packages/BandAttachments.cs); tests/AttachmentLogicTests.cs
             # expects the same parts.
-            self.assertEqual([p for (_, p), kind in sorted(parts["kinds"].items()) if kind == "attachment"], ATTACHMENT_PARTS[role], role)
+            self.assertEqual(
+                [p for (_, p), kind in sorted(parts["kinds"].items()) if kind == "attachment"],
+                ATTACHMENT_PARTS[role],
+                role,
+            )
             self.assertEqual(kinds.count("hair"), 1, role)
-            sorted_hair = sorted(m["name"] for m in glb.list("materials") if m.get("extras", {}).get("gh3SortedTransparency"))
+            sorted_hair = sorted(
+                m["name"] for m in glb.list("materials") if m.get("extras", {}).get("gh3SortedTransparency")
+            )
             self.assertEqual(parts["hairMaterials"], sorted_hair, role)
             for part in ("body", "attachment"):
                 split = Glb(parts[part])
@@ -132,7 +163,8 @@ class LibraryCharacterTests(unittest.TestCase):
                 self.assertEqual(used, set(range(len(split.list("materials")))), (role, part))
                 self.assertEqual(split.list("skins")[0]["joints"], glb.list("skins")[0]["joints"], (role, part))
                 self.assertFalse(split.list("animations"))
-                for accessor in range(len(split.list("accessors"))): split.accessor(accessor)
+                for accessor in range(len(split.list("accessors"))):
+                    split.accessor(accessor)
 
     def test_members_are_valid_packages(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -151,6 +183,7 @@ class LibraryCharacterTests(unittest.TestCase):
 
     def test_instrument_names_are_checked(self):
         from pipeline.package import container
+
         with tempfile.TemporaryDirectory() as temporary:
             character.write_member(self.library, "bassist", Path(temporary))
             folder = Path(temporary) / "unpacked" / "gh3.bassist.chchar"
@@ -176,13 +209,16 @@ class LibraryCharacterTests(unittest.TestCase):
                 self.assertEqual(rig.parents[rig.index(chain[0])], head, role)
 
     def test_clip_list(self):
-        items = character.clip_items(self.library.json("catalog.json"), self.library.json("band/band.json"), "guitarist")
+        items = character.clip_items(
+            self.library.json("catalog.json"), self.library.json("band/band.json"), "guitarist"
+        )
         self.assertEqual(len(items), 356)
         self.assertEqual([i[1] for i in items[:2]], ["gh3_guit_axel_a_fst_idle1", "gh3_guit_axel_a_med_idle2"])
         self.assertTrue(all(self.library.has_clip("guitarist", clip) for clip, *_ in items))
 
     def decoded(self, role, clip):
         import brotli
+
         return q48.decode(brotli.decompress(self.library.clip(role, clip)))
 
     def test_clip_poses_keep_the_bind_pose_of_channels_that_the_clip_does_not_animate(self):
@@ -192,8 +228,14 @@ class LibraryCharacterTests(unittest.TestCase):
         translations, quaternions = character.clip_local_poses(decoded, rig, "singer")
         animated = {bone for bone, mask in decoded[0]["tracks"] if mask & 1}
         still = [j for j in range(len(rig.names)) if j not in animated]
-        np.testing.assert_allclose(translations[:, still], np.repeat(rig.local[still][None, :, :3, 3], len(translations), 0), atol=1e-12)
-        world = character.world_poses(rig, translations[:1] * 0 + rig.local[None, :, :3, 3], character.matrix_quaternions(rig.local[None, :, :3, :3]))
+        np.testing.assert_allclose(
+            translations[:, still], np.repeat(rig.local[still][None, :, :3, 3], len(translations), 0), atol=1e-12
+        )
+        world = character.world_poses(
+            rig,
+            translations[:1] * 0 + rig.local[None, :, :3, 3],
+            character.matrix_quaternions(rig.local[None, :, :3, :3]),
+        )
         np.testing.assert_allclose(world[0], rig.world, rtol=0, atol=1e-6)
 
     def test_game_ik_puts_the_hands_on_the_guitar(self):
@@ -204,7 +246,10 @@ class LibraryCharacterTests(unittest.TestCase):
         solved = character.clip_local_poses(decoded, rig, "guitarist")
         for side in ("R", "L"):
             palm, target = rig.index(bone(f"Bone_Palm_{side}")), rig.index(bone(f"Bone_IK_Hand_Guitar_{side}"))
-            before = np.linalg.norm(character.world_poses(rig, *raw)[:, palm, :3, 3] - character.world_poses(rig, *raw)[:, target, :3, 3], axis=-1)
+            before = np.linalg.norm(
+                character.world_poses(rig, *raw)[:, palm, :3, 3] - character.world_poses(rig, *raw)[:, target, :3, 3],
+                axis=-1,
+            )
             world = character.world_poses(rig, *solved)
             after = np.linalg.norm(world[:, palm, :3, 3] - world[:, target, :3, 3], axis=-1)
             self.assertGreater(before.min(), 0.1, side)
@@ -246,7 +291,9 @@ class CharacterCompareTests(unittest.TestCase):
                 for primitive in mesh["primitives"]:
                     index = primitive["attributes"]["JOINTS_0"]
                     joints = glb.accessor(index).astype(np.int64)
-                    primitive["attributes"]["JOINTS_0"] = add(remap[joints].astype("<u2"), {**gltf["accessors"][index], "componentType": 5123})
+                    primitive["attributes"]["JOINTS_0"] = add(
+                        remap[joints].astype("<u2"), {**gltf["accessors"][index], "componentType": 5123}
+                    )
             gltf["buffers"][0]["byteLength"] = len(binary)
             (folder / "character.glb").write_bytes(character.write_glb(gltf, bytes(binary)))
             manifest = json.loads((folder / "manifest.json").read_text())
@@ -265,14 +312,21 @@ MIDORI = "gh3-guitarist-midori-v1"
 class CharacterJsonTests(unittest.TestCase):
     def test_fixed_profile(self):
         value = character.character_json("gh3-guitarist-axel-v1", ["hair"])
-        self.assertEqual(value, {"version": 1, "library": "gh3-band-v1", "profile": "gh3-guitarist-axel-v1", "hairMaterials": ["hair"]})
+        self.assertEqual(
+            value,
+            {"version": 1, "library": "gh3-band-v1", "profile": "gh3-guitarist-axel-v1", "hairMaterials": ["hair"]},
+        )
         self.assertEqual(character.package_format(value["library"]), "chchar/1.0")
-        description = character.complete_requirements({"requires": [{"id": "gh3-band-v1", "version": "1.0.0"}], "minModVersion": ""})
+        description = character.complete_requirements(
+            {"requires": [{"id": "gh3-band-v1", "version": "1.0.0"}], "minModVersion": ""}
+        )
         self.assertEqual(description, {"requires": [{"id": "gh3-band-v1", "version": "1.0.0"}], "minModVersion": ""})
 
     def test_character_library_profile(self):
         value = character.character_json(MIDORI, [], "", "gh3-characters-v1", "midori")
-        self.assertEqual(value, {"version": 1, "library": "gh3-characters-v1", "profile": MIDORI, "animations": "midori"})
+        self.assertEqual(
+            value, {"version": 1, "library": "gh3-characters-v1", "profile": MIDORI, "animations": "midori"}
+        )
         self.assertEqual(character.open_character_json(value)["animations"], "midori")
         self.assertEqual(character.package_format("gh3-characters-v1"), "chchar/1.0")
         description = character.complete_requirements({"requires": [], "minModVersion": ""}, "gh3-characters-v1")
@@ -295,7 +349,13 @@ class CharacterLibraryTests(unittest.TestCase):
     def test_rig_from_bind_equals_the_gh3_character_package(self):
         packages = character.profile_packages(CHARACTER_LIBRARY.parent, MIDORI)
         self.assertEqual(packages[0].name, "gh3.midori.outfit1.style1.chchar")
-        self.assertTrue(all(character.open_character_json(json.loads(zipfile.ZipFile(p).read("character.json")))["profile"] == MIDORI for p in packages))
+        self.assertTrue(
+            all(
+                character.open_character_json(json.loads(zipfile.ZipFile(p).read("character.json")))["profile"]
+                == MIDORI
+                for p in packages
+            )
+        )
         glb_rig = character.Rig(Glb(character.profile_model(packages[0])))
         rig = self.library.rig(MIDORI)
         self.assertEqual(rig.names, glb_rig.names)
@@ -315,12 +375,16 @@ class CharacterLibraryTests(unittest.TestCase):
                             manifest["id"] = package_id
                             data = json.dumps(manifest).encode()
                         copy.writestr(item, data)
-            self.assertEqual([p.name for p in character.profile_packages(folder, MIDORI)], [source.name, "a-custom.chchar"])
+            self.assertEqual(
+                [p.name for p in character.profile_packages(folder, MIDORI)], [source.name, "a-custom.chchar"]
+            )
 
     def test_hair_chains_follow_the_profile_hair(self):
         chains = self.library.hair_chains(MIDORI)
         joints = [j["bone"] for j in self.library.hair(MIDORI)]
-        self.assertEqual(sorted(n for chain in chains for n in chain), sorted(self.library.rig(MIDORI).names[j] for j in joints))
+        self.assertEqual(
+            sorted(n for chain in chains for n in chain), sorted(self.library.rig(MIDORI).names[j] for j in joints)
+        )
         self.assertEqual(len(chains[0]), 3)
         self.assertEqual(self.library.hair_chains("gh3-guitarist-grim-ripper-v1"), [])
 
@@ -334,7 +398,9 @@ class CharacterLibraryTests(unittest.TestCase):
     def test_clips_play_with_the_rest_offsets_of_the_profile(self):
         items = self.library.clip_items(MIDORI)
         self.assertGreater(len(items), 100)
-        clip = next(clip for clip, label, _, _ in items if label.startswith("stance_a/idle") and self.library.has_clip(clip))
+        clip = next(
+            clip for clip, label, _, _ in items if label.startswith("stance_a/idle") and self.library.has_clip(clip)
+        )
         decoded = q48.decode(brotli_decode.decompress(self.library.clip(clip)))
         rig = self.library.rig(MIDORI)
         offsets = self.library.clip_offsets(MIDORI)
@@ -354,7 +420,16 @@ class BuildTests(unittest.TestCase):
         spec.loader.exec_module(module)
         self.assertIn("character.py", module.VALIDATOR_FILES)
         names = {relative for _, relative in module.files()}
-        self.assertTrue({"brotli_decode.py", "brotli_dictionary.bin", "character_tools.py", "character_package.py", "character_ui.py"} <= names)
+        self.assertTrue(
+            {
+                "brotli_decode.py",
+                "brotli_dictionary.bin",
+                "character_tools.py",
+                "character_package.py",
+                "character_ui.py",
+            }
+            <= names
+        )
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ import bpy
 import numpy as np
 from mathutils import Matrix, Vector
 
-args = sys.argv[sys.argv.index("--") + 1:]
+args = sys.argv[sys.argv.index("--") + 1 :]
 archive, library, output = Path(args[0]), Path(args[1]), Path(args[2])
 output.mkdir(parents=True, exist_ok=True)
 MODULE = "bl_ext.user_default.chstage_tools"
@@ -102,7 +102,14 @@ def truss(size=128):
     """A lattice with alpha: square frame and diagonals (cutout material)."""
     y, x = np.mgrid[0:size, 0:size] / size
     width = 0.06
-    bars = (x < width) | (x > 1 - width) | (y < width) | (y > 1 - width) | (np.abs(x - y) < width * 0.8) | (np.abs(x + y - 1) < width * 0.8)
+    bars = (
+        (x < width)
+        | (x > 1 - width)
+        | (y < width)
+        | (y > 1 - width)
+        | (np.abs(x - y) < width * 0.8)
+        | (np.abs(x + y - 1) < width * 0.8)
+    )
     value = 0.55 + 0.2 * y
     return np.stack([value, value, value * 1.05, bars.astype(float)], -1)
 
@@ -115,7 +122,8 @@ def textured(name, picture, blend="OPAQUE", shading="lit", two_sided=False):
     texture = tree.nodes.new("ShaderNodeTexImage")
     texture.image = picture
     tree.links.new(texture.outputs["Color"], shader.inputs["Base Color"])
-    if blend != "OPAQUE": tree.links.new(texture.outputs["Alpha"], shader.inputs["Alpha"])
+    if blend != "OPAQUE":
+        tree.links.new(texture.outputs["Alpha"], shader.inputs["Alpha"])
     material.chstage.blend, material.chstage.shading, material.chstage.two_sided = blend, shading, two_sided
     return material
 
@@ -168,8 +176,13 @@ def add_star(scene, collection, name, center, radius, material):
         geometry = bmesh.ops.create_cube(bm, size=1.0)
         direction = b - a
         rotation = direction.normalized().to_track_quat("X", "Y").to_matrix().to_4x4()
-        bmesh.ops.transform(bm, matrix=Matrix.Translation((a + b) / 2) @ rotation @ Matrix.Diagonal((direction.length + 0.08, 0.08, 0.08, 1)),
-                            verts=geometry["verts"])
+        bmesh.ops.transform(
+            bm,
+            matrix=Matrix.Translation((a + b) / 2)
+            @ rotation
+            @ Matrix.Diagonal((direction.length + 0.08, 0.08, 0.08, 1)),
+            verts=geometry["verts"],
+        )
     bmesh.ops.translate(bm, vec=center, verts=bm.verts)
     mesh = bpy.data.meshes.new(name)
     bm.to_mesh(mesh)
@@ -182,7 +195,8 @@ def add_star(scene, collection, name, center, radius, material):
 
 
 def remove_default_scene():
-    for scene in [s for s in bpy.data.scenes if s.name == "Scene"]: bpy.data.scenes.remove(scene)
+    for scene in [s for s in bpy.data.scenes if s.name == "Scene"]:
+        bpy.data.scenes.remove(scene)
     bpy.data.orphans_purge(do_local_ids=True, do_linked_ids=True, do_recursive=True)
 
 
@@ -197,8 +211,12 @@ def build_stage():
         bpy.ops.chstage.new_stage()
     scene = bpy.data.scenes["CH Stage"]
     scene.name = "Example Club"
-    package_info(scene, "example.club", "Example Club",
-                  "A small club stage made with the CH Stage Tools template. Example content for creators (docs/CREATOR-GUIDE.md).")
+    package_info(
+        scene,
+        "example.club",
+        "Example Club",
+        "A small club stage made with the CH Stage Tools template. Example content for creators (docs/CREATOR-GUIDE.md).",
+    )
     scene.chstage.package.preview_mode = "RENDER"
     for name in ("floor", "backdrop", "left", "right"):
         obj = scene.objects[name]
@@ -219,12 +237,37 @@ def build_stage():
     add_box(scene, scenery, "club-floor", (0, -8, -1.0), (26, 12, 0.4), floor, tile=4)
     add_box(scene, scenery, "back-wall", (0, 8, 3.2), (26, 0.4, 9), brick)
     for side in (-1, 1):
-        add_box(scene, scenery, f"side-wall-{'left' if side < 0 else 'right'}", (13 * side, -2, 3.2), (0.4, 20, 9), brick)
+        add_box(
+            scene, scenery, f"side-wall-{'left' if side < 0 else 'right'}", (13 * side, -2, 3.2), (0.4, 20, 9), brick
+        )
         for level, height in ((0, 1.6), (1, 1.2)):
             z = 0.8 + level * 1.6
-            add_box(scene, scenery, f"speaker-{'left' if side < 0 else 'right'}-{level}-cabinet", (6.6 * side, 4.5, z), (1.4, 1.0, height), cabinet)
-            add_box(scene, scenery, f"speaker-{'left' if side < 0 else 'right'}-{level}-front", (6.6 * side, 3.98, z), (1.3, 0.04, height * 0.92), grille, tile=height)
-        add_box(scene, scenery, f"truss-{'left' if side < 0 else 'right'}", (7.5 * side, 6.5, 3.0), (0.4, 0.4, 6.0), lattice, tile=0.4)
+            add_box(
+                scene,
+                scenery,
+                f"speaker-{'left' if side < 0 else 'right'}-{level}-cabinet",
+                (6.6 * side, 4.5, z),
+                (1.4, 1.0, height),
+                cabinet,
+            )
+            add_box(
+                scene,
+                scenery,
+                f"speaker-{'left' if side < 0 else 'right'}-{level}-front",
+                (6.6 * side, 3.98, z),
+                (1.3, 0.04, height * 0.92),
+                grille,
+                tile=height,
+            )
+        add_box(
+            scene,
+            scenery,
+            f"truss-{'left' if side < 0 else 'right'}",
+            (7.5 * side, 6.5, 3.0),
+            (0.4, 0.4, 6.0),
+            lattice,
+            tile=0.4,
+        )
     add_box(scene, scenery, "truss-top", (0, 6.5, 6.2), (15.4, 0.4, 0.4), lattice, tile=0.4)
     add_star(scene, scenery, "neon-star", Vector((0, 7.75, 4.4)), 1.6, neon)
 
@@ -235,8 +278,10 @@ def build_stage():
 
     stage, band = scene.objects["Stage"], scene.objects["Band"]
     stage.location, band.location = (0, -2, 6), (0, 1, 4)
-    looks = {"fill": {"Stage": ((1.0, 0.75, 0.45), 0.7), "Band": ((1.0, 0.95, 0.9), 0.8)},
-             "chorus": {"Stage": ((0.9, 0.2, 1.0), 0.9), "Band": ((0.3, 0.9, 1.0), 1.0)}}
+    looks = {
+        "fill": {"Stage": ((1.0, 0.75, 0.45), 0.7), "Band": ((1.0, 0.95, 0.9), 0.8)},
+        "chorus": {"Stage": ((0.9, 0.2, 1.0), 0.9), "Band": ((0.3, 0.9, 1.0), 1.0)},
+    }
     for snapshot in scene.chstage.snapshots:
         for row in snapshot.lights:
             row.color, row.intensity = looks[snapshot.name][row.light.name]
@@ -258,10 +303,12 @@ def build_stage():
     remove_default_scene()
 
     run(scene, bpy.ops.chstage.validate)
-    if errors(scene): fail(f"stage validate: {errors(scene)}")
+    if errors(scene):
+        fail(f"stage validate: {errors(scene)}")
     target = output / "example.club.chstage"
     status = run(scene, bpy.ops.chstage.export_package, filepath=str(target))
-    if status != {"FINISHED"}: fail(f"stage export: {[(i.severity, i.message) for i in scene.chstage.issues]}")
+    if status != {"FINISHED"}:
+        fail(f"stage export: {[(i.severity, i.message) for i in scene.chstage.issues]}")
     print(f"EXAMPLES WROTE {target} {target.stat().st_size} warnings={len(scene.chstage.issues)}")
     scene.chstage.export_path = "//example.club.chstage"
     save(output / "example-club.blend")
@@ -274,7 +321,9 @@ def bone_head(rig, name):
 
 def limb(bm, a, b, radius_a, radius_b, segments=12):
     direction = b - a
-    geometry = bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=segments, radius1=radius_a, radius2=radius_b, depth=direction.length)
+    geometry = bmesh.ops.create_cone(
+        bm, cap_ends=True, cap_tris=False, segments=segments, radius1=radius_a, radius2=radius_b, depth=direction.length
+    )
     rotation = direction.normalized().to_track_quat("Z", "Y").to_matrix().to_4x4()
     bmesh.ops.transform(bm, matrix=Matrix.Translation((a + b) / 2) @ rotation, verts=geometry["verts"])
 
@@ -306,14 +355,21 @@ def hair_texture(size=64):
 def build_character():
     with bpy.context.temp_override(scene=bpy.context.scene):
         status = bpy.ops.chstage.new_character(profile="gh3-guitarist-axel-v1", library=str(library))
-    if status != {"FINISHED"}: fail("new character")
+    if status != {"FINISHED"}:
+        fail("new character")
     scene = next(s for s in bpy.data.scenes if s.name.startswith("CH Character (guitarist)"))
     scene.name = "Example Guitarist"
     props = scene.chstage.character
     rig = props.rig
-    package_info(scene, "example.guitarist", "Example Guitarist",
-                  "A blocky guitarist made from Blender primitives on the GH3 guitarist rig. Example content for creators (docs/CREATOR-GUIDE.md).")
-    collection = next(c for c in scene.collection.children if c.name.startswith("Character") and "Helpers" not in c.name)
+    package_info(
+        scene,
+        "example.guitarist",
+        "Example Guitarist",
+        "A blocky guitarist made from Blender primitives on the GH3 guitarist rig. Example content for creators (docs/CREATOR-GUIDE.md).",
+    )
+    collection = next(
+        c for c in scene.collection.children if c.name.startswith("Character") and "Helpers" not in c.name
+    )
 
     bm = bmesh.new()
     head_of = lambda name: bone_head(rig, name)
@@ -351,8 +407,13 @@ def build_character():
         angle = math.radians(-90 + index * 30)
         root = head + Vector((0.11 * math.sin(angle), 0.11 * math.cos(angle) * 0.6 + 0.04, 0.12))
         geometry = bmesh.ops.create_grid(bm, x_segments=1, y_segments=3, size=0.5)
-        bmesh.ops.transform(bm, matrix=Matrix.Translation(root + Vector((0, 0.06, -0.13))) @ Matrix.Diagonal((0.09, 0.02, 0.3, 1))
-                            @ Matrix.Rotation(math.radians(90), 4, "X"), verts=geometry["verts"])
+        bmesh.ops.transform(
+            bm,
+            matrix=Matrix.Translation(root + Vector((0, 0.06, -0.13)))
+            @ Matrix.Diagonal((0.09, 0.02, 0.3, 1))
+            @ Matrix.Rotation(math.radians(90), 4, "X"),
+            verts=geometry["verts"],
+        )
     hair_mesh = bpy.data.meshes.new("hair")
     bm.to_mesh(hair_mesh)
     bm.free()
@@ -367,17 +428,26 @@ def build_character():
     hair.data.materials.append(hair_material)
 
     view_layer = scene.view_layers[0]
-    for obj in scene.objects: obj.select_set(False, view_layer=view_layer)
-    with bpy.context.temp_override(scene=scene, view_layer=view_layer, selected_objects=[body], active_object=body, object=body):
-        if bpy.ops.chstage.transfer_weights() != {"FINISHED"}: fail("transfer weights")
-    with bpy.context.temp_override(scene=scene, view_layer=view_layer, object=hair, active_object=hair, selected_objects=[hair]):
-        if bpy.ops.chstage.assign_hair(selected_only=False) != {"FINISHED"}: fail("assign hair")
+    for obj in scene.objects:
+        obj.select_set(False, view_layer=view_layer)
+    with bpy.context.temp_override(
+        scene=scene, view_layer=view_layer, selected_objects=[body], active_object=body, object=body
+    ):
+        if bpy.ops.chstage.transfer_weights() != {"FINISHED"}:
+            fail("transfer weights")
+    with bpy.context.temp_override(
+        scene=scene, view_layer=view_layer, object=hair, active_object=hair, selected_objects=[hair]
+    ):
+        if bpy.ops.chstage.assign_hair(selected_only=False) != {"FINISHED"}:
+            fail("assign hair")
         bpy.ops.chstage.hair_material(action="ADD")
     run(scene, bpy.ops.chstage.validate_character)
-    if errors(scene): fail(f"character validate: {errors(scene)}")
+    if errors(scene):
+        fail(f"character validate: {errors(scene)}")
     target = output / "example.guitarist.chchar"
     status = run(scene, bpy.ops.chstage.export_character, filepath=str(target))
-    if status != {"FINISHED"}: fail(f"character export: {[(i.severity, i.message) for i in scene.chstage.issues]}")
+    if status != {"FINISHED"}:
+        fail(f"character export: {[(i.severity, i.message) for i in scene.chstage.issues]}")
     print(f"EXAMPLES WROTE {target} {target.stat().st_size} warnings={len(scene.chstage.issues)}")
 
     # The .blend must not hold GH3 meshes or a local path: Helpers > Reload loads them from the creator's library.
@@ -385,11 +455,13 @@ def build_character():
     props.library = ""
     props.clips.clear()
     scene.chstage.export_path = "//example.guitarist.chchar"
-    for other in [s for s in bpy.data.scenes if s != scene]: bpy.data.scenes.remove(other)
+    for other in [s for s in bpy.data.scenes if s != scene]:
+        bpy.data.scenes.remove(other)
     save(output / "example-guitarist.blend")
 
 
 result = bpy.ops.extensions.package_install_files(filepath=str(archive), repo="user_default", enable_on_install=True)
-if result != {"FINISHED"} or MODULE not in bpy.context.preferences.addons: fail(f"install {result}")
+if result != {"FINISHED"} or MODULE not in bpy.context.preferences.addons:
+    fail(f"install {result}")
 {"stage": build_stage, "character": build_character}[args[3]]()
 print("EXAMPLES DONE")

@@ -39,7 +39,12 @@ def motion_rows(name):
     if name == "turn":
         times = np.arange(0, HOLD + 3.0 + 3.0, 1 / FPS)
         yaw = 45 * (smooth((times - HOLD) / 0.2) - smooth((times - HOLD - 3.0) / 0.2))
-        offset, pitch, roll, stops = np.zeros((len(times), 3)), np.zeros(len(times)), np.zeros(len(times)), [HOLD + 0.2, HOLD + 3.2]
+        offset, pitch, roll, stops = (
+            np.zeros((len(times), 3)),
+            np.zeros(len(times)),
+            np.zeros(len(times)),
+            [HOLD + 0.2, HOLD + 3.2],
+        )
     elif name == "headbang":
         times = np.arange(0, HOLD + 2.0 + 3.0, 1 / FPS)
         active = (times >= HOLD) & (times < HOLD + 2.0)
@@ -64,8 +69,14 @@ def motion_rows(name):
 def quat_mul(a, b):
     ax, ay, az, aw = a
     bx, by, bz, bw = b
-    return np.array([aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx,
-                     aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz])
+    return np.array(
+        [
+            aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw,
+            aw * bw - ax * bx - ay * by - az * bz,
+        ]
+    )
 
 
 def rotate_inverse(q, v):
@@ -86,13 +97,15 @@ def chains(meta):
     """The joints of each chain from the start to the end (the longest path when a chain branches)."""
     rows = meta["joints"]
     children = {}
-    for k, row in enumerate(rows): children.setdefault(row["parent"], []).append(k)
+    for k, row in enumerate(rows):
+        children.setdefault(row["parent"], []).append(k)
 
     def longest(k):
         best = [k]
         for child in children.get(k, []):
             path = [k] + longest(child)
-            if len(path) > len(best): best = path
+            if len(path) > len(best):
+                best = path
         return best
 
     return [longest(k) for k, row in enumerate(rows) if row["parent"] < 0]
@@ -117,10 +130,16 @@ def measure(path, motion=None, quiet=False):
         speed = np.linalg.norm(np.diff(local, axis=0), axis=1) / dt
         skip = times[1:] > 1.0
         above = (tip[:, 1] > start[:, 1] + 0.01)[times > 1.0]
-        row = {"chain": chain_name(meta, chain), "joints": len(chain), "length": round(sum(meta["joints"][k]["length"] for k in chain), 3),
-               "angle": [round(float(np.percentile(angle[times > 1.0], q)), 1) for q in (50, 95)] + [round(float(angle[times > 1.0].max()), 1)],
-               "above": round(float(above.mean()) * 100, 2),
-               "speed": [round(float(np.percentile(speed[skip], q)), 2) for q in (50, 95)] + [round(float(speed[skip].max()), 2)]}
+        row = {
+            "chain": chain_name(meta, chain),
+            "joints": len(chain),
+            "length": round(sum(meta["joints"][k]["length"] for k in chain), 3),
+            "angle": [round(float(np.percentile(angle[times > 1.0], q)), 1) for q in (50, 95)]
+            + [round(float(angle[times > 1.0].max()), 1)],
+            "above": round(float(above.mean()) * 100, 2),
+            "speed": [round(float(np.percentile(speed[skip], q)), 2) for q in (50, 95)]
+            + [round(float(speed[skip].max()), 2)],
+        }
         if motion:
             # Before the motion: the hang under gravity (angle from the bind shape).
             row["hang"] = round(float(angle[np.searchsorted(times, HOLD) - 1]), 1)
@@ -128,7 +147,7 @@ def measure(path, motion=None, quiet=False):
             for stop in stops:
                 window = (times >= stop) & (times < stop + 2.8)
                 seg, t = local[window], times[window]
-                final = seg[-int(0.3 / dt):].mean(0)
+                final = seg[-int(0.3 / dt) :].mean(0)
                 offset = np.linalg.norm(seg - final, axis=1)
                 # Settled: the end stays within 1 cm of its final place.
                 outside = np.nonzero(offset > 0.01)[0]
@@ -141,13 +160,15 @@ def measure(path, motion=None, quiet=False):
                 for value in signal:
                     s = 1 if value > 0.01 else -1 if value < -0.01 else 0
                     if s and s != sign:
-                        if sign: count += 1
+                        if sign:
+                            count += 1
                         sign = s
                 swings.append(count)
             row["settle"], row["swings"] = settles, swings
         results.append(row)
     if not quiet:
-        for row in results: print(json.dumps(row, ensure_ascii=False))
+        for row in results:
+            print(json.dumps(row, ensure_ascii=False))
     return results
 
 
@@ -199,7 +220,8 @@ def vrm(path, out, stiffness=1.0, drag=0.4, gravity=0.0, fps=60.0):
 def from_to(a, b):
     v = np.cross(a, b)
     c = float(np.dot(a, b))
-    if c < -0.999999: return -np.eye(3)
+    if c < -0.999999:
+        return -np.eye(3)
     k = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
     return np.eye(3) + k + k @ k / (1 + c)
 
@@ -216,8 +238,14 @@ def main(args):
         measure(args[1], args[2] if len(args) > 2 else None)
     elif args[0] == "vrm":
         options = dict(zip(args[3::2], args[4::2]))
-        vrm(args[1], args[2], float(options.get("--stiffness", 1.0)), float(options.get("--drag", 0.4)), float(options.get("--gravity", 0.0)),
-            float(options.get("--fps", 60)))
+        vrm(
+            args[1],
+            args[2],
+            float(options.get("--stiffness", 1.0)),
+            float(options.get("--drag", 0.4)),
+            float(options.get("--gravity", 0.0)),
+            float(options.get("--fps", 60)),
+        )
     else:
         raise SystemExit(__doc__)
 

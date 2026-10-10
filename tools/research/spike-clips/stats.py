@@ -11,7 +11,9 @@ performance = json.loads((root / "performance.json").read_text())
 rows = {}
 for role in ["guitarist", "bassist", "drummer", "singer"]:
     files = sorted((root / role).glob("*.bin.gz"))
-    stats = dict(clips=0, gz=0, raw=0, frames=0, tracks=0, rig=0, seconds=0.0, long=0, long_gz=0, max_frames=0, max_tracks=0)
+    stats = dict(
+        clips=0, gz=0, raw=0, frames=0, tracks=0, rig=0, seconds=0.0, long=0, long_gz=0, max_frames=0, max_tracks=0
+    )
     for path in files:
         with gzip.open(path, "rb") as stream:
             header = stream.read(24)

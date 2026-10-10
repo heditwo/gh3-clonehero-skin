@@ -46,7 +46,8 @@ def mip_count(width, height):
 
 
 def level_size(fmt, width, height):
-    if fmt == RGBA32: return width * height * 4
+    if fmt == RGBA32:
+        return width * height * 4
     return max(1, (width + 3) // 4) * max(1, (height + 3) // 4) * (8 if fmt == BC1 else 16)
 
 
@@ -59,16 +60,24 @@ def levels(width, height, mips):
 
 def read_header(data):
     """(format, width, height, mips, flags) of a GH3TEX02 file. Raises TextureError when the file is not valid."""
-    if len(data) < HEADER_SIZE: raise TextureError("file is too short for a GH3TEX02 texture")
+    if len(data) < HEADER_SIZE:
+        raise TextureError("file is too short for a GH3TEX02 texture")
     magic, fmt, width, height, mips, flags = HEADER.unpack_from(data)
-    if magic != MAGIC: raise TextureError("not a GH3TEX02 texture")
-    if fmt not in FORMATS: raise TextureError(f"unknown texture format {fmt} (4 RGBA32, 10 BC1, 12 BC3)")
-    if not (1 <= width <= MAX_SIZE and 1 <= height <= MAX_SIZE): raise TextureError(f"texture size must be 1 to {MAX_SIZE} pixels")
-    if mips != mip_count(width, height): raise TextureError(f"texture has {mips} mip levels, the full chain is {mip_count(width, height)}")
-    if flags & ~FLAGS: raise TextureError(f"unknown texture flags {flags:#x}")
-    if fmt != RGBA32 and (width % 4 or height % 4): raise TextureError("BC1 and BC3 textures must have a width and a height that are multiples of 4")
+    if magic != MAGIC:
+        raise TextureError("not a GH3TEX02 texture")
+    if fmt not in FORMATS:
+        raise TextureError(f"unknown texture format {fmt} (4 RGBA32, 10 BC1, 12 BC3)")
+    if not (1 <= width <= MAX_SIZE and 1 <= height <= MAX_SIZE):
+        raise TextureError(f"texture size must be 1 to {MAX_SIZE} pixels")
+    if mips != mip_count(width, height):
+        raise TextureError(f"texture has {mips} mip levels, the full chain is {mip_count(width, height)}")
+    if flags & ~FLAGS:
+        raise TextureError(f"unknown texture flags {flags:#x}")
+    if fmt != RGBA32 and (width % 4 or height % 4):
+        raise TextureError("BC1 and BC3 textures must have a width and a height that are multiples of 4")
     expected = HEADER_SIZE + sum(level_size(fmt, w, h) for w, h in levels(width, height, mips))
-    if len(data) != expected: raise TextureError(f"texture has {len(data)} bytes, its header gives {expected}")
+    if len(data) != expected:
+        raise TextureError(f"texture has {len(data)} bytes, its header gives {expected}")
     return fmt, width, height, mips, flags
 
 
@@ -76,15 +85,21 @@ def downsample(level):
     """Next mip level: 2 x 2 box filter with rounding; an odd last row or column repeats (as the C# importer did)."""
     height, width = level.shape[:2]
     h, w = max(1, height // 2), max(1, width // 2)
-    y0 = np.minimum(np.arange(h) * 2, height - 1); y1 = np.minimum(np.arange(h) * 2 + 1, height - 1)
-    x0 = np.minimum(np.arange(w) * 2, width - 1); x1 = np.minimum(np.arange(w) * 2 + 1, width - 1)
+    y0 = np.minimum(np.arange(h) * 2, height - 1)
+    y1 = np.minimum(np.arange(h) * 2 + 1, height - 1)
+    x0 = np.minimum(np.arange(w) * 2, width - 1)
+    x1 = np.minimum(np.arange(w) * 2 + 1, width - 1)
     wide = level.astype(np.uint16)
     total = wide[y0][:, x0] + wide[y0][:, x1] + wide[y1][:, x0] + wide[y1][:, x1] + 2
     return (total >> 2).astype(np.uint8)
 
 
-def _expand5(v): return v << 3 | v >> 2
-def _expand6(v): return v << 2 | v >> 4
+def _expand5(v):
+    return v << 3 | v >> 2
+
+
+def _expand6(v):
+    return v << 2 | v >> 4
 
 
 def _quantize(value, bits):
@@ -111,7 +126,8 @@ _SINGLE5 = _single_table(5)
 _SINGLE6 = _single_table(6)
 
 
-def _pack(r, g, b): return r << 11 | g << 5 | b
+def _pack(r, g, b):
+    return r << 11 | g << 5 | b
 
 
 def _palette(c0, c1):
@@ -145,7 +161,9 @@ def _refine(rgb, indices):
     for i in range(16):
         w = w_all[:, i]
         v = 1 - w
-        aa += w * w; bb += v * v; ab += w * v
+        aa += w * w
+        bb += v * v
+        ab += w * v
         a_sum += w[:, None] * rgb[:, i]
         b_sum += v[:, None] * rgb[:, i]
     det = aa * bb - ab * ab
@@ -164,7 +182,8 @@ def _encode_color(block):
     rgb = block[:, :, :3]
     low, high = rgb.min(1), rgb.max(1)
     single = (low == high).all(1)
-    c0 = np.zeros(n, dtype=np.int64); c1 = np.zeros(n, dtype=np.int64)
+    c0 = np.zeros(n, dtype=np.int64)
+    c1 = np.zeros(n, dtype=np.int64)
 
     s = np.nonzero(single)[0]
     if len(s):
@@ -173,17 +192,28 @@ def _encode_color(block):
         z = _pack(_SINGLE5[r, 1], _SINGLE6[g, 1], _SINGLE5[b, 1])
         exact = _pack(_quantize(r, 5), _quantize(g, 6), _quantize(b, 5))
         same = (_expand5(exact >> 11) == r) & (_expand6(exact >> 5 & 63) == g) & (_expand5(exact & 31) == b)
-        c0[s] = np.where(same, exact, a); c1[s] = np.where(same, exact, z)
+        c0[s] = np.where(same, exact, a)
+        c1[s] = np.where(same, exact, z)
 
     m = np.nonzero(~single)[0]
     if len(m):
         pixels = rgb[m].astype(np.float64)
         mean = rgb[m].sum(1) / 16
         centered = pixels - mean[:, None, :]
-        xx = np.zeros(len(m)); xy = xx.copy(); xz = xx.copy(); yy = xx.copy(); yz = xx.copy(); zz = xx.copy()
+        xx = np.zeros(len(m))
+        xy = xx.copy()
+        xz = xx.copy()
+        yy = xx.copy()
+        yz = xx.copy()
+        zz = xx.copy()
         for i in range(16):
             r, g, b = centered[:, i, 0], centered[:, i, 1], centered[:, i, 2]
-            xx += r * r; xy += r * g; xz += r * b; yy += g * g; yz += g * b; zz += b * b
+            xx += r * r
+            xy += r * g
+            xz += r * b
+            yy += g * g
+            yz += g * b
+            zz += b * b
         span = (high[m] - low[m]).astype(np.float64)
         ax, ay, az = span[:, 0], span[:, 1], span[:, 2]
         active = np.ones(len(m), dtype=bool)
@@ -194,9 +224,13 @@ def _encode_color(block):
             length = np.maximum(np.abs(nx), np.maximum(np.abs(ny), np.abs(nz)))
             active &= length >= 1e-9
             safe = np.where(active, length, 1.0)
-            ax = np.where(active, nx / safe, ax); ay = np.where(active, ny / safe, ay); az = np.where(active, nz / safe, az)
+            ax = np.where(active, nx / safe, ax)
+            ay = np.where(active, ny / safe, ay)
+            az = np.where(active, nz / safe, az)
         flat = np.abs(ax) + np.abs(ay) + np.abs(az) < 1e-9
-        ax = np.where(flat, 0.299, ax); ay = np.where(flat, 0.587, ay); az = np.where(flat, 0.114, az)
+        ax = np.where(flat, 0.299, ax)
+        ay = np.where(flat, 0.587, ay)
+        az = np.where(flat, 0.114, az)
         d = rgb[m, :, 0] * ax[:, None] + rgb[m, :, 1] * ay[:, None] + rgb[m, :, 2] * az[:, None]
         rows = np.arange(len(m))
         top, bottom = rgb[m][rows, d.argmax(1)], rgb[m][rows, d.argmin(1)]
@@ -208,7 +242,8 @@ def _encode_color(block):
     for _ in range(2):
         refining &= error > 0
         r = np.nonzero(refining)[0]
-        if not len(r): break
+        if not len(r):
+            break
         ok, r0, r1 = _refine(rgb[r].astype(np.float64), indices[r])
         trial_indices, trial_error = _match(rgb[r], r0, r1)
         better = ok & (trial_error < error[r])
@@ -224,7 +259,8 @@ def _encode_color(block):
     bits = (indices.astype(np.uint64) << (2 * np.arange(16, dtype=np.uint64))).sum(1, dtype=np.uint64)
     out = np.zeros((n, 8), dtype=np.uint8)
     out[:, 0], out[:, 1], out[:, 2], out[:, 3] = c0 & 255, c0 >> 8, c1 & 255, c1 >> 8
-    for k in range(4): out[:, 4 + k] = (bits >> np.uint64(8 * k)) & np.uint64(255)
+    for k in range(4):
+        out[:, 4 + k] = (bits >> np.uint64(8 * k)) & np.uint64(255)
     return out, error
 
 
@@ -233,7 +269,9 @@ def _encode_alpha(block):
     alpha = block[:, :, 3]
     low, high = alpha.min(1), alpha.max(1)
     steps = np.arange(2, 8)
-    palette = np.concatenate([high[:, None], low[:, None], ((8 - steps) * high[:, None] + (steps - 1) * low[:, None] + 3) // 7], 1)
+    palette = np.concatenate(
+        [high[:, None], low[:, None], ((8 - steps) * high[:, None] + (steps - 1) * low[:, None] + 3) // 7], 1
+    )
     errors = np.abs(alpha[:, :, None] - palette[:, None, :])
     choice = errors.argmin(-1)
     best = np.take_along_axis(errors, choice[..., None], -1)[..., 0]
@@ -243,7 +281,8 @@ def _encode_alpha(block):
     bits = (choice.astype(np.uint64) << (3 * np.arange(16, dtype=np.uint64))).sum(1, dtype=np.uint64)
     out = np.zeros((len(block), 8), dtype=np.uint8)
     out[:, 0], out[:, 1] = high, low
-    for k in range(6): out[:, 2 + k] = (bits >> np.uint64(8 * k)) & np.uint64(255)
+    for k in range(6):
+        out[:, 2 + k] = (bits >> np.uint64(8 * k)) & np.uint64(255)
     return out, (best * best).sum(1)
 
 
@@ -270,14 +309,15 @@ def _encode_batch(block, alpha):
 def encode_level(level, alpha):
     """BC1 (alpha False) or BC3 bytes of one level (H, W, 4) uint8, and the summed squared error."""
     blocks = _blocks(level)
-    parts = [_encode_batch(blocks[start:start + BATCH], alpha) for start in range(0, len(blocks), BATCH)]
+    parts = [_encode_batch(blocks[start : start + BATCH], alpha) for start in range(0, len(blocks), BATCH)]
     return b"".join(data for data, _ in parts), sum(error for _, error in parts)
 
 
 def choose_format(rgba):
     """BC1 for opaque, BC3 for alpha, RGBA32 when a side is not a multiple of 4."""
     height, width = rgba.shape[:2]
-    if width % 4 or height % 4: return RGBA32
+    if width % 4 or height % 4:
+        return RGBA32
     return BC1 if (rgba[:, :, 3] == 255).all() else BC3
 
 
@@ -287,9 +327,11 @@ def encode(rgba, linear=False):
     A first level under MINIMUM_PSNR in BC1/BC3 (art that GH3 did not store as DXT, for example smooth gradients) stays
     RGBA32."""
     rgba = np.ascontiguousarray(np.asarray(rgba, dtype=np.uint8)[::-1])
-    if rgba.ndim != 3 or rgba.shape[2] != 4: raise TextureError("expected an RGBA image")
+    if rgba.ndim != 3 or rgba.shape[2] != 4:
+        raise TextureError("expected an RGBA image")
     height, width = rgba.shape[:2]
-    if not (1 <= width <= MAX_SIZE and 1 <= height <= MAX_SIZE): raise TextureError(f"texture size must be 1 to {MAX_SIZE} pixels")
+    if not (1 <= width <= MAX_SIZE and 1 <= height <= MAX_SIZE):
+        raise TextureError(f"texture size must be 1 to {MAX_SIZE} pixels")
     fmt = choose_format(rgba)
     first = None
     if fmt != RGBA32:
@@ -301,21 +343,26 @@ def encode(rgba, linear=False):
     out = [HEADER.pack(MAGIC, fmt, width, height, mips, FLAG_LINEAR if linear else 0)]
     level = rgba
     for mip in range(mips):
-        if fmt == RGBA32: out.append(level.tobytes())
-        elif mip == 0: out.append(first)
-        else: out.append(encode_level(level, fmt == BC3)[0])
-        if mip + 1 < mips: level = downsample(level)
+        if fmt == RGBA32:
+            out.append(level.tobytes())
+        elif mip == 0:
+            out.append(first)
+        else:
+            out.append(encode_level(level, fmt == BC3)[0])
+        if mip + 1 < mips:
+            level = downsample(level)
     return b"".join(out)
 
 
 def decode_level(fmt, data, width, height):
     """RGBA (H, W, 4) uint8 of one level, rows in file order (bottom first). BC1 three-colour blocks decode as the GPU
     does: index 3 is transparent black."""
-    if fmt == RGBA32: return np.frombuffer(data, dtype=np.uint8).reshape(height, width, 4).copy()
+    if fmt == RGBA32:
+        return np.frombuffer(data, dtype=np.uint8).reshape(height, width, 4).copy()
     bx, by = max(1, (width + 3) // 4), max(1, (height + 3) // 4)
     size = 8 if fmt == BC1 else 16
     raw = np.frombuffer(data, dtype=np.uint8).reshape(-1, size)
-    color = raw[:, size - 8:]
+    color = raw[:, size - 8 :]
     words = color[:, :4].copy().view("<u2").astype(np.int32)
     c0, c1 = words[:, 0], words[:, 1]
     palette = np.empty((len(raw), 4, 4), dtype=np.int32)
@@ -334,11 +381,24 @@ def decode_level(fmt, data, width, height):
     if fmt == BC3:
         a0, a1 = raw[:, 0].astype(np.int32), raw[:, 1].astype(np.int32)
         alpha_bits = np.zeros(len(raw), dtype=np.uint64)
-        for k in range(6): alpha_bits |= raw[:, 2 + k].astype(np.uint64) << np.uint64(8 * k)
-        codes = ((alpha_bits[:, None] >> (np.uint64(3) * np.arange(16, dtype=np.uint64))) & np.uint64(7)).astype(np.int64)
+        for k in range(6):
+            alpha_bits |= raw[:, 2 + k].astype(np.uint64) << np.uint64(8 * k)
+        codes = ((alpha_bits[:, None] >> (np.uint64(3) * np.arange(16, dtype=np.uint64))) & np.uint64(7)).astype(
+            np.int64
+        )
         i = np.arange(8)[None, :]
-        eight = np.where(i == 0, a0[:, None], np.where(i == 1, a1[:, None], ((8 - i) * a0[:, None] + (i - 1) * a1[:, None] + 3) // 7))
-        six = np.where(i == 0, a0[:, None], np.where(i == 1, a1[:, None], np.where(i == 6, 0, np.where(i == 7, 255, ((6 - i) * a0[:, None] + (i - 1) * a1[:, None] + 2) // 5))))
+        eight = np.where(
+            i == 0, a0[:, None], np.where(i == 1, a1[:, None], ((8 - i) * a0[:, None] + (i - 1) * a1[:, None] + 3) // 7)
+        )
+        six = np.where(
+            i == 0,
+            a0[:, None],
+            np.where(
+                i == 1,
+                a1[:, None],
+                np.where(i == 6, 0, np.where(i == 7, 255, ((6 - i) * a0[:, None] + (i - 1) * a1[:, None] + 2) // 5)),
+            ),
+        )
         table = np.where((a0 > a1)[:, None], eight, six)
         pixels[:, :, 3] = table[np.arange(len(raw))[:, None], codes]
     image = pixels.astype(np.uint8).reshape(by, bx, 4, 4, 4).transpose(0, 2, 1, 3, 4).reshape(by * 4, bx * 4, 4)
@@ -351,7 +411,7 @@ def level_data(data):
     result, cursor = [], HEADER_SIZE
     for w, h in levels(width, height, mips):
         size = level_size(fmt, w, h)
-        result.append((w, h, data[cursor:cursor + size]))
+        result.append((w, h, data[cursor : cursor + size]))
         cursor += size
     return result
 
@@ -364,7 +424,9 @@ def decode(data, mip=0):
 
 
 def psnr(a, b, channels=4):
-    error = np.mean((np.asarray(a, dtype=np.float64)[..., :channels] - np.asarray(b, dtype=np.float64)[..., :channels]) ** 2)
+    error = np.mean(
+        (np.asarray(a, dtype=np.float64)[..., :channels] - np.asarray(b, dtype=np.float64)[..., :channels]) ** 2
+    )
     return float("inf") if error == 0 else float(10 * np.log10(255.0 * 255.0 / error))
 
 
@@ -380,7 +442,10 @@ def problems(data):
         c0, c1 = blocks[:, 0] | blocks[:, 1] << 8, blocks[:, 2] | blocks[:, 3] << 8
         bits = blocks[:, 4] | blocks[:, 5] << 8 | blocks[:, 6] << 16 | blocks[:, 7] << 24
         three = (c0 <= c1) & ((bits[:, None] >> (2 * np.arange(16)) & 3) == 3).any(1)
-        if three.any(): return [f"BC1 texture has {int(three.sum())} blocks with transparent pixels; textures with alpha must use BC3"]
+        if three.any():
+            return [
+                f"BC1 texture has {int(three.sum())} blocks with transparent pixels; textures with alpha must use BC3"
+            ]
     return []
 
 
@@ -392,15 +457,18 @@ PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 def split_glb(data):
     """(glTF JSON, binary chunk) of GLB bytes."""
     magic, version, length = struct.unpack_from("<3I", data)
-    if magic != GLB_MAGIC or version != 2 or length != len(data): raise TextureError("not a glTF 2.0 GLB")
+    if magic != GLB_MAGIC or version != 2 or length != len(data):
+        raise TextureError("not a glTF 2.0 GLB")
     size, kind = struct.unpack_from("<2I", data, 12)
-    if kind != JSON_CHUNK: raise TextureError("the first GLB chunk is not JSON")
-    gltf = json.loads(bytes(data[20:20 + size]).decode("utf-8"))
+    if kind != JSON_CHUNK:
+        raise TextureError("the first GLB chunk is not JSON")
+    gltf = json.loads(bytes(data[20 : 20 + size]).decode("utf-8"))
     binary, cursor = b"", 20 + size
     if cursor < len(data):
         size, kind = struct.unpack_from("<2I", data, cursor)
-        if kind != BIN_CHUNK: raise TextureError("the second GLB chunk is not binary")
-        binary = bytes(data[cursor + 8:cursor + 8 + size])
+        if kind != BIN_CHUNK:
+            raise TextureError("the second GLB chunk is not binary")
+        binary = bytes(data[cursor + 8 : cursor + 8 + size])
     return gltf, binary
 
 
@@ -417,7 +485,7 @@ def join_glb(gltf, binary):
 def _view_bytes(gltf, binary, index):
     view = gltf["bufferViews"][index]
     start = view.get("byteOffset", 0)
-    return binary[start:start + view["byteLength"]]
+    return binary[start : start + view["byteLength"]]
 
 
 def replace_images(gltf, binary, payloads):
@@ -428,13 +496,16 @@ def replace_images(gltf, binary, payloads):
     out = bytearray()
     for index, view in enumerate(gltf.get("bufferViews", [])):
         data = by_view.get(index)
-        if data is None: data = _view_bytes(gltf, binary, index)
+        if data is None:
+            data = _view_bytes(gltf, binary, index)
         out += b"\0" * (-len(out) % 4)
         view["byteOffset"] = len(out)
         view["byteLength"] = len(data)
         out += data
-    for index, (_, mime) in payloads.items(): images[index]["mimeType"] = mime
-    if gltf.get("buffers"): gltf["buffers"][0]["byteLength"] = len(out)
+    for index, (_, mime) in payloads.items():
+        images[index]["mimeType"] = mime
+    if gltf.get("buffers"):
+        gltf["buffers"][0]["byteLength"] = len(out)
     return bytes(out)
 
 
@@ -452,8 +523,10 @@ def linear_images(gltf):
 def _set_extension(gltf, used):
     for key in ("extensionsUsed", "extensionsRequired"):
         names = [name for name in gltf.get(key, []) if name != EXTENSION] + ([EXTENSION] if used else [])
-        if names: gltf[key] = names
-        else: gltf.pop(key, None)
+        if names:
+            gltf[key] = names
+        else:
+            gltf.pop(key, None)
 
 
 def encode_glb(data, encode_many):
@@ -461,11 +534,16 @@ def encode_glb(data, encode_many):
     GH3TEX02 bytes in the same order (the caller decodes PNG and may encode in parallel)."""
     gltf, binary = split_glb(data)
     linear = linear_images(gltf)
-    jobs = [(index, bytes(_view_bytes(gltf, binary, image["bufferView"])))
-            for index, image in enumerate(gltf.get("images", [])) if "bufferView" in image and image.get("mimeType") != MIME_TYPE]
-    if not jobs: return data
+    jobs = [
+        (index, bytes(_view_bytes(gltf, binary, image["bufferView"])))
+        for index, image in enumerate(gltf.get("images", []))
+        if "bufferView" in image and image.get("mimeType") != MIME_TYPE
+    ]
+    if not jobs:
+        return data
     for index, payload in jobs:
-        if not payload.startswith(PNG_SIGNATURE): raise TextureError(f"image {index} is not a PNG file")
+        if not payload.startswith(PNG_SIGNATURE):
+            raise TextureError(f"image {index} is not a PNG file")
     encoded = encode_many([(payload, index in linear) for index, payload in jobs])
     binary = replace_images(gltf, binary, {index: (tex, MIME_TYPE) for (index, _), tex in zip(jobs, encoded)})
     _set_extension(gltf, True)
@@ -476,9 +554,13 @@ def decode_glb(data, keep_source=True):
     """GLB bytes with every GH3TEX02 image replaced by a PNG image of its first level (for glTF tools and Blender).
     keep_source: the PNG keeps the GH3TEX02 file in a SOURCE_CHUNK (encode_png_image uses it again)."""
     gltf, binary = split_glb(data)
-    views = [(index, bytes(_view_bytes(gltf, binary, image["bufferView"]))) for index, image in enumerate(gltf.get("images", []))
-             if image.get("mimeType") == MIME_TYPE and "bufferView" in image]
-    if not views and EXTENSION not in gltf.get("extensionsUsed", []): return data
+    views = [
+        (index, bytes(_view_bytes(gltf, binary, image["bufferView"])))
+        for index, image in enumerate(gltf.get("images", []))
+        if image.get("mimeType") == MIME_TYPE and "bufferView" in image
+    ]
+    if not views and EXTENSION not in gltf.get("extensionsUsed", []):
+        return data
     payloads = {index: (png_bytes(decode(view), view if keep_source else None), "image/png") for index, view in views}
     binary = replace_images(gltf, binary, payloads)
     _set_extension(gltf, False)
@@ -488,8 +570,15 @@ def decode_glb(data, keep_source=True):
 def glb_textures(data):
     """[(image index, image JSON, GH3TEX02 bytes or None for other images)] of a GLB."""
     gltf, binary = split_glb(data)
-    return [(index, image, bytes(_view_bytes(gltf, binary, image["bufferView"])) if image.get("mimeType") == MIME_TYPE else None)
-            for index, image in enumerate(gltf.get("images", [])) if "bufferView" in image]
+    return [
+        (
+            index,
+            image,
+            bytes(_view_bytes(gltf, binary, image["bufferView"])) if image.get("mimeType") == MIME_TYPE else None,
+        )
+        for index, image in enumerate(gltf.get("images", []))
+        if "bufferView" in image
+    ]
 
 
 # Private PNG chunk (ancillary, safe to copy) with the GH3TEX02 file that a PNG was decoded from: an image that comes
@@ -511,7 +600,12 @@ def png_bytes(rgba, source=None):
     raw = np.concatenate([np.ones((height, 1), dtype=np.uint8), filtered], 1).tobytes()
 
     def chunk(kind, payload):
-        return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+        )
 
     header = struct.pack(">2I5B", width, height, 8, 6 if channels == 4 else 2, 0, 0, 0)
     kept = chunk(SOURCE_CHUNK, zlib.compress(source, 1)) if source else b""
@@ -521,12 +615,13 @@ def png_bytes(rgba, source=None):
 def png_source(png):
     """The GH3TEX02 bytes of the SOURCE_CHUNK of a PNG file, or None."""
     cursor = len(PNG_SIGNATURE)
-    if not png.startswith(PNG_SIGNATURE): return None
+    if not png.startswith(PNG_SIGNATURE):
+        return None
     while cursor + 8 <= len(png):
         length, kind = struct.unpack_from(">I4s", png, cursor)
         if kind == SOURCE_CHUNK:
             try:
-                return zlib.decompress(png[cursor + 8:cursor + 8 + length])
+                return zlib.decompress(png[cursor + 8 : cursor + 8 + length])
             except zlib.error:
                 return None
         cursor += 12 + length
@@ -537,9 +632,11 @@ def unchanged_source(png, linear=False):
     """The GH3TEX02 file of the SOURCE_CHUNK when the PNG is still the file that png_bytes made from it (no decode of
     the PNG needed), else None."""
     source = png_source(png)
-    if source is None: return None
+    if source is None:
+        return None
     try:
-        if bool(read_header(source)[4] & FLAG_LINEAR) == linear and png_bytes(decode(source), source) == png: return source
+        if bool(read_header(source)[4] & FLAG_LINEAR) == linear and png_bytes(decode(source), source) == png:
+            return source
     except TextureError:
         pass
     return None
@@ -551,7 +648,8 @@ def encode_png_image(png, rgba, linear=False):
     source = png_source(png)
     if source is not None:
         try:
-            if bool(read_header(source)[4] & FLAG_LINEAR) == linear and np.array_equal(decode(source), rgba): return source
+            if bool(read_header(source)[4] & FLAG_LINEAR) == linear and np.array_equal(decode(source), rgba):
+                return source
         except TextureError:
             pass
     return encode(rgba, linear)
@@ -561,6 +659,7 @@ def png_rgba(png):
     """RGBA (H, W, 4) uint8 of a PNG file, top row first. Needs Pillow (the Blender add-on decodes with Blender)."""
     from io import BytesIO
     from PIL import Image
+
     return np.asarray(Image.open(BytesIO(png)).convert("RGBA"))
 
 

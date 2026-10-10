@@ -20,27 +20,36 @@ from pipeline.gh3.direction import Source, script  # noqa: E402
 from pipeline.gh3.formats import key  # noqa: E402
 from pipeline.paths import CHARACTER_LIBRARY, GH3_DATA  # noqa: E402
 
-LINE = re.compile(r"\[trace\] band t=(\S+) role=(\S+) profile=(\S+) set=(\S+) stance=(\S+) clip=(\S+) clipTime=(\S+) scale=(\S+) bones=(\S+)")
+LINE = re.compile(
+    r"\[trace\] band t=(\S+) role=(\S+) profile=(\S+) set=(\S+) stance=(\S+) clip=(\S+) clipTime=(\S+) scale=(\S+) bones=(\S+)"
+)
 
 
 def main():
     log = Path(sys.argv[1]).read_text(errors="replace")
-    library = json.loads((CHARACTER_LIBRARY/"characters.json").read_text())
+    library = json.loads((CHARACTER_LIBRARY / "characters.json").read_text())
     source = Source(GH3_DATA)
     rigs = {n: b for k, n, b in source.load("ZONES/global.pak.xen") if k == key(".ske")}
     scripts = source.scripts()
     profiles = {p[key("name")]: p for p in qb_items(script(scripts, "guitar_band_profile"))[key("Musician_Profiles")]}
-    bodies = {row[key("desc_id")]: row for row in qb_items(script(scripts, "guitar_band_profile_data"))[key("musician_body")]}
+    bodies = {
+        row[key("desc_id")]: row for row in qb_items(script(scripts, "guitar_band_profile_data"))[key("musician_body")]
+    }
     banks = {}
 
     def bank(set_name):
         if set_name not in banks:
-            name = next(n for n, p in profiles.items() if f"{p[key('anim_set')]:08x}" == library["animations"][set_name]["animSet"])
+            name = next(
+                n
+                for n, p in profiles.items()
+                if f"{p[key('anim_set')]:08x}" == library["animations"][set_name]["animSet"]
+            )
             body = bodies[key(f"Guitarist_{name}_Outfit1_Style1")]
             clips = {}
             for path in (body[key("anims_pak")], body[key("pak")], "perm_anims.pak", "Judy_1_anims.pak"):
                 for kind, clip, data in source.load(f"PAK/{pak_name(source.directory, path)}"):
-                    if kind == key(".ska"): clips.setdefault(clip, data)
+                    if kind == key(".ska"):
+                        clips.setdefault(clip, data)
             banks[set_name] = clips
         return banks[set_name]
 
@@ -48,9 +57,12 @@ def main():
     samples = lines = 0
     for match in LINE.finditer(log):
         _, _, profile, set_name, _, clip, clip_time, _, bones = match.groups()
-        if profile == "library": continue
+        if profile == "library":
+            continue
         rig = skeleton(rigs[int(library["profiles"][profile]["skeleton"], 16)])
-        p, q = sample_animation(animation(bank(set_name)[int(clip, 16)], len(rig[0])), rig[2], rig[3], np.array([float(clip_time)]))
+        p, q = sample_animation(
+            animation(bank(set_name)[int(clip, 16)], len(rig[0])), rig[2], rig[3], np.array([float(clip_time)])
+        )
         for item in bones.split(";"):
             index, values = item.split(":")
             value = np.array([float(v) for v in values.split(",")])
@@ -61,7 +73,9 @@ def main():
             worst_rotation = max(worst_rotation, float(4 * np.degrees(np.arcsin(min(1, chord / 2)))))
             samples += 1
         lines += 1
-    print(f"{lines} trace lines, {samples} bone samples: largest difference {worst_position * 1000:.3f} mm, {worst_rotation:.4f} degrees")
+    print(
+        f"{lines} trace lines, {samples} bone samples: largest difference {worst_position * 1000:.3f} mm, {worst_rotation:.4f} degrees"
+    )
     return 0 if lines else 1
 
 

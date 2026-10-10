@@ -17,8 +17,12 @@ ANIMATED_TEXTURE_TEMPLATES = {"9893d156", "f76185ad", "9224d2a1"}
 # Original pixel and vertex shaders: (diffuse UV set, layer sampler, layer UV set, mask sampler, mask UV set, layer colour constant).
 # D_3ChkBox_Pass0_Pass1 and D_N_S_4ChkBox_Pass1 blend a second texture over the diffuse by layer alpha x mask red x vertex alpha.
 # D_3ChkBox_Pass1 and Wibble_Simple multiply the output alpha by the mask's red channel.
-LAYERED_TEMPLATES = {"D_3ChkBox_Pass0_Pass1": (0, 1, 1, 2, 2, 1), "D_3ChkBox_Pass1": (1, None, None, 1, 2, None),
-                     "Wibble_Simple": (0, None, None, 1, 1, None), "D_N_S_4ChkBox_Pass1": (0, 3, 1, 4, 1, 4)}
+LAYERED_TEMPLATES = {
+    "D_3ChkBox_Pass0_Pass1": (0, 1, 1, 2, 2, 1),
+    "D_3ChkBox_Pass1": (1, None, None, 1, 2, None),
+    "Wibble_Simple": (0, None, None, 1, 1, None),
+    "D_N_S_4ChkBox_Pass1": (0, 3, 1, 4, 1, 4),
+}
 WIBBLE_SIMPLE = "d825b71c"
 
 
@@ -36,20 +40,28 @@ def cube_to_equirect(blob):
         raise ValueError("Unsupported GH3 cube map layout")
     pixels = np.frombuffer(blob, "<u4", offset=128)
     face_words = sum((width >> level) ** 2 for level in range(mips))
+
     def channel(mask, values):
         shift = (mask & -mask).bit_length() - 1
         return ((values & mask) >> shift).astype(np.uint8)
+
     faces = []
     for face in range(6):
-        level0 = pixels[face*face_words:face*face_words + width*width].reshape(width, width)
+        level0 = pixels[face * face_words : face * face_words + width * width].reshape(width, width)
         faces.append(np.stack([channel(mask, level0) for mask in masks], axis=-1))
-    out_height = 2 * width; out_width = 4 * width
-    v, u = np.meshgrid((np.arange(out_height) + 0.5) / out_height, (np.arange(out_width) + 0.5) / out_width, indexing="ij")
-    phi = (u - 0.5) * 2 * np.pi; theta = v * np.pi
+    out_height = 2 * width
+    out_width = 4 * width
+    v, u = np.meshgrid(
+        (np.arange(out_height) + 0.5) / out_height, (np.arange(out_width) + 0.5) / out_width, indexing="ij"
+    )
+    phi = (u - 0.5) * 2 * np.pi
+    theta = v * np.pi
     x, y, z = np.sin(theta) * np.sin(phi), np.cos(theta), np.sin(theta) * np.cos(phi)
     ax, ay, az = np.abs(x), np.abs(y), np.abs(z)
     # D3D face selection and (sc, tc) per face: +X, -X, +Y, -Y, +Z, -Z.
-    face = np.where((ax >= ay) & (ax >= az), np.where(x > 0, 0, 1), np.where(ay >= az, np.where(y > 0, 2, 3), np.where(z > 0, 4, 5)))
+    face = np.where(
+        (ax >= ay) & (ax >= az), np.where(x > 0, 0, 1), np.where(ay >= az, np.where(y > 0, 2, 3), np.where(z > 0, 4, 5))
+    )
     major = np.choose(face, [ax, ax, ay, ay, az, az])
     sc = np.choose(face, [-z, z, x, x, x, -x]) / major
     tc = np.choose(face, [-y, -y, z, -z, -y, -y]) / major
@@ -67,7 +79,8 @@ def mark_cube_samplers(materials, cubes):
     for material in materials.values():
         gh3 = material.get("gh3", {})
         for slot, name in enumerate(gh3.get("textures", [])):
-            if name in cubes: gh3["addressing"][slot] = 2
+            if name in cubes:
+                gh3["addressing"][slot] = 2
 
 
 def cube_names(data):
@@ -75,8 +88,9 @@ def cube_names(data):
     table = word(data, 8)
     result = set()
     for index in range(values(data, 6, "H")[0]):
-        start, size = values(data, table + 40*index + 28, "II")
-        if cube_map(data[start:start + size]): result.add(f"{word(data, table + 40*index + 4):08x}")
+        start, size = values(data, table + 40 * index + 28, "II")
+        if cube_map(data[start : start + size]):
+            result.add(f"{word(data, table + 40 * index + 4):08x}")
     return result
 
 
@@ -89,7 +103,7 @@ def textures(data):
         header = table + 40 * index
         name = word(data, header + 4)
         start, size = values(data, header + 28, "II")
-        blob = data[start:start + size]
+        blob = data[start : start + size]
         image = cube_to_equirect(blob) if cube_map(blob) else Image.open(BytesIO(blob)).convert("RGBA")
         yield f"{name:08x}", image
 
@@ -98,7 +112,7 @@ def triangles(indices, kind):
     if kind == 4:
         if len(indices) % 3:
             raise ValueError("Incomplete triangle")
-        result = [tuple(indices[i:i + 3]) for i in range(0, len(indices), 3)]
+        result = [tuple(indices[i : i + 3]) for i in range(0, len(indices), 3)]
     elif kind == 6:
         result, strip = [], []
         for index in indices:
@@ -140,21 +154,24 @@ def diffuse_texture(material, available):
 
 def crowd_uvs(vertices, count, faces, seed, stride):
     parents = list(range(count))
+
     def root(index):
         while parents[index] != index:
             parents[index] = parents[parents[index]]
             index = parents[index]
         return index
+
     for face in faces:
-        for vertex in face[1:]: parents[root(vertex)] = root(face[0])
+        for vertex in face[1:]:
+            parents[root(vertex)] = root(face[0])
     if any(size > 6 for size in Counter(root(v) for v in range(count)).values()):
         raise ValueError("Crowd meshes must use independent crowd cards")
     people = {}
     for vertex in range(count):
         person = people.setdefault(root(vertex), len(people))
-        tile = (person+seed) % 24
-        u, v = struct.unpack_from("<2f", vertices, vertex*stride+24)
-        struct.pack_into("<2f", vertices, vertex*stride+24, (tile % 8+u)/8, 1-(tile//8+1-v)/3)
+        tile = (person + seed) % 24
+        u, v = struct.unpack_from("<2f", vertices, vertex * stride + 24)
+        struct.pack_into("<2f", vertices, vertex * stride + 24, (tile % 8 + u) / 8, 1 - (tile // 8 + 1 - v) / 3)
 
 
 # Extended static vertex: the GH3 vertex streams that the original vertex shaders read, unchanged: UV sets 0–3,
@@ -170,34 +187,47 @@ SKINNED_STRIDE = 56 + SKIN_STREAMS.size
 
 def material_record(data, offset, samples):
     """The GH3 material data that selects and drives its template: constant banks, samplers, and render state."""
+
     def bank(at):
         count, start = values(data, offset + at, "II")
-        return [list(values(data, offset + start + i*16, "4f")) for i in range(count)]
-    return {"template": f"{word(data, offset + 160):08x}", "vertexConstants": bank(168), "pixelConstants": bank(176),
-            "textures": [f"{sample:08x}" for sample in samples],
-            # Per-sampler address bits (+234): bit 0 clamps U, bit 1 clamps V.
-            "addressing": list(data[offset + 234:offset + 234 + len(samples)]),
-            # Render state, as GH3's material bind applies it: flags (+204), blend mode (+216), alpha reference (+232).
-            "flags": word(data, offset + 204), "blend": word(data, offset + 216), "alphaRef": data[offset + 232],
-            "drawOrder": values(data, offset + 212, "f")[0]}
+        return [list(values(data, offset + start + i * 16, "4f")) for i in range(count)]
+
+    return {
+        "template": f"{word(data, offset + 160):08x}",
+        "vertexConstants": bank(168),
+        "pixelConstants": bank(176),
+        "textures": [f"{sample:08x}" for sample in samples],
+        # Per-sampler address bits (+234): bit 0 clamps U, bit 1 clamps V.
+        "addressing": list(data[offset + 234 : offset + 234 + len(samples)]),
+        # Render state, as GH3's material bind applies it: flags (+204), blend mode (+216), alpha reference (+232).
+        "flags": word(data, offset + 204),
+        "blend": word(data, offset + 216),
+        "alphaRef": data[offset + 232],
+        "drawOrder": values(data, offset + 212, "f")[0],
+    }
 
 
 def place_vertices(vertices, count, angles=(0, 0, 0), origin=(0, 0, 0), scale=(1, 1, 1)):
     """Rotate, scale, and move stage-convention vertices (z negated), including the GH3 position-1 and binormal streams."""
-    vertices = bytearray(vertices); stride = len(vertices) // count
+    vertices = bytearray(vertices)
+    stride = len(vertices) // count
+
     def point(x, y, z):
-        p = rotate((x*scale[0], y*scale[1], -z*scale[2]), angles)
+        p = rotate((x * scale[0], y * scale[1], -z * scale[2]), angles)
         return p[0] + origin[0], p[1] + origin[1], -(p[2] + origin[2])
+
     def direction(x, y, z):
         d = rotate((x, y, -z), angles)
         return d[0], d[1], -d[2]
+
     for vertex in range(count):
-        at = vertex*stride
+        at = vertex * stride
         x, y, z, nx, ny, nz = struct.unpack_from("<6f", vertices, at)
         struct.pack_into("<6f", vertices, at, *point(x, y, z), *direction(nx, ny, nz))
         if stride == STATIC_STRIDE:
             streams = at + 60 + 48
-            b = struct.unpack_from("<3f", vertices, streams); p = struct.unpack_from("<3f", vertices, streams + 12)
+            b = struct.unpack_from("<3f", vertices, streams)
+            p = struct.unpack_from("<3f", vertices, streams + 12)
             b1 = struct.unpack_from("<3f", vertices, streams + 24)
             struct.pack_into("<9f", vertices, streams, *direction(*b), *point(*p), *direction(*b1))
     return bytes(vertices)
@@ -223,40 +253,58 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
         template = gh3_materials.templates().get(materials[name]["template"])
         if template is not None:
             constant_count, constant_offset = values(data, offset + 176, "II")
-            constants = [values(data, offset + constant_offset + i*16, "4f") for i in range(min(constant_count, 16))]
+            constants = [values(data, offset + constant_offset + i * 16, "4f") for i in range(min(constant_count, 16))]
             slot = gh3_materials.lightmap_slot(template, sample_count)
             materials[name]["shading"] = template["shading"]
             if template["diffuseConstant"] is not None and template["diffuseConstant"] < len(constants):
                 materials[name]["color"] = [max(0.0, v) for v in constants[template["diffuseConstant"]]]
             if slot is not None:
                 materials[name]["lightmap"] = materials[name]["textures"][slot]
+
             def uv_scale(sampler):
                 entry = template["uvScales"].get(sampler)
                 return constants[entry[0]][entry[1]] if entry and entry[0] < len(constants) else 1.0
+
             layers = LAYERED_TEMPLATES.get(template["name"], (0, None, None, None, None, None))
-            scales = [uv_scale(1 if materials[name]["template"] in SECOND_SAMPLER_DIFFUSE else 0),
-                      uv_scale(layers[1]) if layers[1] is not None else 1.0, uv_scale(layers[3]) if layers[3] is not None else 1.0]
-            if scales != [1, 1, 1]: materials[name]["uvScale"] = scales
+            scales = [
+                uv_scale(1 if materials[name]["template"] in SECOND_SAMPLER_DIFFUSE else 0),
+                uv_scale(layers[1]) if layers[1] is not None else 1.0,
+                uv_scale(layers[3]) if layers[3] is not None else 1.0,
+            ]
+            if scales != [1, 1, 1]:
+                materials[name]["uvScale"] = scales
             if template["name"] in LAYERED_TEMPLATES:
                 textures = materials[name]["textures"]
                 diffuse_set, layer, layer_set, mask, mask_set, layer_constant = layers
                 materials[name]["uvSets"] = (diffuse_set, layer_set, mask_set)
                 materials[name]["mask"] = textures[mask]
                 if layer is not None:
-                    if len(constants) <= layer_constant: raise ValueError("Layered material has no layer colour")
+                    if len(constants) <= layer_constant:
+                        raise ValueError("Layered material has no layer colour")
                     base = materials[name].get("color", [1, 1, 1, 1])
                     # The diffuse constant is baked into vertex colours; the layer uses lighting x vertex colour x its own constant.
-                    materials[name]["layer"] = {"texture": textures[layer],
-                                                "color": [c / max(b, 1e-3) for c, b in zip(constants[layer_constant], base)]}
+                    materials[name]["layer"] = {
+                        "texture": textures[layer],
+                        "color": [c / max(b, 1e-3) for c, b in zip(constants[layer_constant], base)],
+                    }
         if materials[name]["template"] in ANIMATED_TEXTURE_TEMPLATES:
             constant_count, constant_offset = values(data, offset + 168, "II")
-            if constant_count != 4: raise ValueError("Animated texture has an invalid vertex constant bank")
-            columns, rows, fps, frame_offset = [values(data, offset + constant_offset + i*16, "f")[0] for i in range(4)]
-            materials[name]["textureAnimation"] = {"columns": int(columns), "rows": int(rows), "fps": fps, "offset": frame_offset}
+            if constant_count != 4:
+                raise ValueError("Animated texture has an invalid vertex constant bank")
+            columns, rows, fps, frame_offset = [
+                values(data, offset + constant_offset + i * 16, "f")[0] for i in range(4)
+            ]
+            materials[name]["textureAnimation"] = {
+                "columns": int(columns),
+                "rows": int(rows),
+                "fps": fps,
+                "offset": frame_offset,
+            }
         if materials[name]["template"] == WIBBLE_SIMPLE:
             constant_count, constant_offset = values(data, offset + 168, "II")
-            if constant_count != 11: raise ValueError("Wibble_Simple has an invalid vertex constant bank")
-            motion = [values(data, offset + constant_offset + i*16, "f")[0] for i in range(11)]
+            if constant_count != 11:
+                raise ValueError("Wibble_Simple has an invalid vertex constant bank")
+            motion = [values(data, offset + constant_offset + i * 16, "f")[0] for i in range(11)]
             # The pixel shader scales the UV after the vertex shader's turn and scroll, so the pivot and scroll scale with it.
             scale = materials[name].get("uvScale", [1, 1, 1])[0]
             materials[name]["uvWibble"] = [v * scale if i in (0, 1, 4, 5, 9, 10) else v for i, v in enumerate(motion)]
@@ -308,14 +356,28 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
                     cursor += 16
                     for _ in range(count):
                         row = values(data, cursor, "14f")
-                        weighted_vertices.append(((row[0], row[4], row[8]), (row[1], row[5], row[9]), (row[2], row[6], row[10]), (row[3], row[7], row[11])))
+                        weighted_vertices.append(
+                            (
+                                (row[0], row[4], row[8]),
+                                (row[1], row[5], row[9]),
+                                (row[2], row[6], row[10]),
+                                (row[3], row[7], row[11]),
+                            )
+                        )
                         amounts = (row[12], row[13], 1 - row[12] - row[13])[:influences]
                         amounts = [max(0, amount) for amount in amounts]
                         total = sum(amounts)
                         if total <= 0 or not math.isfinite(total):
                             raise ValueError("Invalid skin weights")
-                        weights.append(struct.pack("<4B4f", *bones[:influences], *([0] * (4 - influences)),
-                                                   *(amount / total for amount in amounts), *([0] * (4 - influences))))
+                        weights.append(
+                            struct.pack(
+                                "<4B4f",
+                                *bones[:influences],
+                                *([0] * (4 - influences)),
+                                *(amount / total for amount in amounts),
+                                *([0] * (4 - influences)),
+                            )
+                        )
                         cursor += 56
             if len(weights) != vertex_count:
                 raise ValueError("Skin weight count does not match vertices")
@@ -367,8 +429,10 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
             lightmap = values(data, extra, "2f") if flags & 0x0F000000 else (0, 0)
             expected = extra + (8 if flags & 0x0C000000 else 0) + (8 if flags & 0x03000000 else 0)
             streams = [sets.get(n, (0, 0)) for n in range(4)] + [(0, 0), (0, 0)]
-            if flags & 0x0C000000: streams[5] = lightmap
-            if flags & 0x03000000: streams[4] = values(data, extra + (8 if flags & 0x0C000000 else 0), "2f")
+            if flags & 0x0C000000:
+                streams[5] = lightmap
+            if flags & 0x03000000:
+                streams[4] = values(data, extra + (8 if flags & 0x0C000000 else 0), "2f")
             if expected != start + stride:
                 raise ValueError(f"Unsupported vertex layout {flags:08x}: {expected - start} != {stride}")
             floats = (*position[:2], -position[2], *normal[:2], -normal[2], uv[0], 1 - uv[1])
@@ -379,13 +443,35 @@ def scene(data, nodes=None, skinned=False, light_groups=None, mesh_nodes=None, c
             mask_uv = mask_uv if all(map(math.isfinite, mask_uv)) else (0, 0)
             vertex_data.extend(struct.pack("<8f4B", *floats, *color))
             if not skinned:
-                vertex_data.extend(struct.pack("<6f", lightmap[0], 1 - lightmap[1], layer_uv[0], 1 - layer_uv[1], mask_uv[0], 1 - mask_uv[1]))
-                raw = (*(c for uv_pair in streams for c in uv_pair), binormal[0], binormal[1], -binormal[2], pivot[0], pivot[1], -pivot[2],
-                       binormal1[0], binormal1[1], -binormal1[2])
+                vertex_data.extend(
+                    struct.pack(
+                        "<6f", lightmap[0], 1 - lightmap[1], layer_uv[0], 1 - layer_uv[1], mask_uv[0], 1 - mask_uv[1]
+                    )
+                )
+                raw = (
+                    *(c for uv_pair in streams for c in uv_pair),
+                    binormal[0],
+                    binormal[1],
+                    -binormal[2],
+                    pivot[0],
+                    pivot[1],
+                    -pivot[2],
+                    binormal1[0],
+                    binormal1[1],
+                    -binormal1[2],
+                )
                 vertex_data.extend(GH3_STREAMS.pack(*(v if math.isfinite(v) else 0.0 for v in raw)))
             if skinned:
                 vertex_data.extend(weights[vertex] if weighted else struct.pack("<4B4f", 0, 0, 0, 0, 1, 0, 0, 0))
-                raw = (*(c for uv_pair in streams for c in uv_pair), binormal[0], binormal[1], -binormal[2], tangent[0], tangent[1], -tangent[2])
+                raw = (
+                    *(c for uv_pair in streams for c in uv_pair),
+                    binormal[0],
+                    binormal[1],
+                    -binormal[2],
+                    tangent[0],
+                    tangent[1],
+                    -tangent[2],
+                )
                 vertex_data.extend(SKIN_STREAMS.pack(*(v if math.isfinite(v) else 0.0 for v in raw)))
         faces = triangles(values(data, indices_at, f"{index_count}H"), kind)
         if any(max(face) >= vertex_count for face in faces):

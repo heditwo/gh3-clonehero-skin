@@ -30,7 +30,7 @@ def export(path, settings):
     bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", **EXPORT[settings])
 
 
-args = sys.argv[sys.argv.index("--")+1:]
+args = sys.argv[sys.argv.index("--") + 1 :]
 mode = args[0]
 if mode == "import":
     source, output, import_settings, export_settings = args[1:5]
@@ -41,8 +41,11 @@ if mode == "import":
         import_settings = "default"
     if os.environ.get("SPIKE_GLTF_FIX"):
         # The add-on's fix for the Blender 4.2 custom attribute import (blender/chstage_tools/gltf_io.py).
-        spec = importlib.util.spec_from_file_location("gltf_io", Path(__file__).resolve().parents[3]/"blender/chstage_tools/gltf_io.py")
-        gltf_io = importlib.util.module_from_spec(spec); spec.loader.exec_module(gltf_io)
+        spec = importlib.util.spec_from_file_location(
+            "gltf_io", Path(__file__).resolve().parents[3] / "blender/chstage_tools/gltf_io.py"
+        )
+        gltf_io = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gltf_io)
         print("SPIKE fix", gltf_io.fix_custom_attribute_import())
     bpy.ops.import_scene.gltf(filepath=source, **IMPORT[import_settings])
     if export_settings.startswith("blend:"):
@@ -55,7 +58,16 @@ if mode == "import":
         else:
             export(output, export_settings)
     armature = next(o for o in bpy.data.objects if o.type == "ARMATURE")
-    print("SPIKE", json.dumps({"bones": len(armature.data.bones), "actions": len(bpy.data.actions),
-                               "fps": bpy.context.scene.render.fps, "objects": [o.name for o in bpy.data.objects]}))
+    print(
+        "SPIKE",
+        json.dumps(
+            {
+                "bones": len(armature.data.bones),
+                "actions": len(bpy.data.actions),
+                "fps": bpy.context.scene.render.fps,
+                "objects": [o.name for o in bpy.data.objects],
+            }
+        ),
+    )
 elif mode == "export":
     export(args[1], args[2])

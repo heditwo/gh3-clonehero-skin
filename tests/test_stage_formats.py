@@ -31,10 +31,13 @@ def song_fixture():
 class StageFormatTests(unittest.TestCase):
     def test_original_lightshow_export_preserves_pyro_time(self):
         result = events.extract(song_fixture(), "fixture")
-        self.assertEqual([(e["time"], e["type"], e["value"], e["duration"], e["velocity"]) for e in result["events"]], [
-            (45.274, "gh3-note", "56", 0.055, None),
-            (46.0, "gh3-note", "72", 0.043, None),
-        ])
+        self.assertEqual(
+            [(e["time"], e["type"], e["value"], e["duration"], e["velocity"]) for e in result["events"]],
+            [
+                (45.274, "gh3-note", "56", 0.055, None),
+                (46.0, "gh3-note", "72", 0.043, None),
+            ],
+        )
         self.assertEqual(result["playback"], [])
 
     def test_wrong_song_id_is_not_silently_exported(self):
@@ -58,7 +61,7 @@ class StageFormatTests(unittest.TestCase):
 
     def test_unknown_note_pitch_is_rejected(self):
         pak = bytearray(song_fixture())
-        pak[64 + 84:64 + 88] = words(256)
+        pak[64 + 84 : 64 + 88] = words(256)
         with self.assertRaisesRegex(ValueError, "Invalid native lightshow note"):
             events.extract(pak, "fixture")
 

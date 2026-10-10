@@ -55,8 +55,13 @@ class ExampleTests(unittest.TestCase):
 
     def test_images_are_generated(self):
         """All images come from examples/build_examples.py, by name."""
-        expected = {"example.club.chstage": ("stage.glb", {"stage-wood", "club-floor", "brick-wall", "speaker-grille", "truss"}),
-                    "example.guitarist.chchar": ("character.glb", {"body-color", "hair-color"})}
+        expected = {
+            "example.club.chstage": (
+                "stage.glb",
+                {"stage-wood", "club-floor", "brick-wall", "speaker-grille", "truss"},
+            ),
+            "example.guitarist.chchar": ("character.glb", {"body-color", "hair-color"}),
+        }
         for name, (model, images) in expected.items():
             with self.subTest(name=name), zipfile.ZipFile(EXAMPLES / name) as package:
                 glb = Glb(package.read(model))

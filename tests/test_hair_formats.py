@@ -17,7 +17,7 @@ class HairFormatTests(unittest.TestCase):
     @unittest.skipUnless(os.environ.get("GH3_HAIR_SOURCE"), "requires original GH3 data")
     def test_original_ragdoll_reflection_and_bounds(self):
         entries = Source(Path(os.environ["GH3_HAIR_SOURCE"])).load("ZONES/global.pak.xen")
-        data = next(b for k, n, b in entries if k == key(".rag") and n == 0x8efb7275)
+        data = next(b for k, n, b in entries if k == key(".rag") and n == 0x8EFB7275)
         rag = Ragdoll(data)
         bodies = {rag.field(p, c, "name"): p for p, c in rag.types.items() if c == "hkRigidBody"}
         self.assertEqual(len([n for n in bodies if n.startswith("Bone_ACC_")]), 15)

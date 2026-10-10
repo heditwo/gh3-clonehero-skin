@@ -24,8 +24,7 @@ def triangles(mesh):
 
 
 def area(mesh):
-    return sum(((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / 2
-               for a, b, c in triangles(mesh))
+    return sum(((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / 2 for a, b, c in triangles(mesh))
 
 
 class MeshCutoutTests(unittest.TestCase):
@@ -36,8 +35,10 @@ class MeshCutoutTests(unittest.TestCase):
             image.save(Path(folder) / "12345678.png")
             opaque = square(skinned=True)
             blended = ("hair", *opaque[1:])
-            materials = {"drum": {"template": "f4e6db51", "blend": 0, "cutoff": 0.25, "texture": "12345678"},
-                         "hair": {"template": "6f3f03f3", "blend": 3, "cutoff": 0.25, "texture": "12345678"}}
+            materials = {
+                "drum": {"template": "f4e6db51", "blend": 0, "cutoff": 0.25, "texture": "12345678"},
+                "hair": {"template": "6f3f03f3", "blend": 3, "cutoff": 0.25, "texture": "12345678"},
+            }
             result = trim_prop_cutouts([opaque, blended], materials, folder)
             self.assertAlmostEqual(area(result[0]), 0.5)
             self.assertEqual(result[1], blended)

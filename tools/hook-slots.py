@@ -5,6 +5,7 @@ usage: hook-slots.py <core> <game-dir>
 Needs gdb. Extract the core with `coredumpctl dump <pid> --output=<core>` to a disk folder (not a RAM disk) and delete it
 after use. See docs/STATUS.md#stability.
 """
+
 import os
 import re
 import subprocess
@@ -49,7 +50,9 @@ def describe(addr):
 ga = base_of("GameAssembly.so")
 clr = base_of("libcoreclr.so")
 reserve_start = clr - (0x7FFF0000 - 100 * 1024 * 1024)
-print(f"GameAssembly {ga:#x}  libcoreclr {clr:#x}  GA-coreclr {ga - clr:#x}  CLR reservation {reserve_start:#x}..{clr:#x}")
+print(
+    f"GameAssembly {ga:#x}  libcoreclr {clr:#x}  GA-coreclr {ga - clr:#x}  CLR reservation {reserve_start:#x}..{clr:#x}"
+)
 
 lo, hi = 0x2457000, 0x6116760
 dump = tempfile.mktemp(suffix=".bin", dir=os.path.dirname(os.path.abspath(core)))
@@ -65,19 +68,23 @@ while i < len(mem):
         j = i
         while j < len(mem) and mem[j] != fil[j]:
             j += 1
-        start = i - 2 if mem[i - 2:i] == b"\xff\x25" else i - 1 if mem[i - 1] == 0xff else i
+        start = i - 2 if mem[i - 2 : i] == b"\xff\x25" else i - 1 if mem[i - 1] == 0xFF else i
         site = lo + start
-        if mem[start:start + 2] == b"\xff\x25":
-            disp = int.from_bytes(mem[start + 2:start + 6], "little", signed=True)
+        if mem[start : start + 2] == b"\xff\x25":
+            disp = int.from_bytes(mem[start + 2 : start + 6], "little", signed=True)
             slot = ga + site + 6 + disp
             val = gdb(f"x/gx {slot:#x}")
             m = re.search(r":\s+0x([0-9a-f]+)", val)
             value = int(m[1], 16) if m else None
             target = describe(value) if value is not None else "?"
             in_res = reserve_start <= slot < clr
-            print(f"site GA+{site:#x} slot {slot:#x} (= site-2GB page? {((ga + site - 0x80000000) | 0xfff) + 1 == slot & ~0xfff}) "
-                  f"in CLR reservation at +{slot - reserve_start:#x}: {in_res}; slot region {describe(slot)}; "
-                  f"value {value:#x} -> {target}" if value is not None else f"site {site:#x} slot {slot:#x} unreadable")
+            print(
+                f"site GA+{site:#x} slot {slot:#x} (= site-2GB page? {((ga + site - 0x80000000) | 0xFFF) + 1 == slot & ~0xFFF}) "
+                f"in CLR reservation at +{slot - reserve_start:#x}: {in_res}; slot region {describe(slot)}; "
+                f"value {value:#x} -> {target}"
+                if value is not None
+                else f"site {site:#x} slot {slot:#x} unreadable"
+            )
         else:
             print(f"diff at GA+{lo + i:#x} len {j - i}: {mem[i:j][:16].hex()}")
         i = j

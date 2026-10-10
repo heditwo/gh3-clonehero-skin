@@ -11,8 +11,12 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter
 from pipeline.paths import READY_ANIMATION, ROOT
 
 parser = argparse.ArgumentParser(prog="python -m pipeline.hud.ready_animation", description=__doc__)
-parser.add_argument("--video", type=Path, default=ROOT/"gh3-long-star-power-1600x900.mp4",
-                    help="The owner's 1600 x 900 GH3 Star Power reference recording")
+parser.add_argument(
+    "--video",
+    type=Path,
+    default=ROOT / "gh3-long-star-power-1600x900.mp4",
+    help="The owner's 1600 x 900 GH3 Star Power reference recording",
+)
 video = parser.parse_args().video
 target = READY_ANIMATION
 target.mkdir(parents=True, exist_ok=True)
@@ -22,18 +26,46 @@ lightning_left, lightning_top = 970, 370
 lightning_width, lightning_height = 530, 480
 lightning_frame_count = 51
 reference_command = [
-    "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
-    "-ss", "7.8", "-i", str(video),
-    "-frames:v", "1", "-vf", f"crop={lightning_width}:{lightning_height}:{lightning_left}:{lightning_top}",
-    "-pix_fmt", "rgb24", "-f", "rawvideo", "-",
+    "ffmpeg",
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-nostdin",
+    "-ss",
+    "7.8",
+    "-i",
+    str(video),
+    "-frames:v",
+    "1",
+    "-vf",
+    f"crop={lightning_width}:{lightning_height}:{lightning_left}:{lightning_top}",
+    "-pix_fmt",
+    "rgb24",
+    "-f",
+    "rawvideo",
+    "-",
 ]
 reference = np.frombuffer(subprocess.run(reference_command, check=True, capture_output=True).stdout, dtype=np.uint8)
 reference = reference.reshape(lightning_height, lightning_width, 3).astype(np.int16)
 command = [
-    "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
-    "-ss", "8.0", "-t", "2.1", "-i", str(video),
-    "-vf", f"fps=60,crop={width}:{height}:0:{top}",
-    "-pix_fmt", "rgb24", "-f", "rawvideo", "-",
+    "ffmpeg",
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-nostdin",
+    "-ss",
+    "8.0",
+    "-t",
+    "2.1",
+    "-i",
+    str(video),
+    "-vf",
+    f"fps=60,crop={width}:{height}:0:{top}",
+    "-pix_fmt",
+    "rgb24",
+    "-f",
+    "rawvideo",
+    "-",
 ]
 
 frames = []
@@ -58,13 +90,25 @@ with subprocess.Popen(command, stdout=subprocess.PIPE) as process:
         left, upper, right, lower = bounds
         frames.append({"x": left, "y": upper + top, "width": right - left, "height": lower - upper})
         if len(frames) <= lightning_frame_count:
-            lightning = np.asarray(full_image.crop((lightning_left, lightning_top - top,
-                lightning_left + lightning_width, lightning_top - top + lightning_height))).astype(np.int16)
+            lightning = np.asarray(
+                full_image.crop(
+                    (
+                        lightning_left,
+                        lightning_top - top,
+                        lightning_left + lightning_width,
+                        lightning_top - top + lightning_height,
+                    )
+                )
+            ).astype(np.int16)
             difference = np.max(np.maximum(lightning - reference, 0), axis=2)
-            saturated = (lightning[:, :, 2] > lightning[:, :, 0] + 12) & (
-                lightning[:, :, 1] > lightning[:, :, 0] + 8) & (difference > 30)
-            nearby = np.asarray(Image.fromarray((saturated * 255).astype(np.uint8)).filter(
-                ImageFilter.MaxFilter(13))) > 0
+            saturated = (
+                (lightning[:, :, 2] > lightning[:, :, 0] + 12)
+                & (lightning[:, :, 1] > lightning[:, :, 0] + 8)
+                & (difference > 30)
+            )
+            nearby = (
+                np.asarray(Image.fromarray((saturated * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(13))) > 0
+            )
             mask = (difference > 24) & nearby
             row = np.arange(lightning_height)[:, None]
             column = np.arange(lightning_width)[None, :] + lightning_left
@@ -76,12 +120,13 @@ with subprocess.Popen(command, stdout=subprocess.PIPE) as process:
             bounds = effect.getbbox() or (0, 0, 1, 1)
             effect.crop(bounds).save(target / f"ready-lightning-{len(lightning_frames):03}.png", optimize=True)
             left, upper, right, lower = bounds
-            lightning_frames.append({"x": left + lightning_left, "y": upper + lightning_top,
-                "width": right - left, "height": lower - upper})
+            lightning_frames.append(
+                {"x": left + lightning_left, "y": upper + lightning_top, "width": right - left, "height": lower - upper}
+            )
     if process.wait() != 0:
         raise RuntimeError("Could not decode GH3 animation")
 
-(target / "ready-animation.json").write_text(json.dumps({
-    "fps": 60, "frames": frames, "lightning": lightning_frames
-}) + "\n")
+(target / "ready-animation.json").write_text(
+    json.dumps({"fps": 60, "frames": frames, "lightning": lightning_frames}) + "\n"
+)
 print(f"Prepared {len(frames)} GH3 animation frames and {len(lightning_frames)} lower-effect frames")

@@ -13,8 +13,12 @@ from . import sidecars
 BOX_FACES = [(0, 1, 2, 3), (4, 7, 6, 5), (0, 4, 5, 1), (1, 5, 6, 2), (2, 6, 7, 3), (3, 7, 4, 0)]
 # Runtime positions of the example.studio pack; Blender position = (x, z, y).
 BAND = {"guitarist": (2, 0, 0), "bassist": (-3, 0, 0), "singer": (0, 0, -0.5), "drummer": (0, 0, 3)}
-SCENERY = [("floor", (0, -0.15, 1), (18, 0.3, 16), (70, 80, 100)), ("backdrop", (0, 3, 8), (18, 6, 0.4), (40, 30, 75)),
-           ("left", (-7, 2, 5), (0.8, 4, 0.8), (30, 180, 220)), ("right", (7, 2, 5), (0.8, 4, 0.8), (230, 70, 150))]
+SCENERY = [
+    ("floor", (0, -0.15, 1), (18, 0.3, 16), (70, 80, 100)),
+    ("backdrop", (0, 3, 8), (18, 6, 0.4), (40, 30, 75)),
+    ("left", (-7, 2, 5), (0.8, 4, 0.8), (30, 180, 220)),
+    ("right", (7, 2, 5), (0.8, 4, 0.8), (230, 70, 150)),
+]
 
 
 def blender(runtime):
@@ -24,7 +28,16 @@ def blender(runtime):
 
 def box_mesh(name, size):
     sx, sy, sz = (s / 2 for s in size)
-    vertices = [(-sx, -sy, -sz), (sx, -sy, -sz), (sx, sy, -sz), (-sx, sy, -sz), (-sx, -sy, sz), (sx, -sy, sz), (sx, sy, sz), (-sx, sy, sz)]
+    vertices = [
+        (-sx, -sy, -sz),
+        (sx, -sy, -sz),
+        (sx, sy, -sz),
+        (-sx, sy, -sz),
+        (-sx, -sy, sz),
+        (sx, -sy, sz),
+        (sx, sy, sz),
+        (-sx, sy, sz),
+    ]
     mesh = bpy.data.meshes.new(name)
     mesh.from_pydata(vertices, [], BOX_FACES)
     mesh.uv_layers.new(name="UVMap")
@@ -45,7 +58,8 @@ def material(name, color):
 def proxy_body_mesh():
     """A 1.8 m body with a nose toward the audience (runtime -Z, Blender -Y). Preview only."""
     mesh = bpy.data.meshes.get("chstage-proxy-body")
-    if mesh is not None: return mesh
+    if mesh is not None:
+        return mesh
     vertices, faces = [], []
     for z0, z1, r in ((0, 1.45, 0.25), (1.5, 1.8, 0.12)):
         base = len(vertices)
@@ -74,7 +88,8 @@ def add_band_marker(scene, role, location, rotation=None, collection=None):
     marker.empty_display_type = "ARROWS"
     marker.empty_display_size = 0.5
     marker.location = location
-    if rotation is not None: marker.rotation_euler = rotation
+    if rotation is not None:
+        marker.rotation_euler = rotation
     marker.chstage.marker = "BAND"
     marker.chstage.band_role = role
     proxy = link(scene, bpy.data.objects.new(f"proxy-{role}", proxy_body_mesh()), collection)
@@ -114,10 +129,12 @@ def add_shot(scene, name, location, target, fov, groups, anchor="world", look_at
     camera.rotation_quaternion = (Vector(target) - Vector(location)).to_track_quat("-Z", "Y")
     shot = camera.chstage.shot
     shot.enabled = True
-    for group in groups: shot.groups.add().name = group
+    for group in groups:
+        shot.groups.add().name = group
     point = camera.chstage.point
     point.anchor_role, _, part = anchor.partition(".")
-    if part: point.anchor_part = part
+    if part:
+        point.anchor_part = part
     point.look_at_role, point.look_at_part = look_at
     return camera
 
@@ -172,16 +189,33 @@ def create(name="CH Stage"):
     housing.data.materials.append(material("fixture", (90, 90, 100)))
     housing.chstage.fixture_id = "left-beam"
 
-    for role, position in BAND.items(): add_band_marker(scene, role, blender(position))
+    for role, position in BAND.items():
+        add_band_marker(scene, role, blender(position))
     add_waypoint(scene, "guitarist_walk01", blender((4, 0, 0)))
     for kind in sidecars.EFFECTS:
-        for x in (-6, 6): add_effect(scene, kind, blender((x, 0, 0)))
+        for x in (-6, 6):
+            add_effect(scene, kind, blender((x, 0, 0)))
 
     guitarist = blender(BAND["guitarist"])
-    add_shot(scene, "wide", blender((0, 3, -12)), blender(BAND["singer"]) + Vector((0, 0, 1.6)), 72, ["wide", "default"],
-             look_at=("singer", "head"))
-    add_shot(scene, "guitar", guitarist + blender((-1, 1.5, -2.5)), guitarist + Vector((0, 0, 1.6)), 68, ["guitarist", "default"],
-             anchor="guitarist.root", look_at=("guitarist", "head"))
+    add_shot(
+        scene,
+        "wide",
+        blender((0, 3, -12)),
+        blender(BAND["singer"]) + Vector((0, 0, 1.6)),
+        72,
+        ["wide", "default"],
+        look_at=("singer", "head"),
+    )
+    add_shot(
+        scene,
+        "guitar",
+        guitarist + blender((-1, 1.5, -2.5)),
+        guitarist + Vector((0, 0, 1.6)),
+        68,
+        ["guitarist", "default"],
+        anchor="guitarist.root",
+        look_at=("guitarist", "head"),
+    )
     scene.camera = scene.objects["wide"]
 
     stage = add_light(scene, "Stage", "Stage", "Ambient", 0.65)
@@ -193,7 +227,8 @@ def create(name="CH Stage"):
     for mood, names in (("intro", ["fill"]), ("blackout", ["fill"]), ("chorus", ["chorus", "fill"])):
         row = scene.chstage.moods.add()
         row.mood = mood
-        for item in names: row.snapshots.add().name = item
+        for item in names:
+            row.snapshots.add().name = item
     return scene
 
 
@@ -204,11 +239,13 @@ def capture_snapshot(snapshot_entry, scene):
         if obj.type == "LIGHT" and obj.chstage.light.enabled and obj not in known:
             snapshot_entry.lights.add().light = obj
     for row in snapshot_entry.lights:
-        if row.light is None or row.light.type != "LIGHT": continue
+        if row.light is None or row.light.type != "LIGHT":
+            continue
         props = row.light.chstage.light
         row.color, row.intensity, row.near, row.far = row.light.data.color, props.intensity, props.near, props.far
     for beam in snapshot_entry.beams:
-        if beam.target is None: continue
+        if beam.target is None:
+            continue
         location, rotation, _ = beam.target.matrix_world.decompose()
         beam.position, beam.rotation = location, rotation
 
@@ -216,10 +253,14 @@ def capture_snapshot(snapshot_entry, scene):
 def apply_snapshot(snapshot_entry):
     """Set the stage light and beam objects to the settings of a snapshot."""
     for row in snapshot_entry.lights:
-        if row.light is None or row.light.type != "LIGHT": continue
+        if row.light is None or row.light.type != "LIGHT":
+            continue
         props = row.light.chstage.light
         row.light.data.color = row.color
         props.intensity, props.near, props.far = row.intensity, row.near, row.far
     for beam in snapshot_entry.beams:
-        if beam.target is None: continue
-        beam.target.matrix_world = Matrix.LocRotScale(Vector(beam.position), Quaternion(beam.rotation), beam.target.matrix_world.to_scale())
+        if beam.target is None:
+            continue
+        beam.target.matrix_world = Matrix.LocRotScale(
+            Vector(beam.position), Quaternion(beam.rotation), beam.target.matrix_world.to_scale()
+        )

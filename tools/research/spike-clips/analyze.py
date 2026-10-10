@@ -33,11 +33,16 @@ COMPRESSORS = ["raw", "gzip9", "brotli11", "zstd19"]
 
 
 def compress(data, method):
-    if method == "raw": return data
-    if method == "gzip3": return gzip.compress(data, 3, mtime=0)
-    if method == "gzip9": return gzip.compress(data, 9, mtime=0)
-    if method == "brotli11": return brotli.compress(data, quality=11, lgwin=24)
-    if method == "zstd19": return zstandard.ZstdCompressor(level=19).compress(data)
+    if method == "raw":
+        return data
+    if method == "gzip3":
+        return gzip.compress(data, 3, mtime=0)
+    if method == "gzip9":
+        return gzip.compress(data, 9, mtime=0)
+    if method == "brotli11":
+        return brotli.compress(data, quality=11, lgwin=24)
+    if method == "zstd19":
+        return zstandard.ZstdCompressor(level=19).compress(data)
     raise ValueError(method)
 
 
@@ -122,8 +127,10 @@ def encode_soa_f32(p, q, tracks, bones, duration):
     head = b"GH3CLS01" + struct.pack("<BHHf", bones, len(p), len(tracks), duration)
     body = [struct.pack("<BB", b, m) for b, m in tracks]
     for t, (_, mask) in enumerate(tracks):
-        if mask & 1: body.append(p[:, t].astype("<f4").T.tobytes())
-        if mask & 2: body.append(q[:, t].astype("<f4").T.tobytes())
+        if mask & 1:
+            body.append(p[:, t].astype("<f4").T.tobytes())
+        if mask & 2:
+            body.append(q[:, t].astype("<f4").T.tobytes())
     return head + b"".join(body)
 
 
@@ -136,13 +143,17 @@ def encode_keys(key_tracks, tracks, bones, duration, frames, magic=b"GH3CLK01"):
         dpv = drv = None
         if mask & 1:
             data, dpv, const = encode_positions(pv)
-            if const: pt, dpv = pt[:1], dpv[:1]
-            if len(pt) > 1: track_blocks.append(delta(pt).tobytes())
+            if const:
+                pt, dpv = pt[:1], dpv[:1]
+            if len(pt) > 1:
+                track_blocks.append(delta(pt).tobytes())
             track_blocks.append(data)
         if mask & 2:
             data, drv, const = encode_rotations(rv, 15)
-            if const: rt, drv = rt[:1], drv[:1]
-            if len(rt) > 1: track_blocks.append(delta(rt).tobytes())
+            if const:
+                rt, drv = rt[:1], drv[:1]
+            if len(rt) > 1:
+                track_blocks.append(delta(rt).tobytes())
             track_blocks.append(data)
         pc = len(pt) if mask & 1 else 0
         rc = len(rt) if mask & 2 else 0
@@ -157,14 +168,16 @@ def reduce_keys(values, quaternion):
     values = values.copy()
     if quaternion:
         for i in range(1, len(values)):
-            if np.dot(values[i - 1], values[i]) < 0: values[i] *= -1
+            if np.dot(values[i - 1], values[i]) < 0:
+                values[i] *= -1
     n = len(values)
 
     def fits(i, j):
         t = ((np.arange(i + 1, j) - i) / (j - i))[:, None]
         guess = values[i] + (values[j] - values[i]) * t
-        if quaternion: return angle(normalize(guess), values[i + 1:j]).max() <= ROT_TOLERANCE
-        return (np.linalg.norm(guess - values[i + 1:j], axis=-1) * 100).max() <= POS_TOLERANCE_CM
+        if quaternion:
+            return angle(normalize(guess), values[i + 1 : j]).max() <= ROT_TOLERANCE
+        return (np.linalg.norm(guess - values[i + 1 : j], axis=-1) * 100).max() <= POS_TOLERANCE_CM
 
     keys, i = [0], 0
     while i < n - 1:
@@ -174,8 +187,10 @@ def reduce_keys(values, quaternion):
         bad = min(i + span, n)
         while bad - good > 1:
             middle = (good + bad) // 2
-            if middle <= n - 1 and fits(i, middle): good = middle
-            else: bad = middle
+            if middle <= n - 1 and fits(i, middle):
+                good = middle
+            else:
+                bad = middle
         keys.append(good)
         i = good
     return np.array(keys)
@@ -185,7 +200,8 @@ def interp_keys(times, values, at, quaternion):
     values = values.copy()
     if quaternion:
         for i in range(1, len(values)):
-            if np.dot(values[i - 1], values[i]) < 0: values[i] *= -1
+            if np.dot(values[i - 1], values[i]) < 0:
+                values[i] *= -1
     result = np.stack([np.interp(at, times, values[:, c]) for c in range(values.shape[1])], 1)
     return normalize(result) if quaternion else result
 
@@ -234,9 +250,12 @@ def effectors_fk(p, q, tracks, rig, effectors):
     local_p = {i: np.broadcast_to(bind_p[i], (n, 3)) for i in needed}
     local_q = {i: np.broadcast_to(normalize(np.asarray(bind_q[i], float)), (n, 4)) for i in needed}
     for t, (bone, mask) in enumerate(tracks):
-        if bone not in needed: continue
-        if mask & 1: local_p[bone] = p[:, t] * [1, 1, -1]
-        if mask & 2: local_q[bone] = q[:, t] * [1, 1, -1, 1]
+        if bone not in needed:
+            continue
+        if mask & 1:
+            local_p[bone] = p[:, t] * [1, 1, -1]
+        if mask & 2:
+            local_q[bone] = q[:, t] * [1, 1, -1, 1]
     world_p, world_q = {}, {}
     for i in sorted(needed, key=lambda b: depth(parents, b)):
         rotation = local_q[i] * [-1, -1, -1, 1]
@@ -264,7 +283,8 @@ class Stats:
 
     def add(self, name, values):
         values = np.asarray(values, float).ravel()
-        if values.size == 0: return
+        if values.size == 0:
+            return
         counts = np.bincount(np.searchsorted(BINS, values), minlength=len(BINS) + 1)
         self.hist[name] = self.hist.get(name, 0) + counts
         self.max[name] = max(self.max.get(name, 0.0), float(values.max()))
@@ -274,9 +294,12 @@ class Stats:
         self.bone_max[k] = max(self.bone_max.get(k, 0.0), float(value))
 
     def merge(self, other):
-        for k, v in other.hist.items(): self.hist[k] = self.hist.get(k, 0) + v
-        for k, v in other.max.items(): self.max[k] = max(self.max.get(k, 0.0), v)
-        for k, v in other.bone_max.items(): self.bone_max[k] = max(self.bone_max.get(k, 0.0), v)
+        for k, v in other.hist.items():
+            self.hist[k] = self.hist.get(k, 0) + v
+        for k, v in other.max.items():
+            self.max[k] = max(self.max.get(k, 0.0), v)
+        for k, v in other.bone_max.items():
+            self.bone_max[k] = max(self.bone_max.get(k, 0.0), v)
 
 
 def percentile(counts, fraction):
@@ -299,6 +322,7 @@ def groups_of(rig):
                     break
                 j = parents[j]
         return result
+
     palm_l, palm_r, head = (names.index(key(n)) for n in ["Bone_Palm_L", "Bone_Palm_R", "Bone_Head"])
     fingers_l, fingers_r = under(palm_l), under(palm_r)
     tips_l = [i for i in fingers_l if i not in children]
@@ -331,8 +355,13 @@ def analyze(job):
     clip = animation(data, len(source_names))
     duration = max(clip[0], 1 / 60)
     frames = max(2, round(duration * 30) + 1)
-    mapping = [(i, names.index(source_names[i])) for i in sorted(clip[1].keys() | clip[2].keys()) if source_names[i] in names]
-    tracks = [(target, (1 if s in clip[2] and not rotations_only else 0) | (2 if s in clip[1] else 0)) for s, target in mapping]
+    mapping = [
+        (i, names.index(source_names[i])) for i in sorted(clip[1].keys() | clip[2].keys()) if source_names[i] in names
+    ]
+    tracks = [
+        (target, (1 if s in clip[2] and not rotations_only else 0) | (2 if s in clip[1] else 0))
+        for s, target in mapping
+    ]
 
     def convert(p, q):
         for s, target in mapping:
@@ -347,7 +376,8 @@ def analyze(job):
         raw_current = stream.read()
     _, bones, cframes, count, cduration = struct.unpack_from("<8sIIIf", raw_current)
     stored = [struct.unpack_from("<II", raw_current, 24 + 8 * i) for i in range(count)]
-    if cframes != frames or stored != tracks: raise ValueError(f"{role}/{ref}: current clip does not match the source")
+    if cframes != frames or stored != tracks:
+        raise ValueError(f"{role}/{ref}: current clip does not match the source")
     packed = np.frombuffer(raw_current, "<f4", offset=24 + 8 * count).reshape(frames, count, 7).astype(float)
     cur_p, cur_q = packed[..., :3], normalize(packed[..., 3:])
 
@@ -370,8 +400,10 @@ def analyze(job):
             fractional += int(np.any(np.abs(ticks - np.round(ticks)) > 1e-3))
             values = np.array([k[1] for k in keys], float)
             if channel == 2:
-                if not absolute: values = source_positions[s] + values
-                if source_rig is not None: values = values + positions[target] - source_positions[s]
+                if not absolute:
+                    values = source_positions[s] + values
+                if source_rig is not None:
+                    values = values + positions[target] - source_positions[s]
                 values = values * [1, 1, -1]
             else:
                 if source_rig is not None:
@@ -397,9 +429,12 @@ def analyze(job):
         p = np.repeat(cur_p[:1] * 0, len(at), 0)
         q = np.tile([0.0, 0, 0, 1], (len(at), len(tracks), 1))
         for t, ((bone, mask), (pt, pv, rt, rv)) in enumerate(zip(tracks, keyed)):
-            if mask & 1 and pv is not None: p[:, t] = interp_keys(pt / 60, pv, at, False)
-            if mask & 2 and rv is not None: q[:, t] = interp_keys(rt / 60, rv, at, True)
+            if mask & 1 and pv is not None:
+                p[:, t] = interp_keys(pt / 60, pv, at, False)
+            if mask & 2 and rv is not None:
+                q[:, t] = interp_keys(rt / 60, rv, at, True)
         return p, q
+
     decoded["keys"] = dense_from_keys(frame_times, key_decoded)
     q48p, q48q = decoded["q48"]
     reduced = []
@@ -414,7 +449,10 @@ def analyze(job):
         reduced.append(tuple(entry))
     # Key times are 30 fps frame indices; times * 2 maps them onto the 60 Hz tick grid of encode_keys.
     raw["q48kr"], reduced_decoded = encode_keys(reduced, tracks, bones, duration, frames, b"GH3CLR01")
-    scaled = [(pt * duration / (frames - 1) * 30, pv, rt * duration / (frames - 1) * 30, rv) for pt, pv, rt, rv in reduced_decoded]
+    scaled = [
+        (pt * duration / (frames - 1) * 30, pv, rt * duration / (frames - 1) * 30, rv)
+        for pt, pv, rt, rv in reduced_decoded
+    ]
     decoded["q48kr"] = dense_from_keys(frame_times, scaled)
     for name, data in raw.items():
         sizes[name] = {c: len(compress(data, c)) for c in COMPRESSORS}
@@ -424,16 +462,49 @@ def analyze(job):
     cur_eff = effectors_fk(cur_p, cur_q, tracks, rig, effectors)
     for name in ["q48", "q32", "keys", "q48kr"]:
         p, q = decoded[name]
-        record(stats, f"vsCurrent/{name}", cur_p, cur_q, p, q, tracks, rig_groups, cur_eff, effectors_fk(p, q, tracks, rig, effectors))
+        record(
+            stats,
+            f"vsCurrent/{name}",
+            cur_p,
+            cur_q,
+            p,
+            q,
+            tracks,
+            rig_groups,
+            cur_eff,
+            effectors_fk(p, q, tracks, rig, effectors),
+        )
 
     # Everything against the original GH3 keys, sampled at 60 Hz with the runtime interpolation.
     gt_eff = effectors_fk(gt_p, gt_q, tracks, rig, effectors)
     candidates = {"f32": (cur_p, cur_q), **decoded}
     for name, (p, q) in candidates.items():
         sp, sq = runtime_sample(p, q, duration, times60)
-        record(stats, f"vsGH3/{name}", gt_p, gt_q, sp, sq, tracks, rig_groups, gt_eff, effectors_fk(sp, sq, tracks, rig, effectors))
+        record(
+            stats,
+            f"vsGH3/{name}",
+            gt_p,
+            gt_q,
+            sp,
+            sq,
+            tracks,
+            rig_groups,
+            gt_eff,
+            effectors_fk(sp, sq, tracks, rig, effectors),
+        )
     kp, kq = dense_from_keys(times60, key_decoded)
-    record(stats, "vsGH3/keys-direct", gt_p, gt_q, kp, kq, tracks, rig_groups, gt_eff, effectors_fk(kp, kq, tracks, rig, effectors))
+    record(
+        stats,
+        "vsGH3/keys-direct",
+        gt_p,
+        gt_q,
+        kp,
+        kq,
+        tracks,
+        rig_groups,
+        gt_eff,
+        effectors_fk(kp, kq, tracks, rig, effectors),
+    )
 
     for name in ["q48", "q32", "keys", "q48kr"]:
         for method in ["gzip9", "brotli11"]:
@@ -442,10 +513,23 @@ def analyze(job):
             path.write_bytes(compress(raw[name], method))
     rot_keys = sum(len(k[2]) for k, (_, m) in zip(key_tracks, tracks) if m & 2)
     pos_keys = sum(len(k[0]) for k, (_, m) in zip(key_tracks, tracks) if m & 1)
-    info = {"role": role, "ref": ref, "song": song, "frames": frames, "tracks": len(tracks), "duration": duration,
-            "rotTracks": sum(1 for _, m in tracks if m & 2), "posTracks": sum(1 for _, m in tracks if m & 1),
-            "rotKeys": rot_keys, "posKeys": pos_keys,
-            "reducedRotKeys": sum(len(r[2]) for r in reduced), "reducedPosKeys": sum(len(r[0]) for r in reduced), "fractionalTimes": fractional, "ska": len(data), "sizes": sizes}
+    info = {
+        "role": role,
+        "ref": ref,
+        "song": song,
+        "frames": frames,
+        "tracks": len(tracks),
+        "duration": duration,
+        "rotTracks": sum(1 for _, m in tracks if m & 2),
+        "posTracks": sum(1 for _, m in tracks if m & 1),
+        "rotKeys": rot_keys,
+        "posKeys": pos_keys,
+        "reducedRotKeys": sum(len(r[2]) for r in reduced),
+        "reducedPosKeys": sum(len(r[0]) for r in reduced),
+        "fractionalTimes": fractional,
+        "ska": len(data),
+        "sizes": sizes,
+    }
     return info, stats
 
 
@@ -460,7 +544,17 @@ def collect(data_directory, current, out_dir):
     def write_clip(path, data, rig, source_rig=None, rotations_only=False):
         role, ref = path.parent.name, path.name.split(".")[0]
         song = state["pak"].split("/")[-1].split("_song.")[0] if state["pak"].startswith("SONGS/") else ""
-        jobs[(role, ref)] = (role, ref, song, bytes(data), rig, source_rig, rotations_only, str(current / role / f"{ref}.bin.gz"), out_dir)
+        jobs[(role, ref)] = (
+            role,
+            ref,
+            song,
+            bytes(data),
+            rig,
+            source_rig,
+            rotations_only,
+            str(current / role / f"{ref}.bin.gz"),
+            out_dir,
+        )
         return {"duration": 1.0, "frames": 2, "rootDistance": 0.0}
 
     Source.load = load
@@ -474,14 +568,16 @@ def main():
     workers = int(sys.argv[4]) if len(sys.argv) > 4 else 3
     jobs = collect(data_directory, current, out_dir)
     jobs.sort(key=lambda j: -len(j[3]))
-    if len(sys.argv) > 5: jobs = jobs[::int(sys.argv[5])]
+    if len(sys.argv) > 5:
+        jobs = jobs[:: int(sys.argv[5])]
     print(f"{len(jobs)} clips", flush=True)
     infos, totals = [], {}
     with Pool(workers, maxtasksperchild=40) as pool:
         for i, (info, stats) in enumerate(pool.imap_unordered(analyze, jobs)):
             infos.append(info)
             totals.setdefault(info["role"], Stats()).merge(stats)
-            if i % 50 == 0: print(i, info["role"], info["ref"], flush=True)
+            if i % 50 == 0:
+                print(i, info["role"], info["ref"], flush=True)
     (out_dir / "clips.json").write_text(json.dumps(infos))
     with (out_dir / "stats.pickle").open("wb") as f:
         pickle.dump({r: (s.hist, s.max, s.bone_max) for r, s in totals.items()}, f)

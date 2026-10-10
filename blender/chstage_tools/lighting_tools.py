@@ -21,18 +21,21 @@ _HANDLES = []
 def preview_snapshot(scene):
     """The snapshot that the preview shows: the active snapshot, or a snapshot of the selected mood."""
     props = scene.chstage
-    if not props.snapshots: return None
+    if not props.snapshots:
+        return None
     if props.preview_mood in ("", "NONE"):
         return props.snapshots[min(props.snapshots_index, len(props.snapshots) - 1)]
     mood = next((m for m in props.moods if m.mood == props.preview_mood), None)
-    if mood is None or not mood.snapshots: return None
+    if mood is None or not mood.snapshots:
+        return None
     name = mood.snapshots[props.preview_step % len(mood.snapshots)].name
     return next((s for s in props.snapshots if s.name == name), None)
 
 
 def light_kind(obj):
     kind = obj.chstage.light.type
-    if kind != "AUTO": return kind
+    if kind != "AUTO":
+        return kind
     return {"SUN": "Dir", "SPOT": "Spot"}.get(obj.data.type, "Point")
 
 
@@ -41,10 +44,12 @@ def preview_values(snapshot):
     rows, ambient = [], [0.0, 0.0, 0.0]
     for row in snapshot.lights:
         obj = row.light
-        if obj is None or obj.type != "LIGHT" or row.inherit: continue
+        if obj is None or obj.type != "LIGHT" or row.inherit:
+            continue
         power, fill = sidecars.preview_light(light_kind(obj), row.intensity, row.near, row.far)
         if fill and obj.chstage.light.group in ("Stage", ""):
-            for i in range(3): ambient[i] += row.color[i] * fill
+            for i in range(3):
+                ambient[i] += row.color[i] * fill
         rows.append((obj, tuple(row.color), power, row.far))
     return rows, tuple(min(1.0, v) for v in ambient)
 
@@ -76,8 +81,9 @@ def apply_preview(scene, snapshot):
 
 
 def set_viewports(screen, on):
-    for area in (screen.areas if screen else []):
-        if area.type != "VIEW_3D": continue
+    for area in screen.areas if screen else []:
+        if area.type != "VIEW_3D":
+            continue
         shading = area.spaces.active.shading
         if on:
             shading.type = "MATERIAL"
@@ -90,34 +96,52 @@ def group_receivers(scene):
     """Light group name to the objects that its lights light: the scenery of the group; for Band also the proxy rigs
     and proxy bodies (the performers)."""
     from . import actor_tools, groups
+
     receivers = {}
     for name, objects in groups.light_groups(scene).items():
-        for obj in objects: receivers.setdefault(name, []).extend([obj] + (actor_tools.descendants(obj) if obj.chstage.marker == "ACTOR" else []))
-    receivers.setdefault("Band", []).extend(obj for obj in scene.objects if obj.chstage.marker == "PROXY" and obj.type == "MESH")
+        for obj in objects:
+            receivers.setdefault(name, []).extend(
+                [obj] + (actor_tools.descendants(obj) if obj.chstage.marker == "ACTOR" else [])
+            )
+    receivers.setdefault("Band", []).extend(
+        obj for obj in scene.objects if obj.chstage.marker == "PROXY" and obj.type == "MESH"
+    )
     return receivers
 
 
 def link_light_groups(scene):
     """Light linking (Blender 4.0 and later): a stage light lights only the objects of its light group, as in the game."""
-    lights = [obj for obj in scene.objects if obj.type == "LIGHT" and obj.chstage.light.enabled and hasattr(obj, "light_linking")]
-    if not lights: return
+    lights = [
+        obj
+        for obj in scene.objects
+        if obj.type == "LIGHT" and obj.chstage.light.enabled and hasattr(obj, "light_linking")
+    ]
+    if not lights:
+        return
     collections = {}
     for name, objects in group_receivers(scene).items():
         collection = bpy.data.collections.new(f"CH Light Group {name}")
         collection["chstage_light_group"] = scene.name
-        for obj in objects: collection.objects.link(obj)
+        for obj in objects:
+            collection.objects.link(obj)
         collections[name] = collection
     empty = bpy.data.collections.new("CH Light Group (none)")
     empty["chstage_light_group"] = scene.name
-    for obj in lights: obj.light_linking.receiver_collection = collections.get(obj.chstage.light.group or "Stage", empty)
+    for obj in lights:
+        obj.light_linking.receiver_collection = collections.get(obj.chstage.light.group or "Stage", empty)
 
 
 def unlink_light_groups(scene):
     for obj in scene.objects:
-        if obj.type == "LIGHT" and hasattr(obj, "light_linking") and obj.light_linking.receiver_collection is not None \
-                and obj.light_linking.receiver_collection.get("chstage_light_group") == scene.name:
+        if (
+            obj.type == "LIGHT"
+            and hasattr(obj, "light_linking")
+            and obj.light_linking.receiver_collection is not None
+            and obj.light_linking.receiver_collection.get("chstage_light_group") == scene.name
+        ):
             obj.light_linking.receiver_collection = None
-    for collection in [c for c in bpy.data.collections if c.get("chstage_light_group") == scene.name]: bpy.data.collections.remove(collection)
+    for collection in [c for c in bpy.data.collections if c.get("chstage_light_group") == scene.name]:
+        bpy.data.collections.remove(collection)
 
 
 def linked(scene):
@@ -134,22 +158,31 @@ def stop_preview(scene):
 
 def refresh(scene):
     """Update the preview after a change of the snapshot settings (property update callback)."""
-    if not isinstance(scene, bpy.types.Scene): return
+    if not isinstance(scene, bpy.types.Scene):
+        return
     props = scene.chstage
     screen = getattr(bpy.context, "screen", None)
     if not props.lighting_preview:
-        if props.preview_world is not None or (scene.world is not None and scene.world.name == PREVIEW_WORLD) or linked(scene): stop_preview(scene)
+        if (
+            props.preview_world is not None
+            or (scene.world is not None and scene.world.name == PREVIEW_WORLD)
+            or linked(scene)
+        ):
+            stop_preview(scene)
         tag_redraw(screen)
         return
-    if not linked(scene): link_light_groups(scene)
+    if not linked(scene):
+        link_light_groups(scene)
     snapshot = preview_snapshot(scene)
-    if snapshot is not None: apply_preview(scene, snapshot)
+    if snapshot is not None:
+        apply_preview(scene, snapshot)
     set_viewports(screen, True)
 
 
 def tag_redraw(screen):
-    for area in (screen.areas if screen else []):
-        if area.type == "VIEW_3D": area.tag_redraw()
+    for area in screen.areas if screen else []:
+        if area.type == "VIEW_3D":
+            area.tag_redraw()
 
 
 # Beams and fixtures in the viewport.
@@ -161,12 +194,15 @@ def beam_matrix(beam):
 def cone_lines(matrix, start_radius, end_radius, length, segments=16):
     """Line segments of a beam cone along local -Z."""
     points = []
-    ring = lambda radius, z: [matrix @ Vector((math.cos(a) * radius, math.sin(a) * radius, z))
-                              for a in (2 * math.pi * i / segments for i in range(segments))]
+    ring = lambda radius, z: [
+        matrix @ Vector((math.cos(a) * radius, math.sin(a) * radius, z))
+        for a in (2 * math.pi * i / segments for i in range(segments))
+    ]
     start, end = ring(max(start_radius, 0.01), 0.0), ring(max(end_radius, 0.01), -length)
     for i in range(segments):
         points += [start[i], start[(i + 1) % segments], end[i], end[(i + 1) % segments]]
-        if i % 4 == 0: points += [start[i], end[i]]
+        if i % 4 == 0:
+            points += [start[i], end[i]]
     points += [matrix @ Vector((0, 0, 0)), matrix @ Vector((0, 0, -length))]
     return points
 
@@ -184,17 +220,24 @@ def overlay_lines(scene):
     snapshot = preview_snapshot(scene)
     if snapshot is not None:
         for beam in snapshot.beams:
-            if beam.range <= 0: continue
-            result.append(((*beam.color, 0.9), cone_lines(beam_matrix(beam), beam.start_radius, beam.end_radius, beam.range)))
-    fixtures = [line for obj in scene.objects if obj.chstage.fixture_id and obj.visible_get() for line in fixture_lines(obj)]
-    if fixtures: result.append(((1.0, 0.8, 0.1, 1.0), fixtures))
+            if beam.range <= 0:
+                continue
+            result.append(
+                ((*beam.color, 0.9), cone_lines(beam_matrix(beam), beam.start_radius, beam.end_radius, beam.range))
+            )
+    fixtures = [
+        line for obj in scene.objects if obj.chstage.fixture_id and obj.visible_get() for line in fixture_lines(obj)
+    ]
+    if fixtures:
+        result.append(((1.0, 0.8, 0.1, 1.0), fixtures))
     return result
 
 
 def draw_overlay():
     context = bpy.context
     scene = context.scene
-    if scene is None or not hasattr(scene, "chstage") or not scene.chstage.beam_overlay: return
+    if scene is None or not hasattr(scene, "chstage") or not scene.chstage.beam_overlay:
+        return
     shader = gpu.shader.from_builtin("UNIFORM_COLOR")
     gpu.state.blend_set("ALPHA")
     gpu.state.depth_test_set("LESS_EQUAL")
@@ -208,6 +251,7 @@ def draw_overlay():
 
 class CHSTAGE_GGT_beam(bpy.types.GizmoGroup):
     """An arrow on the active beam of the previewed snapshot: drag it to change the beam range."""
+
     bl_idname = "CHSTAGE_GGT_beam"
     bl_label = "CH Stage beam range"
     bl_space_type = "VIEW_3D"
@@ -217,9 +261,11 @@ class CHSTAGE_GGT_beam(bpy.types.GizmoGroup):
     @staticmethod
     def active_beam(context):
         scene = context.scene
-        if scene is None or not scene.chstage.beam_overlay: return None
+        if scene is None or not scene.chstage.beam_overlay:
+            return None
         snapshot = preview_snapshot(scene)
-        if snapshot is None or not snapshot.beams: return None
+        if snapshot is None or not snapshot.beams:
+            return None
         return snapshot.beams[min(snapshot.beams_index, len(snapshot.beams) - 1)]
 
     @classmethod
@@ -236,7 +282,8 @@ class CHSTAGE_GGT_beam(bpy.types.GizmoGroup):
 
     def refresh(self, context):
         beam = self.active_beam(context)
-        if beam is None: return
+        if beam is None:
+            return
         # The arrow points along its local +Z; the beam goes along local -Z.
         self.arrow.matrix_basis = beam_matrix(beam) @ Matrix.Rotation(math.pi, 4, "X")
         self.arrow.target_set_prop("offset", beam, "range")
@@ -248,5 +295,6 @@ def register():
 
 
 def unregister():
-    while _HANDLES: bpy.types.SpaceView3D.draw_handler_remove(_HANDLES.pop(), "WINDOW")
+    while _HANDLES:
+        bpy.types.SpaceView3D.draw_handler_remove(_HANDLES.pop(), "WINDOW")
     bpy.utils.unregister_class(CHSTAGE_GGT_beam)

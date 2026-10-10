@@ -9,7 +9,7 @@ from pathlib import Path
 
 import bpy
 
-args = sys.argv[sys.argv.index("--") + 1:]
+args = sys.argv[sys.argv.index("--") + 1 :]
 archive, output, venue = Path(args[0]), Path(args[1]), Path(args[2])
 output.mkdir(parents=True, exist_ok=True)
 module = "bl_ext.user_default.chstage_tools"
@@ -33,16 +33,22 @@ def panels(*names):
     Item tab, so the panels go into the Item tab, above the object transform panel (screenshots only)."""
     classes = sys.modules[module + ".panels"].CLASSES
     for cls in list(bpy.types.Panel.__subclasses__()):
-        if getattr(cls, "bl_space_type", "") == "VIEW_3D" and getattr(cls, "bl_region_type", "") == "UI" and getattr(cls, "is_registered", False):
+        if (
+            getattr(cls, "bl_space_type", "") == "VIEW_3D"
+            and getattr(cls, "bl_region_type", "") == "UI"
+            and getattr(cls, "is_registered", False)
+        ):
             bpy.utils.unregister_class(cls)
     for cls in classes:
-        if not issubclass(cls, bpy.types.Panel) and not getattr(cls, "is_registered", False): bpy.utils.register_class(cls)
+        if not issubclass(cls, bpy.types.Panel) and not getattr(cls, "is_registered", False):
+            bpy.utils.register_class(cls)
     for name in names:
         cls = next(c for c in classes if c.__name__ == name)
         cls.bl_options = set()
         cls.bl_category = "Item"
         cls.bl_order = -10
-        if "bl_parent_id" in cls.__dict__: del cls.bl_parent_id
+        if "bl_parent_id" in cls.__dict__:
+            del cls.bl_parent_id
         bpy.utils.register_class(cls)
 
 
@@ -52,8 +58,10 @@ def scene():
 
 def select(objects):
     view_layer = window().view_layer
-    for obj in scene().objects: obj.select_set(False)
-    for obj in objects: obj.select_set(True)
+    for obj in scene().objects:
+        obj.select_set(False)
+    for obj in objects:
+        obj.select_set(True)
     view_layer.objects.active = objects[0] if objects else None
 
 
@@ -62,8 +70,10 @@ def frame(objects=None, perspective="PERSP"):
     space = area.spaces.active
     space.region_3d.view_perspective = perspective
     with bpy.context.temp_override(window=window(), screen=window().screen, area=area, region=region):
-        if objects: bpy.ops.view3d.view_selected()
-        else: bpy.ops.view3d.view_all()
+        if objects:
+            bpy.ops.view3d.view_selected()
+        else:
+            bpy.ops.view3d.view_all()
 
 
 def shot(name):
@@ -88,7 +98,14 @@ def setup():
 def actors():
     actor_tools = sys.modules[module + ".actor_tools"]
     roots = actor_tools.actor_roots(scene())
-    root = max(roots, key=lambda r: len(actor_tools.descendants(r)[0].data.bones) if actor_tools.descendants(r) and actor_tools.descendants(r)[0].type == "ARMATURE" else 0)
+    root = max(
+        roots,
+        key=lambda r: (
+            len(actor_tools.descendants(r)[0].data.bones)
+            if actor_tools.descendants(r) and actor_tools.descendants(r)[0].type == "ARMATURE"
+            else 0
+        ),
+    )
     scene().frame_set(40)
     select([root])
     panels("CHSTAGE_PT_actor", "CHSTAGE_PT_actors")
@@ -110,13 +127,19 @@ def scripts():
 def events():
     props = scene().chstage
     props.script_view = "EVENTS"
-    props.script_rows_index = next((i for i, r in enumerate(props.script_rows) if r.label == "object startup" and r.objects), 0)
+    props.script_rows_index = next(
+        (i for i, r in enumerate(props.script_rows) if r.label == "object startup" and r.objects), 0
+    )
     panels("CHSTAGE_PT_scripts")
 
 
 def cameras():
     props = scene().chstage
-    shot_object = next(o for o in scene().objects if o.type == "CAMERA" and o.chstage.shot.enabled and o.chstage.point.anchor_part == "bone")
+    shot_object = next(
+        o
+        for o in scene().objects
+        if o.type == "CAMERA" and o.chstage.shot.enabled and o.chstage.point.anchor_part == "bone"
+    )
     props.shot_group = shot_object.chstage.shot.groups[0].name if shot_object.chstage.shot.groups else ""
     panels("CHSTAGE_PT_shots", "CHSTAGE_PT_shot")
     select([shot_object])
@@ -125,7 +148,11 @@ def cameras():
 
 def lighting():
     props = scene().chstage
-    wide = next(o for o in scene().objects if o.type == "CAMERA" and o.chstage.shot.enabled and any(g.name == "wide" for g in o.chstage.shot.groups))
+    wide = next(
+        o
+        for o in scene().objects
+        if o.type == "CAMERA" and o.chstage.shot.enabled and any(g.name == "wide" for g in o.chstage.shot.groups)
+    )
     select([])
     props.shots_index = scene().objects.find(wide.name)
     props.lighting_preview = True
@@ -150,9 +177,26 @@ def groups():
     panels("CHSTAGE_PT_groups")
 
 
-steps = [setup, lambda: None, actors, lambda: shot("panel-actor"), scripts, lambda: shot("panel-script-objects"), events, lambda: shot("panel-script-events"),
-         cameras, lambda: shot("panel-shots-rig"), lighting, lambda: None, lambda: None, lambda: None, lambda: shot("panel-lighting-preview"),
-         groups, lambda: shot("panel-groups-overlay"), lambda: bpy.ops.wm.quit_blender()]
+steps = [
+    setup,
+    lambda: None,
+    actors,
+    lambda: shot("panel-actor"),
+    scripts,
+    lambda: shot("panel-script-objects"),
+    events,
+    lambda: shot("panel-script-events"),
+    cameras,
+    lambda: shot("panel-shots-rig"),
+    lighting,
+    lambda: None,
+    lambda: None,
+    lambda: None,
+    lambda: shot("panel-lighting-preview"),
+    groups,
+    lambda: shot("panel-groups-overlay"),
+    lambda: bpy.ops.wm.quit_blender(),
+]
 
 
 def tick():
@@ -161,6 +205,7 @@ def tick():
         step()
     except Exception:
         import traceback
+
         traceback.print_exc()
     return 3.0 if steps else None
 

@@ -5,6 +5,7 @@ Usage: native-offsets.py <GameAssembly.so> <GameAssembly.dll> NAME:LINUX_RVA:LEN
 The RVAs and lengths come from `tools/InteropMap` (`type` mode). In the Linux GameAssembly.so the RVA is the file offset.
 Run with: uv run --with capstone --with pefile python tools/native-offsets.py ...
 """
+
 import re
 import sys
 
@@ -30,9 +31,9 @@ windows = open(sys.argv[2], "rb").read()
 for spec in sys.argv[3:]:
     name, linux_rva, linux_length, windows_rva, windows_length = spec.split(":")
     start, length = int(linux_rva, 16), int(linux_length, 16)
-    offsets, calls = summary(linux[start:start + length], start)
+    offsets, calls = summary(linux[start : start + length], start)
     print(f"{name} linux: offsets {offsets}; calls {calls}")
     start, length = int(windows_rva, 16), int(windows_length, 16)
     file_offset = windows_pe.get_offset_from_rva(start)
-    offsets, calls = summary(windows[file_offset:file_offset + length], start)
+    offsets, calls = summary(windows[file_offset : file_offset + length], start)
     print(f"{name} windows: offsets {offsets}; calls {calls}")

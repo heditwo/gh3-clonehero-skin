@@ -21,7 +21,8 @@ _OPEN = {"active": False, "nodes": {}, "materials": {}, "images": {}}
 
 
 def _index(items, item, cache):
-    if id(items) not in cache: cache[id(items)] = {id(value): index for index, value in enumerate(items)}
+    if id(items) not in cache:
+        cache[id(items)] = {id(value): index for index, value in enumerate(items)}
     return cache[id(items)].get(id(item))
 
 
@@ -35,7 +36,9 @@ class ImportHooks:
 
     def gather_import_material_after_hook(self, gltf_material, vertex_color, blender_material, gltf):
         if _OPEN["active"]:
-            _OPEN["materials"].setdefault(_index(gltf.data.materials, gltf_material, self.cache), []).append(blender_material)
+            _OPEN["materials"].setdefault(_index(gltf.data.materials, gltf_material, self.cache), []).append(
+                blender_material
+            )
 
     def gather_import_image_after_hook(self, gltf_image, blender_image, gltf):
         if _OPEN["active"] and blender_image is not None:
@@ -52,11 +55,13 @@ def packed_image(name, data):
 
 
 def remove_gh3_properties(data):
-    for key in [k for k in data.keys() if k.startswith("gh3")]: del data[key]
+    for key in [k for k in data.keys() if k.startswith("gh3")]:
+        del data[key]
 
 
 def set_properties(holder, values):
-    for key, value in values.items(): setattr(holder, key, value)
+    for key, value in values.items():
+        setattr(holder, key, value)
 
 
 def link(collection, obj):
@@ -78,12 +83,15 @@ def import_stage(scene, data, issues):
     prepared, uv_maps = glb_tools.fill_texcoord_gaps(prepared)
     prepared, normals = glb_tools.normalize_normals(prepared)
     if faces or uv_maps or normals:
-        print(f"CH Stage Tools: stage.glb import: {faces} triangles got own vertices, {uv_maps} empty UV maps added, {normals} normal sets normalized")
-    if normals: issues.warn(f"stage.glb: {normals} meshes have normals that are not unit length; Blender writes unit normals")
+        print(
+            f"CH Stage Tools: stage.glb import: {faces} triangles got own vertices, {uv_maps} empty UV maps added, {normals} normal sets normalized"
+        )
+    if normals:
+        issues.warn(f"stage.glb: {normals} meshes have normals that are not unit length; Blender writes unit normals")
     _OPEN.update(active=True, nodes={}, materials={}, images={})
     try:
         with tempfile.TemporaryDirectory(prefix="chstage-open-") as folder:
-            path = Path(folder)/"stage.glb"
+            path = Path(folder) / "stage.glb"
             path.write_bytes(prepared)
             view_layer = scene.view_layers[0]
             with bpy.context.temp_override(scene=scene, view_layer=view_layer, collection=scene.collection):
@@ -99,16 +107,20 @@ def open_scenery(scene, source, entry, issues):
     gltf, binary, nodes, mats, images = import_stage(scene, source.read(entry["model"]), issues)
     open_nodes(gltf, nodes)
     open_materials(gltf, binary, mats, images, source, issues)
-    for mesh in {obj.data for obj in nodes.values() if obj.type == "MESH"}: remove_gh3_properties(mesh)
+    for mesh in {obj.data for obj in nodes.values() if obj.type == "MESH"}:
+        remove_gh3_properties(mesh)
 
 
 def open_nodes(gltf, nodes):
     """Set the add-on settings of the imported objects from the gh3* node extras."""
     for index, obj in nodes.items():
-        if index is None: continue
+        if index is None:
+            continue
         node = gltf["nodes"][index]
         set_properties(obj.chstage, sidecars.open_node(node.get("extras", {})))
-        obj.chstage.kept = sidecars.kept_text(node={k: v for k, v in node.get("extras", {}).items() if k.startswith("gh3")})
+        obj.chstage.kept = sidecars.kept_text(
+            node={k: v for k, v in node.get("extras", {}).items() if k.startswith("gh3")}
+        )
         obj.chstage.source_name = node.get("name", "")
         remove_gh3_properties(obj)
 
@@ -118,8 +130,12 @@ def open_materials(gltf, binary, mats, images, source, issues):
     Images that no material socket uses are packed from the GLB (the importer does not import them)."""
     for index, image in enumerate(gltf.get("images", [])):
         if index not in images:
-            images[index] = packed_image(image.get("name") or f"image-{index}", glb_tools.image_bytes(gltf, binary, index))
-    by_name = {image.get("name"): images[index] for index, image in enumerate(gltf.get("images", [])) if image.get("name")}
+            images[index] = packed_image(
+                image.get("name") or f"image-{index}", glb_tools.image_bytes(gltf, binary, index)
+            )
+    by_name = {
+        image.get("name"): images[index] for index, image in enumerate(gltf.get("images", [])) if image.get("name")
+    }
     gltf_textures = gltf.get("textures", [])
     for index, variants in mats.items():
         material = gltf["materials"][index]
@@ -127,28 +143,36 @@ def open_materials(gltf, binary, mats, images, source, issues):
         refs = {}
 
         def resolve(ref):
-            if ref.startswith("#"): image = by_name.get(ref[1:])
-            elif ref in source.set: image = bpy.data.images.get(ref) or packed_image(ref, textures.png_of(source.read(ref)))
-            else: image = None
-            if image is None: issues.warn(f"material '{material.get('name')}': texture reference {ref} has no image")
+            if ref.startswith("#"):
+                image = by_name.get(ref[1:])
+            elif ref in source.set:
+                image = bpy.data.images.get(ref) or packed_image(ref, textures.png_of(source.read(ref)))
+            else:
+                image = None
+            if image is None:
+                issues.warn(f"material '{material.get('name')}': texture reference {ref} has no image")
             return image
 
         for container, key in sidecars.texture_references(other):
             ref = container[key]
-            if not ref: continue
+            if not ref:
+                continue
             image = resolve(ref)
-            if image is not None: refs[ref[1:] if ref.startswith("#") else ref] = image
+            if image is not None:
+                refs[ref[1:] if ref.startswith("#") else ref] = image
         toon_images = {}
         for prop, ref in sidecars.toon_references(material.get("extras", {})).items():
             image = resolve(ref)
             toon_images[prop] = image
             # An unchanged material keeps its source reference (sidecars.Keeper), which can differ from the Blender image name.
-            if image is not None: refs[ref[1:] if ref.startswith("#") else ref] = image
+            if image is not None:
+                refs[ref[1:] if ref.startswith("#") else ref] = image
         occlusion = material.get("occlusionTexture")
         lightmap = images.get(gltf_textures[occlusion["index"]].get("source")) if occlusion else None
         for blender_material in variants:
             set_properties(blender_material.chstage, props)
-            for prop, image in toon_images.items(): setattr(blender_material.chstage, prop, image)
+            for prop, image in toon_images.items():
+                setattr(blender_material.chstage, prop, image)
             blender_material.chstage.kept_extras = json.dumps(other, separators=(",", ":")) if other else ""
             for key, image in refs.items():
                 item = blender_material.chstage.kept_images.add()
@@ -157,11 +181,13 @@ def open_materials(gltf, binary, mats, images, source, issues):
                 blender_material.chstage.lightmap = lightmap
                 uv = occlusion.get("texCoord", 0)
                 blender_material.chstage.lightmap_uv = "UVMap" if uv == 0 else f"UVMap.{uv:03d}"
-                if uv != 1: issues.warn(f"material '{blender_material.name}': the lightmap uses TEXCOORD_{uv}, not TEXCOORD_1")
+                if uv != 1:
+                    issues.warn(f"material '{blender_material.name}': the lightmap uses TEXCOORD_{uv}, not TEXCOORD_1")
             blender_material.chstage.kept = sidecars.kept_text(material=sidecars.gltf_material_row(material))
             blender_material.chstage.source_name = material.get("name", "")
             remove_gh3_properties(blender_material)
-        if len(variants) > 1: issues.warn(f"material '{material.get('name')}': Blender made {len(variants)} materials from it")
+        if len(variants) > 1:
+            issues.warn(f"material '{material.get('name')}': Blender made {len(variants)} materials from it")
 
 
 def set_matrix(obj, value):
@@ -172,12 +198,15 @@ def open_markers(scene, placements):
     markers, crowd, keys = sidecars.open_placements(placements)
     collection = child_collection(scene, "Markers")
     for marker in markers:
-        if marker["kind"] == "BAND": obj = template.add_band_marker(scene, marker["role"], (0, 0, 0), collection=collection)
-        elif marker["kind"] == "WAYPOINT": obj = template.add_waypoint(scene, marker["name"], (0, 0, 0), collection=collection)
+        if marker["kind"] == "BAND":
+            obj = template.add_band_marker(scene, marker["role"], (0, 0, 0), collection=collection)
+        elif marker["kind"] == "WAYPOINT":
+            obj = template.add_waypoint(scene, marker["name"], (0, 0, 0), collection=collection)
         else:
             obj = template.add_effect(scene, marker["effect"], (0, 0, 0), collection=collection)
             obj.name = f"effect-{marker['effect']}-{marker['order']:02d}"
-        if marker["kind"] == "WAYPOINT": obj.chstage.waypoint_name = marker["name"]
+        if marker["kind"] == "WAYPOINT":
+            obj.chstage.waypoint_name = marker["name"]
         set_matrix(obj, marker["matrix"])
         obj.chstage.order = marker["order"]
         obj.chstage.kept = sidecars.kept_text(placement=marker["source"])
@@ -197,8 +226,16 @@ def camera_object(collection, name, point):
     obj = link(collection, bpy.data.objects.new(name, data))
     set_matrix(obj, point["matrix"])
     props = obj.chstage.point
-    props.anchor_role, props.anchor_part, props.anchor_bone = point["anchorRole"], point["anchorPart"], point["anchorBone"]
-    props.look_at_role, props.look_at_part, props.look_at_bone = point["lookAtRole"], point["lookAtPart"], point["lookAtBone"]
+    props.anchor_role, props.anchor_part, props.anchor_bone = (
+        point["anchorRole"],
+        point["anchorPart"],
+        point["anchorBone"],
+    )
+    props.look_at_role, props.look_at_part, props.look_at_bone = (
+        point["lookAtRole"],
+        point["lookAtPart"],
+        point["lookAtBone"],
+    )
     props.use_rotation = point["useRotation"]
     if point["screenOffset"] is not None:
         props.use_screen_offset, props.screen_offset = True, point["screenOffset"]
@@ -213,16 +250,29 @@ def open_cameras(scene, cameras, placements):
         props = camera.chstage.shot
         props.enabled, props.shot_name = True, shot["name"]
         props.type, props.control, props.tag = shot["type"], shot["control"], shot["tag"]
-        for group in shot["groups"]: props.groups.add().name = group
-        for waypoint in shot["waypoints"]: props.waypoints.add().name = waypoint
-        for value in shot["times"]: props.times.add().value = value
+        for group in shot["groups"]:
+            props.groups.add().name = group
+        for waypoint in shot["waypoints"]:
+            props.waypoints.add().name = waypoint
+        for value in shot["times"]:
+            props.times.add().value = value
         props.interpolation = shot["interpolation"]
-        for flag, name in (("use_orbit_angle", "orbitAngle"), ("use_angular_speed", "angularSpeed"), ("use_step_time", "stepTime"),
-                           ("use_step_count", "stepCount"), ("use_step_direction", "stepDirection"), ("use_height_ease", "heightEase")):
+        for flag, name in (
+            ("use_orbit_angle", "orbitAngle"),
+            ("use_angular_speed", "angularSpeed"),
+            ("use_step_time", "stepTime"),
+            ("use_step_count", "stepCount"),
+            ("use_step_direction", "stepDirection"),
+            ("use_height_ease", "heightEase"),
+        ):
             if shot[name] is not None:
                 setattr(props, flag, True)
                 setattr(props, flag[4:], shot[name])
-        props.hand_cam, props.disable_orbit1, props.disable_orbit2 = shot["handCam"], shot["disableOrbit1"], shot["disableOrbit2"]
+        props.hand_cam, props.disable_orbit1, props.disable_orbit2 = (
+            shot["handCam"],
+            shot["disableOrbit1"],
+            shot["disableOrbit2"],
+        )
         for number, point in enumerate(shot["points"][1:], start=2):
             props.more_points.add().target = camera_object(collection, f"{shot['name']}.point{number}", point)
         camera.chstage.order = shot["order"]
@@ -230,10 +280,19 @@ def open_cameras(scene, cameras, placements):
     for note in notes:
         item = scene.chstage.camera_notes.add()
         item.note, item.group, item.tag, item.type = note["note"], note["group"], note["tag"], note["type"]
-        if note["enable"] is not None: item.use_enable, item.enable = True, note["enable"]
+        if note["enable"] is not None:
+            item.use_enable, item.enable = True, note["enable"]
         item.kept = sidecars.kept_text(note=note["source"])
-    wide = next((obj for obj in collection.objects if obj.chstage.shot.enabled and any(g.name == "wide" for g in obj.chstage.shot.groups)), None)
-    if wide is not None: scene.camera = wide
+    wide = next(
+        (
+            obj
+            for obj in collection.objects
+            if obj.chstage.shot.enabled and any(g.name == "wide" for g in obj.chstage.shot.groups)
+        ),
+        None,
+    )
+    if wide is not None:
+        scene.camera = wide
     return cameras.get("groups", {})
 
 
@@ -251,7 +310,8 @@ def open_lighting(scene, lighting):
         props = obj.chstage.light
         props.enabled, props.light_id, props.group, props.type = True, light["id"], light["group"], light["type"]
         props.script_object, props.override_color = light["object"], light["overrideColor"]
-        if light["useCone"]: props.use_cone, props.hotspot, props.field = True, light["hotspot"], light["field"]
+        if light["useCone"]:
+            props.use_cone, props.hotspot, props.field = True, light["hotspot"], light["field"]
         obj.chstage.order = light["order"]
         obj.chstage.kept = sidecars.kept_text(light=light["source"])
         objects.append(obj)
@@ -261,18 +321,36 @@ def open_lighting(scene, lighting):
         for row in snapshot["lights"]:
             item = entry.lights.add()
             item.light = objects[row["index"]] if row["index"] < len(objects) else None
-            item.color, item.intensity, item.near, item.far, item.inherit = row["color"], row["intensity"], row["near"], row["far"], row["inherit"]
-            if row["specular"] is not None: item.use_specular, item.specular = True, row["specular"]
+            item.color, item.intensity, item.near, item.far, item.inherit = (
+                row["color"],
+                row["intensity"],
+                row["near"],
+                row["far"],
+                row["inherit"],
+            )
+            if row["specular"] is not None:
+                item.use_specular, item.specular = True, row["specular"]
         for beam in snapshot["beams"]:
             item = entry.beams.add()
-            item.fixture_id, item.position, item.rotation, item.color = beam["id"], beam["position"], beam["rotation"], beam["color"]
-            item.density, item.start_radius, item.end_radius, item.range = beam["density"], beam["startRadius"], beam["endRadius"], beam["range"]
+            item.fixture_id, item.position, item.rotation, item.color = (
+                beam["id"],
+                beam["position"],
+                beam["rotation"],
+                beam["color"],
+            )
+            item.density, item.start_radius, item.end_radius, item.range = (
+                beam["density"],
+                beam["startRadius"],
+                beam["endRadius"],
+                beam["range"],
+            )
             item.inherit = beam["inherit"]
         entry.kept = sidecars.kept_text(snapshot=snapshot["source"])
     for mood in moods:
         item = scene.chstage.moods.add()
         item.mood = mood["mood"]
-        for name in mood["snapshots"]: item.snapshots.add().name = name
+        for name in mood["snapshots"]:
+            item.snapshots.add().name = name
         item.kept = sidecars.kept_text(mood=mood["source"])
     for color in colors:
         item = scene.chstage.colors.add()
@@ -281,14 +359,16 @@ def open_lighting(scene, lighting):
     intro = next((m for m in scene.chstage.moods if m.mood == "intro" and m.snapshots), None)
     if intro is not None:
         snapshot = next((s for s in scene.chstage.snapshots if s.name == intro.snapshots[0].name), None)
-        if snapshot is not None: template.apply_snapshot(snapshot)
+        if snapshot is not None:
+            template.apply_snapshot(snapshot)
 
 
 def open_kept_files(scene, source, manifest, path, skip):
     """Keep the package files that the add-on does not make: JSON files as text blocks, other files packed."""
     entry_of = {value: key for key, value in manifest.get("entry", {}).items()}
     for name in sorted(manifest.get("files", {}) or source.names):
-        if name in skip or name == "manifest.json": continue
+        if name in skip or name == "manifest.json":
+            continue
         item = scene.chstage.kept_files.add()
         item.path, item.entry = name, entry_of.get(name, "")
         data = source.read(name)
@@ -307,8 +387,10 @@ def record_kept(scene):
     keeper = sidecars.Keeper("record")
     collect.sidecar_files(scene, sidecars.Issues(), keeper)
     objects = collect.exported_objects(scene)
-    for obj in objects: keeper(collect.node_row(obj), obj.chstage, "node")
-    for material in collect.exported_materials(objects): keeper(collect.material_row(material), material.chstage, "material")
+    for obj in objects:
+        keeper(collect.node_row(obj), obj.chstage, "node")
+    for material in collect.exported_materials(objects):
+        keeper(collect.material_row(material), material.chstage, "material")
     keeper.store()
 
 
@@ -317,13 +399,19 @@ def open_package_info(scene, manifest, source, skip):
     package = scene.chstage.package
     description = sidecars.open_manifest(manifest)
     package.package_id, package.version, package.name = description["id"], description["version"], description["name"]
-    package.description, package.license, package.homepage = description["description"], description["license"], description["homepage"]
+    package.description, package.license, package.homepage = (
+        description["description"],
+        description["license"],
+        description["homepage"],
+    )
     package.min_mod_version = description["minModVersion"]
-    for key in ("redistribute", "modify", "commercial"): setattr(package, key, bool(description["permissions"].get(key, False)))
+    for key in ("redistribute", "modify", "commercial"):
+        setattr(package, key, bool(description["permissions"].get(key, False)))
     for author in description["authors"]:
         item = package.authors.add()
         item.name, item.role, item.url = author["name"], author["role"], author["url"]
-    for line in description["credits"]: package.credits.add().name = line
+    for line in description["credits"]:
+        package.credits.add().name = line
     for requirement in description["requires"]:
         item = package.requires.add()
         item.package_id, item.version = requirement.get("id", ""), requirement.get("version", "")
@@ -340,18 +428,23 @@ def open_package(path, library=None, all_clips=False):
     """Make a new scene from a .chstage zip or development folder. Returns (scene, issues).
     library: a GH3 library package for the proxy rigs (None: look next to the package; "": no rigs)."""
     path = Path(path)
-    if path.name == "manifest.json": path = path.parent
+    if path.name == "manifest.json":
+        path = path.parent
     issues = sidecars.Issues()
     report = Report()
     source = Source(path, report)
-    if report.errors or "manifest.json" not in source.set: raise ValueError(f"{path}: not a package ({'; '.join(report.errors) or 'no manifest.json'})")
+    if report.errors or "manifest.json" not in source.set:
+        raise ValueError(f"{path}: not a package ({'; '.join(report.errors) or 'no manifest.json'})")
     manifest = json.loads(source.read("manifest.json"))
-    if not str(manifest.get("format", "")).startswith("chstage/"): raise ValueError(f"{path}: not a venue package (format {manifest.get('format')})")
+    if not str(manifest.get("format", "")).startswith("chstage/"):
+        raise ValueError(f"{path}: not a venue package (format {manifest.get('format')})")
     validation = Validator(path).run()
-    for message in validation.errors: issues.error(f"package: {message}")
+    for message in validation.errors:
+        issues.error(f"package: {message}")
     entry = manifest.get("entry", {})
     for key in ("model", "placements", "cameras"):
-        if entry.get(key) not in source.set: raise ValueError(f"{path}: the package has no {key} file")
+        if entry.get(key) not in source.set:
+            raise ValueError(f"{path}: the package has no {key} file")
 
     scene = bpy.data.scenes.new(manifest.get("name") or manifest.get("id") or "CH Stage")
     scene.render.resolution_x, scene.render.resolution_y = 1920, 1080
@@ -368,9 +461,12 @@ def open_package(path, library=None, all_clips=False):
         try:
             camera_tools.load_rigs(scene, library)
         except (OSError, ValueError, KeyError) as error:
-            issues.warn(f"the GH3 library {library} has no band rigs ({error}); camera bone anchors use the performer roots")
+            issues.warn(
+                f"the GH3 library {library} has no band rigs ({error}); camera bone anchors use the performer roots"
+            )
     groups = open_cameras(scene, json.loads(source.read(entry["cameras"])), placements)
-    if entry.get("lighting") in source.set: open_lighting(scene, json.loads(source.read(entry["lighting"])))
+    if entry.get("lighting") in source.set:
+        open_lighting(scene, json.loads(source.read(entry["lighting"])))
     roots = []
     if entry.get("actors") in source.set:
         actors = json.loads(source.read(entry["actors"]))
@@ -378,22 +474,29 @@ def open_package(path, library=None, all_clips=False):
         skip.update(actor["model"] for actor in actors.get("actors", {}).values())
     for material in bpy.data.materials:
         for item in material.chstage.kept_images:
-            if item.name in source.set: skip.add(item.name)
+            if item.name in source.set:
+                skip.add(item.name)
     open_kept_files(scene, source, manifest, path, skip)
-    scene.chstage.kept = json.dumps({"groups": {"source": groups}, "placementKeys": keys, "actorsFile": entry.get("actors") in source.set},
-                                    separators=(",", ":"))
+    scene.chstage.kept = json.dumps(
+        {"groups": {"source": groups}, "placementKeys": keys, "actorsFile": entry.get("actors") in source.set},
+        separators=(",", ":"),
+    )
     record_kept(scene)
     actor_tools.record_fingerprints(roots)
     actor_tools.frame_scene(scene, roots)
     from . import scripts_ui
+
     scripts_ui.rebuild(scene)
     return scene, issues.items
 
 
 def source_status(item):
     """'text', 'packed', 'ok', or why the kept file cannot be written."""
-    if item.text is not None: return "text"
-    if item.blob is not None: return "packed"
+    if item.text is not None:
+        return "text"
+    if item.blob is not None:
+        return "packed"
     path = bpy.path.abspath(item.source)
-    if not os.path.exists(path): return "source package missing"
+    if not os.path.exists(path):
+        return "source package missing"
     return "ok"

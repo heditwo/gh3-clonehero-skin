@@ -23,7 +23,10 @@ def main():
     if count == 0 or any(len(files) != count for _, files in columns):
         raise SystemExit("Every column needs the same, nonzero number of frames")
     labels = args.rows.split(",") if args.rows else [str(i) for i in range(count)]
-    width = args.width; height = width * 9 // 16; header = 22; side = 60
+    width = args.width
+    height = width * 9 // 16
+    header = 22
+    side = 60
     sheet = Image.new("RGB", (side + width * len(columns), header + height * count), (16, 18, 24))
     draw = ImageDraw.Draw(sheet)
     for c, (label, files) in enumerate(columns):

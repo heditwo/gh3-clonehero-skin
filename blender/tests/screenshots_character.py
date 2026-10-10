@@ -10,7 +10,7 @@ from pathlib import Path
 
 import bpy
 
-args = sys.argv[sys.argv.index("--") + 1:]
+args = sys.argv[sys.argv.index("--") + 1 :]
 archive, output, package, library = Path(args[0]), Path(args[1]), Path(args[2]), Path(args[3])
 output.mkdir(parents=True, exist_ok=True)
 module = "bl_ext.user_default.chstage_tools"
@@ -31,23 +31,34 @@ def view3d():
 
 def panels(*names):
     """Show only these character panels, open, in the Item tab (the API cannot select a sidebar tab; screenshots only)."""
-    classes = [c for c in sys.modules[module + ".character_ui"].CLASSES + sys.modules[module + ".chain_tools"].CLASSES if issubclass(c, bpy.types.Panel)]
+    classes = [
+        c
+        for c in sys.modules[module + ".character_ui"].CLASSES + sys.modules[module + ".chain_tools"].CLASSES
+        if issubclass(c, bpy.types.Panel)
+    ]
     for cls in list(bpy.types.Panel.__subclasses__()):
-        if getattr(cls, "bl_space_type", "") == "VIEW_3D" and getattr(cls, "bl_region_type", "") == "UI" and getattr(cls, "is_registered", False):
+        if (
+            getattr(cls, "bl_space_type", "") == "VIEW_3D"
+            and getattr(cls, "bl_region_type", "") == "UI"
+            and getattr(cls, "is_registered", False)
+        ):
             bpy.utils.unregister_class(cls)
     for name in names:
         cls = next(c for c in classes if c.__name__ == name)
         cls.bl_options = set()
         cls.bl_category = "Item"
         cls.bl_order = -10
-        if "bl_parent_id" in cls.__dict__: del cls.bl_parent_id
+        if "bl_parent_id" in cls.__dict__:
+            del cls.bl_parent_id
         bpy.utils.register_class(cls)
 
 
 def select(objects):
     view_layer = window().view_layer
-    for obj in scene().objects: obj.select_set(False)
-    for obj in objects: obj.select_set(True)
+    for obj in scene().objects:
+        obj.select_set(False)
+    for obj in objects:
+        obj.select_set(True)
     view_layer.objects.active = objects[0] if objects else None
 
 
@@ -92,7 +103,8 @@ def issues():
     body.location.x += 0.3
     group = body.vertex_groups[0]
     group.remove([0, 1, 2])
-    for other in body.vertex_groups: other.remove([0, 1, 2])
+    for other in body.vertex_groups:
+        other.remove([0, 1, 2])
     bpy.ops.chstage.validate_character()
     props = scene().chstage
     props.issues_index = next((i for i, issue in enumerate(props.issues) if issue.object_name), 0)
@@ -108,7 +120,8 @@ def weights():
     select([hair])
     bpy.ops.object.mode_set(mode="WEIGHT_PAINT")
     group = next((g for g in hair.vertex_groups if g.name.startswith("bone-")), None)
-    if group is not None: hair.vertex_groups.active_index = group.index
+    if group is not None:
+        hair.vertex_groups.active_index = group.index
     panels("CHSTAGE_PT_character_weights")
     frame([hair])
 
@@ -133,10 +146,12 @@ def chains():
     joint = next(b for b in rig.data.bones if b.chstage_joint.enabled)
     rig.data.bones.active = joint
     for obj in scene().objects:
-        if obj.chstage_collider.enabled: obj.hide_set(False)
+        if obj.chstage_collider.enabled:
+            obj.hide_set(False)
     rig.show_in_front = True
     rig.data.display_type = "STICK"
-    for bone in rig.data.bones: bone.hide = not (bone.chstage_joint.enabled or bone.name == joint.parent.name)
+    for bone in rig.data.bones:
+        bone.hide = not (bone.chstage_joint.enabled or bone.name == joint.parent.name)
     tail = next(o for o in scene().objects if o.name.startswith("TestTwinTail"))
     frame([tail])
     area, region = view3d()
@@ -147,8 +162,20 @@ def chains():
     bpy.ops.object.mode_set(mode="POSE")
 
 
-steps = [setup, lambda: None, package_panel, lambda: shot("panel-character"), issues, lambda: shot("panel-character-issues"),
-         weights, lambda: shot("panel-character-weights"), clips, lambda: None, lambda: shot("panel-character-clips"), lambda: bpy.ops.wm.quit_blender()]
+steps = [
+    setup,
+    lambda: None,
+    package_panel,
+    lambda: shot("panel-character"),
+    issues,
+    lambda: shot("panel-character-issues"),
+    weights,
+    lambda: shot("panel-character-weights"),
+    clips,
+    lambda: None,
+    lambda: shot("panel-character-clips"),
+    lambda: bpy.ops.wm.quit_blender(),
+]
 
 
 def tick():
@@ -157,10 +184,18 @@ def tick():
         step()
     except Exception:
         import traceback
+
         traceback.print_exc()
     return 3.0 if steps else None
 
 
 if "chains" in package.name:
-    steps = [setup, lambda: None, chains, lambda: None, lambda: shot("panel-character-chains"), lambda: bpy.ops.wm.quit_blender()]
+    steps = [
+        setup,
+        lambda: None,
+        chains,
+        lambda: None,
+        lambda: shot("panel-character-chains"),
+        lambda: bpy.ops.wm.quit_blender(),
+    ]
 bpy.app.timers.register(tick, first_interval=2.0)

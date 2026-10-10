@@ -11,27 +11,110 @@ from pathlib import Path
 
 from pipeline.gh3 import materials as gh3_materials
 
-OPCODES = {1: "mov", 2: "add", 3: "sub", 4: "mad", 5: "mul", 6: "rcp", 7: "rsq", 8: "dp3", 9: "dp4", 10: "min", 11: "max",
-           12: "slt", 13: "sge", 14: "exp", 15: "log", 18: "lrp", 19: "frc", 32: "pow", 33: "crs", 35: "abs", 36: "nrm",
-           37: "sincos", 41: "ifc", 42: "else", 43: "endif", 65: "texkill", 66: "texld", 88: "cmp", 90: "dp2add"}
-USAGES = {0: "position", 1: "blendweight", 2: "blendindices", 3: "normal", 4: "psize", 5: "texcoord", 6: "tangent",
-          7: "binormal", 8: "tessfactor", 10: "color", 11: "fog", 12: "depth"}
+OPCODES = {
+    1: "mov",
+    2: "add",
+    3: "sub",
+    4: "mad",
+    5: "mul",
+    6: "rcp",
+    7: "rsq",
+    8: "dp3",
+    9: "dp4",
+    10: "min",
+    11: "max",
+    12: "slt",
+    13: "sge",
+    14: "exp",
+    15: "log",
+    18: "lrp",
+    19: "frc",
+    32: "pow",
+    33: "crs",
+    35: "abs",
+    36: "nrm",
+    37: "sincos",
+    41: "ifc",
+    42: "else",
+    43: "endif",
+    65: "texkill",
+    66: "texld",
+    88: "cmp",
+    90: "dp2add",
+}
+USAGES = {
+    0: "position",
+    1: "blendweight",
+    2: "blendindices",
+    3: "normal",
+    4: "psize",
+    5: "texcoord",
+    6: "tangent",
+    7: "binormal",
+    8: "tessfactor",
+    10: "color",
+    11: "fog",
+    12: "depth",
+}
 SCALAR = {"rcp", "rsq", "exp", "log", "pow"}
 SAMPLER_TYPES = {2: "2d", 3: "cube", 4: "volume"}
 # Unity texture properties for samplers s0..s9. s1–s5 reuse the legacy stage shader's sampler names.
-SAMPLER_NAMES = ("_MainTex", "_Gh3Lightmap", "_Gh3NormalTex", "_Gh3SpecularTex", "_Gh3LayerTex", "_Gh3MaskTex",
-                 "_Gh3Tex6", "_Gh3Tex7", "_Gh3Tex8", "_Gh3Tex9")
+SAMPLER_NAMES = (
+    "_MainTex",
+    "_Gh3Lightmap",
+    "_Gh3NormalTex",
+    "_Gh3SpecularTex",
+    "_Gh3LayerTex",
+    "_Gh3MaskTex",
+    "_Gh3Tex6",
+    "_Gh3Tex7",
+    "_Gh3Tex8",
+    "_Gh3Tex9",
+)
 VERTEX_CONSTANTS = 16
 PIXEL_CONSTANTS = 16
 # GH3 engine registers. Vertex: c119 wibble direction, c120–c122 camera axes (inverse view rows), c124–c127 view-projection,
 # c155.x time, c160–c163 world, c168–c171 world-view-projection. Pixel: c123 eye, c137 lightmap strengths, c138 normal-map
 # fade (start, end, -, 1/range), c140/c142 prop tint, c176 ambient, c177 key light direction, c178 key colour (w: key
 # lightmap factor), c179 specular colour, c188–c191 SH (constant, x, y, z).
-VERTEX_ENGINE = {156: "gh3_zero", 157: "gh3_zero", 158: "gh3_zero", 159: "gh3_zero", 119: "gh3_c119", 120: "gh3_c120", 121: "gh3_c121", 122: "gh3_c122", 124: "gh3_c124", 125: "gh3_c125",
-                 126: "gh3_c126", 127: "gh3_c127", 155: "gh3_c155", 160: "gh3_c160", 161: "gh3_c161", 162: "gh3_c162",
-                 163: "gh3_c163", 168: "gh3_c168", 169: "gh3_c169", 170: "gh3_c170", 171: "gh3_c171"}
-PIXEL_ENGINE = {123: "gh3_c123", 137: "gh3_c137", 138: "gh3_c138", 140: "gh3_c140", 142: "gh3_c142", 176: "gh3_c176",
-                177: "gh3_c177", 178: "gh3_c178", 179: "gh3_c179", 188: "gh3_c188", 189: "gh3_c189", 190: "gh3_c190", 191: "gh3_c191"}
+VERTEX_ENGINE = {
+    156: "gh3_zero",
+    157: "gh3_zero",
+    158: "gh3_zero",
+    159: "gh3_zero",
+    119: "gh3_c119",
+    120: "gh3_c120",
+    121: "gh3_c121",
+    122: "gh3_c122",
+    124: "gh3_c124",
+    125: "gh3_c125",
+    126: "gh3_c126",
+    127: "gh3_c127",
+    155: "gh3_c155",
+    160: "gh3_c160",
+    161: "gh3_c161",
+    162: "gh3_c162",
+    163: "gh3_c163",
+    168: "gh3_c168",
+    169: "gh3_c169",
+    170: "gh3_c170",
+    171: "gh3_c171",
+}
+PIXEL_ENGINE = {
+    123: "gh3_c123",
+    137: "gh3_c137",
+    138: "gh3_c138",
+    140: "gh3_c140",
+    142: "gh3_c142",
+    176: "gh3_c176",
+    177: "gh3_c177",
+    178: "gh3_c178",
+    179: "gh3_c179",
+    188: "gh3_c188",
+    189: "gh3_c189",
+    190: "gh3_c190",
+    191: "gh3_c191",
+}
 LIGHT_REGISTERS = {176, 177, 178, 179, 188, 189, 190, 191}
 
 
@@ -43,19 +126,19 @@ def _records(data):
     if data[:8] != b"MATL\0\0\0\x02":
         raise ValueError("Unsupported material library")
     count = struct.unpack_from(">I", data, 8)[0]
-    base = (20 + count*4 + 15) & ~15
+    base = (20 + count * 4 + 15) & ~15
     shader_base = base + struct.unpack_from(">I", data, 16)[0]
     for index in range(count):
-        record = base + struct.unpack_from(">I", data, 20 + index*4)[0]
+        record = base + struct.unpack_from(">I", data, 20 + index * 4)[0]
         row = struct.unpack_from(">10I", data, record)
-        name = data[base + row[1]:data.index(b"\0", base + row[1])].decode()
+        name = data[base + row[1] : data.index(b"\0", base + row[1])].decode()
         descriptor = base + row[7]
         programs = []
         # Variant 0 is the normal scene pass: vertex shader size and offset at +0x50/+0x58, pixel shader at +0x60/+0x68.
         for size_at, offset_at in ((0x50, 0x58), (0x60, 0x68)):
             size = struct.unpack_from(">I", data, descriptor + size_at)[0]
             start = shader_base + struct.unpack_from(">I", data, descriptor + offset_at)[0]
-            programs.append(data[start:start + size])
+            programs.append(data[start : start + size])
         yield f"{row[2]:08x}", name, programs[0], programs[1]
 
 
@@ -84,10 +167,10 @@ class Program:
         if version != (0xFFFE0300 if stage == "vs" else 0xFFFF0300):
             raise Unsupported(f"Unsupported {stage} version {version:08x}")
         self.stage = stage
-        self.inputs = {}      # v index -> (usage, usage index)
-        self.outputs = {}     # o index -> (usage, usage index)
-        self.samplers = {}    # s index -> type
-        self.defs = {}        # c index -> literal vec4
+        self.inputs = {}  # v index -> (usage, usage index)
+        self.outputs = {}  # o index -> (usage, usage index)
+        self.samplers = {}  # s index -> type
+        self.defs = {}  # c index -> literal vec4
         self.constants = set()
         self.body = []
         self.temps = 0
@@ -151,7 +234,7 @@ class Program:
 
     def source(self, token):
         name = self.register(token)
-        swizzle = "".join("xyzw"[(token >> (16 + 2*i)) & 3] for i in range(4))
+        swizzle = "".join("xyzw"[(token >> (16 + 2 * i)) & 3] for i in range(4))
         value = name if swizzle == "xyzw" else f"{name}.{swizzle}"
         modifier = (token >> 24) & 15
         if modifier == 0:
@@ -177,7 +260,7 @@ class Program:
         if name == "texkill":
             return f"if (any(lessThan({self.register(arguments[0])}.xyz, vec3(0.0)))) discard;"
         target, mask, saturate = self.destination(arguments[0])
-        s = [self.source(token) for token in arguments[1:2 if name == "texld" else None]]
+        s = [self.source(token) for token in arguments[1 : 2 if name == "texld" else None]]
         if name == "texld":
             sampler = gh3_materials._register(arguments[2])[1]
             kind = self.samplers.get(sampler)
@@ -191,30 +274,54 @@ class Program:
                 value = f"gh3_cube({SAMPLER_NAMES[sampler]}, {s[0]}.xyz)"
             else:
                 value = f"texture({SAMPLER_NAMES[sampler]}, gh3_uv({s[0]}))"
-        elif name == "mov": value = s[0]
-        elif name == "add": value = f"({s[0]} + {s[1]})"
-        elif name == "sub": value = f"({s[0]} - {s[1]})"
-        elif name == "mul": value = f"({s[0]} * {s[1]})"
-        elif name == "mad": value = f"({s[0]} * {s[1]} + {s[2]})"
-        elif name == "dp3": value = f"vec4(dot({s[0]}.xyz, {s[1]}.xyz))"
-        elif name == "dp4": value = f"vec4(dot({s[0]}, {s[1]}))"
-        elif name == "dp2add": value = f"vec4(dot({s[0]}.xy, {s[1]}.xy) + {s[2]}.x)"
-        elif name == "min": value = f"min({s[0]}, {s[1]})"
-        elif name == "max": value = f"max({s[0]}, {s[1]})"
-        elif name == "slt": value = f"vec4(lessThan({s[0]}, {s[1]}))"
-        elif name == "sge": value = f"vec4(greaterThanEqual({s[0]}, {s[1]}))"
-        elif name == "frc": value = f"fract({s[0]})"
-        elif name == "abs": value = f"abs({s[0]})"
-        elif name == "lrp": value = f"mix({s[2]}, {s[1]}, {s[0]})"
-        elif name == "cmp": value = f"mix({s[2]}, {s[1]}, vec4(greaterThanEqual({s[0]}, vec4(0.0))))"
-        elif name == "nrm": value = f"vec4({s[0]}.xyz * gh3_rsq(dot({s[0]}.xyz, {s[0]}.xyz)), 0.0)"
-        elif name == "crs": value = f"vec4(cross({s[0]}.xyz, {s[1]}.xyz), 0.0)"
-        elif name == "rcp": value = f"vec4(gh3_rcp({s[0]}.x))"
-        elif name == "rsq": value = f"vec4(gh3_rsq(abs({s[0]}.x)))"
-        elif name == "exp": value = f"vec4(exp2({s[0]}.x))"
-        elif name == "log": value = f"vec4(gh3_log(abs({s[0]}.x)))"
-        elif name == "pow": value = f"vec4(gh3_pow(abs({s[0]}.x), {s[1]}.x))"
-        elif name == "sincos": value = f"vec4(cos({s[0]}.x), sin({s[0]}.x), 0.0, 0.0)"
+        elif name == "mov":
+            value = s[0]
+        elif name == "add":
+            value = f"({s[0]} + {s[1]})"
+        elif name == "sub":
+            value = f"({s[0]} - {s[1]})"
+        elif name == "mul":
+            value = f"({s[0]} * {s[1]})"
+        elif name == "mad":
+            value = f"({s[0]} * {s[1]} + {s[2]})"
+        elif name == "dp3":
+            value = f"vec4(dot({s[0]}.xyz, {s[1]}.xyz))"
+        elif name == "dp4":
+            value = f"vec4(dot({s[0]}, {s[1]}))"
+        elif name == "dp2add":
+            value = f"vec4(dot({s[0]}.xy, {s[1]}.xy) + {s[2]}.x)"
+        elif name == "min":
+            value = f"min({s[0]}, {s[1]})"
+        elif name == "max":
+            value = f"max({s[0]}, {s[1]})"
+        elif name == "slt":
+            value = f"vec4(lessThan({s[0]}, {s[1]}))"
+        elif name == "sge":
+            value = f"vec4(greaterThanEqual({s[0]}, {s[1]}))"
+        elif name == "frc":
+            value = f"fract({s[0]})"
+        elif name == "abs":
+            value = f"abs({s[0]})"
+        elif name == "lrp":
+            value = f"mix({s[2]}, {s[1]}, {s[0]})"
+        elif name == "cmp":
+            value = f"mix({s[2]}, {s[1]}, vec4(greaterThanEqual({s[0]}, vec4(0.0))))"
+        elif name == "nrm":
+            value = f"vec4({s[0]}.xyz * gh3_rsq(dot({s[0]}.xyz, {s[0]}.xyz)), 0.0)"
+        elif name == "crs":
+            value = f"vec4(cross({s[0]}.xyz, {s[1]}.xyz), 0.0)"
+        elif name == "rcp":
+            value = f"vec4(gh3_rcp({s[0]}.x))"
+        elif name == "rsq":
+            value = f"vec4(gh3_rsq(abs({s[0]}.x)))"
+        elif name == "exp":
+            value = f"vec4(exp2({s[0]}.x))"
+        elif name == "log":
+            value = f"vec4(gh3_log(abs({s[0]}.x)))"
+        elif name == "pow":
+            value = f"vec4(gh3_pow(abs({s[0]}.x), {s[1]}.x))"
+        elif name == "sincos":
+            value = f"vec4(cos({s[0]}.x), sin({s[0]}.x), 0.0, 0.0)"
         else:
             raise Unsupported(f"Unsupported instruction {name}")
         if saturate:
@@ -228,19 +335,27 @@ class Program:
         return f"{target}.{mask} = ({value}).{mask};"
 
 
-
 def _input_expression(usage, index):
-    if usage == "position" and index == 0: return "gh3_position"
-    if usage == "position" and index == 1: return "gh3_position1"
-    if usage == "normal" and index == 0: return "gh3_normal"
-    if usage == "binormal" and index == 0: return "gh3_binormal"
-    if usage == "binormal" and index == 1: return "gh3_binormal1"
-    if usage == "tangent" and index == 0: return "gh3_tangent"
+    if usage == "position" and index == 0:
+        return "gh3_position"
+    if usage == "position" and index == 1:
+        return "gh3_position1"
+    if usage == "normal" and index == 0:
+        return "gh3_normal"
+    if usage == "binormal" and index == 0:
+        return "gh3_binormal"
+    if usage == "binormal" and index == 1:
+        return "gh3_binormal1"
+    if usage == "tangent" and index == 0:
+        return "gh3_tangent"
     # GH3 PC skins characters on the CPU: its vertex shaders read already-skinned streams and have no bone palette.
     # A palette (blend weights or indices) would need its own mapping, so it is reported instead of translated.
-    if usage in ("blendweight", "blendindices"): raise Unsupported(f"GPU skinning input {usage}{index} is not supported")
-    if usage == "color" and index == 0: return "in_COLOR0"
-    if usage == "texcoord" and 0 <= index <= 5: return f"vec4(in_TEXCOORD{index}, 0.0, 1.0)"
+    if usage in ("blendweight", "blendindices"):
+        raise Unsupported(f"GPU skinning input {usage}{index} is not supported")
+    if usage == "color" and index == 0:
+        return "in_COLOR0"
+    if usage == "texcoord" and 0 <= index <= 5:
+        return f"vec4(in_TEXCOORD{index}, 0.0, 1.0)"
     if usage in ("binormal", "tangent", "color", "texcoord"):
         # GH3 meshes for these templates carry no such stream; D3D supplies (0, 0, 0, 1).
         return "vec4(0.0, 0.0, 0.0, 1.0)"
@@ -248,8 +363,10 @@ def _input_expression(usage, index):
 
 
 def _varying(usage, index):
-    if usage == "texcoord" and 0 <= index <= 9: return f"gh3_T{index}"
-    if usage == "color" and 0 <= index <= 1: return f"gh3_C{index}"
+    if usage == "texcoord" and 0 <= index <= 9:
+        return f"gh3_T{index}"
+    if usage == "color" and 0 <= index <= 1:
+        return f"gh3_C{index}"
     return None
 
 
@@ -262,23 +379,31 @@ def translate(checksum):
     lines = [f"// {name}", f"void gh3_vs_{function}()", "{"]
     lines += [f"    const vec4 d{i} = {v};" for i, v in sorted(vs.defs.items())]
     for index in sorted(vs.constants):
-        if index in VERTEX_ENGINE: lines.append(f"    vec4 c{index} = {VERTEX_ENGINE[index]};")
-        elif index < VERTEX_CONSTANTS: lines.append(f"    vec4 c{index} = _Gh3V{index};")
-        else: raise Unsupported(f"Unmapped vertex engine constant c{index}")
+        if index in VERTEX_ENGINE:
+            lines.append(f"    vec4 c{index} = {VERTEX_ENGINE[index]};")
+        elif index < VERTEX_CONSTANTS:
+            lines.append(f"    vec4 c{index} = _Gh3V{index};")
+        else:
+            raise Unsupported(f"Unmapped vertex engine constant c{index}")
     for index, (usage, usage_index) in sorted(vs.inputs.items()):
         lines.append(f"    vec4 v{index} = {_input_expression(usage, usage_index)};")
-    if vs.temps: lines.append("    vec4 " + ", ".join(f"r{i} = vec4(0.0)" for i in range(vs.temps)) + ";")
+    if vs.temps:
+        lines.append("    vec4 " + ", ".join(f"r{i} = vec4(0.0)" for i in range(vs.temps)) + ";")
     position = None
     for index, (usage, usage_index) in sorted(vs.outputs.items()):
         lines.append(f"    vec4 o{index} = vec4(0.0);")
-        if usage == "position" and usage_index == 0: position = index
-    if position is None: raise Unsupported("The vertex shader writes no position")
+        if usage == "position" and usage_index == 0:
+            position = index
+    if position is None:
+        raise Unsupported("The vertex shader writes no position")
     lines += vs.body
     lines.append(f"    gl_Position = o{position};")
     for index, (usage, usage_index) in sorted(vs.outputs.items()):
         varying = _varying(usage, usage_index)
-        if varying: lines.append(f"    {varying} = o{index};")
-        elif usage not in ("position", "fog", "psize"): raise Unsupported(f"Unsupported vertex output {usage}{usage_index}")
+        if varying:
+            lines.append(f"    {varying} = o{index};")
+        elif usage not in ("position", "fog", "psize"):
+            raise Unsupported(f"Unsupported vertex output {usage}{usage_index}")
     lines.append("}")
     vertex = "\n".join(lines)
 
@@ -287,39 +412,59 @@ def translate(checksum):
     lines += [f"    const vec4 d{i} = {v};" for i, v in sorted(ps.defs.items())]
     lights = sorted(ps.constants & LIGHT_REGISTERS)
     for index in sorted(ps.constants):
-        if index in PIXEL_ENGINE: lines.append(f"    vec4 c{index} = {PIXEL_ENGINE[index]}();")
+        if index in PIXEL_ENGINE:
+            lines.append(f"    vec4 c{index} = {PIXEL_ENGINE[index]}();")
         elif index < PIXEL_CONSTANTS:
             # Scripts set the Pass0 material colour (m_psPass0MaterialColor) on the constant that tints sampler 0.
             lines.append(f"    vec4 c{index} = _Gh3P{index}" + (" * _Color;" if index == color else ";"))
-        else: raise Unsupported(f"Unmapped pixel engine constant c{index}")
+        else:
+            raise Unsupported(f"Unmapped pixel engine constant c{index}")
     for index, (usage, usage_index) in sorted(ps.inputs.items()):
         varying = _varying(usage, usage_index)
-        if varying is None: raise Unsupported(f"Unsupported pixel input {usage}{usage_index}")
+        if varying is None:
+            raise Unsupported(f"Unsupported pixel input {usage}{usage_index}")
         lines.append(f"    vec4 v{index} = {varying};")
-    if ps.temps: lines.append("    vec4 " + ", ".join(f"r{i} = vec4(0.0)" for i in range(ps.temps)) + ";")
+    if ps.temps:
+        lines.append("    vec4 " + ", ".join(f"r{i} = vec4(0.0)" for i in range(ps.temps)) + ";")
     lines.append("    vec4 oC0 = vec4(0.0);")
     lines += ps.body
     lines += ["    return oC0;", "}"]
     fragment = "\n".join(lines)
     vertex_written = {_varying(*usage) for usage in vs.outputs.values()}
     missing = [_varying(*usage) for usage in ps.inputs.values() if _varying(*usage) not in vertex_written]
-    if missing: raise Unsupported(f"Pixel inputs not written by the vertex shader: {missing}")
+    if missing:
+        raise Unsupported(f"Pixel inputs not written by the vertex shader: {missing}")
     approximations = []
-    if 119 in vs.constants: approximations.append("c119 wibble direction is GH3's default (zero)")
-    if vs.constants & {156, 157, 158, 159} or any(i >= len(SAMPLER_NAMES) for i in ps.samplers): approximations.append("engine shadow projection and render-target samplers are unshadowed")
+    if 119 in vs.constants:
+        approximations.append("c119 wibble direction is GH3's default (zero)")
+    if vs.constants & {156, 157, 158, 159} or any(i >= len(SAMPLER_NAMES) for i in ps.samplers):
+        approximations.append("engine shadow projection and render-target samplers are unshadowed")
     inputs = {f"{u}{i}" for u, i in vs.inputs.values()}
     extra = "position1" if "position1" in inputs else "binormal1" if "binormal1" in inputs else ""
-    return {"name": name, "function": function, "extraStream": extra, "cubeSamplers": sorted(i for i, kind in ps.samplers.items() if kind == "cube"), "vertex": vertex, "fragment": fragment,
-            "samplers": {index: kind for index, kind in ps.samplers.items()}, "lighting": bool(lights),
-            "shading": "lit" if set(lights) & {177, 178, 188, 189, 190, 191} else "ambient" if lights else "unlit",
-            "vertexConstants": sorted(i for i in vs.constants if i < VERTEX_CONSTANTS),
-            "pixelConstants": sorted(i for i in ps.constants if i < PIXEL_CONSTANTS), "colorConstant": color,
-            "inputs": sorted({f"{u}{i}" for u, i in vs.inputs.values()}), "approximations": approximations}
+    return {
+        "name": name,
+        "function": function,
+        "extraStream": extra,
+        "cubeSamplers": sorted(i for i, kind in ps.samplers.items() if kind == "cube"),
+        "vertex": vertex,
+        "fragment": fragment,
+        "samplers": {index: kind for index, kind in ps.samplers.items()},
+        "lighting": bool(lights),
+        "shading": "lit" if set(lights) & {177, 178, 188, 189, 190, 191} else "ambient" if lights else "unlit",
+        "vertexConstants": sorted(i for i in vs.constants if i < VERTEX_CONSTANTS),
+        "pixelConstants": sorted(i for i in ps.constants if i < PIXEL_CONSTANTS),
+        "colorConstant": color,
+        "inputs": sorted({f"{u}{i}" for u, i in vs.inputs.values()}),
+        "approximations": approximations,
+    }
 
 
-VERTEX_PROLOGUE = """// Generated by pipeline/gh3/shader.py from GH3's MaterialLibrary: one function per material template.
+VERTEX_PROLOGUE = (
+    """// Generated by pipeline/gh3/shader.py from GH3's MaterialLibrary: one function per material template.
 uniform vec4 _Gh3Template;
-""" + "".join(f"uniform vec4 _Gh3V{i};\n" for i in range(VERTEX_CONSTANTS)) + """uniform vec4 _Gh3Time;
+"""
+    + "".join(f"uniform vec4 _Gh3V{i};\n" for i in range(VERTEX_CONSTANTS))
+    + """uniform vec4 _Gh3Time;
 uniform vec4 _Gh3ViewRight;
 uniform vec4 _Gh3ViewUp;
 uniform vec4 _Gh3ViewForward;
@@ -327,7 +472,9 @@ in vec2 in_TEXCOORD4;
 in vec2 in_TEXCOORD5;
 in vec2 in_TEXCOORD6;
 in vec2 in_TEXCOORD7;
-""" + "".join(f"out vec4 gh3_T{i};\n" for i in range(10)) + """out vec4 gh3_C0;
+"""
+    + "".join(f"out vec4 gh3_T{i};\n" for i in range(10))
+    + """out vec4 gh3_C0;
 out vec4 gh3_C1;
 vec4 gh3_position, gh3_position1, gh3_normal, gh3_binormal, gh3_binormal1, gh3_tangent;
 vec4 gh3_c119, gh3_c120, gh3_c121, gh3_c122, gh3_c124, gh3_c125, gh3_c126, gh3_c127, gh3_c155;
@@ -338,6 +485,7 @@ float gh3_rsq(float x) { return inversesqrt(x); }
 float gh3_log(float x) { return log2(x); }
 float gh3_pow(float x, float y) { return x == 0.0 ? (y == 0.0 ? 1.0 : 0.0) : exp2(y * log2(x)); }
 """
+)
 
 VERTEX_MAIN = """
 // GH3 world space is the stage mesh space with z negated (F). World W = F M F, world-view-projection = VP M F, view-projection = VP F.
@@ -368,10 +516,16 @@ void gh3_vertex_main()
 }
 """
 
-FRAGMENT_PROLOGUE = """// Generated by pipeline/gh3/shader.py from GH3's MaterialLibrary: one function per material template.
+FRAGMENT_PROLOGUE = (
+    """// Generated by pipeline/gh3/shader.py from GH3's MaterialLibrary: one function per material template.
 uniform vec4 _Gh3Template;
-""" + "".join(f"uniform vec4 _Gh3P{i};\n" for i in range(PIXEL_CONSTANTS)) + """uniform vec4 _Gh3ViewEye;
-""" + "".join(f"uniform sampler2D {name};\n" for name in SAMPLER_NAMES[6:]) + "".join(f"in vec4 gh3_T{i};\n" for i in range(10)) + """in vec4 gh3_C0;
+"""
+    + "".join(f"uniform vec4 _Gh3P{i};\n" for i in range(PIXEL_CONSTANTS))
+    + """uniform vec4 _Gh3ViewEye;
+"""
+    + "".join(f"uniform sampler2D {name};\n" for name in SAMPLER_NAMES[6:])
+    + "".join(f"in vec4 gh3_T{i};\n" for i in range(10))
+    + """in vec4 gh3_C0;
 in vec4 gh3_C1;
 float gh3_rcp(float x) { return 1.0 / x; }
 float gh3_rsq(float x) { return inversesqrt(x); }
@@ -401,6 +555,7 @@ vec4 gh3_c138() { return vec4(0.0, 40.0, 30.0, 0.1); }
 vec4 gh3_c140() { return vec4(0.0); }
 vec4 gh3_c142() { return vec4(0.2, 0.8, 0.35, 0.65); }
 """
+)
 
 FRAGMENT_MAIN = """
 // GH3's material bind: alpha test (flags bit 6 clear) passes alpha > reference, with ALPHAFUNC GREATER set at device creation.
@@ -426,9 +581,16 @@ def uber(checksums):
             failures[checksum] = f"{library()[checksum][0]}: {error}"
             continue
         index = len(table) + 1
-        table[checksum] = {"index": index, "name": result["name"], "shading": result["shading"], "extraStream": result["extraStream"],
-                           "samplers": {str(k): v for k, v in result["samplers"].items()}, "approximations": result["approximations"]}
-        vertex.append(result["vertex"]); fragment.append(result["fragment"])
+        table[checksum] = {
+            "index": index,
+            "name": result["name"],
+            "shading": result["shading"],
+            "extraStream": result["extraStream"],
+            "samplers": {str(k): v for k, v in result["samplers"].items()},
+            "approximations": result["approximations"],
+        }
+        vertex.append(result["vertex"])
+        fragment.append(result["fragment"])
         table[checksum]["_function"] = result["function"]
     vertex_switch = ["void gh3_vs_template(int index)", "{", "    switch (index)", "    {"]
     fragment_switch = ["vec4 gh3_ps_template(int index)", "{", "    switch (index)", "    {"]
@@ -437,6 +599,11 @@ def uber(checksums):
         fragment_switch.append(f"        case {row['index']}: return gh3_ps_{row['_function']}();")
     vertex_switch += ["        default: gl_Position = vec4(0.0); break;", "    }", "}"]
     fragment_switch += ["        default: return vec4(1.0, 0.0, 1.0, 1.0);", "    }", "}"]
-    for row in table.values(): row.pop("_function")
-    return (VERTEX_PROLOGUE + "\n\n".join(vertex + ["\n".join(vertex_switch)]) + VERTEX_MAIN,
-            FRAGMENT_PROLOGUE + "\n\n".join(fragment + ["\n".join(fragment_switch)]) + FRAGMENT_MAIN, table, failures)
+    for row in table.values():
+        row.pop("_function")
+    return (
+        VERTEX_PROLOGUE + "\n\n".join(vertex + ["\n".join(vertex_switch)]) + VERTEX_MAIN,
+        FRAGMENT_PROLOGUE + "\n\n".join(fragment + ["\n".join(fragment_switch)]) + FRAGMENT_MAIN,
+        table,
+        failures,
+    )

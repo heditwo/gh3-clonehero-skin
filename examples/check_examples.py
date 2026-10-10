@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from pipeline.package import compare  # noqa: E402
 
-args = sys.argv[sys.argv.index("--") + 1:]
+args = sys.argv[sys.argv.index("--") + 1 :]
 archive, library, output = Path(args[0]), Path(args[1]), Path(args[2])
 output.mkdir(parents=True, exist_ok=True)
 MODULE = "bl_ext.user_default.chstage_tools"
@@ -24,13 +24,16 @@ failures = []
 
 def check(name, condition, detail=""):
     print(f"EXAMPLES-CHECK {'PASS' if condition else 'FAIL'} {name} {detail}"[:600])
-    if not condition: failures.append(name)
+    if not condition:
+        failures.append(name)
 
 
 bpy.ops.extensions.package_install_files(filepath=str(archive), repo="user_default", enable_on_install=True)
 bpy.context.preferences.addons[MODULE].preferences.library = str(library)
-for blend, package, operator in (("example-club.blend", "example.club.chstage", "export_package"),
-                                 ("example-guitarist.blend", "example.guitarist.chchar", "export_character")):
+for blend, package, operator in (
+    ("example-club.blend", "example.club.chstage", "export_package"),
+    ("example-guitarist.blend", "example.guitarist.chchar", "export_character"),
+):
     bpy.ops.wm.open_mainfile(filepath=str(ROOT / "examples" / blend))
     scenes = list(bpy.data.scenes)
     check(f"{blend}: one scene", len(scenes) == 1, [s.name for s in scenes])

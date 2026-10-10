@@ -27,7 +27,8 @@ def principled_output(tree):
 def base_color_source(tree):
     """(image node or None, constant color) of the Principled BSDF base color."""
     shader = next((n for n in tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
-    if shader is None: return None, (1, 1, 1, 1)
+    if shader is None:
+        return None, (1, 1, 1, 1)
     socket = shader.inputs["Base Color"]
     node = socket.links[0].from_node if socket.is_linked else None
     while node is not None and node.type != "TEX_IMAGE":
@@ -38,16 +39,20 @@ def base_color_source(tree):
 
 def remove_preview(material):
     tree = material.node_tree
-    if tree is None: return
-    for node in preview_nodes(tree): tree.nodes.remove(node)
+    if tree is None:
+        return
+    for node in preview_nodes(tree):
+        tree.nodes.remove(node)
     output = principled_output(tree)
-    if output is not None: output.is_active_output = True
+    if output is not None:
+        output.is_active_output = True
 
 
 def add_preview(material):
     """Make an EEVEE node tree that shows the toon settings: the lit side, the shade, the mask, the sphere map, and the rim."""
     props = material.chstage
-    if material.node_tree is None: material.use_nodes = True
+    if material.node_tree is None:
+        material.use_nodes = True
     tree = material.node_tree
     remove_preview(material)
     nodes, links = tree.nodes, tree.links
@@ -56,17 +61,20 @@ def add_preview(material):
         item = nodes.new(kind)
         item[PREVIEW] = True
         item.location = (x, y - 900)
-        for key, value in settings.items(): setattr(item, key, value)
+        for key, value in settings.items():
+            setattr(item, key, value)
         return item
 
     def image(picture, x, y, non_color=False):
         item = node("ShaderNodeTexImage", x, y, image=picture)
-        if non_color and picture is not None: picture.colorspace_settings.name = "Non-Color"
+        if non_color and picture is not None:
+            picture.colorspace_settings.name = "Non-Color"
         return item
 
     base_node, base_value = base_color_source(tree)
     base = image(base_node.image, -900, 0) if base_node is not None else node("ShaderNodeRGB", -900, 0)
-    if base_node is None: base.outputs[0].default_value = base_value
+    if base_node is None:
+        base.outputs[0].default_value = base_value
     diffuse = node("ShaderNodeBsdfDiffuse", -900, -300)
     to_rgb = node("ShaderNodeShaderToRGB", -700, -300)
     links.new(diffuse.outputs[0], to_rgb.inputs[0])
@@ -89,7 +97,9 @@ def add_preview(material):
     softness = max(props.toon_softness, 0.001)
     step.inputs["From Min"].default_value = props.toon_threshold - softness
     step.inputs["From Max"].default_value = props.toon_threshold + softness
-    shade_source = image(props.toon_shade_image, -500, 200).outputs["Color"] if props.toon_shade_image else base.outputs[0]
+    shade_source = (
+        image(props.toon_shade_image, -500, 200).outputs["Color"] if props.toon_shade_image else base.outputs[0]
+    )
     shade = node("ShaderNodeMix", -100, 200, data_type="RGBA", blend_type="MULTIPLY")
     shade.inputs["Factor"].default_value = 1.0
     links.new(shade_source, shade.inputs[6])
@@ -101,14 +111,22 @@ def add_preview(material):
     color = mix.outputs[2]
     if props.toon_sphere_image is not None:
         coordinates = node("ShaderNodeTexCoord", -100, 600)
-        to_view = node("ShaderNodeVectorTransform", 100, 600, vector_type="NORMAL", convert_from="WORLD", convert_to="CAMERA")
+        to_view = node(
+            "ShaderNodeVectorTransform", 100, 600, vector_type="NORMAL", convert_from="WORLD", convert_to="CAMERA"
+        )
         links.new(coordinates.outputs["Normal"], to_view.inputs[0])
         scale = node("ShaderNodeVectorMath", 300, 600, operation="MULTIPLY_ADD")
         links.new(to_view.outputs[0], scale.inputs[0])
         scale.inputs[1].default_value, scale.inputs[2].default_value = (0.5, 0.5, 0), (0.5, 0.5, 0)
         sphere = image(props.toon_sphere_image, 500, 600)
         links.new(scale.outputs[0], sphere.inputs["Vector"])
-        combine = node("ShaderNodeMix", 700, 300, data_type="RGBA", blend_type="ADD" if props.toon_sphere_mode == "add" else "MULTIPLY")
+        combine = node(
+            "ShaderNodeMix",
+            700,
+            300,
+            data_type="RGBA",
+            blend_type="ADD" if props.toon_sphere_mode == "add" else "MULTIPLY",
+        )
         combine.inputs["Factor"].default_value = 1.0
         links.new(color, combine.inputs[6])
         links.new(sphere.outputs["Color"], combine.inputs[7])
@@ -132,18 +150,27 @@ def add_preview(material):
 
 def refresh(material):
     """Rebuild the preview of a material when its preview is on (a property update)."""
-    if not isinstance(material, bpy.types.Material) or material.node_tree is None or not preview_nodes(material.node_tree): return
-    if material.chstage.shading == "toon": add_preview(material)
-    else: remove_preview(material)
+    if (
+        not isinstance(material, bpy.types.Material)
+        or material.node_tree is None
+        or not preview_nodes(material.node_tree)
+    ):
+        return
+    if material.chstage.shading == "toon":
+        add_preview(material)
+    else:
+        remove_preview(material)
 
 
 def set_preview(materials, enabled):
     count = 0
     for material in materials:
         if enabled and material.chstage.shading == "toon":
-            add_preview(material); count += 1
+            add_preview(material)
+            count += 1
         elif material.node_tree is not None and preview_nodes(material.node_tree):
-            remove_preview(material); count += 1
+            remove_preview(material)
+            count += 1
     return count
 
 
@@ -154,12 +181,14 @@ def preview_off_for_export(materials):
     try:
         for material in shown:
             output = principled_output(material.node_tree)
-            if output is not None: output.is_active_output = True
+            if output is not None:
+                output.is_active_output = True
         yield
     finally:
         for material in shown:
             output = next((n for n in preview_nodes(material.node_tree) if n.type == "OUTPUT_MATERIAL"), None)
-            if output is not None: output.is_active_output = True
+            if output is not None:
+                output.is_active_output = True
 
 
 # MMD Tools materials.
@@ -167,12 +196,14 @@ def image_rows(image):
     """Pixels of a Blender image, rows from the top, RGBA 0-1."""
     width, height = image.size
     pixels = np.array(image.pixels[:], dtype=float).reshape(height, width, image.channels)
-    if image.channels < 4: pixels = np.concatenate([pixels, np.ones((height, width, 4 - image.channels))], axis=2)
+    if image.channels < 4:
+        pixels = np.concatenate([pixels, np.ones((height, width, 4 - image.channels))], axis=2)
     return pixels[::-1]
 
 
 def load_image(path):
-    if not path or not os.path.isfile(bpy.path.abspath(path)): return None
+    if not path or not os.path.isfile(bpy.path.abspath(path)):
+        return None
     return bpy.data.images.load(bpy.path.abspath(path), check_existing=True)
 
 
@@ -180,13 +211,16 @@ def from_mmd(material):
     """Set the toon settings of a material from its MMD Tools data (mmd_material and the mmd_toon_tex and mmd_sphere_tex
     image nodes). Returns a list of notes, or None when the material has no MMD data."""
     mmd = getattr(material, "mmd_material", None)
-    if mmd is None: return None
+    if mmd is None:
+        return None
     props = material.chstage
     notes = []
     tree = material.node_tree
     named = {n.name: n for n in tree.nodes} if tree is not None else {}
     toon_node = named.get("mmd_toon_tex")
-    toon_image = toon_node.image if toon_node is not None and toon_node.image is not None else load_image(mmd.toon_texture)
+    toon_image = (
+        toon_node.image if toon_node is not None and toon_node.image is not None else load_image(mmd.toon_texture)
+    )
     props.shading = "toon"
     if toon_image is not None and toon_image.size[0] > 0:
         props.toon_threshold, props.toon_softness, shade = sidecars.toon_ramp_settings(image_rows(toon_image))
@@ -201,7 +235,8 @@ def from_mmd(material):
         props.toon_sphere_mode = "multiply" if str(mmd.sphere_texture_type) == "1" else "add"
     else:
         props.toon_sphere_image = None
-        if str(mmd.sphere_texture_type) == "3": notes.append("sub-texture sphere maps are not supported")
+        if str(mmd.sphere_texture_type) == "3":
+            notes.append("sub-texture sphere maps are not supported")
     props.use_outline = bool(mmd.enabled_toon_edge)
     if props.use_outline:
         props.outline_width = min(0.05, float(mmd.edge_weight) * MMD_EDGE_WIDTH)

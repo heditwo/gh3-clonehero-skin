@@ -24,7 +24,9 @@ class TextureTests(unittest.TestCase):
         bc1 = texture.encode(pattern(64, 32))
         fmt, width, height, mips, flags = texture.read_header(bc1)
         self.assertEqual((fmt, width, height, mips, flags), (texture.BC1, 64, 32, 7, 0))
-        self.assertEqual(len(bc1), texture.HEADER_SIZE + sum(texture.level_size(fmt, w, h) for w, h in texture.levels(64, 32, 7)))
+        self.assertEqual(
+            len(bc1), texture.HEADER_SIZE + sum(texture.level_size(fmt, w, h) for w, h in texture.levels(64, 32, 7))
+        )
         self.assertEqual(texture.read_header(texture.encode(pattern(64, 32, alpha=True)))[0], texture.BC3)
         self.assertEqual(texture.read_header(texture.encode(pattern(6, 5)))[0], texture.RGBA32)
         self.assertEqual(texture.read_header(texture.encode(pattern(8, 8), linear=True))[4], texture.FLAG_LINEAR)
@@ -47,7 +49,9 @@ class TextureTests(unittest.TestCase):
 
     def test_encoder_output_is_stable(self):
         # The encoder gives the bytes of the C# importer encoder of 2026-10-10 (checked on all 1,536 GH3 package textures).
-        digest = hashlib.sha256(texture.encode(pattern(64, 32)) + texture.encode(pattern(32, 32, alpha=True))).hexdigest()
+        digest = hashlib.sha256(
+            texture.encode(pattern(64, 32)) + texture.encode(pattern(32, 32, alpha=True))
+        ).hexdigest()
         self.assertEqual(digest, STABLE_DIGEST)
 
     def test_rules(self):
@@ -57,11 +61,12 @@ class TextureTests(unittest.TestCase):
         self.assertIn("unknown texture flags", texture.problems(bytes(data[:24] + struct.pack("<i", 4) + data[28:]))[0])
         self.assertIn("not a GH3TEX02", texture.problems(b"\x89PNG\r\n\x1a\n" + bytes(40))[0])
         punch = bytearray(data)
-        punch[texture.HEADER_SIZE:texture.HEADER_SIZE + 8] = bytes([0, 0, 255, 255, 255, 255, 255, 255])
+        punch[texture.HEADER_SIZE : texture.HEADER_SIZE + 8] = bytes([0, 0, 255, 255, 255, 255, 255, 255])
         self.assertIn("must use BC3", texture.problems(bytes(punch))[0])
 
     def test_glb_round_trip(self):
         from tests.test_package_format import GlbBuilder
+
         glb = GlbBuilder()
         glb.image("a", texture.png_bytes(pattern(16, 16)), "image/png")
         glb.image("n", texture.png_bytes(pattern(8, 8, seed=3)), "image/png")
@@ -81,7 +86,9 @@ class TextureTests(unittest.TestCase):
         self.assertIsNone(texture.unchanged_source(texture.png_bytes(texture.decode(source), source), linear=True))
         changed = texture.png_bytes(pattern(16, 16, seed=9), texture.glb_textures(encoded)[0][2])
         self.assertIsNone(texture.unchanged_source(changed))
-        self.assertNotEqual(texture.encode_png_image(changed, texture.png_rgba(changed)), texture.glb_textures(encoded)[0][2])
+        self.assertNotEqual(
+            texture.encode_png_image(changed, texture.png_rgba(changed)), texture.glb_textures(encoded)[0][2]
+        )
 
 
 STABLE_DIGEST = "896a8491e56a1017b51c0ddbc0ca418f7881aa5a94a8025feaf701292c0f426e"

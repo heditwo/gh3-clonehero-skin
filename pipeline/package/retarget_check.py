@@ -53,60 +53,102 @@ def check_clip(retarget, label, source_t, source_q, names, roles, mesh=None):
     out = []
 
     def add(kind, severity, role, value, message, fix):
-        out.append({"kind": kind, "severity": severity, "role": role, "clip": label, "value": float(value), "message": message, "fix": fix})
+        out.append(
+            {
+                "kind": kind,
+                "severity": severity,
+                "role": role,
+                "clip": label,
+                "value": float(value),
+                "message": message,
+                "fix": fix,
+            }
+        )
 
     # Hands: the wrist against its goal (the GH3 hand place on the moved and scaled instrument) while the arm is on it.
     for end, goal, gain, knuckle, offset in retarget.goals:
         active = np.asarray(gain) * np.ones(frames) > 0.9
-        if not active.any(): continue
+        if not active.any():
+            continue
         miss = np.linalg.norm(wp[:, end] - goal, axis=-1)[active]
         worst = float(np.percentile(miss, 95))
         if worst > HAND_MISS:
             role = role_of.get(end, names[end])
-            add("hand", "WARNING", role, worst, f"{label}: the {role} is {worst * 100:.0f} cm from its place on the instrument",
+            add(
+                "hand",
+                "WARNING",
+                role,
+                worst,
+                f"{label}: the {role} is {worst * 100:.0f} cm from its place on the instrument",
                 "The arm is too short for the instrument: set a smaller Instrument Scale, or move the instrument nearer with Instrument Offset. "
-                "Also make sure that the UpperArm, LowerArm, and Hand roles are on the correct bones")
+                "Also make sure that the UpperArm, LowerArm, and Hand roles are on the correct bones",
+            )
     # Flips: a bone that turns much more than its GH3 bone between two frames.
     if frames > 2:
         for bone, source in enumerate(retarget.map):
-            if source < 0: continue
+            if source < 0:
+                continue
             mine = _angle(wq[1:, bone], wq[:-1, bone])
             theirs = _angle(retarget.source_q[1:, source], retarget.source_q[:-1, source])
             jump = mine - theirs
             worst = float(jump.max())
             if worst > FLIP_DEGREES:
                 role = role_of.get(bone, names[bone])
-                add("flip", "ERROR", role, worst, f"{label}: '{names[bone]}' ({role}) flips {worst:.0f}° in one frame",
+                add(
+                    "flip",
+                    "ERROR",
+                    role,
+                    worst,
+                    f"{label}: '{names[bone]}' ({role}) flips {worst:.0f}° in one frame",
                     f"The {role} bone points in a direction that the GH3 bone cannot follow: make sure that the {role} role is on the correct bone, and "
-                    "that the next role in the chain is on its child")
+                    "that the next role in the chain is on its child",
+                )
     # Knees and elbows: the bend of the middle joint against the GH3 bend.
-    chains = [(u, lo, e, "knee") for u, lo, e, *_ in retarget.legs] + [(u, lo, e, "elbow") for u, lo, e, *_ in retarget.arms]
+    chains = [(u, lo, e, "knee") for u, lo, e, *_ in retarget.legs] + [
+        (u, lo, e, "elbow") for u, lo, e, *_ in retarget.arms
+    ]
     for upper, lower, end, what in chains:
         su, sl, se = retarget.map[upper], retarget.map[lower], retarget.map[end]
-        if min(su, sl, se) < 0: continue
+        if min(su, sl, se) < 0:
+            continue
         mine, size = _bend(wp[:, upper], wp[:, lower], wp[:, end])
         theirs, their_size = _bend(sp[:, su], sp[:, sl], sp[:, se])
         bent = (size > 0.02) & (their_size > 0.02)
-        if not bent.any(): continue
+        if not bent.any():
+            continue
         angle = np.degrees(np.arccos(np.clip(np.sum(mine * theirs, -1), -1, 1)))[bent]
         wrong = float(np.mean(angle > BEND_DEGREES))
         if wrong > 0.1:
             role = role_of.get(lower, names[lower])
-            add("bend", "ERROR", role, wrong, f"{label}: the {what} ({role}) bends the other way in {wrong * 100:.0f} % of the bent frames",
+            add(
+                "bend",
+                "ERROR",
+                role,
+                wrong,
+                f"{label}: the {what} ({role}) bends the other way in {wrong * 100:.0f} % of the bent frames",
                 "The model may look toward +Y or its left and right may be swapped: click Set Up Skeleton again. Else make sure that the "
-                f"{role} role is on the {what} bone")
+                f"{role} role is on the {what} bone",
+            )
     # Feet: the target foot moves while the GH3 foot stays.
     for upper, lower, foot, source_foot, *_ in retarget.legs:
-        if frames < 3: break
+        if frames < 3:
+            break
         theirs = np.linalg.norm(np.diff(sp[:, source_foot], axis=0), axis=-1)
         mine = np.linalg.norm(np.diff(wp[:, foot], axis=0), axis=-1)
         planted = theirs < 0.004
-        if planted.sum() < 3: continue
+        if planted.sum() < 3:
+            continue
         sliding = float(np.mean(mine[planted] > SLIDE))
         if sliding > 0.05:
             role = role_of.get(foot, names[foot])
-            add("slide", "WARNING", role, sliding, f"{label}: the {role} slides in {sliding * 100:.0f} % of the frames where the GH3 foot stays",
-                "The leg cannot reach the GH3 foot place: make sure that the UpperLeg, LowerLeg, and Foot roles are on the hip, knee, and ankle bones")
+            add(
+                "slide",
+                "WARNING",
+                role,
+                sliding,
+                f"{label}: the {role} slides in {sliding * 100:.0f} % of the frames where the GH3 foot stays",
+                "The leg cannot reach the GH3 foot place: make sure that the UpperLeg, LowerLeg, and Foot roles are on the hip, knee, and ankle bones",
+            )
     # Twist: the hand against the forearm about the forearm axis (from the rest pose).
     for upper, lower, hand, *_ in retarget.arms:
         rest = qnorm(qmul(qinv(retarget.rest_q[lower]), retarget.rest_q[hand]))
@@ -116,22 +158,40 @@ def check_clip(retarget, label, source_t, source_q, names, roles, mesh=None):
         relative = qmul(qmul(qinv(wq[:, lower]), wq[:, hand]), qinv(rest))
         twist = np.abs(_twist(relative, axis))
         if twist_bone >= 0:
-            twist = np.abs(_twist(qmul(qmul(qinv(wq[:, lower]), wq[:, twist_bone]),
-                                       qinv(qnorm(qmul(qinv(retarget.rest_q[lower]), retarget.rest_q[twist_bone])))), axis)) / 2
+            twist = (
+                np.abs(
+                    _twist(
+                        qmul(
+                            qmul(qinv(wq[:, lower]), wq[:, twist_bone]),
+                            qinv(qnorm(qmul(qinv(retarget.rest_q[lower]), retarget.rest_q[twist_bone]))),
+                        ),
+                        axis,
+                    )
+                )
+                / 2
+            )
         worst = float(twist.max())
         if worst > TWIST_DEGREES:
             role = role_of.get(lower, names[lower])
-            add("twist", "WARNING", role, worst, f"{label}: the {role} twists {worst:.0f}° (the wrist can look like a candy wrapper)",
+            add(
+                "twist",
+                "WARNING",
+                role,
+                worst,
+                f"{label}: the {role} twists {worst:.0f}° (the wrist can look like a candy wrapper)",
                 "Map a forearm twist bone to LowerArmTwist if the model has one, or add one half way along the forearm with weights on the "
-                "forearm mesh")
-    if mesh is not None: out += _stretch(retarget, label, mesh, names)
+                "forearm mesh",
+            )
+    if mesh is not None:
+        out += _stretch(retarget, label, mesh, names)
     return out
 
 
 def _stretch(retarget, label, mesh, names):
     """Mesh edges that get much longer than at rest (linear blend skinning of a sample of frames and edges)."""
     rest, joints, weights, edges = (np.asarray(mesh[k]) for k in ("positions", "joints", "weights", "edges"))
-    if not len(edges): return []
+    if not len(edges):
+        return []
     frames = retarget.wp.shape[0]
     pick = np.unique(np.linspace(0, frames - 1, min(frames, 8)).astype(int))
     rest_p, rest_q = retarget.rest_p, retarget.rest_q
@@ -144,21 +204,33 @@ def _stretch(retarget, label, mesh, names):
         moved = np.zeros_like(rest)
         for k in range(joints.shape[1]):
             j = joints[:, k]
-            moved += weights[:, k:k + 1] * (retarget.wp[f][j] + qrotate(turn[j], rest - rest_p[j]))
+            moved += weights[:, k : k + 1] * (retarget.wp[f][j] + qrotate(turn[j], rest - rest_p[j]))
         ratio = np.linalg.norm(moved[edges[:, 0]] - moved[edges[:, 1]], axis=-1) / length
         share = float(np.mean(ratio > STRETCH))
         if share > STRETCH_SHARE and share > worst_ratio:
             worst_ratio = share
             bad = edges[ratio > STRETCH].reshape(-1)
             worst_bone = int(np.bincount(joints[bad, 0], minlength=len(names)).argmax())
-    if worst_bone < 0: return []
+    if worst_bone < 0:
+        return []
     mapped = retarget.map[worst_bone] >= 0
-    fix = ("The weights of the stretched vertices mix bones that move apart: smooth the weights at this joint" if mapped else
-           f"'{names[worst_bone]}' has no role, so it keeps its rest pose under its parent: give it a role if it is a body bone, or move its weights "
-           "to the body bone next to it")
-    return [{"kind": "stretch", "severity": "WARNING", "role": names[worst_bone], "clip": label, "value": worst_ratio,
-             "message": f"{label}: {worst_ratio * 100:.1f} % of the mesh edges near '{names[worst_bone]}' stretch to more than {STRETCH:.1f} times their length",
-             "fix": fix}]
+    fix = (
+        "The weights of the stretched vertices mix bones that move apart: smooth the weights at this joint"
+        if mapped
+        else f"'{names[worst_bone]}' has no role, so it keeps its rest pose under its parent: give it a role if it is a body bone, or move its weights "
+        "to the body bone next to it"
+    )
+    return [
+        {
+            "kind": "stretch",
+            "severity": "WARNING",
+            "role": names[worst_bone],
+            "clip": label,
+            "value": worst_ratio,
+            "message": f"{label}: {worst_ratio * 100:.1f} % of the mesh edges near '{names[worst_bone]}' stretch to more than {STRETCH:.1f} times their length",
+            "fix": fix,
+        }
+    ]
 
 
 def summary(findings):
@@ -166,5 +238,6 @@ def summary(findings):
     best = {}
     for f in findings:
         key = (f["kind"], f["role"])
-        if key not in best or f["value"] > best[key]["value"]: best[key] = f
+        if key not in best or f["value"] > best[key]["value"]:
+            best[key] = f
     return sorted(best.values(), key=lambda f: (f["severity"] != "ERROR", f["kind"], f["role"]))

@@ -34,14 +34,25 @@ class DirectionFormatTests(unittest.TestCase):
         self.assertEqual(point["fieldOfView"], 72)
 
     def test_facial_cue_preserves_original_clip_key_and_time(self):
-        event = performance_command({key("time"): 44764, key("scr"): key("Band_PlayFacialAnim"),
-            key("params"): {key("Name"): key("vocalist"), key("anim"): 0x12345678}})
-        self.assertEqual((event["time"], event["role"], event["type"], event["value"]),
-                         (44.764, "singer", "face", "12345678"))
+        event = performance_command(
+            {
+                key("time"): 44764,
+                key("scr"): key("Band_PlayFacialAnim"),
+                key("params"): {key("Name"): key("vocalist"), key("anim"): 0x12345678},
+            }
+        )
+        self.assertEqual(
+            (event["time"], event["role"], event["type"], event["value"]), (44.764, "singer", "face", "12345678")
+        )
 
     def test_original_queue_and_cycle_flags_survive_export(self):
-        event = performance_command({key("time"): 42097, key("scr"): key("Band_PlayAnim"),
-            key("params"): {key("anim"): key("special"), 0: [key("no_wait"), key("cycle")]}})
+        event = performance_command(
+            {
+                key("time"): 42097,
+                key("scr"): key("Band_PlayAnim"),
+                key("params"): {key("anim"): key("special"), 0: [key("no_wait"), key("cycle")]},
+            }
+        )
         self.assertEqual(event["value"], "special")
         self.assertTrue(event["immediate"])
         self.assertTrue(event["loop"])

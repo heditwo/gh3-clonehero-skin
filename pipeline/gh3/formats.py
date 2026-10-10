@@ -27,20 +27,25 @@ def pak_entries(data):
         start = offset + relative
         if start < offset + 32 or start + size > len(data):
             raise ValueError("Invalid PAK entry")
-        yield kind, name, data[start:start + size]
+        yield kind, name, data[start : start + size]
         offset += 192 if flags & 0x20 else 32
     raise ValueError("PAK has no end marker")
 
 
 def node_prefixes(data, arrays):
     array, count = values(data, 0, "2I")
-    if array not in arrays or count > 100000 or 8 + count*12 > len(data): raise ValueError("Invalid node prefix table")
-    nodes = arrays[array]; start = 8 + count*12; result = {}
+    if array not in arrays or count > 100000 or 8 + count * 12 > len(data):
+        raise ValueError("Invalid node prefix table")
+    nodes = arrays[array]
+    start = 8 + count * 12
+    result = {}
     for index in range(count):
-        name, offset, length = values(data, 8 + index*12, "3I")
-        if name in result or offset % 2 or start + offset + length*2 > len(data): raise ValueError("Invalid node prefix range")
+        name, offset, length = values(data, 8 + index * 12, "3I")
+        if name in result or offset % 2 or start + offset + length * 2 > len(data):
+            raise ValueError("Invalid node prefix range")
         indices = values(data, start + offset, f"{length}H")
-        if any(i >= len(nodes) for i in indices): raise ValueError("Node prefix index is outside its array")
+        if any(i >= len(nodes) for i in indices):
+            raise ValueError("Node prefix index is outside its array")
         result[name] = [nodes[i][key("Name")] for i in indices]
     return result
 

@@ -1,0 +1,40 @@
+# Ruff settings (docs/CODE-STYLE.md). A pyproject.toml would make `uv run` create a project environment here.
+# Blender 4.2 LTS runs Python 3.11; the add-on bundles pipeline/package (blender/build.py).
+target-version = "py311"
+line-length = 120
+extend-exclude = ["blender/chstage_tools/vendor"]
+
+[lint]
+select = [
+    "F",   # pyflakes
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "N",   # pep8-naming
+    "C90", # mccabe complexity
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501",   # the formatter sets the line length; long strings and URLs stay on one line
+    "E741",   # l, I, O are rare and read fine in the numeric code
+    "B905",   # zip() without strict: the inputs have equal lengths by construction
+    "N806",   # matrix and vector names (M, R, T) follow the math
+    "N803",
+    "SIM108", # a ternary is not always clearer than an if/else block
+]
+
+[lint.per-file-ignores]
+# Blender requires the CATEGORY_OT_name class names of operators, panels, and menus.
+"blender/chstage_tools/*.py" = ["N801"]
+"blender/tests/*.py" = ["N801"]
+
+[lint.mccabe]
+max-complexity = 20
+
+[lint.isort]
+known-first-party = ["pipeline"]
+
+[format]
+line-ending = "lf"

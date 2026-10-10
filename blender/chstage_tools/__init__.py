@@ -1,7 +1,17 @@
 """CH Stage Tools: make venue packages (.chstage) and character packages (.chchar, docs/PACKAGE-FORMAT.md) in Blender.
 See docs/BLENDER-ADDON.md."""
 
-from . import chain_tools, character_ui, collect, lighting_tools, operators, package_open, panels, properties, skeleton_tools
+from . import (
+    chain_tools,
+    character_ui,
+    collect,
+    lighting_tools,
+    operators,
+    package_open,
+    panels,
+    properties,
+    skeleton_tools,
+)
 
 
 class glTF2ExportUserExtension(collect.ExportExtras):
@@ -29,6 +39,7 @@ def menu_export(self, context):
 
 def register():
     import bpy
+
     properties.register()
     operators.register()
     panels.register()
@@ -43,6 +54,7 @@ def register():
 
 def unregister():
     import bpy
+
     bpy.types.TOPBAR_MT_file_export.remove(menu_export)
     bpy.types.TOPBAR_MT_file_import.remove(menu_import)
     bpy.types.TOPBAR_MT_file_new.remove(menu_new_stage)

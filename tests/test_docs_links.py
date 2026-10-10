@@ -22,7 +22,8 @@ KEYWORDS = {"subgraph", "end", "direction", "style", "classDef", "class", "click
 def flowchart_nodes(lines):
     nodes = set()
     for line in lines:
-        if line.split()[0] in KEYWORDS: continue
+        if line.split()[0] in KEYWORDS:
+            continue
         line = re.sub(r"\"[^\"]*\"", "", line)
         line = re.sub(r"\[[^\]]*\]|\{[^}]*\}|\([^)]*\)|\|[^|]*\|", "", line)
         line = re.sub(r"--\s.*?-->|-\.\s.*?\.->|==\s.*?==>", "-->", line)
@@ -31,8 +32,16 @@ def flowchart_nodes(lines):
 
 
 def markdown_files():
-    names = subprocess.run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "*.md"],
-                           cwd=ROOT, capture_output=True, check=True).stdout.decode().split("\0")
+    names = (
+        subprocess.run(
+            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "*.md"],
+            cwd=ROOT,
+            capture_output=True,
+            check=True,
+        )
+        .stdout.decode()
+        .split("\0")
+    )
     return [ROOT / name for name in names if name and (ROOT / name).is_file()]
 
 
@@ -66,7 +75,8 @@ def anchors(path, cache={}):
         seen, result = {}, set()
         for _, line in prose:
             match = HEADING.match(line)
-            if not match: continue
+            if not match:
+                continue
             base = slug(match.group(2))
             count = seen.get(base, 0)
             seen[base] = count + 1
@@ -82,7 +92,8 @@ class MarkdownLinkTests(unittest.TestCase):
             prose, _ = split_blocks(path.read_text(encoding="utf-8"))
             for number, line in prose:
                 for target in LINK.findall(re.sub(r"`[^`]*`", "", line)):
-                    if re.match(r"^[a-z][a-z0-9+.-]*:", target): continue
+                    if re.match(r"^[a-z][a-z0-9+.-]*:", target):
+                        continue
                     file_part, _, anchor = target.partition("#")
                     destination = (path.parent / unquote(file_part)).resolve() if file_part else path
                     where = f"{path.relative_to(ROOT)}:{number}: {target}"
@@ -94,10 +105,16 @@ class MarkdownLinkTests(unittest.TestCase):
 
     def test_player_guide_links_stay_inside_the_release_zip(self):
         # scripts/build-release.sh puts PLAYER-GUIDE.md and some of its images into the zip, without the other docs.
-        shipped = set(re.findall(r"docs/(images/[^\"\s]+)", (ROOT / "scripts" / "build-release.sh").read_text(encoding="utf-8")))
+        shipped = set(
+            re.findall(r"docs/(images/[^\"\s]+)", (ROOT / "scripts" / "build-release.sh").read_text(encoding="utf-8"))
+        )
         prose, _ = split_blocks((ROOT / "docs" / "PLAYER-GUIDE.md").read_text(encoding="utf-8"))
-        outside = [target for _, line in prose for target in LINK.findall(re.sub(r"`[^`]*`", "", line))
-                   if not re.match(r"^[a-z][a-z0-9+.-]*:", target) and target.partition("#")[0] not in shipped | {""}]
+        outside = [
+            target
+            for _, line in prose
+            for target in LINK.findall(re.sub(r"`[^`]*`", "", line))
+            if not re.match(r"^[a-z][a-z0-9+.-]*:", target) and target.partition("#")[0] not in shipped | {""}
+        ]
         self.assertEqual(outside, [])
 
     def test_mermaid_blocks_are_small(self):
@@ -105,7 +122,8 @@ class MarkdownLinkTests(unittest.TestCase):
         for path in markdown_files():
             _, blocks = split_blocks(path.read_text(encoding="utf-8"))
             for start, info, body in blocks:
-                if info != "mermaid": continue
+                if info != "mermaid":
+                    continue
                 where = f"{path.relative_to(ROOT)}:{start}"
                 lines = [line.strip() for line in body if line.strip() and not line.strip().startswith("%%")]
                 if not lines or not lines[0].startswith(MERMAID_TYPES):

@@ -26,7 +26,8 @@ def png_rgba(data):
     """RGBA (H, W, 4) uint8 of PNG bytes, top row first (Blender stores the bottom row first)."""
     with tempfile.TemporaryDirectory(prefix="chstage-png-") as folder:
         path = os.path.join(folder, "image.png")
-        with open(path, "wb") as stream: stream.write(data)
+        with open(path, "wb") as stream:
+            stream.write(data)
         image = bpy.data.images.load(path)
         try:
             # Raw values: no colour conversion and no premultiplied alpha.
@@ -42,7 +43,8 @@ def png_rgba(data):
 
 def encode_many(items):
     """GH3TEX02 bytes for [(PNG bytes, linear)] (texture.encode_glb callback)."""
-    if not items: return []
+    if not items:
+        return []
     clock = time.perf_counter()
     with ThreadPoolExecutor(min(workers(), len(items))) as pool:
         # A PNG that Open made and that did not change gives its original texture without a Blender decode.

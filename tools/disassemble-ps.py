@@ -8,10 +8,44 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pipeline.gh3 import materials as gh3_materials  # noqa: E402
 
-OPCODES = {1: "mov", 2: "add", 3: "sub", 4: "mad", 5: "mul", 6: "rcp", 7: "rsq", 8: "dp3", 9: "dp4", 10: "min", 11: "max",
-           12: "slt", 13: "sge", 14: "exp", 15: "log", 18: "lrp", 19: "frc", 23: "m3x3", 31: "dcl", 32: "pow", 33: "crs",
-           35: "abs", 36: "nrm", 37: "sincos", 40: "if", 41: "ifc", 42: "else", 43: "endif", 65: "texkill", 66: "texld",
-           81: "def", 88: "cmp", 90: "dp2add", 91: "dsx", 92: "dsy", 95: "texldl"}
+OPCODES = {
+    1: "mov",
+    2: "add",
+    3: "sub",
+    4: "mad",
+    5: "mul",
+    6: "rcp",
+    7: "rsq",
+    8: "dp3",
+    9: "dp4",
+    10: "min",
+    11: "max",
+    12: "slt",
+    13: "sge",
+    14: "exp",
+    15: "log",
+    18: "lrp",
+    19: "frc",
+    23: "m3x3",
+    31: "dcl",
+    32: "pow",
+    33: "crs",
+    35: "abs",
+    36: "nrm",
+    37: "sincos",
+    40: "if",
+    41: "ifc",
+    42: "else",
+    43: "endif",
+    65: "texkill",
+    66: "texld",
+    81: "def",
+    88: "cmp",
+    90: "dp2add",
+    91: "dsx",
+    92: "dsy",
+    95: "texldl",
+}
 TYPES = {0: "r", 1: "v", 2: "c", 3: "t", 8: "oC", 9: "oDepth", 10: "s", 14: "b", 17: "vMisc", 19: "p"}
 MODIFIERS = {1: "-{}", 11: "|{}|", 12: "-|{}|", 13: "!{}"}
 
@@ -36,7 +70,9 @@ def listing(code):
     for opcode, arguments in gh3_materials._instructions(code):
         name = OPCODES.get(opcode, f"op{opcode}")
         if opcode == 81:
-            yield f"def {register(arguments[0])} = " + ", ".join(f"{value:g}" for value in struct.unpack("<4f", struct.pack("<4I", *arguments[1:5])))
+            yield f"def {register(arguments[0])} = " + ", ".join(
+                f"{value:g}" for value in struct.unpack("<4f", struct.pack("<4I", *arguments[1:5]))
+            )
         elif opcode == 31:
             yield f"dcl {destination(arguments[1])}"
         elif arguments:

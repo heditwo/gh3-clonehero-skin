@@ -9,6 +9,7 @@ chunk around the page, and whether the slot still points to executable memory. E
 The hook sites are the six GameAssembly.so functions that MelonLoader 0.7.3 hooks in Clone Hero 1.1.0.6142 (Linux).
 Example: hook-page-sampler.py run.json run.pid ./run-gh3-skin.sh --preview
 """
+
 import json
 import os
 import subprocess
@@ -80,7 +81,7 @@ def scan(maps):
                         if not sites or site - (ga + sites[-1][0]) > 8:
                             entry = [site - ga]
                             if j >= 0:
-                                slot = site + 6 + int.from_bytes(live[j + 2:j + 6], "little", signed=True)
+                                slot = site + 6 + int.from_bytes(live[j + 2 : j + 6], "little", signed=True)
                                 entry.append(hex(slot))
                                 entry.append(classify(maps, slot & ~0xFFF, clr))
                             sites.append(entry)
@@ -105,8 +106,12 @@ while process.poll() is None:
     if clr is None:
         clr = next((a for a, b, p, off, n in maps if n.endswith("/libcoreclr.so") and off == 0), None)
         if clr is not None and ga is not None:
-            state.update(ga=hex(ga), clr=hex(clr), ga_minus_clr_mb=round((ga - clr) / 2**20, 1),
-                         clr_reservation_start=hex(clr - RESERVATION))
+            state.update(
+                ga=hex(ga),
+                clr=hex(clr),
+                ga_minus_clr_mb=round((ga - clr) / 2**20, 1),
+                clr_reservation_start=hex(clr - RESERVATION),
+            )
             mem = os.open(f"/proc/{pid}/mem", os.O_RDONLY)
     if ga is None or clr is None:
         previous = maps
@@ -135,23 +140,36 @@ while process.poll() is None:
             if hook is not None:
                 event(f"hook {key} slot moved {hook['slot']} -> {slot:#x}")
             hook = state["hooks"][key] = {
-                "slot": hex(slot), "t_install": now(), "valid": valid,
+                "slot": hex(slot),
+                "t_install": now(),
+                "valid": valid,
                 "victim": classify(previous, page, clr) if hook is None else hook.get("victim"),
-                "page_after": classify(maps, page, clr)}
+                "page_after": classify(maps, page, clr),
+            }
             event(f"hook {key} slot {slot:#x}; before: {hook['victim']}")
         if not valid and hook.get("valid") and not hook.get("invalid"):
             hook["invalid"] = now()
             hook["invalid_value"] = hex(value) if value is not None else None
             event(f"hook {key} slot {slot:#x} no longer points to executable memory: {hook['invalid_value']}")
         chunk = page & ~0xFFFF
-        neighbours = [m for m in maps if m[0] < chunk + 0x10000 and m[1] > chunk and not (m[0] <= page and m[1] >= page + 0x1000)
-                      and not m[2].startswith("---")]
+        neighbours = [
+            m
+            for m in maps
+            if m[0] < chunk + 0x10000
+            and m[1] > chunk
+            and not (m[0] <= page and m[1] >= page + 0x1000)
+            and not m[2].startswith("---")
+        ]
         if neighbours and not hook.get("owner_uses_chunk"):
             hook["owner_uses_chunk"] = now()
             n = neighbours[0]
             hook["owner_mapping"] = f"{n[0]:#x}-{n[1]:#x} {n[2]} {os.path.basename(n[4])}"
             event(f"hook {key} slot page {page:#x}: 64 KB chunk now also holds {hook['owner_mapping']}")
-    if not state.get("scan") and len(state["hooks"]) >= 6 and now() > max(h["t_install"] for h in state["hooks"].values()) + 1:
+    if (
+        not state.get("scan")
+        and len(state["hooks"]) >= 6
+        and now() > max(h["t_install"] for h in state["hooks"].values()) + 1
+    ):
         state["scan"] = scan(maps)
         event(f"full scan: {len(state['scan'])} patched sites in GameAssembly.so")
     previous = maps

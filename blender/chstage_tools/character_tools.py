@@ -26,7 +26,7 @@ HELPER = "chstage_helper"
 PREVIEW = "chstage_clip_preview"
 CLIP_FPS = q48.FPS
 # glTF (Y up) to Blender (Z up), as the glTF importer converts node transforms.
-AXES = np.array([[1., 0, 0, 0], [0, 0, -1, 0], [0, 1, 0, 0], [0, 0, 0, 1]])
+AXES = np.array([[1.0, 0, 0, 0], [0, 0, -1, 0], [0, 1, 0, 0], [0, 0, 0, 1]])
 _libraries = {}
 _character_libraries = {}
 
@@ -43,14 +43,16 @@ def library_path(scene=None, package_path=None):
     """The library of a character scene: its stored library, the add-on preference, or gh3-band-v1.chlib next to the package."""
     if scene is not None and props(scene).library:
         path = Path(bpy.path.abspath(props(scene).library))
-        if path.exists(): return str(path)
+        if path.exists():
+            return str(path)
     return camera_tools.find_library(package_path)
 
 
 def library(path):
     """A cached character.Library for a library path."""
     path = str(Path(path).resolve())
-    if path not in _libraries: _libraries[path] = character.Library(path)
+    if path not in _libraries:
+        _libraries[path] = character.Library(path)
     return _libraries[path]
 
 
@@ -59,14 +61,16 @@ def character_library_path(scene=None, package_path=None):
     GH3 library or the package."""
     if scene is not None and props(scene).character_library:
         path = Path(bpy.path.abspath(props(scene).character_library))
-        if path.exists(): return str(path)
+        if path.exists():
+            return str(path)
     return camera_tools.find_character_library(package_path)
 
 
 def character_library(path):
     """A cached character.CharacterLibrary for a character library path."""
     path = str(Path(path).resolve())
-    if path not in _character_libraries: _character_libraries[path] = character.CharacterLibrary(path)
+    if path not in _character_libraries:
+        _character_libraries[path] = character.CharacterLibrary(path)
     return _character_libraries[path]
 
 
@@ -79,26 +83,35 @@ def profile_id(scene):
 def library_profile(scene):
     """(CharacterLibrary, profile) of a scene on a character library profile, else (None, None)."""
     p = props(scene)
-    if not p.library_profile: return None, None
+    if not p.library_profile:
+        return None, None
     path = character_library_path(scene)
-    if not path: raise ValueError(f"no GH3 character library for the profile {p.library_profile}: set 'GH3 character library (.chlib)' "
-                                  "in the add-on preferences")
+    if not path:
+        raise ValueError(
+            f"no GH3 character library for the profile {p.library_profile}: set 'GH3 character library (.chlib)' "
+            "in the add-on preferences"
+        )
     clib = character_library(path)
-    if p.library_profile not in clib.profiles: raise ValueError(f"the character library {clib.id} has no profile {p.library_profile}")
+    if p.library_profile not in clib.profiles:
+        raise ValueError(f"the character library {clib.id} has no profile {p.library_profile}")
     return clib, p.library_profile
 
 
 def profile_package(clib, profile):
     """The GH3 character package of a character library profile (the first gh3.<name>...chchar next to the library)."""
     found = character.profile_packages(clib.path.resolve().parent, profile)
-    if not found: raise ValueError(f"no character package for the profile {profile} next to {clib.path.name} (for example gh3.<name>.outfit1.style1.chchar)")
+    if not found:
+        raise ValueError(
+            f"no character package for the profile {profile} next to {clib.path.name} (for example gh3.<name>.outfit1.style1.chchar)"
+        )
     return found[0]
 
 
 def scene_rig_data(scene, lib=None):
     """The profile rig (character.Rig) of a character scene."""
     clib, profile = library_profile(scene)
-    if clib is not None: return clib.rig(profile)
+    if clib is not None:
+        return clib.rig(profile)
     return profile_rig(lib or library(library_path(scene)), role_of(props(scene).profile))
 
 
@@ -113,7 +126,8 @@ def helper_parts(scene, lib, role):
 
 def profile_rig(lib, role):
     key = ("rig", role)
-    if key not in lib._json: lib._json[key] = character.Rig(Glb(lib.model(role)))
+    if key not in lib._json:
+        lib._json[key] = character.Rig(Glb(lib.model(role)))
     return lib._json[key]
 
 
@@ -124,11 +138,14 @@ def is_helper(obj):
 def character_meshes(scene):
     """The exported meshes: meshes skinned to the rig (Armature modifier or parent), without helpers."""
     rig = props(scene).rig
-    if rig is None: return []
+    if rig is None:
+        return []
     result = []
     for obj in scene.objects:
-        if obj.type != "MESH" or is_helper(obj) or obj.chstage.marker == "PROXY": continue
-        if obj.parent == rig or any(m.type == "ARMATURE" and m.object == rig for m in obj.modifiers): result.append(obj)
+        if obj.type != "MESH" or is_helper(obj) or obj.chstage.marker == "PROXY":
+            continue
+        if obj.parent == rig or any(m.type == "ARMATURE" and m.object == rig for m in obj.modifiers):
+            result.append(obj)
     return sorted(result, key=lambda o: o.name)
 
 
@@ -142,16 +159,23 @@ def import_glb(scene, data, collection, mapped=False, bone_heuristic=None):
     prepared, _ = glb_tools.normalize_normals(prepared)
     before = set(bpy.data.objects)
     hooks = package_open._OPEN
-    if mapped: hooks.update(active=True, nodes={}, materials={}, images={})
+    if mapped:
+        hooks.update(active=True, nodes={}, materials={}, images={})
     try:
         with tempfile.TemporaryDirectory(prefix="chstage-character-") as folder:
-            path = Path(folder)/"character.glb"
+            path = Path(folder) / "character.glb"
             path.write_bytes(prepared)
             with bpy.context.temp_override(scene=scene, view_layer=scene.view_layers[0], collection=collection):
-                gltf_io.import_glb(path, fps=CLIP_FPS, disable_bone_shape=True, **({"bone_heuristic": bone_heuristic} if bone_heuristic else {}))
+                gltf_io.import_glb(
+                    path,
+                    fps=CLIP_FPS,
+                    disable_bone_shape=True,
+                    **({"bone_heuristic": bone_heuristic} if bone_heuristic else {}),
+                )
         nodes, mats, images = dict(hooks["nodes"]), dict(hooks["materials"]), dict(hooks["images"])
     finally:
-        if mapped: hooks.update(active=False, nodes={}, materials={}, images={})
+        if mapped:
+            hooks.update(active=False, nodes={}, materials={}, images={})
     gltf, binary = glb_tools.read_glb(data)
     new = [obj for obj in bpy.data.objects if obj not in before]
     for obj in new:
@@ -168,7 +192,8 @@ def retarget(meshes, rig):
         obj.matrix_parent_inverse = Matrix.Identity(4)
         obj.matrix_basis = Matrix.Identity(4)
         for modifier in obj.modifiers:
-            if modifier.type == "ARMATURE": modifier.object = rig
+            if modifier.type == "ARMATURE":
+                modifier.object = rig
 
 
 def make_helper(obj, kind, name):
@@ -183,7 +208,8 @@ def remove_helpers(scene):
     for obj in [o for o in scene.objects if is_helper(o)]:
         data = obj.data
         bpy.data.objects.remove(obj, do_unlink=True)
-        if data is not None and data.users == 0 and isinstance(data, bpy.types.Mesh): bpy.data.meshes.remove(data)
+        if data is not None and data.users == 0 and isinstance(data, bpy.types.Mesh):
+            bpy.data.meshes.remove(data)
     props(scene).reference = None
     props(scene).attachment = None
 
@@ -196,19 +222,26 @@ def load_helpers(scene, collection, lib, role, show_reference=True):
     parts = helper_parts(scene, lib, role)
     props(scene).hair_reference = json.dumps(parts["hairMaterials"])
     for kind, data in (("reference", parts["body"]), ("attachment", parts["attachment"])):
-        if data is None: continue
+        if data is None:
+            continue
         new, *_ = import_glb(scene, data, collection)
         armatures = [o for o in new if o.type == "ARMATURE"]
         meshes = [o for o in new if o.type == "MESH"]
         retarget(meshes, rig)
-        for armature in armatures: bpy.data.objects.remove(armature, do_unlink=True)
+        for armature in armatures:
+            bpy.data.objects.remove(armature, do_unlink=True)
         for index, obj in enumerate(meshes):
-            label = "GH3 body (reference)" if kind == "reference" else f"GH3 {character.ATTACHMENTS.get(role, 'attachment')} (preview)"
+            label = (
+                "GH3 body (reference)"
+                if kind == "reference"
+                else f"GH3 {character.ATTACHMENTS.get(role, 'attachment')} (preview)"
+            )
             make_helper(obj, kind, label if index == 0 else f"{label} {index + 1}")
             if kind == "reference":
                 obj.display_type = "WIRE"
                 obj.hide_set(not show_reference, view_layer=scene.view_layers[0])
-        if meshes: setattr(props(scene), kind, meshes[0])
+        if meshes:
+            setattr(props(scene), kind, meshes[0])
 
 
 def load_profile_data(scene, lib, role):
@@ -220,14 +253,18 @@ def load_profile_data(scene, lib, role):
     if clib is not None:
         props(scene).hair_chains = json.dumps(clib.hair_chains(profile))
         for clip, label, duration, frames in clib.clip_items(profile, props(scene).animations):
-            if not clib.has_clip(clip): continue
+            if not clib.has_clip(clip):
+                continue
             item = clips.add()
             item.clip, item.label, item.duration, item.frames = clip, label, duration, frames
         return
     rig_data = profile_rig(lib, role)
     props(scene).hair_chains = json.dumps(character.hair_chains(lib.json("band/hair.json"), role, rig_data))
-    for clip, label, duration, frames in character.clip_items(lib.json("catalog.json"), lib.json("band/band.json"), role):
-        if not lib.has_clip(role, clip): continue
+    for clip, label, duration, frames in character.clip_items(
+        lib.json("catalog.json"), lib.json("band/band.json"), role
+    ):
+        if not lib.has_clip(role, clip):
+            continue
         item = clips.add()
         item.clip, item.label, item.duration, item.frames = clip, label, duration, frames
     props(scene)["clips_index"] = -1
@@ -253,7 +290,8 @@ def make_source_rig(rig):
     rig.show_in_front = True
     armature = rig.data
     armature.display_type = "OCTAHEDRAL"
-    if hasattr(armature, "show_bone_colors"): armature.show_bone_colors = True
+    if hasattr(armature, "show_bone_colors"):
+        armature.show_bone_colors = True
     body_keys = set(skeleton.GH3.values()) | set(skeleton.spine_sources(3))
     groups = {}
     if hasattr(armature, "collections"):
@@ -262,8 +300,10 @@ def make_source_rig(rig):
             group.is_visible = visible
             groups[visible] = group
     for bone in armature.bones:
-        if hasattr(bone, "color"): bone.color.palette = SOURCE_COLOR
-        if groups: groups[bone.name.removeprefix("bone-") in body_keys].assign(bone)
+        if hasattr(bone, "color"):
+            bone.color.palette = SOURCE_COLOR
+        if groups:
+            groups[bone.name.removeprefix("bone-") in body_keys].assign(bone)
 
 
 def add_preview_camera(scene, collection):
@@ -281,7 +321,9 @@ def add_preview_camera(scene, collection):
     return camera
 
 
-def new_character(profile, library_file, use_gh3_body=False, name=None, character_library_file=None, own_skeleton=False):
+def new_character(
+    profile, library_file, use_gh3_body=False, name=None, character_library_file=None, own_skeleton=False
+):
     """Make a character scene for a profile: the rig from the library, the helpers, and the clip list. With
     use_gh3_body, the GH3 body of the library becomes the character mesh (a start for an edit). A profile that is not
     a fixed profile is a profile of the character library (character_library_file, else the preference or the file
@@ -292,9 +334,13 @@ def new_character(profile, library_file, use_gh3_body=False, name=None, characte
         role = role_of(profile)
     else:
         path = character_library_file or camera_tools.find_character_library()
-        if not path: raise ValueError(f"{profile} is not a fixed profile, and there is no GH3 character library (gh3-characters-v1.chlib)")
+        if not path:
+            raise ValueError(
+                f"{profile} is not a fixed profile, and there is no GH3 character library (gh3-characters-v1.chlib)"
+            )
         clib = character_library(path)
-        if profile not in clib.profiles: raise ValueError(f"the character library {clib.id} has no profile {profile}")
+        if profile not in clib.profiles:
+            raise ValueError(f"the character library {clib.id} has no profile {profile}")
         role = clib.role(profile)
     lib = library(library_file)
     scene = bpy.data.scenes.new(name or f"CH Character ({role})")
@@ -308,7 +354,9 @@ def new_character(profile, library_file, use_gh3_body=False, name=None, characte
     author.name = "Me"
     if clib is not None:
         p.library_profile, p.library_id, p.character_library = profile, clib.id, str(clib.path.resolve())
-    description = character.complete_requirements({"requires": [], "minModVersion": ""}, p.library_id or character.LIBRARY_ID)
+    description = character.complete_requirements(
+        {"requires": [], "minModVersion": ""}, p.library_id or character.LIBRARY_ID
+    )
     for row in description["requires"]:
         requirement = package.requires.add()
         requirement.package_id, requirement.version = row["id"], row["version"]
@@ -318,8 +366,9 @@ def new_character(profile, library_file, use_gh3_body=False, name=None, characte
     helpers = bpy.data.collections.new("Character Helpers")
     scene.collection.children.link(helpers)
     parts = helper_parts(scene, lib, role)
-    new, gltf, binary, nodes, mats, images = import_glb(scene, parts["body"], collection, mapped=use_gh3_body,
-                                                        bone_heuristic=SOURCE_BONES if own_skeleton else None)
+    new, gltf, binary, nodes, mats, images = import_glb(
+        scene, parts["body"], collection, mapped=use_gh3_body, bone_heuristic=SOURCE_BONES if own_skeleton else None
+    )
     rig = next(o for o in new if o.type == "ARMATURE")
     rig.name = f"{role}-rig"
     p.rig = rig
@@ -328,9 +377,11 @@ def new_character(profile, library_file, use_gh3_body=False, name=None, characte
         package_open.open_nodes(gltf, nodes)
         package_open.open_materials(gltf, binary, mats, images, _NoFiles(), _Ignore())
         for name in parts["hairMaterials"]:
-            for material in mats_by_name(gltf, mats).get(name, []): p.hair_materials.add().material = material
+            for material in mats_by_name(gltf, mats).get(name, []):
+                p.hair_materials.add().material = material
     else:
-        for obj in meshes: bpy.data.objects.remove(obj, do_unlink=True)
+        for obj in meshes:
+            bpy.data.objects.remove(obj, do_unlink=True)
     if own_skeleton:
         # The GH3 rig plays the clips in the preview; the creator's armature becomes the rig.
         make_source_rig(rig)
@@ -348,18 +399,22 @@ def new_character(profile, library_file, use_gh3_body=False, name=None, characte
 class _NoFiles:
     set = frozenset()
 
-    def read(self, name): raise KeyError(name)
+    def read(self, name):
+        raise KeyError(name)
 
 
 class _Ignore:
-    def warn(self, *args, **kwargs): pass
+    def warn(self, *args, **kwargs):
+        pass
 
-    def error(self, *args, **kwargs): pass
+    def error(self, *args, **kwargs):
+        pass
 
 
 def mats_by_name(gltf, mats):
     result = {}
-    for index, variants in mats.items(): result.setdefault(gltf["materials"][index].get("name", ""), []).extend(variants)
+    for index, variants in mats.items():
+        result.setdefault(gltf["materials"][index].get("name", ""), []).extend(variants)
     return result
 
 
@@ -375,7 +430,8 @@ def vertex_weights(obj, names):
     for vertex in obj.data.vertices:
         for element in vertex.groups:
             column = index.get(element.group)
-            if column is not None: weights[vertex.index, column] = element.weight
+            if column is not None:
+                weights[vertex.index, column] = element.weight
     return weights
 
 
@@ -386,7 +442,8 @@ def set_vertex_weights(obj, names, weights, vertices=None):
     for column, name in enumerate(names):
         group = obj.vertex_groups.get(name)
         if group is None:
-            if not weights[:, column].any(): continue
+            if not weights[:, column].any():
+                continue
             group = obj.vertex_groups.new(name=name)
         groups[column] = group
         group.remove([int(v) for v in vertices])
@@ -409,7 +466,8 @@ def fit_to_rig(obj, rig):
         obj.matrix_parent_inverse = Matrix.Identity(4)
         obj.matrix_basis = Matrix.Identity(4)
     modifier = next((m for m in obj.modifiers if m.type == "ARMATURE"), None)
-    if modifier is None: modifier = obj.modifiers.new("Armature", "ARMATURE")
+    if modifier is None:
+        modifier = obj.modifiers.new("Armature", "ARMATURE")
     modifier.object = rig
     modifier.use_vertex_groups = True
 
@@ -428,13 +486,19 @@ def triangles(obj, exclude_materials=()):
     tris = tris.reshape(-1, 3)
     materials = np.empty(len(mesh.loop_triangles), dtype=np.int64)
     mesh.loop_triangles.foreach_get("material_index", materials)
-    excluded = [i for i, slot in enumerate(obj.material_slots) if slot.material is not None and _base_name(slot.material.name) in exclude_materials]
-    if excluded: tris = tris[~np.isin(materials, excluded)]
+    excluded = [
+        i
+        for i, slot in enumerate(obj.material_slots)
+        if slot.material is not None and _base_name(slot.material.name) in exclude_materials
+    ]
+    if excluded:
+        tris = tris[~np.isin(materials, excluded)]
     return co, tris
 
 
 def _base_name(name):
     import re
+
     return re.sub(r"(\.\d{3,})+$", "", name)
 
 
@@ -442,7 +506,8 @@ def barycentric(point, a, b, c):
     v0, v1, v2 = b - a, c - a, point - a
     d00, d01, d11, d20, d21 = v0 @ v0, v0 @ v1, v1 @ v1, v2 @ v0, v2 @ v1
     denominator = d00 * d11 - d01 * d01
-    if abs(denominator) < 1e-20: return np.array([1.0, 0.0, 0.0])
+    if abs(denominator) < 1e-20:
+        return np.array([1.0, 0.0, 0.0])
     v = (d11 * d20 - d01 * d21) / denominator
     w = (d00 * d21 - d01 * d20) / denominator
     result = np.clip([1 - v - w, v, w], 0, 1)
@@ -456,11 +521,13 @@ def transfer_weights(scene, target, source=None, exclude_hair=True):
     p = props(scene)
     rig = p.rig
     source = source or p.reference
-    if rig is None or source is None: raise ValueError("the scene has no rig or no reference body")
+    if rig is None or source is None:
+        raise ValueError("the scene has no rig or no reference body")
     names = profile_groups(rig)
     exclude = set(json.loads(p.hair_reference or "[]")) if exclude_hair else set()
     co, tris = triangles(source, exclude)
-    if not len(tris): raise ValueError("the reference body has no triangles")
+    if not len(tris):
+        raise ValueError("the reference body has no triangles")
     source_weights = vertex_weights(source, names)
     tree = BVHTree.FromPolygons([tuple(v) for v in co], [tuple(int(i) for i in t) for t in tris])
     fit_to_rig(target, rig)
@@ -473,12 +540,14 @@ def transfer_weights(scene, target, source=None, exclude_hair=True):
     weights = np.zeros((count, len(names)))
     for index, point in enumerate(target_co):
         location, _, face, _ = tree.find_nearest(Vector(point))
-        if face is None: continue
+        if face is None:
+            continue
         corners = tris[face]
         bary = barycentric(np.array(location), *co[corners])
         weights[index] = bary @ source_weights[corners]
     weights = character.limit_weights(weights)
-    for group in [g for g in target.vertex_groups if g.name in names]: target.vertex_groups.remove(group)
+    for group in [g for g in target.vertex_groups if g.name in names]:
+        target.vertex_groups.remove(group)
     set_vertex_weights(target, names, weights)
     return count, int((weights.sum(1) == 0).sum())
 
@@ -492,7 +561,8 @@ def limit_and_normalize(obj, rig):
 
 def hair_bones(scene, chain="ALL"):
     chains = json.loads(props(scene).hair_chains or "[]")
-    if chain == "ALL": return [name for c in chains for name in c]
+    if chain == "ALL":
+        return [name for c in chains for name in c]
     return chains[int(chain)] if chain.isdigit() and int(chain) < len(chains) else []
 
 
@@ -501,11 +571,14 @@ def assign_hair(scene, obj, chain="ALL", selected_only=True):
     Returns the count of changed vertices."""
     rig = props(scene).rig
     bones = [rig.data.bones[name] for name in hair_bones(scene, chain) if name in rig.data.bones]
-    if not bones: raise ValueError("the profile has no hair bones for this choice")
+    if not bones:
+        raise ValueError("the profile has no hair bones for this choice")
     fit_to_rig(obj, rig)
-    if obj.mode == "EDIT": obj.update_from_editmode()
+    if obj.mode == "EDIT":
+        obj.update_from_editmode()
     vertices = [v.index for v in obj.data.vertices if v.select] if selected_only else []
-    if not vertices: vertices = list(range(len(obj.data.vertices)))
+    if not vertices:
+        vertices = list(range(len(obj.data.vertices)))
     names = profile_groups(rig)
     world = np.array(rig.matrix_world)
     segments = []
@@ -513,7 +586,9 @@ def assign_hair(scene, obj, chain="ALL", selected_only=True):
         child = next((c for c in bone.children if c in bones), None)
         head = np.array(bone.head_local)
         tail = np.array(child.head_local if child is not None else bone.tail_local)
-        segments.append((names.index(bone.name), head @ world[:3, :3].T + world[:3, 3], tail @ world[:3, :3].T + world[:3, 3]))
+        segments.append(
+            (names.index(bone.name), head @ world[:3, :3].T + world[:3, 3], tail @ world[:3, :3].T + world[:3, 3])
+        )
     matrix = np.array(obj.matrix_world)
     weights = np.zeros((len(vertices), len(names)))
     for row, index in enumerate(vertices):
@@ -523,7 +598,8 @@ def assign_hair(scene, obj, chain="ALL", selected_only=True):
             axis = tail - head
             t = 0.0 if not axis.any() else float(np.clip((point - head) @ axis / (axis @ axis), 0, 1))
             distance = np.linalg.norm(point - (head + t * axis))
-            if best is None or distance < best: best, column = distance, joint
+            if best is None or distance < best:
+                best, column = distance, joint
         weights[row, column] = 1.0
     set_vertex_weights(obj, names, weights, vertices)
     return len(vertices)
@@ -533,6 +609,7 @@ def assign_hair(scene, obj, chain="ALL", selected_only=True):
 def decompress(data):
     try:
         import brotli
+
         return brotli.decompress(data)
     except ImportError:
         return brotli_decode.decompress(data)
@@ -572,7 +649,9 @@ def clip_basis(rig_object, rig_data, translations, quaternions):
             basis[:, joint] = np.linalg.inv(bone_rest[joint]) @ pose[:, joint]
         else:
             p = index[parent.name]
-            basis[:, joint] = np.linalg.inv(bone_rest[joint]) @ bone_rest[p] @ np.linalg.inv(pose[:, p]) @ pose[:, joint]
+            basis[:, joint] = (
+                np.linalg.inv(bone_rest[joint]) @ bone_rest[p] @ np.linalg.inv(pose[:, p]) @ pose[:, joint]
+            )
     rotation = basis[..., :3, :3] / np.linalg.norm(basis[..., :3, :3], axis=-2, keepdims=True)
     q = matrix_quaternions(rotation)
     for frame in range(1, len(q)):
@@ -586,25 +665,33 @@ def clip_action(scene, clip):
     p = props(scene)
     if p.own_skeleton:
         from . import skeleton_tools
-        if p.rig is None: raise ValueError("the character has no armature yet: select it and click Use Selected Armature")
+
+        if p.rig is None:
+            raise ValueError("the character has no armature yet: select it and click Use Selected Armature")
         return skeleton_tools.clip_action(scene, clip)
     rig = p.rig
     role = role_of(p.profile)
     clib, profile = library_profile(scene)
     name = f"{profile or role} clip {clip}"
     for action in clip_actions():
-        if action.get(PREVIEW) != name: bpy.data.actions.remove(action)
+        if action.get(PREVIEW) != name:
+            bpy.data.actions.remove(action)
     action = next((a for a in clip_actions() if a.get(PREVIEW) == name), None)
     rig.animation_data_create()
     if clib is not None:
-        decoded, rig_data, offsets = q48.decode(decompress(clib.clip(clip))), clib.rig(profile), clib.clip_offsets(profile)
+        decoded, rig_data, offsets = (
+            q48.decode(decompress(clib.clip(clip))),
+            clib.rig(profile),
+            clib.clip_offsets(profile),
+        )
     else:
         lib = library(library_path(scene))
         decoded, rig_data, offsets = q48.decode(decompress(lib.clip(role, clip))), profile_rig(lib, role), None
     frames = decoded[0]["frames"]
     if action is None:
         missing = [n for n in rig_data.names if n not in rig.data.bones]
-        if missing: raise ValueError(f"the rig has no bone {missing[0]} of the profile")
+        if missing:
+            raise ValueError(f"the rig has no bone {missing[0]} of the profile")
         translations, quaternions = character.clip_local_poses(decoded, rig_data, role, offsets)
         locations, rotations = clip_basis(rig, rig_data, translations, quaternions)
         action = bpy.data.actions.new(name)
@@ -636,8 +723,10 @@ def clip_action(scene, clip):
 def clear_pose(scene):
     p = props(scene)
     for rig in (p.rig, p.source_rig):
-        if rig is None: continue
-        if rig.animation_data: rig.animation_data.action = None
+        if rig is None:
+            continue
+        if rig.animation_data:
+            rig.animation_data.action = None
         for bone in rig.pose.bones:
             bone.location = (0, 0, 0)
             bone.rotation_quaternion = (1, 0, 0, 0)
@@ -645,8 +734,10 @@ def clear_pose(scene):
             bone.scale = (1, 1, 1)
     if p.own_skeleton:
         from . import skeleton_tools
+
         skeleton_tools.restore_constraints(p.rig)
-    for action in clip_actions(): bpy.data.actions.remove(action)
+    for action in clip_actions():
+        bpy.data.actions.remove(action)
     p.clip = ""
     p["clips_index"] = -1
 

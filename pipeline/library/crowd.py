@@ -25,6 +25,7 @@ MODELS = [
     ("crowd_biker_02", ["jerod_reg_med1", "jerod_good_slow2"]),
 ]
 
+
 def performance_data(data):
     profiles = find_struct(data, "Crowd_Profiles")
     models = [name for name, _ in MODELS[:6]] + ["crowd_ped_03", "crowd_ped_04"]
@@ -56,10 +57,19 @@ def write_model(directory, materials, meshes, images):
             stream.write(vertices)
             for face in faces:
                 stream.write(struct.pack("<3I", *face))
-    (directory / "stage.json").write_text(json.dumps({
-        "version": 1, "name": directory.name, "cameraPosition": [0, 0, 0], "cameraTarget": [0, 1, 0],
-        "materials": materials,
-    }, indent=2) + "\n")
+    (directory / "stage.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "name": directory.name,
+                "cameraPosition": [0, 0, 0],
+                "cameraTarget": [0, 1, 0],
+                "materials": materials,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
 
 
 def convert(data_dir, output):
@@ -77,16 +87,16 @@ def convert(data_dir, output):
         return pak_entries(data)
 
     global_entries = {(kind, name): blob for kind, name, blob in load("ZONES/global.pak.xen")}
-    rig = next(blob for (kind, name), blob in global_entries.items()
-               if kind == key(".ske") and name == key("GH3_ped"))
+    rig = next(blob for (kind, name), blob in global_entries.items() if kind == key(".ske") and name == key("GH3_ped"))
     names, parents, positions, rotations = skeleton(rig)
     source = Source(data_dir)
     scripts = source.scripts()
     members = performance_data(script(scripts, "guitar_animation_data_crowd"))
     needed = {key("gh3_crowd_" + clip) for _, clips in MODELS for clip in clips}
     needed.update(int(ref, 16) for member in members.values() for refs in member["groups"].values() for ref in refs)
-    clips = {name: blob for kind, name, blob in load("PAK/perm_anims.pak.xen")
-             if kind == key(".ska") and name in needed}
+    clips = {
+        name: blob for kind, name, blob in load("PAK/perm_anims.pak.xen") if kind == key(".ska") and name in needed
+    }
     if clips.keys() != needed:
         raise ValueError("Missing original crowd animations")
     for model, clip_names in MODELS:
@@ -95,7 +105,10 @@ def convert(data_dir, output):
         embedded = model in ("crowd_biker_01", "crowd_biker_02")
         archive = "ZONES/z_hell.pak.xen" if embedded else f"PAK/{model}.pak.xen"
         for kind, name, blob in load(archive):
-            if embedded and name not in (key(f"models\\Real_Crowd\\{model}.skin"), key(f"models\\Real_Crowd\\{model}.tex")):
+            if embedded and name not in (
+                key(f"models\\Real_Crowd\\{model}.skin"),
+                key(f"models\\Real_Crowd\\{model}.tex"),
+            ):
                 continue
             if kind == key(".skin"):
                 materials, meshes = scene.scene(blob, skinned=True)
@@ -109,8 +122,7 @@ def convert(data_dir, output):
         with (directory / "animation.bin").open("wb") as stream:
             stream.write(b"GH3ANM01" + struct.pack("<II", len(names), len(clip_names)))
             for i, parent in enumerate(parents):
-                stream.write(struct.pack("<i7f", parent, *(positions[i] * [1, 1, -1]),
-                                         *(rotations[i] * [1, 1, -1, 1])))
+                stream.write(struct.pack("<i7f", parent, *(positions[i] * [1, 1, -1]), *(rotations[i] * [1, 1, -1, 1])))
             for name in clip_names:
                 clip = animation(clips[key("gh3_crowd_" + name)], len(names))
                 frames = round(clip[0] * 30) + 1
@@ -126,26 +138,59 @@ def convert(data_dir, output):
         for kind in ("clap", "lighter", "rock", "fist"):
             stem = f"models\\Real_Crowd\\Crowd_{hand}_{kind}"
             materials, meshes = scene.scene(global_entries[key(".skin"), key(stem + ".skin")], skinned=True)
-            write_model(output / "hands" / f"{side}-{kind}", materials, meshes,
-                        dict(scene.textures(global_entries[key(".tex"), key(stem + ".tex")])))
+            write_model(
+                output / "hands" / f"{side}-{kind}",
+                materials,
+                meshes,
+                dict(scene.textures(global_entries[key(".tex"), key(stem + ".tex")])),
+            )
             hands.append(f"{side}-{kind}")
-    performance_clips = {ref: direction.write_clip(output / "clips" / f"{ref}.bin.gz", clips[int(ref, 16)],
-        (names, parents, positions, rotations)) for ref in sorted({ref for member in members.values() for refs in member["groups"].values() for ref in refs})}
+    performance_clips = {
+        ref: direction.write_clip(
+            output / "clips" / f"{ref}.bin.gz", clips[int(ref, 16)], (names, parents, positions, rotations)
+        )
+        for ref in sorted({ref for member in members.values() for refs in member["groups"].values() for ref in refs})
+    }
     constants = {}
-    for filename, names_to_read in (("guitar_animation_data", ["slow_tempo", "med_tempo", "fast_tempo"]),
-        ("guitar_animation_data_crowd", ["Crowd_BlendTime_TempoChange", "Crowd_BlendTime_Bad", "Crowd_BlendTime_Special",
-                                      "Crowd_BlendTime_Slow", "Crowd_BlendTime_Med", "Crowd_BlendTime_Fast"])):
+    for filename, names_to_read in (
+        ("guitar_animation_data", ["slow_tempo", "med_tempo", "fast_tempo"]),
+        (
+            "guitar_animation_data_crowd",
+            [
+                "Crowd_BlendTime_TempoChange",
+                "Crowd_BlendTime_Bad",
+                "Crowd_BlendTime_Special",
+                "Crowd_BlendTime_Slow",
+                "Crowd_BlendTime_Med",
+                "Crowd_BlendTime_Fast",
+            ],
+        ),
+    ):
         for name in names_to_read:
             value = scalar(script(scripts, filename), name, None)
             if value is None:
-                value = next((value for blob in scripts.values() if (value := scalar(blob, name, None)) is not None), None)
-            if value is None: raise ValueError(f"Missing crowd constant: {name}")
+                value = next(
+                    (value for blob in scripts.values() if (value := scalar(blob, name, None)) is not None), None
+                )
+            if value is None:
+                raise ValueError(f"Missing crowd constant: {name}")
             constants[name] = value
     sources.update(source.hashes)
-    (output / "crowd.json").write_text(json.dumps({
-        "version": 2, "models": [model for model, _ in MODELS], "members": members,
-        "bones": [f"{name:08x}" for name in names], "hands": hands, "performanceClips": performance_clips, "constants": constants,
-        "clips": {model: ["gh3_crowd_" + name for name in clips] for model, clips in MODELS},
-        "sources": sources,
-    }, indent=2) + "\n")
+    (output / "crowd.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "models": [model for model, _ in MODELS],
+                "members": members,
+                "bones": [f"{name:08x}" for name in names],
+                "hands": hands,
+                "performanceClips": performance_clips,
+                "constants": constants,
+                "clips": {model: ["gh3_crowd_" + name for name in clips] for model, clips in MODELS},
+                "sources": sources,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
     print(output)

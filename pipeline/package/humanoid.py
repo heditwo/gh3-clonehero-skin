@@ -19,7 +19,9 @@ import numpy as np
 
 from . import skeleton
 
-_HELPER = re.compile(r"(^|[^a-z])(ik|ctrl|control|helper|dummy|target|pole|mch|wgt|ref|nub|end|tip)([^a-z]|$)|ik$|ＩＫ|操作|先$|_end$|end$")
+_HELPER = re.compile(
+    r"(^|[^a-z])(ik|ctrl|control|helper|dummy|target|pole|mch|wgt|ref|nub|end|tip)([^a-z]|$)|ik$|ＩＫ|操作|先$|_end$|end$"
+)
 _ARM_WORDS = re.compile(r"arm|elbow|hand|wrist|shoulder|clavicle|collar|shldr|腕|ひじ|肘|手|肩")
 _LEG_WORDS = re.compile(r"leg|thigh|knee|calf|shin|foot|ankle|toe|足|ひざ|膝")
 _FINGERS = ("Index", "Middle", "Ring", "Little")
@@ -63,13 +65,15 @@ class Skeleton:
         self.tails = None if tails is None else np.asarray(tails, dtype=np.float64).reshape(-1, 3)
         self.children = [[] for _ in range(self.count)]
         for i, p in enumerate(self.parents):
-            if p >= 0: self.children[p].append(i)
+            if p >= 0:
+                self.children[p].append(i)
         order, stack = [], [i for i in range(self.count) if self.parents[i] < 0]
         while stack:
             bone = stack.pop()
             order.append(bone)
             stack.extend(self.children[bone])
-        if len(order) != self.count: raise ValueError("the skeleton has a cycle")
+        if len(order) != self.count:
+            raise ValueError("the skeleton has a cycle")
         self.order = order
         helper = np.array([bool(_HELPER.search(_normalized(n))) for n in self.names])
         if weights is None or not np.any(np.asarray(weights) > 0):
@@ -78,7 +82,8 @@ class Skeleton:
             weighted = np.asarray(weights) > 0
         relevant = weighted.copy()
         for bone in reversed(order):
-            if relevant[bone] and self.parents[bone] >= 0: relevant[self.parents[bone]] = True
+            if relevant[bone] and self.parents[bone] >= 0:
+                relevant[self.parents[bone]] = True
         self.weighted, self.relevant = weighted, relevant
         self.kids = [[c for c in self.children[i] if relevant[c]] for i in range(self.count)]
         self.points = self.heads[relevant] if np.any(relevant) else self.heads
@@ -86,32 +91,40 @@ class Skeleton:
         self.size = float(max(np.max(extent), 1e-6))
         self.depth = [0] * self.count
         for bone in order:
-            if self.parents[bone] >= 0: self.depth[bone] = self.depth[self.parents[bone]] + 1
+            if self.parents[bone] >= 0:
+                self.depth[bone] = self.depth[self.parents[bone]] + 1
         self.subtree = [[] for _ in range(self.count)]
         for bone in reversed(order):
-            if not relevant[bone]: continue
+            if not relevant[bone]:
+                continue
             self.subtree[bone] = [bone] + [d for c in self.kids[bone] for d in self.subtree[c]]
 
     def end(self, bone):
         """The far point of a bone: its tail (when it is plausible: importers guess the tails), else the head of its
         relevant child, else its head."""
-        if self.tails is not None and np.linalg.norm(self.tails[bone] - self.heads[bone]) < 0.25 * self.size: return self.tails[bone]
-        if self.kids[bone]: return self.heads[self.kids[bone][0]]
+        if self.tails is not None and np.linalg.norm(self.tails[bone] - self.heads[bone]) < 0.25 * self.size:
+            return self.tails[bone]
+        if self.kids[bone]:
+            return self.heads[self.kids[bone][0]]
         return self.heads[bone]
 
     def above(self, a, b):
         p = self.parents[b]
         while p >= 0:
-            if p == a: return True
+            if p == a:
+                return True
             p = self.parents[p]
         return False
 
     def lca(self, a, b):
         chain = set()
         x = a
-        while x >= 0: chain.add(x); x = self.parents[x]
+        while x >= 0:
+            chain.add(x)
+            x = self.parents[x]
         x = b
-        while x >= 0 and x not in chain: x = self.parents[x]
+        while x >= 0 and x not in chain:
+            x = self.parents[x]
         return x
 
     def path_down(self, top, bottom):
@@ -132,30 +145,41 @@ def _mirror_plane(sk):
     candidates = []
     for node in range(sk.count):
         kids = sk.kids[node]
-        if len(kids) < 2 or len(kids) > 24: continue
+        if len(kids) < 2 or len(kids) > 24:
+            continue
         for i in range(len(kids)):
             for j in range(i + 1, len(kids)):
                 a, b = kids[i], kids[j]
                 d = sk.heads[a] - sk.heads[b]
-                if np.linalg.norm(d) < 0.01 * sk.size: continue
+                if np.linalg.norm(d) < 0.01 * sk.size:
+                    continue
                 na, nb = len(sk.subtree[a]), len(sk.subtree[b])
-                if abs(na - nb) > max(1, 0.25 * max(na, nb)): continue
+                if abs(na - nb) > max(1, 0.25 * max(na, nb)):
+                    continue
                 normal, point = _unit(d), (sk.heads[a] + sk.heads[b]) / 2
                 error = _mirror_error(sk, a, b, normal, point)
                 extent = max(sk.reach(a), 0.02 * sk.size)
-                if error > 0.12 * extent + 0.01 * sk.size: continue
+                if error > 0.12 * extent + 0.01 * sk.size:
+                    continue
                 candidates.append((normal, point, min(na, nb) * extent))
-    if not candidates: return None, None
+    if not candidates:
+        return None, None
     best, best_mass, best_group = None, -1.0, []
     for normal, point, _ in candidates:
-        group = [(n2 * np.sign(np.dot(n2, normal)), p2, m2) for n2, p2, m2 in candidates
-                 if abs(np.dot(n2, normal)) > 0.95 and abs(np.dot(p2 - point, normal)) < 0.05 * sk.size]
+        group = [
+            (n2 * np.sign(np.dot(n2, normal)), p2, m2)
+            for n2, p2, m2 in candidates
+            if abs(np.dot(n2, normal)) > 0.95 and abs(np.dot(p2 - point, normal)) < 0.05 * sk.size
+        ]
         mass = sum(m for _, _, m in group)
-        if mass > best_mass: best_mass, best_group = mass, group
+        if mass > best_mass:
+            best_mass, best_group = mass, group
     normal = _snap(_unit(np.sum([n2 * m for n2, _, m in best_group], axis=0)), 8)
     # The plane offset that mirrors the whole skeleton best (side-by-side hair strands pass the pair test too).
     points = sk.heads[sk.relevant]
-    offsets = sorted({round(float(np.dot(p2, normal)), 5) for _, p2, _ in best_group} | {float(np.median(points @ normal))})
+    offsets = sorted(
+        {round(float(np.dot(p2, normal)), 5) for _, p2, _ in best_group} | {float(np.median(points @ normal))}
+    )
 
     def fit(offset):
         reflected = points - 2 * np.outer(points @ normal - offset, normal)
@@ -178,13 +202,18 @@ def _partners(sk, normal, point):
     mutual: the closest pairs (position, then depth and subtree size) are taken first."""
     partner = np.full(sk.count, -1)
     idx = np.flatnonzero(sk.relevant)
-    if not len(idx): return partner
+    if not len(idx):
+        return partner
     heads = sk.heads[idx]
     reflected = heads - 2 * np.outer((heads - point) @ normal, normal)
     cost = np.linalg.norm(reflected[:, None, :] - heads[None, :, :], axis=2)
     depth = np.array([sk.depth[i] for i in idx])
     sizes = np.array([len(sk.subtree[i]) for i in idx])
-    cost = cost + np.abs(depth[:, None] - depth[None, :]) * 0.01 * sk.size + np.abs(sizes[:, None] - sizes[None, :]) * 0.004 * sk.size
+    cost = (
+        cost
+        + np.abs(depth[:, None] - depth[None, :]) * 0.01 * sk.size
+        + np.abs(sizes[:, None] - sizes[None, :]) * 0.004 * sk.size
+    )
     # A bone is its own partner (on the mirror plane) only when it is very near the plane.
     side = np.abs((heads - point) @ normal)
     np.fill_diagonal(cost, np.where(side < 0.008 * sk.size, np.diag(cost), np.inf))
@@ -193,7 +222,8 @@ def _partners(sk, normal, point):
     order = np.argsort(cost[rows, cols], kind="stable")
     for k in order:
         a, b = idx[rows[k]], idx[cols[k]]
-        if partner[a] >= 0 or partner[b] >= 0: continue
+        if partner[a] >= 0 or partner[b] >= 0:
+            continue
         partner[a], partner[b] = b, a
     return partner
 
@@ -206,9 +236,13 @@ def _match_children(sk, x, y, plane):
         reflected = sk.heads[c] - 2 * np.dot(sk.heads[c] - point, normal) * normal
         best, best_cost = -1, 0.03 * sk.size
         for d in sk.kids[y]:
-            cost = np.linalg.norm(sk.heads[d] - reflected) + abs(len(sk.subtree[c]) - len(sk.subtree[d])) * 0.004 * sk.size
-            if cost < best_cost: best, best_cost = d, cost
-        if best >= 0: pairs.append((c, best))
+            cost = (
+                np.linalg.norm(sk.heads[d] - reflected) + abs(len(sk.subtree[c]) - len(sk.subtree[d])) * 0.004 * sk.size
+            )
+            if cost < best_cost:
+                best, best_cost = d, cost
+        if best >= 0:
+            pairs.append((c, best))
     return pairs
 
 
@@ -220,12 +254,17 @@ def _pair_chains(sk, a, b, partner):
     x, y = a, b
     while len(left) < 64:
         pairs = _match_children(sk, x, y, partner)
-        if not pairs: break
+        if not pairs:
+            break
         inner = [(c, d) for c, d in pairs if sk.kids[c] and sk.kids[d]]
         options = inner or pairs
-        reach = sorted(((sk.reach(c) + float(np.linalg.norm(sk.heads[c] - sk.heads[x])), c, d) for c, d in options), reverse=True)
-        if len(reach) > 1 and reach[0][0] < 2.5 * reach[1][0]: break
-        if not inner and len(pairs) > 1: break
+        reach = sorted(
+            ((sk.reach(c) + float(np.linalg.norm(sk.heads[c] - sk.heads[x])), c, d) for c, d in options), reverse=True
+        )
+        if len(reach) > 1 and reach[0][0] < 2.5 * reach[1][0]:
+            break
+        if not inner and len(pairs) > 1:
+            break
         _, x, y = reach[0]
         left.append(x)
         right.append(y)
@@ -243,28 +282,50 @@ def _straight(sk, chain, i, j, tolerance):
     return all(_segment_distance(sk.heads[chain[k]], a, b) <= tolerance * length for k in range(i + 1, j))
 
 
-def _limb_split(sk, chain, hint_roles, upper_role, lower_role, end_role, ratio_mid, height=None, floor=None, up=None, end_low=False, lateral=None):
+def _limb_split(
+    sk,
+    chain,
+    hint_roles,
+    upper_role,
+    lower_role,
+    end_role,
+    ratio_mid,
+    height=None,
+    floor=None,
+    up=None,
+    end_low=False,
+    lateral=None,
+):
     """The (upper, middle, end) joints of a limb chain: two straight parts of near-equal length. Returns
     (indices into chain, quality 0-1) or None."""
     best, best_score = None, -1e9
     n = len(chain)
     # Of joints at one place (MMD cancel and shoulder C bones), the deeper one with weights has the role.
-    same = [i + 1 < n and np.linalg.norm(sk.heads[chain[i + 1]] - sk.heads[chain[i]]) < 0.005 * sk.size for i in range(n)]
+    same = [
+        i + 1 < n and np.linalg.norm(sk.heads[chain[i + 1]] - sk.heads[chain[i]]) < 0.005 * sk.size for i in range(n)
+    ]
     for i in range(n):
-        if same[i]: continue
+        if same[i]:
+            continue
         for j in range(i + 1, n):
-            if same[j]: continue
+            if same[j]:
+                continue
             for k in range(j + 1, n):
-                if same[k]: continue
+                if same[k]:
+                    continue
                 lu = np.linalg.norm(sk.heads[chain[j]] - sk.heads[chain[i]])
                 ll = np.linalg.norm(sk.heads[chain[k]] - sk.heads[chain[j]])
-                if lu < 0.02 * sk.size or ll < 0.02 * sk.size: continue
+                if lu < 0.02 * sk.size or ll < 0.02 * sk.size:
+                    continue
                 ratio = lu / ll
-                if not 0.5 < ratio < 2.2: continue
-                if not (_straight(sk, chain, i, j, 0.05) and _straight(sk, chain, j, k, 0.05)): continue
+                if not 0.5 < ratio < 2.2:
+                    continue
+                if not (_straight(sk, chain, i, j, 0.05) and _straight(sk, chain, j, k, 0.05)):
+                    continue
                 score = -abs(np.log(ratio / ratio_mid)) * 2 + (lu + ll) / sk.size
                 # The upper joint of a limb is away from the middle of the body (a collarbone starts near it).
-                if lateral is not None: score -= max(0.0, 0.06 - lateral(chain[i])) * 30
+                if lateral is not None:
+                    score -= max(0.0, 0.06 - lateral(chain[i])) * 30
                 if end_low:
                     rel = (np.dot(sk.heads[chain[k]], up) - floor) / height
                     score -= max(0.0, rel - 0.12) * 8
@@ -272,19 +333,24 @@ def _limb_split(sk, chain, hint_roles, upper_role, lower_role, end_role, ratio_m
                     for x, y, least in ((i, j, 0.75), (j, k, 0.85)):
                         down = np.dot(_unit(sk.heads[chain[y]] - sk.heads[chain[x]]), -up)
                         score -= max(0.0, least - down) * 6
-                    after = chain[k + 1:]
+                    after = chain[k + 1 :]
                     if after:
                         step = sk.heads[after[0]] - sk.heads[chain[k]]
                         flat = np.linalg.norm(step - up * np.dot(step, up))
-                        if flat < abs(np.dot(step, up)) * 0.6: score -= 1.0
+                        if flat < abs(np.dot(step, up)) * 0.6:
+                            score -= 1.0
                 else:
                     rest = _chain_length(sk, chain[k:]) if k < n - 1 else 0.0
                     hand = max([sk.reach(chain[k])] + [rest])
-                    if hand > 0.9 * ll: score -= (hand / ll - 0.9) * 3
+                    if hand > 0.9 * ll:
+                        score -= (hand / ll - 0.9) * 3
                 for role, at in ((upper_role, i), (lower_role, j), (end_role, k)):
-                    if hint_roles.get(chain[at]) == role: score += 0.4
-                if score > best_score: best, best_score = (i, j, k), score
-    if best is None: return None
+                    if hint_roles.get(chain[at]) == role:
+                        score += 0.4
+                if score > best_score:
+                    best, best_score = (i, j, k), score
+    if best is None:
+        return None
     i, j, k = best
     lu = np.linalg.norm(sk.heads[chain[j]] - sk.heads[chain[i]])
     ll = np.linalg.norm(sk.heads[chain[k]] - sk.heads[chain[j]])
@@ -301,20 +367,26 @@ def _fingers(sk, hand, other, plane, hint_roles, front=None):
         if not sk.kids[bone]:
             paths.append(path)
             return
-        for c in sk.kids[bone]: walk(c, path + [c])
+        for c in sk.kids[bone]:
+            walk(c, path + [c])
 
     mirrored = {c for c, _ in _match_children(sk, hand, other, plane)} if other >= 0 else set(sk.kids[hand])
     for c in sk.kids[hand]:
-        if c in mirrored: walk(c, [c])
-    if len(paths) < 2: return [], 1.0
+        if c in mirrored:
+            walk(c, [c])
+    if len(paths) < 2:
+        return [], 1.0
     counts = {}
     for path in paths:
-        for bone in path: counts[bone] = counts.get(bone, 0) + 1
+        for bone in path:
+            counts[bone] = counts.get(bone, 0) + 1
     chains = []
     for path in paths:
         own = [b for b in path if counts[b] == 1]
-        if own: chains.append(own[:4])
-    if len(chains) < 2: return [], 1.0
+        if own:
+            chains.append(own[:4])
+    if len(chains) < 2:
+        return [], 1.0
     wrist = sk.heads[hand]
     bases = np.array([sk.heads[c[0]] for c in chains])
     tips = np.array([sk.heads[c[-1]] if len(c) > 1 else sk.end(c[0]) for c in chains])
@@ -323,9 +395,16 @@ def _fingers(sk, hand, other, plane, hint_roles, front=None):
     for c, base, tip in zip(chains, bases, tips):
         direction = _unit(tip - base) if np.linalg.norm(tip - base) > 1e-6 else axis
         along = np.dot(base - wrist, axis)
-        hinted = any(hint_roles.get(b, "").endswith(("ThumbMetacarpal", "ThumbProximal", "ThumbDistal")) or _THUMB.search(_normalized(sk.names[b]))
-                     for b in c)
-        deviation.append(np.degrees(np.arccos(np.clip(np.dot(direction, axis), -1, 1))) - along / max(sk.size, 1e-6) * 200 + (25 if hinted else 0))
+        hinted = any(
+            hint_roles.get(b, "").endswith(("ThumbMetacarpal", "ThumbProximal", "ThumbDistal"))
+            or _THUMB.search(_normalized(sk.names[b]))
+            for b in c
+        )
+        deviation.append(
+            np.degrees(np.arccos(np.clip(np.dot(direction, axis), -1, 1)))
+            - along / max(sk.size, 1e-6) * 200
+            + (25 if hinted else 0)
+        )
     order = np.argsort(deviation)[::-1]
     margin = deviation[order[0]] - deviation[order[1]]
     # A hand has a thumb when one finger leaves the hand at another angle or nearer the wrist (or its name says so).
@@ -340,23 +419,34 @@ def _fingers(sk, hand, other, plane, hint_roles, front=None):
         side = np.asarray(front, dtype=np.float64) if front is not None else bases[others[0]] - bases[others[-1]]
     side = _unit(side - axis * np.dot(side, axis))
     others.sort(key=lambda i: -np.dot(bases[i] - wrist, side))
-    names = {1: ("Middle",), 2: ("Index", "Middle"), 3: ("Index", "Middle", "Ring"), 4: _FINGERS}.get(len(others), _FINGERS)
-    if len(others) > 4: others = others[:2] + others[-2:]
+    names = {1: ("Middle",), 2: ("Index", "Middle"), 3: ("Index", "Middle", "Ring"), 4: _FINGERS}.get(
+        len(others), _FINGERS
+    )
+    if len(others) > 4:
+        others = others[:2] + others[-2:]
     knuckle = np.median([np.linalg.norm(sk.heads[chains[i][1 if len(chains[i]) > 1 else 0]] - wrist) for i in others])
     result = []
     for name, i in zip(names, others):
         joints = chains[i]
-        if len(joints) >= 4 or (len(joints) >= 2 and np.linalg.norm(sk.heads[joints[0]] - wrist) < 0.45 * knuckle): joints = joints[1:]
+        if len(joints) >= 4 or (len(joints) >= 2 and np.linalg.norm(sk.heads[joints[0]] - wrist) < 0.45 * knuckle):
+            joints = joints[1:]
         result.append((name, joints[:3]))
-    if thumb >= 0: result.append(("Thumb", chains[thumb][:3]))
+    if thumb >= 0:
+        result.append(("Thumb", chains[thumb][:3]))
     return result, quality
 
 
 def _finger_roles(side, finger, joints, sk, wrist_knuckle):
     if finger == "Thumb":
-        parts = skeleton.THUMB_PARTS if len(joints) >= 3 else ("Metacarpal", "Proximal") if len(joints) == 2 else ("Proximal",)
+        parts = (
+            skeleton.THUMB_PARTS
+            if len(joints) >= 3
+            else ("Metacarpal", "Proximal")
+            if len(joints) == 2
+            else ("Proximal",)
+        )
     else:
-        parts = skeleton.FINGER_PARTS[:len(joints)]
+        parts = skeleton.FINGER_PARTS[: len(joints)]
     return {side + finger + part: bone for part, bone in zip(parts, joints)}
 
 
@@ -382,15 +472,19 @@ def find(names, parents, heads, tails=None, weights=None, points=None):
     partner = _partners(sk, normal, point)
     roots = []
     for bone in range(sk.count):
-        if not sk.relevant[bone] or partner[bone] < 0 or partner[bone] == bone: continue
+        if not sk.relevant[bone] or partner[bone] < 0 or partner[bone] == bone:
+            continue
         parent = sk.parents[bone]
-        if parent >= 0 and partner[parent] != parent and partner[parent] >= 0: continue
-        if np.dot(sk.heads[bone] - point, normal) > 0: roots.append((bone, int(partner[bone])))
+        if parent >= 0 and partner[parent] != parent and partner[parent] >= 0:
+            continue
+        if np.dot(sk.heads[bone] - point, normal) > 0:
+            roots.append((bone, int(partner[bone])))
     limbs = []
     for a, b in roots:
         ca, cb = _pair_chains(sk, a, b, (normal, point))
         length = (_chain_length(sk, ca) + _chain_length(sk, cb)) / 2
-        if min(len(ca), len(cb)) < 2 or length < 0.12 * sk.size: continue
+        if min(len(ca), len(cb)) < 2 or length < 0.12 * sk.size:
+            continue
         limbs.append({"roots": (a, b), "chains": (ca, cb), "length": length, "lca": sk.lca(a, b)})
     if len(limbs) < 2:
         notes.append("fewer than two limb pairs (legs and arms) were found")
@@ -399,14 +493,18 @@ def find(names, parents, heads, tails=None, weights=None, points=None):
     hypotheses = []
     for legs in limbs:
         for arms in limbs:
-            if legs is arms: continue
-            if any(sk.above(x, legs["lca"]) or x == legs["lca"] for c in arms["chains"] for x in c): continue
-            if any(sk.above(x, arms["lca"]) or x == arms["lca"] for c in legs["chains"] for x in c): continue
+            if legs is arms:
+                continue
+            if any(sk.above(x, legs["lca"]) or x == legs["lca"] for c in arms["chains"] for x in c):
+                continue
+            if any(sk.above(x, arms["lca"]) or x == arms["lca"] for c in legs["chains"] for x in c):
+                continue
             attach_l = (sk.heads[legs["roots"][0]] + sk.heads[legs["roots"][1]]) / 2
             attach_a = (sk.heads[arms["roots"][0]] + sk.heads[arms["roots"][1]]) / 2
             up = attach_a - attach_l
             up = up - normal * np.dot(up, normal)
-            if np.linalg.norm(up) < 0.02 * sk.size: continue
+            if np.linalg.norm(up) < 0.02 * sk.size:
+                continue
             up = _unit(up)
             h = sk.points @ up
             floor, top = float(h.min()), float(h.max())
@@ -418,7 +516,8 @@ def find(names, parents, heads, tails=None, weights=None, points=None):
             for c in legs["chains"]:
                 for x, y in zip(c, c[1:]):
                     step = sk.heads[y] - sk.heads[x]
-                    if np.linalg.norm(step) > 1e-6: downs.append(np.dot(_unit(step), -up) * np.linalg.norm(step))
+                    if np.linalg.norm(step) > 1e-6:
+                        downs.append(np.dot(_unit(step), -up) * np.linalg.norm(step))
             score += float(np.clip(np.sum(downs) / max(legs["length"] * 2, 1e-6), -1, 1)) * 1.5
             rel_a, rel_l = (np.dot(attach_a, up) - floor) / height, (np.dot(attach_l, up) - floor) / height
             score += 1 if 0.45 <= rel_a <= 0.97 else -1
@@ -426,23 +525,35 @@ def find(names, parents, heads, tails=None, weights=None, points=None):
             ratio = arms["length"] / max(legs["length"], 1e-6)
             score += 1 if 0.35 <= ratio <= 1.35 else -1
             mid_top = max(midline, key=lambda i: np.dot(sk.heads[i], up), default=-1)
-            if mid_top >= 0 and (arms["lca"] == mid_top or sk.above(arms["lca"], mid_top)): score += 1.5
-            else: score -= 1.5
-            if mid_top >= 0 and np.dot(sk.heads[mid_top], up) > np.dot(attach_a, up) + 0.03 * height: score += 0.5
-            if any(len(sk.kids[c[-1]]) >= 2 for c in arms["chains"]): score += 0.5
+            if mid_top >= 0 and (arms["lca"] == mid_top or sk.above(arms["lca"], mid_top)):
+                score += 1.5
+            else:
+                score -= 1.5
+            if mid_top >= 0 and np.dot(sk.heads[mid_top], up) > np.dot(attach_a, up) + 0.03 * height:
+                score += 0.5
+            if any(len(sk.kids[c[-1]]) >= 2 for c in arms["chains"]):
+                score += 0.5
             text = " ".join(_normalized(names[x]) for c in legs["chains"] for x in c)
-            if _LEG_WORDS.search(text): score += 0.5
+            if _LEG_WORDS.search(text):
+                score += 0.5
             text = " ".join(_normalized(names[x]) for c in arms["chains"] for x in c)
-            if _ARM_WORDS.search(text): score += 0.5
-            hinted = sum(1 for c in legs["chains"] for x in c if hint_roles.get(x, "").endswith(("UpperLeg", "LowerLeg", "Foot")))
-            hinted += sum(1 for c in arms["chains"] for x in c if hint_roles.get(x, "").endswith(("UpperArm", "LowerArm", "Hand")))
+            if _ARM_WORDS.search(text):
+                score += 0.5
+            hinted = sum(
+                1 for c in legs["chains"] for x in c if hint_roles.get(x, "").endswith(("UpperLeg", "LowerLeg", "Foot"))
+            )
+            hinted += sum(
+                1 for c in arms["chains"] for x in c if hint_roles.get(x, "").endswith(("UpperArm", "LowerArm", "Hand"))
+            )
             score += min(hinted, 6) * 0.1
             hypotheses.append((score, id(legs), id(arms), legs, arms, up, floor, height))
     if not hypotheses:
         notes.append("no pair of legs and arms was found")
         return result
     hypotheses.sort(key=lambda h: -h[0])
-    result["debug"] = [(round(float(h[0]), 2), names[h[3]["roots"][0]], names[h[4]["roots"][0]]) for h in hypotheses[:6]]
+    result["debug"] = [
+        (round(float(h[0]), 2), names[h[3]["roots"][0]], names[h[4]["roots"][0]]) for h in hypotheses[:6]
+    ]
     score, _, _, legs, arms, up, floor, height = hypotheses[0]
     margin = score - hypotheses[1][0] if len(hypotheses) > 1 else 3.0
     structure = float(np.clip(0.55 + margin / 4, 0.4, 1.0)) if score > 3 else 0.35
@@ -453,41 +564,71 @@ def find(names, parents, heads, tails=None, weights=None, points=None):
     roles, confidence = {}, {}
 
     def put(role, bone, c):
-        if bone is None or bone < 0: return
+        if bone is None or bone < 0:
+            return
         roles[role] = int(bone)
         confidence[role] = float(np.clip(c, 0, 1))
 
     # Legs: hip, knee, ankle; the toes are the next joint that goes forward.
     leg_rows = []
     for chain in legs["chains"]:
-        split = _limb_split(sk, chain, hint_roles, "UpperLeg", "LowerLeg", "Foot", 1.1, height, floor, up, end_low=True,
-                            lateral=lambda bone: 0.06 + abs(np.dot(sk.heads[bone] - point, normal)) / height)
+        split = _limb_split(
+            sk,
+            chain,
+            hint_roles,
+            "UpperLeg",
+            "LowerLeg",
+            "Foot",
+            1.1,
+            height,
+            floor,
+            up,
+            end_low=True,
+            lateral=lambda bone: 0.06 + abs(np.dot(sk.heads[bone] - point, normal)) / height,
+        )
         if split is None:
             notes.append(f"the leg chain from '{names[chain[0]]}' has no knee: check the leg roles")
             leg_rows.append(None)
             continue
         (i, j, k), q = split
         toes = None
-        after = chain[k + 1:]
+        after = chain[k + 1 :]
         if not after and sk.kids[chain[k]]:
             # The foot ends where two children start (heel and toes): the toes are the child farthest out.
-            flat = lambda x: np.linalg.norm((sk.heads[x] - sk.heads[chain[k]]) - up * np.dot(sk.heads[x] - sk.heads[chain[k]], up))
+            flat = lambda x: np.linalg.norm(
+                (sk.heads[x] - sk.heads[chain[k]]) - up * np.dot(sk.heads[x] - sk.heads[chain[k]], up)
+            )
             best = max(sk.kids[chain[k]], key=flat)
-            if flat(best) > 0.01 * sk.size: after = [best]
+            if flat(best) > 0.01 * sk.size:
+                after = [best]
         if after:
-            flat = [np.linalg.norm((sk.heads[x] - sk.heads[chain[k]]) - up * np.dot(sk.heads[x] - sk.heads[chain[k]], up)) for x in after]
-            far = max(flat + [np.linalg.norm((sk.end(after[-1]) - sk.heads[chain[k]]) - up * np.dot(sk.end(after[-1]) - sk.heads[chain[k]], up))])
+            flat = [
+                np.linalg.norm((sk.heads[x] - sk.heads[chain[k]]) - up * np.dot(sk.heads[x] - sk.heads[chain[k]], up))
+                for x in after
+            ]
+            far = max(
+                flat
+                + [
+                    np.linalg.norm(
+                        (sk.end(after[-1]) - sk.heads[chain[k]])
+                        - up * np.dot(sk.end(after[-1]) - sk.heads[chain[k]], up)
+                    )
+                ]
+            )
             toes = next((x for x, f in zip(after, flat) if f >= 0.3 * far and f > 0.01 * sk.size), None)
         leg_rows.append((chain, i, j, k, toes, q))
     # The front: the toes and the mesh at the floor point forward, the thumbs and the eyes too.
     forward_axis = _unit(np.cross(up, normal))
     votes = 0.0
     for row in leg_rows:
-        if row is None: continue
+        if row is None:
+            continue
         chain, i, j, k, toes, q = row
         ankle = sk.heads[chain[k]]
-        if toes is not None: votes += 2 * np.dot(_unit(sk.heads[toes] - ankle), forward_axis)
-        elif sk.tails is not None: votes += np.dot(_unit(sk.end(chain[k]) - ankle), forward_axis)
+        if toes is not None:
+            votes += 2 * np.dot(_unit(sk.heads[toes] - ankle), forward_axis)
+        elif sk.tails is not None:
+            votes += np.dot(_unit(sk.end(chain[k]) - ankle), forward_axis)
     if points is not None and len(points):
         pts = np.asarray(points, dtype=np.float64)
         ph = pts @ up
@@ -498,117 +639,181 @@ def find(names, parents, heads, tails=None, weights=None, points=None):
             votes += 3 * np.clip(offset / (0.03 * max(height, 1e-6)), -1, 1)
     arm_rows = []
     for chain in arms["chains"]:
-        split = _limb_split(sk, chain, hint_roles, "UpperArm", "LowerArm", "Hand", 1.05,
-                            lateral=lambda bone: abs(np.dot(sk.heads[bone] - point, normal)) / height)
+        split = _limb_split(
+            sk,
+            chain,
+            hint_roles,
+            "UpperArm",
+            "LowerArm",
+            "Hand",
+            1.05,
+            lateral=lambda bone: abs(np.dot(sk.heads[bone] - point, normal)) / height,
+        )
         if split is None:
             notes.append(f"the arm chain from '{names[chain[0]]}' has no elbow: check the arm roles")
             arm_rows.append(None)
             continue
         arm_rows.append((chain, *split[0], split[1]))
     for row in arm_rows:
-        if row is None: continue
+        if row is None:
+            continue
         chain, i, j, k, q = row
-        other = arm_rows[1 - arm_rows.index(row)] if len(arm_rows) == 2 and all(r is not None for r in arm_rows) else None
+        other = (
+            arm_rows[1 - arm_rows.index(row)] if len(arm_rows) == 2 and all(r is not None for r in arm_rows) else None
+        )
         fingers, _ = _fingers(sk, chain[k], other[0][other[3]] if other else -1, (normal, point), hint_roles)
         thumb = next((f for f in fingers if f[0] == "Thumb"), None)
         rest = [sk.heads[f[1][0]] for f in fingers if f[0] != "Thumb"]
         if thumb is not None and rest:
-            votes += 1.5 * np.clip(np.dot(sk.heads[thumb[1][0]] - np.mean(rest, 0), forward_axis) / (0.01 * sk.size), -1, 1)
+            votes += 1.5 * np.clip(
+                np.dot(sk.heads[thumb[1][0]] - np.mean(rest, 0), forward_axis) / (0.01 * sk.size), -1, 1
+            )
     forward = forward_axis if votes >= 0 else -forward_axis
-    if abs(votes) < 0.5: notes.append("the front of the model is not clear (no toes, no feet in the mesh): check that the model looks toward -Y")
+    if abs(votes) < 0.5:
+        notes.append(
+            "the front of the model is not clear (no toes, no feet in the mesh): check that the model looks toward -Y"
+        )
     forward = _snap(forward)
     left = _unit(np.cross(up, forward))
     side_of = lambda bone: "left" if np.dot(sk.heads[bone] - point, left) > 0 else "right"
     mismatch, match = 0, 0
     for row in leg_rows:
-        if row is None: continue
+        if row is None:
+            continue
         chain, i, j, k, toes, q = row
         side = side_of(chain[i])
         hinted = hint_roles.get(chain[i], "")
-        if hinted.startswith(("left", "right")): match, mismatch = (match + 1, mismatch) if hinted.startswith(side) else (match, mismatch + 1)
+        if hinted.startswith(("left", "right")):
+            match, mismatch = (match + 1, mismatch) if hinted.startswith(side) else (match, mismatch + 1)
         base = structure * q
         put(side + "UpperLeg", chain[i], base)
         put(side + "LowerLeg", chain[j], base)
         put(side + "Foot", chain[k], base)
-        if toes is not None: put(side + "Toes", toes, base * 0.9)
+        if toes is not None:
+            put(side + "Toes", toes, base * 0.9)
     # Arms: shoulder (the joint before the upper arm), twist joints on the straight parts, the hand, the fingers.
     for row in arm_rows:
-        if row is None: continue
+        if row is None:
+            continue
         chain, i, j, k, q = row
         side = side_of(chain[i])
         hinted = hint_roles.get(chain[i], "")
-        if hinted.startswith(("left", "right")): match, mismatch = (match + 1, mismatch) if hinted.startswith(side) else (match, mismatch + 1)
+        if hinted.startswith(("left", "right")):
+            match, mismatch = (match + 1, mismatch) if hinted.startswith(side) else (match, mismatch + 1)
         base = structure * q
         if i > 0:
             shoulder = chain[i - 1]
-            if np.linalg.norm(sk.heads[shoulder] - sk.heads[chain[i]]) > 0.01 * sk.size or i == 1: put(side + "Shoulder", shoulder, base * 0.9)
-            elif i > 1: put(side + "Shoulder", chain[i - 2], base * 0.8)
+            if np.linalg.norm(sk.heads[shoulder] - sk.heads[chain[i]]) > 0.01 * sk.size or i == 1:
+                put(side + "Shoulder", shoulder, base * 0.9)
+            elif i > 1:
+                put(side + "Shoulder", chain[i - 2], base * 0.8)
         put(side + "UpperArm", chain[i], base)
         put(side + "LowerArm", chain[j], base)
         put(side + "Hand", chain[k], base)
+
         # A twist joint lies inside a straight part, away from its ends.
         def inside(x, a, b):
-            t = np.dot(sk.heads[x] - sk.heads[a], sk.heads[b] - sk.heads[a]) / max(np.dot(sk.heads[b] - sk.heads[a], sk.heads[b] - sk.heads[a]), 1e-12)
+            t = np.dot(sk.heads[x] - sk.heads[a], sk.heads[b] - sk.heads[a]) / max(
+                np.dot(sk.heads[b] - sk.heads[a], sk.heads[b] - sk.heads[a]), 1e-12
+            )
             return 0.1 < t < 0.9
 
         if j - i > 1 and sk.parents[chain[i + 1]] == chain[i] and inside(chain[i + 1], chain[i], chain[j]):
             put(side + "UpperArmTwist", chain[i + 1], base * 0.8)
-        twists = [x for x in chain[j + 1:k] if inside(x, chain[j], chain[k])]
-        if twists: put(side + "LowerArmTwist", twists[0], base * 0.8)
-        other = arm_rows[1 - arm_rows.index(row)] if len(arm_rows) == 2 and all(r is not None for r in arm_rows) else None
+        twists = [x for x in chain[j + 1 : k] if inside(x, chain[j], chain[k])]
+        if twists:
+            put(side + "LowerArmTwist", twists[0], base * 0.8)
+        other = (
+            arm_rows[1 - arm_rows.index(row)] if len(arm_rows) == 2 and all(r is not None for r in arm_rows) else None
+        )
         fingers, fq = _fingers(sk, chain[k], other[0][other[3]] if other else -1, (normal, point), hint_roles, forward)
         knuckles = [np.linalg.norm(sk.heads[f[1][0]] - sk.heads[chain[k]]) for f in fingers if f[0] != "Thumb"]
         for finger, joints in fingers:
-            for role, bone in _finger_roles(side, finger, joints, sk, float(np.median(knuckles)) if knuckles else 0.05 * sk.size).items():
+            for role, bone in _finger_roles(
+                side, finger, joints, sk, float(np.median(knuckles)) if knuckles else 0.05 * sk.size
+            ).items():
                 put(role, bone, base * 0.85 * fq)
     match, mismatch = 0, 0
     for bone in range(sk.count):
         offset = np.dot(sk.heads[bone] - point, left)
-        if not sk.relevant[bone] or abs(offset) < 0.02 * height: continue
+        if not sk.relevant[bone] or abs(offset) < 0.02 * height:
+            continue
         token = skeleton._split(names[bone])[0]
-        if token: match, mismatch = (match + 1, mismatch) if (token == "l") == (offset > 0) else (match, mismatch + 1)
+        if token:
+            match, mismatch = (match + 1, mismatch) if (token == "l") == (offset > 0) else (match, mismatch + 1)
     if mismatch >= 4 and mismatch > 3 * match:
         result["mirrored"] = True
-        notes.append("the bone names say left where the body is right: the model is mirrored (a Unity or left-handed export)")
+        notes.append(
+            "the bone names say left where the body is right: the model is mirrored (a Unity or left-handed export)"
+        )
     # Trunk: hips (where the legs meet), the spine up to where the arms meet, the neck, and the head.
     legs_at, arms_at = legs["lca"], arms["lca"]
     hips = legs_at
     if sk.above(legs_at, arms_at):
         parent = sk.parents[legs_at]
-        if parent >= 0 and abs(np.dot(sk.heads[parent] - sk.heads[legs_at], up)) < 0.15 * height and partner[parent] == parent:
+        if (
+            parent >= 0
+            and abs(np.dot(sk.heads[parent] - sk.heads[legs_at], up)) < 0.15 * height
+            and partner[parent] == parent
+        ):
             hips = parent
     put("hips", hips, structure)
     arm_roots = set(arms["roots"])
     upward, bone = [], arms_at
     while True:
         options = [c for c in sk.kids[bone] if partner[c] == c and c not in arm_roots]
-        if not options: break
+        if not options:
+            break
         best = max(options, key=lambda c: max(np.dot(sk.heads[x], up) for x in sk.subtree[c]))
-        if max(np.dot(sk.heads[x], up) for x in sk.subtree[best]) < np.dot(sk.heads[bone], up) + 0.01 * height: break
+        if max(np.dot(sk.heads[x], up) for x in sk.subtree[best]) < np.dot(sk.heads[bone], up) + 0.01 * height:
+            break
         upward.append(best)
         bone = best
-        risers = [c for c in sk.kids[best] if max(np.dot(sk.heads[x], up) for x in sk.subtree[c]) >= np.dot(sk.heads[best], up) + 0.01 * height
-                  or partner[c] != c]
-        if len(risers) >= 2: break
+        risers = [
+            c
+            for c in sk.kids[best]
+            if max(np.dot(sk.heads[x], up) for x in sk.subtree[c]) >= np.dot(sk.heads[best], up) + 0.01 * height
+            or partner[c] != c
+        ]
+        if len(risers) >= 2:
+            break
     head = upward[-1] if upward else -1
     hinted_head = next((b for b, r in hint_roles.items() if r == "head"), -1)
-    if hinted_head >= 0 and hinted_head in upward: head = hinted_head
-    neck_chain = upward[:upward.index(head)] if head in upward else []
+    if hinted_head >= 0 and hinted_head in upward:
+        head = hinted_head
+    neck_chain = upward[: upward.index(head)] if head in upward else []
     chest = arms_at
-    shoulder_height = min(np.dot(sk.heads[arm_rows[x][0][arm_rows[x][1]]], up) for x in range(len(arm_rows)) if arm_rows[x] is not None) \
-        if any(r is not None for r in arm_rows) else np.dot(sk.heads[arms_at], up)
-    if not neck_chain and head >= 0 and np.dot(sk.heads[arms_at], up) >= shoulder_height - 0.02 * height and sk.parents[arms_at] >= 0:
+    shoulder_height = (
+        min(
+            np.dot(sk.heads[arm_rows[x][0][arm_rows[x][1]]], up)
+            for x in range(len(arm_rows))
+            if arm_rows[x] is not None
+        )
+        if any(r is not None for r in arm_rows)
+        else np.dot(sk.heads[arms_at], up)
+    )
+    if (
+        not neck_chain
+        and head >= 0
+        and np.dot(sk.heads[arms_at], up) >= shoulder_height - 0.02 * height
+        and sk.parents[arms_at] >= 0
+    ):
         neck_chain, chest = [arms_at], sk.parents[arms_at]
     base = sk.lca(hips, chest)
     spine = sk.path_down(base, chest)
     spine = [b for b in spine if b != hips]
-    if head < 0: notes.append("no head was found above the arms: set the head role")
+    if head < 0:
+        notes.append("no head was found above the arms: set the head role")
     put("head", head, structure * (0.9 if head == hinted_head or hinted_head < 0 else 0.6))
-    if neck_chain: put("neck", neck_chain[0], structure * 0.9)
+    if neck_chain:
+        put("neck", neck_chain[0], structure * 0.9)
     if not spine:
         notes.append("no spine bone between the hips and the arms: set the spine role")
-    elif len(spine) == 1: put("spine", spine[0], structure)
-    elif len(spine) == 2: put("spine", spine[0], structure); put("chest", spine[1], structure)
+    elif len(spine) == 1:
+        put("spine", spine[0], structure)
+    elif len(spine) == 2:
+        put("spine", spine[0], structure)
+        put("chest", spine[1], structure)
     else:
         put("spine", spine[0], structure)
         put("chest", spine[len(spine) // 2] if len(spine) > 3 else spine[1], structure * 0.9)
@@ -617,30 +822,41 @@ def find(names, parents, heads, tails=None, weights=None, points=None):
     if head >= 0:
         best_eyes = None
         for a, b in roots:
-            if not (sk.above(head, a) and sk.above(head, b)): continue
-            if sk.reach(a) > 0.06 * height: continue
-            if np.dot(sk.heads[a] - sk.heads[head], up) < -0.02 * height: continue
+            if not (sk.above(head, a) and sk.above(head, b)):
+                continue
+            if sk.reach(a) > 0.06 * height:
+                continue
+            if np.dot(sk.heads[a] - sk.heads[head], up) < -0.02 * height:
+                continue
             hinted = hint_roles.get(a, "").endswith("Eye")
             front = np.dot(sk.heads[a] - sk.heads[head], forward) + (1 if hinted else 0)
             if hinted or "eye" in _normalized(names[a]) or "目" in names[a]:
-                if best_eyes is None or front > best_eyes[0]: best_eyes = (front, a, b)
+                if best_eyes is None or front > best_eyes[0]:
+                    best_eyes = (front, a, b)
         if best_eyes is not None:
-            for bone in best_eyes[1:]: put(side_of(bone) + "Eye", bone, 0.7)
+            for bone in best_eyes[1:]:
+                put(side_of(bone) + "Eye", bone, 0.7)
         jaw = next((b for b, r in hint_roles.items() if r == "jaw"), -1)
-        if jaw >= 0 and sk.above(head, jaw): put("jaw", jaw, 0.7)
+        if jaw >= 0 and sk.above(head, jaw):
+            put("jaw", jaw, 0.7)
     # The bone names check the result: a role whose name says another role gets a low confidence and a note.
     for role, bone in list(roles.items()):
         named = hint_map.get(role)
-        if named is None: continue
-        if named == names[bone]: confidence[role] = max(confidence[role], 0.9)
+        if named is None:
+            continue
+        if named == names[bone]:
+            confidence[role] = max(confidence[role], 0.9)
         elif named in index and role in skeleton.REQUIRED and not result["mirrored"]:
             confidence[role] = min(confidence[role], 0.5)
-            notes.append(f"{role}: the bone '{names[bone]}' has the place of this role, but the name of '{named}' says {role}: check it")
+            notes.append(
+                f"{role}: the bone '{names[bone]}' has the place of this role, but the name of '{named}' says {role}: check it"
+            )
     used = {}
     for role in sorted(roles, key=lambda r: -confidence[r]):
         if roles[role] in used:
             notes.append(f"'{names[roles[role]]}' was found for {used[roles[role]]} and {role}: check them")
-            del roles[role]; del confidence[role]
+            del roles[role]
+            del confidence[role]
         else:
             used[roles[role]] = role
     mesh_height = None
@@ -649,10 +865,22 @@ def find(names, parents, heads, tails=None, weights=None, points=None):
         mesh_height = float(ph.max() - ph.min())
         floor = float(ph.min())
     missing = [r for r in skeleton.REQUIRED if r not in roles]
-    if missing: notes.append(f"not found: {', '.join(missing)}")
-    result.update(roles=roles, confidence=confidence, found=not missing,
-                  frame={"up": up.tolist(), "forward": forward.tolist(), "left": left.tolist(), "floor": floor, "height": height,
-                         "mesh_height": mesh_height, "center": point.tolist()})
+    if missing:
+        notes.append(f"not found: {', '.join(missing)}")
+    result.update(
+        roles=roles,
+        confidence=confidence,
+        found=not missing,
+        frame={
+            "up": up.tolist(),
+            "forward": forward.tolist(),
+            "left": left.tolist(),
+            "floor": floor,
+            "height": height,
+            "mesh_height": mesh_height,
+            "center": point.tolist(),
+        },
+    )
     return result
 
 
@@ -666,7 +894,11 @@ def helper_followers(names, parents, heads, weights, mapping, taken=()):
     mapped = {index[b] for b in mapping.values() if b in index}
     rows = []
     for bone in range(len(names)):
-        if bone in mapped or names[bone] in taken or not weights[bone] > 0: continue
-        twins = [m for m in mapped if parents[m] == parents[bone] and np.linalg.norm(heads[m] - heads[bone]) < 0.01 * size]
-        if twins: rows.append({"bone": names[bone], "source": names[twins[0]], "weight": 1.0})
+        if bone in mapped or names[bone] in taken or not weights[bone] > 0:
+            continue
+        twins = [
+            m for m in mapped if parents[m] == parents[bone] and np.linalg.norm(heads[m] - heads[bone]) < 0.01 * size
+        ]
+        if twins:
+            rows.append({"bone": names[bone], "source": names[twins[0]], "weight": 1.0})
     return rows

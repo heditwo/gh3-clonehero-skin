@@ -22,14 +22,17 @@ def json_bytes(value):
 def sha256_file(path):
     digest = hashlib.sha256()
     with open(path, "rb") as stream:
-        for block in iter(lambda: stream.read(1 << 20), b""): digest.update(block)
+        for block in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(block)
     return digest.hexdigest()
 
 
 def file_list(folder, names):
     """The manifest 'files' object for package paths in a folder."""
     folder = Path(folder)
-    return {name: {"sha256": sha256_file(folder/name), "size": (folder/name).stat().st_size} for name in sorted(names)}
+    return {
+        name: {"sha256": sha256_file(folder / name), "size": (folder / name).stat().st_size} for name in sorted(names)
+    }
 
 
 def write_zip(folder, target):
@@ -46,7 +49,7 @@ def write_zip(folder, target):
             info.compress_type = decisions.zip_method(name)
             # ZipFile.open does not apply the archive level to a given ZipInfo (3.13 keeps _compresslevel as an alias).
             info._compresslevel = decisions.DEFLATE_LEVEL
-            info.file_size = (folder/name).stat().st_size
-            with open(folder/name, "rb") as source, archive.open(info, "w") as destination:
+            info.file_size = (folder / name).stat().st_size
+            with open(folder / name, "rb") as source, archive.open(info, "w") as destination:
                 shutil.copyfileobj(source, destination, 1 << 20)
     os.replace(temporary, target)
