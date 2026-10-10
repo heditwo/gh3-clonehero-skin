@@ -26,6 +26,7 @@ Prepare the mod for a public release to the Clone Hero community:
 | 9 | Package sizes | GLB and PNG files are stored without compression in the zips. Library audio stays WAV. Movies stay PNG frames. Library extension `.chlib`. |
 | 10 | Direction | Charts without direction get generated cues by default (an option turns them off). The Rock Band `VENUE` mapping choices in [CUSTOM-CONTENT.md](CUSTOM-CONTENT.md#rock-band-venue-track) are accepted. |
 | 11 | Upstream | No upstream report of the MelonLoader Dobby hook-page bug. |
+| 12 | Format versions | Before the first release, the format has no compatibility rules. Format 1.1 goes into 1.0, and new features (for example custom hair chains) change 1.0 directly. There are no `minModVersion` gates for our own packages. The format becomes frozen at the first release. |
 
 ## 3. Research summary
 
