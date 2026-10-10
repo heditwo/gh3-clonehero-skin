@@ -20,7 +20,7 @@ from pathlib import Path, PurePosixPath
 import numpy as np
 
 # Relative imports: the Blender add-on bundles this package (blender/build.py).
-from . import q48
+from . import q48, texture
 from .glb import Glb, GlbError, decompose, quaternion_angle
 from .schema import Schemas
 
@@ -32,8 +32,8 @@ MAX_CHAIN_JOINTS = 64
 CHAIN_JOINTS_WARNING = 32
 CHAIN_ALIGNMENT = 0.002
 EXTENSIONS = {".chstage": "chstage", ".chchar": "chchar", ".chinst": "chinst", ".chlib": "chlib"}
-STORED = {".glb", ".png", ".br", ".ogg", ".mp3", ".opus"}
-DEFLATED = {".json", ".wav"}
+STORED = {".png", ".br", ".ogg", ".mp3", ".opus"}
+DEFLATED = {".json", ".wav", ".glb", ".tex"}
 WINDOWS_RESERVED = re.compile(r"^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$", re.IGNORECASE)
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 PROFILE_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
@@ -46,7 +46,8 @@ LIBRARY_SCHEMAS = {"catalog": "catalog.schema.json", "band": "band.schema.json",
                    "hair": "hair.schema.json", "crowd": "crowd.schema.json", "handFire": "hand-fire.schema.json",
                    "audio": "audio.schema.json", "scripts": "scripts.schema.json", "songs": "songs.schema.json"}
 EFFECT_SCHEMAS = {"effects/particle-materials.json": "particle-materials.schema.json", "effects/tesla-material.json": "tesla-material.schema.json"}
-KNOWN_EXTENSIONS = {"KHR_materials_unlit"}
+KNOWN_EXTENSIONS = {"KHR_materials_unlit", texture.EXTENSION}
+EXPORT_AGAIN = "package format 1.0 stores textures pre-encoded (GH3TEX02, PACKAGE-FORMAT.md section 7): export the package again with the current CH Stage Tools add-on, or run the converter (python -m pipeline.package.build) again"
 # Texture references in gh3Toon (PACKAGE-FORMAT 6.5).
 TOON_TEXTURES = ("shadeTexture", "shadeMaskTexture", "sphereTexture")
 IGNORED_EXTENSIONS = {"KHR_lights_punctual", "KHR_materials_emissive_strength", "KHR_texture_transform", "KHR_materials_specular", "KHR_materials_ior"}
@@ -240,6 +241,8 @@ class Validator:
             if name.lower().endswith(".png") and name != manifest.get("preview"):
                 problem = png_problem(self.source.read(name))
                 if problem: self.report.error(name, problem)
+            elif name.lower().endswith(".tex"):
+                self.check_texture(name, "texture", self.source.read(name), None)
         if self.kind in ("chstage", "chchar", "chinst") and not any(r["id"] == LIBRARY_ID for r in manifest.get("requires", [])):
             self.report.warn("manifest.json", f"'requires' does not list the band library {LIBRARY_ID}")
         if any(name not in self.source.set for name in manifest["entry"].values()): return self.report
@@ -259,6 +262,18 @@ class Validator:
             if name not in self.source.set: self.report.error(name, "listed in manifest.json but missing"); continue
             if self.source.size(name) != entry["size"]: self.report.error(name, "size differs from manifest.json"); continue
             if hashlib.sha256(self.source.read(name)).hexdigest() != entry["sha256"]: self.report.error(name, "SHA-256 differs from manifest.json")
+
+    def check_texture(self, name, label, data, linear):
+        """GH3TEX02 rules (section 7). linear: True for the source of a glTF normal texture, False for other GLB images,
+        None for package files (the flag is not checked)."""
+        problems = texture.problems(data)
+        for problem in problems: self.report.error(name, f"{label}: {problem}")
+        if problems: return
+        fmt, _, _, _, flags = texture.read_header(data)
+        if linear is not None and bool(flags & texture.FLAG_LINEAR) != linear:
+            self.report.warn(name, f"{label}: " + ("a normal texture should have the linear flag" if linear else "a colour texture should not have the linear flag"))
+        if fmt == texture.BC3 and (texture.decode(data)[:, :, 3] == 255).all():
+            self.report.warn(name, f"{label}: BC3 texture without alpha; BC1 is half the size")
 
     def check_preview(self, name):
         if name not in self.source.set: self.report.error("manifest.json", f"preview file is missing: {name}"); return
@@ -288,21 +303,26 @@ class Validator:
         if glb is None: return None
         data = glb.json
         if data.get("asset", {}).get("version") != "2.0": self.report.error(name, "asset.version must be '2.0'")
-        if data.get("extensionsRequired"): self.report.error(name, f"required glTF extensions are not supported: {data['extensionsRequired']}")
+        unsupported = [e for e in data.get("extensionsRequired", []) if e != texture.EXTENSION]
+        if unsupported: self.report.error(name, f"required glTF extensions are not supported: {unsupported}")
         for extension in data.get("extensionsUsed", []):
             if extension not in KNOWN_EXTENSIONS: self.report.warn(name, f"glTF extension {extension} is ignored")
         buffers = glb.list("buffers")
         if len(buffers) > 1 or any("uri" in b for b in buffers) or (buffers and buffers[0].get("byteLength", 0) > len(glb.binary)):
             self.report.error(name, "a package GLB has one embedded buffer")
         image_names = set()
+        linear = texture.linear_images(data)
         for index, image in enumerate(glb.list("images")):
             if "bufferView" not in image or "uri" in image: self.report.error(name, f"image {index} must be embedded"); continue
-            if image.get("mimeType") != "image/png": self.report.error(name, f"image {index} must be PNG")
-            try:
-                problem = png_problem(glb.view(image["bufferView"]))
-            except GlbError as error:
-                self.report.error(name, f"image {index}: {error}"); continue
-            if problem: self.report.error(name, f"image {index}: {problem}")
+            if image.get("mimeType") == "image/png": self.report.error(name, f"image {index} is PNG; {EXPORT_AGAIN}")
+            elif image.get("mimeType") != texture.MIME_TYPE: self.report.error(name, f"image {index} must have the media type {texture.MIME_TYPE}")
+            else:
+                try:
+                    self.check_texture(name, f"image {index} ({image.get('name', '')})", glb.view(image["bufferView"]), index in linear)
+                except GlbError as error:
+                    self.report.error(name, f"image {index}: {error}"); continue
+                if texture.EXTENSION not in data.get("extensionsRequired", []):
+                    self.report.error(name, f"GLB images of the media type {texture.MIME_TYPE} need '{texture.EXTENSION}' in extensionsRequired")
             if "name" in image:
                 if image["name"] in image_names: self.report.error(name, f"image name '{image['name']}' is not unique")
                 image_names.add(image["name"])
@@ -338,6 +358,7 @@ class Validator:
                 elif isinstance(ref, str) and ref:
                     if ref.startswith("#"):
                         if ref[1:] not in image_names: self.report.error(name, f"{label}: no GLB image named '{ref[1:]}'")
+                    elif ref.lower().endswith(".png"): self.report.error(name, f"{label}: texture file {ref} is PNG; {EXPORT_AGAIN}")
                     elif ref not in self.source.set: self.report.error(name, f"{label}: texture file is missing: {ref}")
         allowed = SKINNED_ATTRIBUTES if skinned else STATIC_ATTRIBUTES
         for mesh_index, mesh in enumerate(glb.list("meshes")):

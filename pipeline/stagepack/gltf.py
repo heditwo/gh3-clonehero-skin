@@ -8,6 +8,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from pipeline.package import texture as package_texture
+
 REFLECTION = np.diag([1, 1, -1, 1])
 VERTEX = np.dtype([("position", "<f4", 3), ("normal", "<f4", 3), ("uv", "<f4", 2), ("color", "u1", 4)])
 STATIC_VERTEX = np.dtype(VERTEX.descr + [("lightmap", "<f4", 2), ("layer", "<f4", 2), ("mask", "<f4", 2),
@@ -248,7 +250,7 @@ class GlbReader:
             if cursor+length > len(data) or kind in chunks: raise ValueError("Invalid GLB chunks")
             chunks[kind] = data[cursor:cursor+length]; cursor += length
         self.data = json.loads(chunks[0x4e4f534a]); self.binary = chunks[0x004e4942]
-        if self.data.get("extensionsRequired"): raise ValueError("Bake required glTF extensions before stage import")
+        if set(self.data.get("extensionsRequired", [])) - {package_texture.EXTENSION}: raise ValueError("Bake required glTF extensions before stage import")
         buffers = self.data.get("buffers", [])
         if len(buffers) != 1 or "uri" in buffers[0] or buffers[0]["byteLength"] > len(self.binary):
             raise ValueError("Stage GLB must contain one embedded buffer")
@@ -289,6 +291,7 @@ class GlbReader:
     def image_at(self, index):
         row = self.data["images"][index]
         if "bufferView" not in row: raise ValueError("Stage textures must be embedded in the GLB")
+        if row.get("mimeType") == package_texture.MIME_TYPE: return Image.fromarray(package_texture.decode(self.view(row["bufferView"])), "RGBA")
         return Image.open(BytesIO(self.view(row["bufferView"]))).convert("RGBA")
 
     def nodes(self):

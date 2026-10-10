@@ -15,6 +15,7 @@ from PIL import Image
 
 from pipeline.gh3.formats import key
 from pipeline.gh3.mesh_cutout import alpha_region, trim_mesh
+from pipeline.package import texture as package_texture
 from pipeline.stagepack.actor import compile_actor
 from pipeline.stagepack.gltf import SHADING, STATIC_VERTEX, GlbReader, matrix_quaternion
 
@@ -232,10 +233,12 @@ def texture_reference(glb, reference, texture_dir, images):
             if name not in images:
                 images[name] = glb.image_at(image); images[name].save(texture_dir/(name+".png"))
             return name
-    elif isinstance(reference, str) and reference.lower().endswith(".png"):
+    elif isinstance(reference, str) and reference.lower().endswith((".png", ".tex")):
         name = f"{key('file-'+reference):08x}"
         if name not in images:
-            images[name] = Image.open(relative(glb.root, reference)).convert("RGBA"); images[name].save(texture_dir/(name+".png"))
+            path = relative(glb.root, reference)
+            images[name] = Image.fromarray(package_texture.decode(path.read_bytes()), "RGBA") if reference.lower().endswith(".tex") else Image.open(path).convert("RGBA")
+            images[name].save(texture_dir/(name+".png"))
         return name
     else: raise ValueError("Invalid material texture reference")
     name = f"{key('texture-'+str(index)):08x}"

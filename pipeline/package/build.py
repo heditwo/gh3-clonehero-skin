@@ -6,6 +6,9 @@ Each package is written two times: as an unpacked development folder (`<output>/
 Usage: python -m pipeline.package.build [--packs DIR] [--library DIR] [--character-library DIR] [--events DIR]
                                         [--characters DIR] [--instruments DIR] [--output DIR] [--venue ID ...] [--no-venues]
                                         [--no-library] [--no-character-library] [--no-characters] [--no-instruments] [--jobs N]
+
+The GLB images become pre-encoded GH3TEX02 textures (BC1, BC3, or RGBA32 with mipmaps, pipeline/package/texture.py). The
+encoder keeps its results in <output>/.texture-cache, so a second run encodes only changed images.
 """
 
 import argparse
@@ -15,11 +18,13 @@ import json
 import os
 import shutil
 from concurrent.futures import ProcessPoolExecutor
+from io import BytesIO
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 
-from pipeline.package import decisions, q48, runtime
+from pipeline.package import decisions, q48, runtime, texture
 from pipeline.package.container import file_list, json_bytes, write_zip
 from pipeline.package.glb import Glb
 from pipeline.paths import CHARACTER_LIBRARY, CHARACTERS, INSTRUMENTS, LIBRARY, PACKAGES, STAGE_PACKS, STAGES
@@ -31,6 +36,8 @@ BROTLI_QUALITY = 11
 BROTLI_WINDOW = 24
 # Increment when the clip encoder output changes, so that the clip cache is not reused.
 CLIP_ENCODER = "q48-1"
+# Increment when the texture encoder output changes, so that the texture cache is not reused.
+TEXTURE_ENCODER = "gh3tex02-1"
 PLACEMENT_FIELDS = ("band", "waypoints", "effects", "crowd")
 LIBRARY_ENTRY = {"catalog": "catalog.json", "band": "band/band.json", "performance": "direction/performance.json",
                  "hair": "band/hair.json", "crowd": "crowd/crowd.json", "handFire": "hand-fire/hand-fire.json",
@@ -92,6 +99,40 @@ def texture_index_references(glb_bytes):
     return found
 
 
+def encode_texture(job):
+    """GH3TEX02 bytes of one PNG image; reuse the cache entry of the same PNG bytes."""
+    png, linear, cache = job
+    cached = Path(cache)/f"{hashlib.sha256(png + f'{TEXTURE_ENCODER} {int(linear)}'.encode()).hexdigest()}.tex"
+    if cached.is_file(): return cached.read_bytes()
+    data = texture.encode(np.asarray(Image.open(BytesIO(png)).convert("RGBA")), linear)
+    cached.parent.mkdir(parents=True, exist_ok=True)
+    temporary = cached.with_name(cached.name + f".{os.getpid()}.tmp")
+    temporary.write_bytes(data); os.replace(temporary, cached)
+    return data
+
+
+class TextureEncoder:
+    """Encodes the PNG images of package GLBs in worker processes (pipeline/package/texture.py)."""
+
+    def __init__(self, cache, jobs=2):
+        self.cache, self.jobs, self.pool = str(cache), max(1, jobs), None
+        self.count = 0
+
+    def __call__(self, items):
+        self.count += len(items)
+        jobs = [(png, linear, self.cache) for png, linear in items]
+        if self.jobs == 1 or len(jobs) == 1: return [encode_texture(job) for job in jobs]
+        if self.pool is None: self.pool = ProcessPoolExecutor(max_workers=self.jobs)
+        return list(self.pool.map(encode_texture, jobs))
+
+    def glb(self, data):
+        return texture.encode_glb(data, self)
+
+    def close(self):
+        if self.pool is not None: self.pool.shutdown()
+        self.pool = None
+
+
 # Venues.
 def venue_manifest(stage, entry):
     gh3 = stage["id"].startswith("gh3.")
@@ -105,8 +146,9 @@ def venue_manifest(stage, entry):
     return manifest
 
 
-def build_venue(source, output):
+def build_venue(source, output, textures=None):
     source = Path(source)
+    textures = textures or TextureEncoder(Path(output)/".texture-cache", 1)
     stage = json.loads((source/"stage-pack.json").read_text())
     name = stage["id"] + ".chstage"
     writer = PackageWriter(output/"unpacked"/("." + name + ".tmp"))
@@ -115,7 +157,7 @@ def build_venue(source, output):
     for model in models:
         data = (source/model).read_bytes()
         if texture_index_references(data): raise ValueError(f"{source/model} uses glTF texture indices in extras; export the source pack again")
-        writer.add_bytes(model, data)
+        writer.add_bytes(model, textures.glb(data))
     writer.add_file(stage["cameras"], source/stage["cameras"])
     for key in ("lighting", "scripts"):
         if key in stage:
@@ -189,10 +231,11 @@ def library_manifest(entry):
             "credits": [decisions.CONVERTER_CREDIT], "entry": entry}
 
 
-def build_library(library, events, output, jobs=2):
+def build_library(library, events, output, jobs=2, textures=None):
     if decisions.AUDIO_FORMAT != "wav" or decisions.MOVIE_FORMAT != "png-frames":
         raise ValueError("Only WAV audio and PNG movie frames are implemented")
     library = Path(library)
+    textures = textures or TextureEncoder(Path(output)/".texture-cache", jobs)
     name = "gh3-band-v1" + decisions.LIBRARY_EXTENSION
     writer = PackageWriter(output/"unpacked"/("." + name + ".tmp"))
     for path in ("catalog.json", "band/band.json", "band/hair.json", "direction/performance.json", "crowd/crowd.json", "hand-fire/hand-fire.json"):
@@ -221,16 +264,16 @@ def build_library(library, events, output, jobs=2):
     performance = json.loads((library/"direction/performance.json").read_text())
     for member in json.loads((library/"band/band.json").read_text())["members"]:
         role = member["role"]
-        writer.add_bytes(f"band/{role}/model.glb", skinned_model(library/"band"/role, performance["members"][role]["bones"], member["clips"], name=member["model"]))
+        writer.add_bytes(f"band/{role}/model.glb", textures.glb(skinned_model(library/"band"/role, performance["members"][role]["bones"], member["clips"], name=member["model"])))
     crowd = json.loads((library/"crowd/crowd.json").read_text())
     crowd_rig = None
     for model in crowd["models"]:
         rig = runtime.read_animation((library/"crowd"/model/"animation.bin").read_bytes())
         if crowd_rig is None: crowd_rig = rig
         elif rig[0] != crowd_rig[0] or not np.array_equal(rig[1], crowd_rig[1]): raise ValueError("Crowd models use different rigs")
-        writer.add_bytes(f"crowd/{model}/model.glb", skinned_model(library/"crowd"/model, crowd["bones"], crowd["clips"][model], rig, name=model))
+        writer.add_bytes(f"crowd/{model}/model.glb", textures.glb(skinned_model(library/"crowd"/model, crowd["bones"], crowd["clips"][model], rig, name=model)))
     for hand in crowd["hands"]:
-        writer.add_bytes(f"crowd/hands/{hand}/model.glb", skinned_model(library/"crowd/hands"/hand, crowd["bones"], (), (crowd_rig[0], crowd_rig[1], []), name=hand))
+        writer.add_bytes(f"crowd/hands/{hand}/model.glb", textures.glb(skinned_model(library/"crowd/hands"/hand, crowd["bones"], (), (crowd_rig[0], crowd_rig[1], []), name=hand)))
 
     jobs_list = []
     for role, member in performance["members"].items():
@@ -310,13 +353,14 @@ def character_highway(info, instruments):
     return Path(instruments)/row["file"] if row else None
 
 
-def build_character(folder, library, output, character_library=CHARACTER_LIBRARY, instruments=INSTRUMENTS):
+def build_character(folder, library, output, character_library=CHARACTER_LIBRARY, instruments=INSTRUMENTS, textures=None):
     folder, library, character_library = Path(folder), Path(library), Path(character_library)
+    textures = textures or TextureEncoder(Path(output)/".texture-cache", 1)
     info = json.loads((folder/"character.json").read_text())
     library_id = profile_rig(info["profile"], library, character_library)[0]
     name = info["id"] + ".chchar"
     writer = PackageWriter(output/"unpacked"/("." + name + ".tmp"))
-    writer.add_bytes("character.glb", character_glb(folder, library, info["profile"], character_library))
+    writer.add_bytes("character.glb", textures.glb(character_glb(folder, library, info["profile"], character_library)))
     character = {"version": 1, "library": library_id, "profile": info["profile"]}
     highway = character_highway(info, instruments)
     if highway is not None:
@@ -351,12 +395,13 @@ def instrument_glb(folder, library, profile):
     return skinned_model(folder, bones, (), (parents, bind, []), name="instrument")
 
 
-def build_instrument(folder, library, output):
+def build_instrument(folder, library, output, textures=None):
     folder, library = Path(folder), Path(library)
+    textures = textures or TextureEncoder(Path(output)/".texture-cache", 1)
     info = json.loads((folder/"instrument.json").read_text())
     name = info["id"] + ".chinst"
     writer = PackageWriter(output/"unpacked"/("." + name + ".tmp"))
-    writer.add_bytes("instrument.glb", instrument_glb(folder, library, info["profile"]))
+    writer.add_bytes("instrument.glb", textures.glb(instrument_glb(folder, library, info["profile"])))
     instrument = {"version": 1, "library": "gh3-band-v1", "profile": info["profile"], "kind": info["kind"]}
     for field in ("brand", "model", "series", "finish"):
         if info[field]: instrument[field] = info[field]
@@ -402,18 +447,19 @@ def main(argv=None):
     parser.add_argument("--no-character-library", action="store_true")
     parser.add_argument("--no-characters", action="store_true")
     parser.add_argument("--no-instruments", action="store_true")
-    parser.add_argument("--jobs", type=int, default=2, help="Clip encoder processes (each uses about 0.1 GB)")
+    parser.add_argument("--jobs", type=int, default=2, help="Clip and texture encoder processes (each uses about 0.1 GB, 0.3 GB for a 4096 x 4096 texture)")
     args = parser.parse_args(argv)
     (args.output/"unpacked").mkdir(parents=True, exist_ok=True)
     report = {"venues": {}, "library": None, "characterLibrary": None, "characters": {}, "instruments": {}}
+    textures = TextureEncoder(args.output/".texture-cache", args.jobs)
     if not args.no_venues:
         for source in sorted(p.parent for p in args.packs.glob("*/stage-pack.json")):
             if args.venue and source.name not in args.venue: continue
-            folder, archive = build_venue(source, args.output)
+            folder, archive = build_venue(source, args.output, textures)
             report["venues"][source.name] = {"folder": tree_size(folder), "zip": archive.stat().st_size}
             print(f"{archive}: folder {tree_size(folder):,} bytes, zip {archive.stat().st_size:,} bytes")
     if not args.no_library:
-        (folder, archive), clips = build_library(args.library, args.events, args.output, args.jobs)
+        (folder, archive), clips = build_library(args.library, args.events, args.output, args.jobs, textures)
         report["library"] = {"folder": tree_size(folder), "zip": archive.stat().st_size, "parts": part_sizes(folder),
                              "clips": {"count": len(clips), "sourceBytes": sum(a for a, _ in clips), "packageBytes": sum(b for _, b in clips)}}
         print(f"{archive}: folder {tree_size(folder):,} bytes, zip {archive.stat().st_size:,} bytes")
@@ -424,16 +470,17 @@ def main(argv=None):
         print(f"{archive}: folder {tree_size(folder):,} bytes, zip {archive.stat().st_size:,} bytes")
     if not args.no_characters:
         for source in sorted(p.parent for p in args.characters.glob("*/character.json")):
-            folder, archive = build_character(source, args.library, args.output, args.character_library, args.instruments)
+            folder, archive = build_character(source, args.library, args.output, args.character_library, args.instruments, textures)
             report["characters"][source.name] = {"folder": tree_size(folder), "zip": archive.stat().st_size}
         total = sum(row["zip"] for row in report["characters"].values())
         print(f"{len(report['characters'])} characters: zip {total:,} bytes")
     if not args.no_instruments:
         for source in sorted(p.parent for p in args.instruments.glob("*/instrument.json")):
-            folder, archive = build_instrument(source, args.library, args.output)
+            folder, archive = build_instrument(source, args.library, args.output, textures)
             report["instruments"][source.name] = {"folder": tree_size(folder), "zip": archive.stat().st_size}
         total = sum(row["zip"] for row in report["instruments"].values())
         print(f"{len(report['instruments'])} instruments: zip {total:,} bytes")
+    textures.close()
     (args.output/"build-report.json").write_bytes(json_bytes(report))
 
 

@@ -7,9 +7,12 @@ the `packages` step of scripts/regenerate.sh again.
 import zipfile
 from pathlib import Path
 
-# O1: zip method for each file suffix. The plan stores GLB and images (section 4.1); DEFLATE for the rest.
-STORED_SUFFIXES = {".glb", ".png", ".br", ".ogg", ".mp3"}
-DEFLATE_LEVEL = 9
+# O1: zip method for each file suffix. STORE for files that are compressed already; DEFLATE for the rest, also GLB and the
+# pre-encoded textures (2026-10-10, PACKAGE-FORMAT.md section 2.3: the 193 GH3 packages are 1,133 MB instead of 1,906 MB;
+# the importer inflates them in about 1 s more for all packages).
+STORED_SUFFIXES = {".png", ".br", ".ogg", ".mp3"}
+# Level 6: 3 times faster than 9 for the pre-encoded textures, 0.1-0.7 % larger.
+DEFLATE_LEVEL = 6
 
 
 def zip_method(path):

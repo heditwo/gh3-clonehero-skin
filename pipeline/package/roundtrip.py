@@ -1,6 +1,8 @@
 """Round-trip check: convert packages back to the runtime inputs that the mod reads today and compare them.
 
 - Venue: package -> source pack (stage-pack.json, GLBs, sidecars) -> `compile_stage` -> compare with the compiled pack.
+- Textures: the packages hold GH3TEX02 textures (pipeline/package/texture.py). A texture is equal when the package
+  texture is the encoder output of the PNG image of the compiled pack (compared as decoded pixels for venues).
 - Library: package -> GH3BND02, GH3ANM01, stage.json, and textures of each model; GH3CLP01 clips; gzip PCM; GH3VID01
   movies; library JSON files -> compare with the current library folder. Clips must stay within the q48 error bound.
 
@@ -19,8 +21,10 @@ from pathlib import Path
 
 import numpy as np
 
-from pipeline.package import q48, runtime
-from pipeline.package.build import EFFECT_FILES, EVENTS, OUTPUT, json_bytes
+from PIL import Image
+
+from pipeline.package import q48, runtime, texture
+from pipeline.package.build import EFFECT_FILES, EVENTS, OUTPUT, encode_texture, json_bytes
 from pipeline.package.glb import COLUMNS, COMPONENTS, Glb
 from pipeline.package.validate import Report, Source
 from pipeline.paths import LIBRARY, STAGES
@@ -42,15 +46,35 @@ def open_package(path):
     return source
 
 
+# The converter's texture cache (main() uses the one of --packages).
+TEXTURE_CACHE = [OUTPUT/".texture-cache"]
+
+
+def encoded(png):
+    """GH3TEX02 bytes of a PNG image (the converter's encoder and texture cache)."""
+    return encode_texture((png, False, str(TEXTURE_CACHE[0])))
+
+
+def without_hashes(pack):
+    """pack.json without the hashes of its sources and files: the package GLBs and the textures that they give are
+    other bytes than the source pack's (GH3TEX02 images)."""
+    return {**pack, "sources": sorted(pack.get("sources", {})), "files": sorted(pack.get("files", {}))}
+
+
 def compare_trees(actual, expected):
-    """Differences between two compiled stage folders: missing or extra files, JSON or byte differences."""
+    """Differences between two compiled stage folders: missing or extra files, JSON or byte differences. A texture PNG
+    from a package is equal when its pixels are the decoded encoder output of the expected PNG."""
     a = {p.relative_to(actual).as_posix() for p in Path(actual).rglob("*") if p.is_file()}
     e = {p.relative_to(expected).as_posix() for p in Path(expected).rglob("*") if p.is_file()}
-    result = {"files": len(e), "byteEqual": 0, "jsonEqual": 0, "missing": sorted(e - a), "extra": sorted(a - e), "different": []}
+    result = {"files": len(e), "byteEqual": 0, "jsonEqual": 0, "packJsonEqual": 0, "textureEncoderEqual": 0, "missing": sorted(e - a), "extra": sorted(a - e), "different": []}
     for name in sorted(a & e):
         left, right = (Path(actual)/name).read_bytes(), (Path(expected)/name).read_bytes()
         if left == right: result["byteEqual"] += 1
         elif name.endswith(".json") and json.loads(left) == json.loads(right): result["jsonEqual"] += 1
+        elif Path(name).name == "pack.json" and without_hashes(json.loads(left)) == without_hashes(json.loads(right)): result["packJsonEqual"] += 1
+        elif "/textures/" in "/" + name and name.endswith(".png") and \
+                np.array_equal(np.asarray(Image.open(BytesIO(left)).convert("RGBA")), texture.decode(encoded(right))):
+            result["textureEncoderEqual"] += 1
         else: result["different"].append(name)
     return result
 
@@ -111,7 +135,7 @@ def runtime_material(glb, material):
 
 
 def model_runtime(data):
-    """Runtime files of one library model GLB: meshes.bin bytes, rig and clips, stage.json materials, PNG images."""
+    """Runtime files of one library model GLB: meshes.bin bytes, rig and clips, stage.json materials, GH3TEX02 images."""
     glb = Glb(data)
     nodes = glb.list("nodes")
     joints = glb.list("skins")[0]["joints"]
@@ -181,7 +205,7 @@ def check_model(data, folder, clip_names, animated=True):
         if material.get("color") == [1, 1, 1, 1]: del material["color"]
     expected_meshes = (folder/"meshes.bin").read_bytes()
     result = {"meshesBinByteEqual": rebuilt["meshes"] == expected_meshes, "stageJsonEqual": rebuilt["stage"] == expected_stage,
-              "texturesByteEqual": all(data == (folder/"textures"/f"{n}.png").read_bytes() for n, data in rebuilt["textures"].items()),
+              "texturesByteEqual": all(data == encoded((folder/"textures"/f"{n}.png").read_bytes()) for n, data in rebuilt["textures"].items()),
               "textures": len(rebuilt["textures"]), "unreferencedTextures": len(list((folder/"textures").glob("*.png"))) - len(rebuilt["textures"])}
     if not result["meshesBinByteEqual"]: result["meshDifference"] = mesh_difference(rebuilt["meshes"], expected_meshes)
     if animated:
@@ -313,13 +337,15 @@ def main(argv=None):
     parser.add_argument("--no-library", action="store_true")
     parser.add_argument("--json", type=Path)
     args = parser.parse_args(argv)
+    TEXTURE_CACHE[0] = args.packages/".texture-cache"
     report = {"venues": {}, "library": None}
     if not args.no_venues:
         for package in sorted(args.packages.glob("*.chstage")):
             identifier = package.name.removesuffix(".chstage")
             if args.venue and identifier not in args.venue: continue
             report["venues"][identifier] = row = venue_round_trip(package, args.stages/identifier)
-            print(f"{identifier}: {'equal' if row['ok'] else 'DIFFERENT'} ({row['byteEqual']} byte-equal, {row['jsonEqual']} JSON-equal of {row['files']}; "
+            print(f"{identifier}: {'equal' if row['ok'] else 'DIFFERENT'} ({row['byteEqual']} byte-equal, {row['jsonEqual']} JSON-equal, {row['packJsonEqual']} pack.json equal without hashes, "
+                  f"{row['textureEncoderEqual']} textures equal to the encoder output, of {row['files']}; "
                   f"different {row['different']}, missing {row['missing']}, extra {row['extra']})")
     if not args.no_library:
         package = next(args.packages.glob("gh3-band-v1.ch*"))

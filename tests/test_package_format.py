@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from pipeline.package import q48
+from pipeline.package import decisions, q48, texture
 from pipeline.package.schema import SCHEMA_DIR, Schemas
 from pipeline.package.validate import Validator, validate
 
@@ -19,6 +19,13 @@ def png(width=1, height=1):
     rows = b"".join(b"\0" + b"\xff\xff\xff\xff" * width for _ in range(height))
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)) + \
         chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
+
+
+def tex(width=4, height=4, alpha=False):
+    rgba = np.full((height, width, 4), 255, dtype=np.uint8)
+    rgba[..., 0] = np.arange(width) * 40
+    if alpha: rgba[..., 3] = 128
+    return texture.encode(rgba)
 
 
 class GlbBuilder:
@@ -38,9 +45,10 @@ class GlbBuilder:
         self.json["accessors"].append({"bufferView": self.view(values.tobytes()), "componentType": component, "count": len(values), "type": kind})
         return len(self.json["accessors"]) - 1
 
-    def image(self, name):
-        self.json["images"].append({"bufferView": self.view(png()), "mimeType": "image/png", "name": name})
+    def image(self, name, data=None, mime=texture.MIME_TYPE):
+        self.json["images"].append({"bufferView": self.view(tex() if data is None else data), "mimeType": mime, "name": name})
         self.json["textures"].append({"source": len(self.json["images"]) - 1})
+        if mime == texture.MIME_TYPE: self.json["extensionsUsed"] = self.json["extensionsRequired"] = [texture.EXTENSION]
 
     def triangle(self, material=None, skinned=False):
         attributes = {"POSITION": self.accessor([[0, 0, 0], [1, 0, 0], [0, 1, 0]], "VEC3"),
@@ -159,7 +167,7 @@ def manifest(contents, kind="chstage", entry=None, **changes):
 def write_zip(path, files, compress=None):
     with zipfile.ZipFile(path, "w") as archive:
         for name, data in files.items():
-            method = compress or (zipfile.ZIP_DEFLATED if name.endswith(".json") else zipfile.ZIP_STORED)
+            method = decisions.zip_method(name) if compress is None else compress
             archive.writestr(zipfile.ZipInfo(name, (2026, 1, 1, 0, 0, 0)), data, compress_type=method)
     return path
 
@@ -246,14 +254,43 @@ class StagePackageTests(unittest.TestCase):
         path = write_zip(self.folder / "d.chstage", {"manifest.json": manifest(files), **files}, compress=zipfile.ZIP_DEFLATED)
         report = validate(path)
         self.assertEqual(report.errors, [])
-        self.assertTrue(any("use STORE" in w for w in report.warnings))
+        self.assertTrue(any(w.startswith("preview.png") and "use STORE" in w for w in report.warnings))
+        files["stage.glb"] += b" " * 2048
+        path = write_zip(self.folder / "s.chstage", {"manifest.json": manifest(files), **files}, compress=zipfile.ZIP_STORED)
+        self.assertTrue(any(w.startswith("stage.glb") and "use DEFLATE" in w for w in validate(path).warnings))
 
     def test_texture_references(self):
         self.assertTrue(any("not glTF indices" in e for e in errors_of(package(self.folder, stage_files(**{"stage.glb": stage_glb(texture=0)})))))
         self.assertTrue(any("no GLB image named" in e for e in errors_of(package(self.folder, stage_files(**{"stage.glb": stage_glb(texture="#other")})))))
-        self.assertTrue(any("texture file is missing" in e for e in errors_of(package(self.folder, stage_files(**{"stage.glb": stage_glb(texture="textures/a.png")})))))
-        files = stage_files(**{"stage.glb": stage_glb(texture="textures/a.png"), "textures/a.png": png()})
+        self.assertTrue(any("texture file is missing" in e for e in errors_of(package(self.folder, stage_files(**{"stage.glb": stage_glb(texture="textures/a.tex")})))))
+        files = stage_files(**{"stage.glb": stage_glb(texture="textures/a.tex"), "textures/a.tex": tex()})
         self.assertEqual(errors_of(package(self.folder, files)), [])
+        files = stage_files(**{"stage.glb": stage_glb(texture="textures/a.png"), "textures/a.png": png()})
+        self.assertTrue(any("is PNG; package format 1.0 stores textures pre-encoded" in e for e in errors_of(package(self.folder, files))))
+
+    def test_pre_encoded_textures(self):
+        def stage_with(data, mime=texture.MIME_TYPE, required=True):
+            glb = GlbBuilder()
+            glb.image("lightmap", data, mime)
+            if not required: glb.json.pop("extensionsRequired")
+            glb.json["materials"].append({"name": "m", "extras": {"gh3MaskTexture": "#lightmap"}})
+            glb.node({"name": "n", "mesh": glb.triangle(0)})
+            return package(self.folder, stage_files(**{"stage.glb": glb.bytes()}))
+        self.assertEqual(errors_of(stage_with(tex())), [])
+        self.assertTrue(any("image 0 is PNG" in e for e in errors_of(stage_with(png(), "image/png"))))
+        self.assertTrue(any("extensionsRequired" in e for e in errors_of(stage_with(tex(), required=False))))
+        self.assertTrue(any("bytes, its header gives" in e for e in errors_of(stage_with(tex()[:-1]))))
+        bad = bytearray(tex(8, 4)); bad[12:16] = struct.pack("<i", 6)
+        self.assertTrue(any("multiples of 4" in e or "mip levels" in e for e in errors_of(stage_with(bytes(bad)))))
+        # A BC1 block with color0 <= color1 and index 3 has transparent pixels: alpha needs BC3.
+        punch = bytearray(tex()); punch[28:36] = bytes([0, 0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
+        self.assertTrue(any("must use BC3" in e for e in errors_of(stage_with(bytes(punch)))))
+        report = validate(stage_with(tex(alpha=True)))
+        self.assertEqual(report.errors, [])
+        rgba = np.full((4, 4, 4), 200, dtype=np.uint8)
+        bc3 = bytearray(texture.encode(np.concatenate([rgba[..., :3], np.full((4, 4, 1), 254, np.uint8)], -1)))
+        bc3[28] = bc3[29] = 255
+        self.assertTrue(any("BC3 texture without alpha" in w for w in validate(stage_with(bytes(bc3))).warnings))
 
     def test_reserved_extras(self):
         glb = GlbBuilder()

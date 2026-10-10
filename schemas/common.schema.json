@@ -78,10 +78,10 @@
       "pattern": "^crowd[1-8]$"
     },
     "textureRef": {
-      "description": "Empty (no texture), '#' and the name of an image in the same GLB, or the package path of a PNG file.",
+      "description": "Empty (no texture), '#' and the name of an image in the same GLB, or the package path of a pre-encoded texture (GH3TEX02, .tex).",
       "type": "string",
       "maxLength": 257,
-      "pattern": "^(|#.{1,256}|[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*\\.png)$"
+      "pattern": "^(|#.{1,256}|[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*\\.tex)$"
     }
   }
 }

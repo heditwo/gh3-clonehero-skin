@@ -4,7 +4,8 @@ The GLB must be skinned to a fixed GH3 rig profile (the guitarist or the bassist
 export of the guitarist template. With --split, only the mesh parts that follow the instrument joints stay (the rule of
 the game, BandAttachments): a creator can export the whole template with the body and keep only the guitar.
 
-numpy only and relative imports, so the Blender add-on can bundle it (blender/build.py).
+numpy only and relative imports, so the Blender add-on can bundle it (blender/build.py). PNG images of the GLB become
+pre-encoded textures (section 7); that step needs Pillow.
 
 Usage: python -m pipeline.package.instrument GLB --id ID --name NAME --kind guitar|bass --output DIR
            [--profile PROFILE] [--highway PNG] [--preview PNG] [--author NAME] [--license SPDX] [--split]
@@ -15,7 +16,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import container, decisions
+from . import container, decisions, texture
 from .character import Rig, keep_primitives, primitive_kinds
 from .glb import Glb
 from .validate import LIBRARY_ID, validate
@@ -48,6 +49,7 @@ def write(glb, output, package_id, name, kind, profile=None, highway=None, previ
     """Write <output>/<id>.chinst (zip) and <output>/unpacked/<id>.chinst (folder). Returns the zip path."""
     data = Path(glb).read_bytes()
     if split: data = only_instrument(data)
+    data = texture.encode_glb(data, texture.encode_pngs)
     files = {MODEL_FILE: data, INSTRUMENT_FILE: container.json_bytes(instrument_json(kind, profile, highway is not None, **(labels or {})))}
     if highway is not None: files[HIGHWAY_FILE] = Path(highway).read_bytes()
     if preview is not None: files[PREVIEW_FILE] = Path(preview).read_bytes()

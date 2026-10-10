@@ -7,7 +7,7 @@ This check compares each cache folder with the files that the Python compiler wr
 
 - JSON: equal, numbers within 1e-6 (relative) or 1e-9. pack.json `sources`, `files`, and `package` are not compared.
 - meshes.bin, animation.bin: byte-equal, or the largest float difference (venue limit 1e-5 m; library UV 6e-8).
-- Textures: the cache `.tex` (RGBA32, BC1, or BC3 with mips) is decoded and compared with the PNG: exact for RGBA32, the
+- Textures: the cache `.tex` (GH3TEX02: RGBA32, BC1, or BC3 with mips) is decoded and compared with the PNG: exact for RGBA32, the
   error is reported for BC1 and BC3 (maximum and PSNR of mip 0).
 - Audio: `<sample>.pcm` against the decompressed `<sample>.pcm.gz`. Clips: `.q48.br` against the package bytes.
 
@@ -26,7 +26,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from pipeline.package import runtime
+from pipeline.package import runtime, texture
 from pipeline.package.build import EVENTS, OUTPUT, json_bytes
 from pipeline.package.roundtrip import UNREAD_MATERIAL_FIELDS
 from pipeline.paths import LIBRARY, STAGES
@@ -53,58 +53,18 @@ def close(a, b, path="", out=None):
     return out
 
 
-def decode_bc(data, width, height, alpha):
-    """Decode BC1 or BC3 blocks to an RGBA array (rows in storage order)."""
-    bx, by = max(1, (width + 3) // 4), max(1, (height + 3) // 4)
-    size = 16 if alpha else 8
-    blocks = np.frombuffer(data, np.uint8).reshape(by * bx, size)
-    colour = blocks[:, 8:] if alpha else blocks
-    c0 = colour[:, 0].astype(np.int32) | colour[:, 1].astype(np.int32) << 8
-    c1 = colour[:, 2].astype(np.int32) | colour[:, 3].astype(np.int32) << 8
-
-    def expand(c):
-        r, g, b = c >> 11 & 31, c >> 5 & 63, c & 31
-        return np.stack([r << 3 | r >> 2, g << 2 | g >> 4, b << 3 | b >> 2], -1)
-
-    e0, e1 = expand(c0), expand(c1)
-    four = (c0 > c1) | alpha
-    p2 = np.where(four[:, None], (2 * e0 + e1) // 3, (e0 + e1) // 2)
-    p3 = np.where(four[:, None], (e0 + 2 * e1) // 3, 0)
-    palette = np.stack([e0, e1, p2, p3], 1)
-    bits = colour[:, 4:8].astype(np.uint32)
-    word = bits[:, 0] | bits[:, 1] << 8 | bits[:, 2] << 16 | bits[:, 3] << 24
-    index = (word[:, None] >> (2 * np.arange(16, dtype=np.uint32))) & 3
-    rgb = np.take_along_axis(palette, index[..., None].astype(np.int64).repeat(3, -1), 1)
-    if alpha:
-        a0, a1 = blocks[:, 0].astype(np.int32), blocks[:, 1].astype(np.int32)
-        levels = [a0, a1] + ([((8 - i) * a0 + (i - 1) * a1 + 3) // 7 for i in range(2, 8)])
-        six = [a0, a1] + [((6 - i) * a0 + (i - 1) * a1 + 2) // 5 for i in range(2, 6)] + [np.zeros_like(a0), np.full_like(a0, 255)]
-        apal = np.where((a0 > a1)[:, None], np.stack(levels, 1), np.stack(six, 1))
-        abits = np.zeros(len(blocks), np.uint64)
-        for i in range(6): abits |= blocks[:, 2 + i].astype(np.uint64) << np.uint64(8 * i)
-        aindex = ((abits[:, None] >> (np.uint64(3) * np.arange(16, dtype=np.uint64))) & np.uint64(7)).astype(np.int64)
-        a = np.take_along_axis(apal, aindex, 1)
-    else:
-        a = np.where((~four[:, None]) & (index == 3), 0, 255)
-    pixels = np.concatenate([rgb, a[..., None]], -1).reshape(by, bx, 4, 4, 4).transpose(0, 2, 1, 3, 4).reshape(by * 4, bx * 4, 4)
-    return pixels[:height, :width].astype(np.uint8)
-
-
 def read_tex(data):
-    """Return (format, mip 0 RGBA array top row first, mip count, mip sizes ok)."""
-    magic, fmt, width, height, mips = struct.unpack_from("<8s4i", data)
-    if magic != b"GH3TEX01": raise ValueError("not a cache texture")
-    sizes, w, h = [], width, height
-    for _ in range(mips):
-        sizes.append(w * h * 4 if fmt == RGBA32 else max(1, (w + 3) // 4) * max(1, (h + 3) // 4) * (8 if fmt == DXT1 else 16))
-        w, h = max(1, w // 2), max(1, h // 2)
-    level = data[24:24 + sizes[0]]
-    pixels = np.frombuffer(level, np.uint8).reshape(height, width, 4) if fmt == RGBA32 else decode_bc(level, width, height, fmt == DXT5)
-    return fmt, pixels[::-1], mips, 24 + sum(sizes) == len(data) and mips == max(width, height).bit_length()
+    """Return (format, mip 0 RGBA array top row first, mip count, header and size ok)."""
+    try:
+        fmt, _, _, mips, _ = texture.read_header(data)
+    except texture.TextureError:
+        return None, None, 0, False
+    return fmt, texture.decode(data), mips, True
 
 
 def texture_difference(tex, png):
     fmt, pixels, mips, sizes = read_tex(tex)
+    if not sizes: return {"format": fmt, "shape": False}
     expected = np.asarray(Image.open(BytesIO(png)).convert("RGBA"))
     if pixels.shape != expected.shape or not sizes: return {"format": fmt, "shape": False}
     if fmt == DXT1: pixels = pixels.copy(); pixels[..., 3] = np.where(pixels[..., 3] == 0, 0, 255)
