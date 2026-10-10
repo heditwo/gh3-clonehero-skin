@@ -115,7 +115,7 @@ internal sealed class StageCameraPath
     private int _cueIndex;
     private double _next;
     private Gh3Random _random = new(BootSeed);
-    private readonly string _forcedShot = Environment.GetEnvironmentVariable("GH3_SKIN_CAMERA_SHOT") ?? "";
+    private readonly string _forcedShot = SkinEnvironment.Get(SkinEnvironment.CameraShot) ?? "";
     public float Aspect { get; set; } = 16f / 9; // GH3: 16:9 (GH3.exe 0x47b3a6)
     public int Seed { get; init; } = BootSeed;
 

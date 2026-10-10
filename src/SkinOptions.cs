@@ -21,11 +21,11 @@ internal sealed class SkinOptions
 
     public static SkinOptions FromEnvironment()
     {
-        var captureAfter = ParseFloat("GH3_SKIN_CAPTURE_AFTER") ?? 0;
+        var captureAfter = ParseFloat(SkinEnvironment.CaptureAfter) ?? 0;
         captureAfter = captureAfter > 0 ? captureAfter : 0;
-        var songClock = Environment.GetEnvironmentVariable("GH3_SKIN_CAPTURE_CLOCK") == "song";
+        var songClock = SkinEnvironment.Get(SkinEnvironment.CaptureClock) == "song";
         // On the song clock, negative times capture GH3's intro (the 8 s before the song).
-        var captureTimes = (Environment.GetEnvironmentVariable("GH3_SKIN_CAPTURE_TIMES") ?? "")
+        var captureTimes = (SkinEnvironment.Get(SkinEnvironment.CaptureTimes) ?? "")
             .Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(value => float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var time) ? time : 0)
             .Where(time => float.IsFinite(time) && (time > 0 || songClock && time < 0))
@@ -33,39 +33,39 @@ internal sealed class SkinOptions
             .OrderBy(time => time)
             .ToArray();
         var capture = captureAfter > 0 || captureTimes.Length > 0;
-        var power = capture ? ParseFloat("GH3_SKIN_PREVIEW_POWER") : null;
-        var rock = capture ? ParseFloat("GH3_SKIN_PREVIEW_ROCK") : null;
-        power = ParseFloat("GH3_SKIN_FORCE_POWER") ?? power;
-        rock = ParseFloat("GH3_SKIN_FORCE_ROCK") ?? rock;
+        var power = capture ? ParseFloat(SkinEnvironment.PreviewPower) : null;
+        var rock = capture ? ParseFloat(SkinEnvironment.PreviewRock) : null;
+        power = ParseFloat(SkinEnvironment.ForcePower) ?? power;
+        rock = ParseFloat(SkinEnvironment.ForceRock) ?? rock;
 
         return new SkinOptions
         {
-            KeepStockGems = Environment.GetEnvironmentVariable("GH3_SKIN_KEEP_STOCK_GEMS") == "1",
-            KeepStockFlames = Environment.GetEnvironmentVariable("GH3_SKIN_KEEP_STOCK_FLAMES") == "1",
+            KeepStockGems = SkinEnvironment.IsOne(SkinEnvironment.KeepStockGems),
+            KeepStockFlames = SkinEnvironment.IsOne(SkinEnvironment.KeepStockFlames),
             DisplayPower = power.HasValue ? Math.Clamp(power.Value, 0, 1) : null,
             DisplayRock = rock.HasValue ? Math.Clamp(rock.Value, 0, 1) : null,
-            ForcePowerAtCombo = int.TryParse(Environment.GetEnvironmentVariable("GH3_SKIN_FORCE_POWER_AT_COMBO"), out var combo)
+            ForcePowerAtCombo = int.TryParse(SkinEnvironment.Get(SkinEnvironment.ForcePowerAtCombo), out var combo)
                 ? Math.Max(0, combo) : 0,
-            ForceCombo = ParseInt("GH3_SKIN_FORCE_COMBO"),
-            ForceComboBreak = ParseInt("GH3_SKIN_FORCE_COMBO_BREAK"),
-            ForceWhammyRate = Math.Max(0, ParseFloat("GH3_SKIN_FORCE_WHAMMY") ?? 0),
-            ForceStarPowerActive = Environment.GetEnvironmentVariable("GH3_SKIN_FORCE_STAR_POWER_ACTIVE") == "1",
+            ForceCombo = ParseInt(SkinEnvironment.ForceCombo),
+            ForceComboBreak = ParseInt(SkinEnvironment.ForceComboBreak),
+            ForceWhammyRate = Math.Max(0, ParseFloat(SkinEnvironment.ForceWhammy) ?? 0),
+            ForceStarPowerActive = SkinEnvironment.IsOne(SkinEnvironment.ForceStarPowerActive),
             CaptureAfter = captureAfter,
             CaptureTimes = captureTimes,
             CaptureSongClock = songClock,
-            CaptureDirectory = Path.GetFullPath(Environment.GetEnvironmentVariable("GH3_SKIN_CAPTURE_DIR") ??
+            CaptureDirectory = Path.GetFullPath(SkinEnvironment.Get(SkinEnvironment.CaptureDirectory) ??
                 Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Captures", "GH3Skin")),
-            ScreenshotPath = Path.GetFullPath(Environment.GetEnvironmentVariable("GH3_SKIN_SCREENSHOT") ??
+            ScreenshotPath = Path.GetFullPath(SkinEnvironment.Get(SkinEnvironment.Screenshot) ??
                 Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Captures", "GH3Skin", "preview.png"))
         };
     }
 
     private static int ParseInt(string name) =>
-        int.TryParse(Environment.GetEnvironmentVariable(name), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
+        int.TryParse(SkinEnvironment.Get(name), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
             ? Math.Max(0, value) : 0;
 
     private static float? ParseFloat(string name) =>
-        float.TryParse(Environment.GetEnvironmentVariable(name), NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && float.IsFinite(value)
+        float.TryParse(SkinEnvironment.Get(name), NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && float.IsFinite(value)
             ? value : null;
 }
 

@@ -93,7 +93,7 @@ internal sealed class StageAssets : IDisposable
     private static int _hairLayerModels;
     // Check aid: GH3_SKIN_DEBUG_HAIR_LAYER=mark draws the over-hair features in one flat color for each model (magenta, green,
     // yellow); `off` also ignores the hair layers.
-    private static readonly string DebugHairLayer = Environment.GetEnvironmentVariable("GH3_SKIN_DEBUG_HAIR_LAYER") ?? "";
+    private static readonly string DebugHairLayer = SkinEnvironment.Get(SkinEnvironment.DebugHairLayer) ?? "";
     private static readonly HashSet<string> ReportedFallbacks = new();
 
     public void SetVisible(string group, bool? visible)

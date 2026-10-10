@@ -7,7 +7,7 @@ namespace Gh3Skin;
 // song second, so runs on different platforms can be compared at the same song times.
 internal static class BindingTrace
 {
-    public static readonly bool Enabled = Environment.GetEnvironmentVariable("GH3_SKIN_TRACE") == "1";
+    public static readonly bool Enabled = SkinEnvironment.IsOne(SkinEnvironment.Trace);
     public static int StageNoteEvents;
     public static int FlameLanes;
     private static double _next = double.NegativeInfinity;
@@ -15,7 +15,7 @@ internal static class BindingTrace
     private static bool _charged;
     private static float _logged;
     // The command-line bot earns no Star Power; this fills the native charge once so both platforms can be compared.
-    private static readonly double? Charge = double.TryParse(Environment.GetEnvironmentVariable("GH3_SKIN_TRACE_CHARGE"),
+    private static readonly double? Charge = double.TryParse(SkinEnvironment.Get(SkinEnvironment.TraceCharge),
         System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var charge) ? charge : null;
 
     public static void Reset()

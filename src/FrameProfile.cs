@@ -6,7 +6,7 @@ namespace Gh3Skin;
 // GH3_SKIN_PROFILE=1 logs per-subsystem milliseconds and managed allocations per frame once a second.
 internal static class FrameProfile
 {
-    public static readonly bool Enabled = Environment.GetEnvironmentVariable("GH3_SKIN_PROFILE") == "1";
+    public static readonly bool Enabled = SkinEnvironment.IsOne(SkinEnvironment.Profile);
     private static readonly Dictionary<string, double> Times = new();
     private static readonly Dictionary<string, long> Allocations = new();
     private static readonly Stopwatch Clock = new();

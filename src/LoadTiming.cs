@@ -8,8 +8,8 @@ namespace Gh3Skin;
 // and logs main-thread frames longer than 50 ms (docs/VERIFICATION.md, load times).
 internal static class LoadTiming
 {
-    public static readonly bool Enabled = Environment.GetEnvironmentVariable("GH3_SKIN_TIMING") == "1";
-    public static int Reloads = Enabled && int.TryParse(Environment.GetEnvironmentVariable("GH3_SKIN_TIMING_RELOADS"), out var count) ? count : 0;
+    public static readonly bool Enabled = SkinEnvironment.IsOne(SkinEnvironment.Timing);
+    public static int Reloads = Enabled && int.TryParse(SkinEnvironment.Get(SkinEnvironment.TimingReloads), out var count) ? count : 0;
     private static readonly DateTime ProcessStart = Process.GetCurrentProcess().StartTime.ToUniversalTime();
     private static readonly Stopwatch Phase = Stopwatch.StartNew();
     private static string _scene = "";

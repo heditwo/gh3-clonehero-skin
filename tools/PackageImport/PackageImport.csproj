@@ -12,6 +12,7 @@
   <ItemGroup>
     <Compile Include="../../src/Packages/*.cs" Exclude="../../src/Packages/PackageRuntime.cs" Link="Packages/%(Filename)%(Extension)" />
     <Compile Include="../../src/Native/Gh3Checksum.cs" Link="Native/Gh3Checksum.cs" />
+    <Compile Include="../../src/SkinEnvironment.cs" Link="SkinEnvironment.cs" />
     <Compile Include="../../src/Stage/Band/StageHair.cs" Link="Stage/StageHair.cs" />
     <Compile Include="../../src/Stage/StageLimits.cs" Link="Stage/StageLimits.cs" />
     <Compile Include="../../src/Stage/StageTolerance.cs" Link="Stage/StageTolerance.cs" />

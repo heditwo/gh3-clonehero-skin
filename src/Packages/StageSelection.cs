@@ -74,7 +74,7 @@ internal static class StageSelection
     public static StageDecision Choose(PlayerChoices choices, string? environment, IReadOnlyList<string> available, StageSuggestion? suggestion,
         Random random, string previous = "")
     {
-        if (environment == "off") return new StageDecision("", "", "GH3_SKIN_STAGE=off");
+        if (environment == "off") return new StageDecision("", "", SkinEnvironment.Stage + "=off");
         var mode = !string.IsNullOrEmpty(environment) && PlayerChoices.ValidStage(environment) ? environment : choices.Stage;
         var fixedByEnvironment = mode == environment && mode is not (PlayerChoices.RandomStage or PlayerChoices.SongStage);
         var note = "";
@@ -93,7 +93,7 @@ internal static class StageSelection
             var reason = mode == PlayerChoices.RandomStage ? "random choice" : $"random choice: the song has no stage and {PlayerChoices.FallbackStage} is not installed";
             return new StageDecision(pool[random.Next(pool.Length)], "", reason + note);
         }
-        if (available.Contains(mode) || fixedByEnvironment) return new StageDecision(mode, "", (fixedByEnvironment ? "GH3_SKIN_STAGE" : "the player's choice") + note);
+        if (available.Contains(mode) || fixedByEnvironment) return new StageDecision(mode, "", (fixedByEnvironment ? SkinEnvironment.Stage : "the player's choice") + note);
         var fallback = available.Contains(PlayerChoices.FallbackStage) ? PlayerChoices.FallbackStage : available.FirstOrDefault() ?? PlayerChoices.FallbackStage;
         return new StageDecision(fallback, "", $"the chosen stage {mode} is not installed" + note);
     }

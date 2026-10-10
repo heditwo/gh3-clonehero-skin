@@ -94,14 +94,14 @@ internal sealed class GameplayStage
         {
             MelonLogger.Warning($"GH3 stage: the song folder could not be read for a stage suggestion ({error.Message})");
         }
-        var decision = Packages.StageSelection.Choose(choices, Environment.GetEnvironmentVariable("GH3_SKIN_STAGE"), AvailableStages(manager), suggestion,
+        var decision = Packages.StageSelection.Choose(choices, SkinEnvironment.Get(SkinEnvironment.Stage), AvailableStages(manager), suggestion,
             StageRandom, _previousRandom);
         if (decision.PackagePath.Length > 0)
         {
             _songPackage = manager.AddSongPackage(decision.PackagePath);
             if (_songPackage == null)
             {
-                decision = Packages.StageSelection.Choose(choices, Environment.GetEnvironmentVariable("GH3_SKIN_STAGE"), AvailableStages(manager), null, StageRandom, _previousRandom);
+                decision = Packages.StageSelection.Choose(choices, SkinEnvironment.Get(SkinEnvironment.Stage), AvailableStages(manager), null, StageRandom, _previousRandom);
                 decision = decision with { Reason = decision.Reason + " (the song's venue package did not load)" };
             }
             else decision = decision with { StageId = _songPackage.Manifest.Id };
@@ -111,16 +111,16 @@ internal sealed class GameplayStage
         _stageId = decision.StageId.Length == 0 || StagePack.ValidId(decision.StageId) ? decision.StageId : "";
         MelonLogger.Msg($"GH3 stage choice: {(_stageId.Length > 0 ? _stageId : "none")} ({decision.Reason}; player choice {choices.Stage}, " +
             $"song suggestions {(choices.SongSuggestions ? "on" : "off")})");
-        StageChartReader.UseVenueTrack = Packages.PlayerChoices.Switch(Environment.GetEnvironmentVariable("GH3_SKIN_VENUE_TRACK"), choices.VenueTrack);
-        StageChartReader.UseGeneratedDirection = Packages.PlayerChoices.Switch(Environment.GetEnvironmentVariable("GH3_SKIN_GENERATED_DIRECTION"), choices.GeneratedDirection);
-        StageRockBandVenue.ReduceFlashing = Environment.GetEnvironmentVariable("GH3_SKIN_REDUCE_FLASHING") is { } reduce ?
+        StageChartReader.UseVenueTrack = Packages.PlayerChoices.Switch(SkinEnvironment.Get(SkinEnvironment.VenueTrack), choices.VenueTrack);
+        StageChartReader.UseGeneratedDirection = Packages.PlayerChoices.Switch(SkinEnvironment.Get(SkinEnvironment.GeneratedDirection), choices.GeneratedDirection);
+        StageRockBandVenue.ReduceFlashing = SkinEnvironment.Get(SkinEnvironment.ReduceFlashing) is { } reduce ?
             reduce is not ("off" or "0") : choices.ReduceFlashing;
         MelonLogger.Msg($"GH3 direction: Rock Band VENUE tracks {(StageChartReader.UseVenueTrack ? "on" : "off")}, " +
             $"generated direction {(StageChartReader.UseGeneratedDirection ? "on" : "off")}, reduce flashing {(StageRockBandVenue.ReduceFlashing ? "on" : "off")}");
         _characterPackages.Clear();
         foreach (var role in Packages.PlayerChoices.Roles)
         {
-            var id = Environment.GetEnvironmentVariable("GH3_SKIN_CHARACTER_" + role.ToUpperInvariant()) ?? choices.Character(role);
+            var id = SkinEnvironment.Get(SkinEnvironment.CharacterPrefix + role.ToUpperInvariant()) ?? choices.Character(role);
             if (id == Packages.PlayerChoices.DefaultCharacter || id.Length == 0) continue;
             var character = manager.Find(Packages.PackageKind.Character, id);
             if (character == null || character.State == Packages.PackageState.Failed)
@@ -130,7 +130,7 @@ internal sealed class GameplayStage
         _instrumentPackages.Clear();
         foreach (var role in Packages.PlayerChoices.InstrumentRoles)
         {
-            var id = Environment.GetEnvironmentVariable("GH3_SKIN_INSTRUMENT_" + role.ToUpperInvariant()) ?? choices.Instrument(role);
+            var id = SkinEnvironment.Get(SkinEnvironment.InstrumentPrefix + role.ToUpperInvariant()) ?? choices.Instrument(role);
             if (id == Packages.PlayerChoices.DefaultInstrument || id.Length == 0) continue;
             var instrument = manager.Find(Packages.PackageKind.Instrument, id);
             if (instrument == null || instrument.State == Packages.PackageState.Failed)
@@ -388,12 +388,12 @@ internal sealed class GameplayStage
 
     // Capture aid: GH3_SKIN_DEBUG_VIEW="x,y,z,targetX,targetY,targetZ,fov[;...]" fixes the stage camera (cycling through the
     // views every GH3_SKIN_DEBUG_VIEW_SECONDS of song time) and hides the highway; GH3_SKIN_DEBUG_SHOW="id,id" keeps those GH3 objects created.
-    private static readonly float[][] DebugViews = (Environment.GetEnvironmentVariable("GH3_SKIN_DEBUG_VIEW") ?? "")
+    private static readonly float[][] DebugViews = (SkinEnvironment.Get(SkinEnvironment.DebugView) ?? "")
         .Split(';', StringSplitOptions.RemoveEmptyEntries)
         .Select(view => view.Split(',').Select(value => float.Parse(value, System.Globalization.CultureInfo.InvariantCulture)).ToArray()).ToArray();
-    private static readonly float DebugViewSeconds = float.TryParse(Environment.GetEnvironmentVariable("GH3_SKIN_DEBUG_VIEW_SECONDS"),
+    private static readonly float DebugViewSeconds = float.TryParse(SkinEnvironment.Get(SkinEnvironment.DebugViewSeconds),
         System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var seconds) ? seconds : 4;
-    private static readonly string[] DebugShow = (Environment.GetEnvironmentVariable("GH3_SKIN_DEBUG_SHOW") ?? "")
+    private static readonly string[] DebugShow = (SkinEnvironment.Get(SkinEnvironment.DebugShow) ?? "")
         .Split(',', StringSplitOptions.RemoveEmptyEntries);
 
     private void ApplyDebugView(Camera camera, StageAssets assets)
@@ -405,9 +405,9 @@ internal sealed class GameplayStage
         if (DebugViews[index] is not { Length: 7 } view) return;
         camera.transform.localPosition = new Vector3(view[0], view[1], view[2]);
         camera.transform.LookAt(_root!.transform.position + new Vector3(view[3], view[4], view[5]));
-        var headMode = Environment.GetEnvironmentVariable("GH3_SKIN_DEBUG_VIEW_HEAD");
+        var headMode = SkinEnvironment.Get(SkinEnvironment.DebugViewHead);
         // GH3_SKIN_DEBUG_VIEW_ROLE: the band member of the head views (default the guitarist).
-        var headRole = Environment.GetEnvironmentVariable("GH3_SKIN_DEBUG_VIEW_ROLE") ?? "guitarist";
+        var headRole = SkinEnvironment.Get(SkinEnvironment.DebugViewRole) ?? "guitarist";
         if (headMode == "1" && _band?.Anchor(headRole, Gh3Bones.Head) is { } head)
             camera.transform.LookAt(new Vector3(head.Position.X, head.Position.Y, head.Position.Z));
         if (headMode == "local" && _band?.Anchor(headRole, Gh3Bones.Head) is { } face)
@@ -573,7 +573,7 @@ internal sealed class GameplayStage
                 new System.Numerics.Vector3(definition.CameraTarget[0], definition.CameraTarget[1], definition.CameraTarget[2]),
                 definition.FieldOfView, "fixed"),
                 _band.Positions.ToDictionary(pair => pair.Key, pair => new System.Numerics.Vector3(pair.Value.x, pair.Value.y, pair.Value.z)),
-                Environment.GetEnvironmentVariable("GH3_SKIN_CAMERA") ?? "auto",
+                SkinEnvironment.Get(SkinEnvironment.Camera) ?? "auto",
                 StageCameraBank.Load(Path.Combine(_directory, "cameras.json")), _band.Anchor)
                 { Aspect = player.mainCamera.aspect };
             foreach (var camera in UnityEngine.Object.FindObjectsOfType<Camera>())

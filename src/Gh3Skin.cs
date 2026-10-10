@@ -28,7 +28,7 @@ public sealed class SkinMod : MelonMod
         MelonLogger.Msg($"Linux hook page guard: {guard}");
         LoadTiming.Mark("mod early init");
         // MelonLoader retries a bHaptics WebSocket on a timer; disposing those sockets has crashed the CLR in this game.
-        if (Environment.GetEnvironmentVariable("GH3_SKIN_KEEP_BHAPTICS") == "1") return;
+        if (SkinEnvironment.IsOne(SkinEnvironment.KeepBhaptics)) return;
         try
         {
             var manager = Type.GetType("bHapticsLib.bHapticsManager, bHapticsLib");

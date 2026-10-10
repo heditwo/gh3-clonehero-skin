@@ -12,7 +12,7 @@ internal sealed class StageLipSync
     internal readonly record struct Syllable(double On, double Off, float Jaw, float Round, char Vowel = 'a');
 
     // GH3_SKIN_LIPSYNC=off keeps the face still on charts without GH3 facial clips. A menu option can set this before the song loads.
-    public static bool Enabled { get; set; } = Environment.GetEnvironmentVariable("GH3_SKIN_LIPSYNC") is not ("off" or "0");
+    public static bool Enabled { get; set; } = SkinEnvironment.IsNotOff(SkinEnvironment.LipSync);
     // Tuned: the mouth opens Lead before the note over Attack, closes over Release after it, and closes Gap before the
     // next syllable; a syllable is at least MinimumSyllable long.
     private const double Lead = 0.05;

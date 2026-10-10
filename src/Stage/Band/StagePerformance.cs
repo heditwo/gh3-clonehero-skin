@@ -305,7 +305,6 @@ internal sealed class PerformancePlayer
     private const double SixteenthNoteBeats = 0.25;
     internal sealed record Segment(double Time, double End, string Clip, double Rate, string Stance, string Action, int DisableArms);
     private readonly string _role;
-    private readonly string _directory;
     private readonly PerformanceMember _member;
     private readonly BandPose[] _bind;
     private readonly BandPose[] _previous;
@@ -341,7 +340,6 @@ internal sealed class PerformancePlayer
         int[]? parents = null, IReadOnlyDictionary<string, float>? constants = null, CharacterMotion? motion = null)
     {
         _role = role;
-        _directory = directory;
         _member = motion?.Member ?? member;
         member = _member;
         _bind = bind;

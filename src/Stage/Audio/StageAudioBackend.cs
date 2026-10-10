@@ -12,7 +12,7 @@ internal static class StageAudioBackend
         var name = OperatingSystem.IsWindows() ? "bass.dll" : OperatingSystem.IsMacOS() ? "libbass.dylib" : "libbass.so";
         // The data folder is clonehero_Data on Linux and Clone Hero_Data on Windows; Windows keeps plugins in x86_64.
         var data = UnityEngine.Application.dataPath;
-        var root = Environment.GetEnvironmentVariable("GH3_CLONE_HERO_DIR") ?? Environment.CurrentDirectory;
+        var root = SkinEnvironment.Get(SkinEnvironment.GameDirectory) ?? Environment.CurrentDirectory;
         var candidates = new[]
         {
             Path.Combine(data, "Plugins", name), Path.Combine(data, "Plugins", "x86_64", name),

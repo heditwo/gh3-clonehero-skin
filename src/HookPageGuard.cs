@@ -32,7 +32,7 @@ internal static class HookPageGuard
     public static string? Install()
     {
         if (!OperatingSystem.IsLinux()) return null;
-        if (Environment.GetEnvironmentVariable("GH3_SKIN_HOOK_GUARD") == "off") return "off (GH3_SKIN_HOOK_GUARD=off)";
+        if (SkinEnvironment.Get(SkinEnvironment.HookGuard) == "off") return "off (GH3_SKIN_HOOK_GUARD=off)";
         if (Environment.OSVersion.Version < new Version(4, 17)) return $"off (Linux {Environment.OSVersion.Version} has no MAP_FIXED_NOREPLACE)";
         var maps = MemoryMap.Read("/proc/self/maps");
         var bootstrap = maps.FirstOrDefault(entry => entry.Path.EndsWith("/MelonLoader.Bootstrap.so", StringComparison.Ordinal) && entry.Offset == 0);

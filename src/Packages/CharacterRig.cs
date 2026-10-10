@@ -27,7 +27,7 @@ internal static class CharacterRig
             bind[i] = i;
             if (!ownRole && profile.TryGetValue(target, out var bone) && !profileHair.Contains(bone))
             {
-                var body = Accessories.Contains(target) ? Ancestor(bone, profileBones, profileParents, b => !Accessories.Contains(profileBones[b]))
+                var body = Accessories.Contains(target) ? Ancestor(bone, profileParents, b => !Accessories.Contains(profileBones[b]))
                     : UnderHead(bone, profileBones, profileParents) ? profile.GetValueOrDefault(Head, -1) : bone;
                 if (body >= 0 && body != bone && character.TryGetValue(profileBones[body], out var source))
                 {
@@ -47,7 +47,7 @@ internal static class CharacterRig
         return result;
     }
 
-    private static int Ancestor(int bone, IReadOnlyList<string> bones, IReadOnlyList<int> parents, Func<int, bool> accept)
+    private static int Ancestor(int bone, IReadOnlyList<int> parents, Func<int, bool> accept)
     {
         for (var parent = parents[bone]; parent >= 0; parent = parents[parent])
             if (accept(parent)) return parent;
@@ -55,5 +55,5 @@ internal static class CharacterRig
     }
 
     private static bool UnderHead(int bone, IReadOnlyList<string> bones, IReadOnlyList<int> parents) =>
-        Ancestor(bone, bones, parents, b => bones[b] == Head) >= 0;
+        Ancestor(bone, parents, b => bones[b] == Head) >= 0;
 }

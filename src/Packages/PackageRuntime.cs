@@ -75,7 +75,7 @@ internal static class PackageRuntime
             Application.platform.ToString(),
             SystemInfo.graphicsDeviceType.ToString(),
             version,
-            Environment.GetEnvironmentVariable("GH3_SKIN_STAGE") ?? (Choices.Stage == PlayerChoices.SongStage ? PlayerChoices.FallbackStage : Choices.Stage),
+            SkinEnvironment.Get(SkinEnvironment.Stage) ?? (Choices.Stage == PlayerChoices.SongStage ? PlayerChoices.FallbackStage : Choices.Stage),
             Math.Clamp(Environment.ProcessorCount / 2, 1, 4),
             Math.Clamp(Environment.ProcessorCount / 4, 1, 2));
         MelonLogger.Msg($"GH3 packages: scanning {string.Join(", ", custom.SelectMany(c => PackageManager.CustomFolders.Select(f => Path.Combine(c, f))).Append(settings.ModPackages))}; " +

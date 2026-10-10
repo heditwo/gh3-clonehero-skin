@@ -44,9 +44,9 @@ internal static class StageChartReader
     private sealed record Tempo(long Tick, double Microseconds);
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
     // Player option: GH3_SKIN_VENUE_TRACK=off ignores Rock Band VENUE tracks. A menu option can set this before the song loads.
-    public static bool UseVenueTrack { get; set; } = Environment.GetEnvironmentVariable("GH3_SKIN_VENUE_TRACK") is not ("off" or "0");
+    public static bool UseVenueTrack { get; set; } = SkinEnvironment.IsNotOff(SkinEnvironment.VenueTrack);
     // GH3_SKIN_GENERATED_DIRECTION=off keeps charts without direction on the static defaults (for older reference captures).
-    public static bool UseGeneratedDirection { get; set; } = Environment.GetEnvironmentVariable("GH3_SKIN_GENERATED_DIRECTION") is not ("off" or "0");
+    public static bool UseGeneratedDirection { get; set; } = SkinEnvironment.IsNotOff(SkinEnvironment.GeneratedDirection);
 
     public static StageTimeline Load(string songDirectory, string chartPath, string? library = null, string title = "", string artist = "",
         StagePerformance? performance = null)

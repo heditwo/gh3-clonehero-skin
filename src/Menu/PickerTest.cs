@@ -14,7 +14,7 @@ internal sealed class PickerTest
     private PickerTest(IEnumerable<string> steps) => _steps = new Queue<string>(steps);
 
     public static PickerTest? FromEnvironment() =>
-        Environment.GetEnvironmentVariable("GH3_SKIN_PICKER_TEST") is { Length: > 0 } text
+        SkinEnvironment.Get(SkinEnvironment.PickerTest) is { Length: > 0 } text
             ? new PickerTest(text.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) : null;
 
     public void Update(PickerOverlay picker)

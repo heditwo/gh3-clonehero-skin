@@ -68,7 +68,7 @@ internal sealed class StageAudioState
         foreach (var cue in _commands)
             Schedule(cue.Time, time =>
             {
-                try { Execute(Gh3ScriptEvent.Decode(cue.Value), time); }
+                try { Execute(Gh3ScriptEvent.Decode(cue.Value)); }
                 catch (InvalidDataException error) { _diagnostics.Add(error.Message); }
             });
         Revision++;
@@ -121,7 +121,7 @@ internal sealed class StageAudioState
         return voice.Gain * (float)Math.Pow(10, decibels / DecibelsPerDecade);
     }
 
-    private void Execute(Gh3ScriptEvent call, double time)
+    private void Execute(Gh3ScriptEvent call)
     {
         var command = call.Command;
         var parameters = call.Parameters;
