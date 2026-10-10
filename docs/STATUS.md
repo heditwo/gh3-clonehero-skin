@@ -260,6 +260,8 @@ Measured with `scripts/measure-load.sh` (3 runs each, median) on `~/games/cloneh
 | | Gameplay scene to the running song clock | 2.37 s | 2.50 s |
 | Sizes | The 193 GH3 packages | 1,779.9 MB | 1,138.4 MB |
 | | The two Miku packages | 11.95 MB | 4.05 MB |
+| | Release zip (`scripts/build-release.sh`, Linux; Windows +4 kB) | 1,799.1 MB | 1,157.6 MB |
+| | Add-on zip | 321,014 bytes | 331,914 bytes |
 
 The warm song start uses the same cache texture bytes as before (only the header changed); its differences are in the range of the single runs (stage loaded 7.97–8.11 s before, 8.06–8.31 s after, from the process start). The first song after a cold start still waits for the band library (2.0 s) and the stage package import; the rest of the import time is the SHA-256 check (2.1 GB), the inflate, and the mesh and clip conversion.
 
