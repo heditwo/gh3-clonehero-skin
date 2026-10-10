@@ -33,6 +33,7 @@ args.add_argument("--export", action="store_true")
 args.add_argument("--render", action="store_true")
 args.add_argument("--draft", action="store_true")
 args.add_argument("--save", action="store_true", help="save each scene as OUT/blend/<id>.blend")
+args.add_argument("--check", action="store_true", help="exit 1 when a model without 'expect' has a wrong or missing role, an error, or fails")
 args.add_argument("--corpus", default=str(HERE / "corpus.json"))
 options = args.parse_args(sys.argv[sys.argv.index("--") + 1:])
 MODELS, OUT = Path(options.models).expanduser(), Path(options.out)
@@ -426,7 +427,8 @@ rows = []
 only = {x for x in options.only.split(",") if x}
 for model in corpus["models"]:
     if only and model["id"] not in only: continue
-    if any(name != "RIGIFY" and not (MODELS / name).exists() for name in model["files"]):
+    if any(name != "RIGIFY" and not (MODELS / name).exists() for name in model["files"]) or \
+            (model.get("needs") == "mmd_tools" and not any(m.endswith("mmd_tools") for m in bpy.context.preferences.addons.keys())):
         log(model["id"], "SKIP (no model file)")
         rows.append({"id": model["id"], "skipped": True})
         continue
@@ -441,5 +443,10 @@ for model in corpus["models"]:
 if options.draft:
     (OUT / "draft.json").write_text(json.dumps({r["id"]: r.get("draft", {}) for r in rows if "draft" in r}, ensure_ascii=False, indent=1))
 scored = [r for r in rows if "accuracy" in r and r.get("truthRoles")]
+expected = {m["id"]: m.get("expect") for m in corpus["models"]}
+bad = [r["id"] for r in rows if not r.get("skipped") and expected.get(r["id"]) is None
+       and ("failed" in r or r.get("fixes") or r.get("required") or r.get("errors") or any(c.startswith("ERROR") for c in r.get("checks", [])))]
 log("SUMMARY", f"{len(scored)} models scored, mean accuracy {np.mean([r['accuracy'] for r in scored]) if scored else 0:.3f}, "
-    f"zero fixes {sum(1 for r in scored if r['fixes'] == 0)}, failed {sum(1 for r in rows if 'failed' in r)}, skipped {sum(1 for r in rows if r.get('skipped'))}")
+    f"zero fixes {sum(1 for r in scored if r['fixes'] == 0)}, failed {sum(1 for r in rows if 'failed' in r)}, skipped {sum(1 for r in rows if r.get('skipped'))}"
+    + (f", not as expected: {', '.join(bad)}" if bad else ""))
+if options.check and bad: sys.exit(1)

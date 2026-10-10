@@ -1041,7 +1041,8 @@
     "rightUpperArmTwist": "腕捩.R",
     "rightUpperLeg": "足D.R",
     "spine": "上半身"
-   }
+   },
+   "needs": "mmd_tools"
   },
   {
    "id": "sekai",

@@ -6,6 +6,8 @@
 # CHSTAGE_TEST_RIG: a GH3 rig GLB for the import fix check.
 # CHSTAGE_TEST_LIBRARY: the library package for the character test (default: assets/packages/gh3-band-v1.chlib if
 # present; an empty value turns the character test off).
+# RIG_CORPUS_DIR: the rig corpus models (tools/rig-corpus/fetch.sh). When the folder exists, the corpus runs with the first
+# Blender and fails when a model that the corpus expects to map has a wrong role (tools/rig-corpus/run.sh); else it is skipped.
 set -euo pipefail
 export MISE_QUIET=1
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -34,4 +36,9 @@ for blender in "${blenders[@]}"; do
     --python "$here/tests/character_test.py" -- "$archive" "$run/characters" "$library" > "$run/characters.log" 2>&1 || status=1
   grep -E '^CHSTAGE-TEST (FAIL|RESULT)' "$run/characters.log" || { printf '%s: no character result, see %s\n' "$name" "$run/characters.log"; status=1; }
 done
+if [[ -n "${RIG_CORPUS_DIR:-}" && -d "${RIG_CORPUS_DIR:-}" && -n "$library" ]]; then
+  BLENDER="${blenders[0]}" bash "$here/../tools/rig-corpus/run.sh" "$output/rig-corpus" --check || status=1
+else
+  printf 'rig corpus: skipped (set RIG_CORPUS_DIR to the models of tools/rig-corpus/fetch.sh)\n'
+fi
 exit "$status"
