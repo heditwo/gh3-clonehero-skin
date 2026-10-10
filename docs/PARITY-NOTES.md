@@ -213,7 +213,13 @@ Measured on the GH3 PC data (2026-10-09). `GH3_Guitarist_RockGod` and `GH3_Guita
 | Ragdoll `a494694f` bodies against the accessory bones | Up to 0.47 m and 150° off | At most 0.005 m and 11° (the same as all other GH3 ragdolls on their skeletons) |
 | Mesh `RockGod_1` vertices of `Bone_ACC_14` against the bone | 0.47 m (mean) | 0.10 m (mean) |
 
-The ragdoll and the mesh were made on `GH3_Guitarist_RockGod`. On Axel's skeleton, his hair and beard turn about points on the chest with the wrong axes, and the hair covers the face. We did not see what the original GH3 shows for him. Judgment call: the mod gives him a rig with Axel's bones and the accessory bones of `GH3_Guitarist_RockGod` (`pipeline/character_library.py`, `ACCESSORY_SKELETONS`). The body, face, and clips stay as in GH3. With this rig his hair and beard hang down as in the bind pose of his mesh.
+The ragdoll and the mesh were made on `GH3_Guitarist_RockGod`. On Axel's skeleton, his hair and beard turn about points on the chest with the wrong axes, and the hair covers the face. Judgment call: the mod gives him a rig with Axel's bones and the accessory bones of `GH3_Guitarist_RockGod` (`pipeline/character_library.py`, `ACCESSORY_SKELETONS`). The body, face, and clips stay as in GH3. With this rig his hair and beard hang down as in the bind pose of his mesh.
+
+Original GH3 check (2026-10-09, quickplay My Curse in the Dive, bot, the God of Rock as player 1, close cameras from the front and the side; the patched files were restored byte-equal):
+
+- His long white hair hangs from the head down the back and over the shoulders. The beard hangs from the chin over the chest. Both move with the head. On fast head moves the hair swings out to the side and for a moment goes over the face, then falls back. We saw no hood-like flip and no hair or beard that stays on the chest when the head turns.
+- The mod before the judgment call (1f8ea9c) and after it (main) look the same as this in the same kind of close-ups, and nearly the same as each other: the mod's hair joints hang from the head in both states (the ragdoll constraints give the chain parents), and only the rest lengths of three chains change. So the judgment call stays: it agrees with the GH3 data (ragdoll and mesh fit) and with what GH3 shows.
+- Not compared: the exact swing amplitude and speed (GH3 picks its cameras, songs, and clips at random, so no frame pair has the same pose), and the character select screen.
 
 All other guitarist ragdolls fit their own skeletons: at most 0.21 m (Judy Nails outfit 2: the skirt bodies on the pelvis and thighs) and 20° (Judy Nails outfit 1). The converter stops when a body is more than 0.25 m or 45° from its bone (`pipeline/library/hair.py`, `ragdoll_member`).
 

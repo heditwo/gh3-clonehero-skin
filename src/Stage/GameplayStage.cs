@@ -359,6 +359,8 @@ internal sealed class GameplayStage
         if (DebugViews[index] is not { Length: 7 } view) return;
         camera.transform.localPosition = new Vector3(view[0], view[1], view[2]);
         camera.transform.LookAt(_root!.transform.position + new Vector3(view[3], view[4], view[5]));
+        if (Environment.GetEnvironmentVariable("GH3_SKIN_DEBUG_VIEW_HEAD") == "1" && _band?.Anchor("guitarist", "ddec28af") is { } head)
+            camera.transform.LookAt(new Vector3(head.Position.X, head.Position.Y, head.Position.Z));
         camera.fieldOfView = view[6];
         foreach (var (other, _) in _cameras) other.cullingMask = 0;
         if (_playerCamera != null) _playerCamera.cullingMask = 0;

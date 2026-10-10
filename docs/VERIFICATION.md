@@ -169,6 +169,7 @@ The tool aligns the two videos and writes full side-by-side frames, amplified di
 2. `tools/Gh3SongTool chart <song>_song.pak.xen <notes.chart>` writes a Clone Hero chart with GH3's notes and Star Power phrases.
 3. Align the videos on the music, or on camera cuts against the exported `gh3-camera` event times.
 4. GH3 selects shots at random. Set `GH3_SKIN_CAMERA_SHOT=<shot name>` to force the matching shot in the mod.
+5. To play a store character (for example the God of Rock), set `character_id` in the two `player*_status` defaults and unlock the character in `setup_character_tags` (the script runs only for a new save; it is LZSS-compressed in `qb.pab.xen`). Keep a copy of the save folder (`~/Documents/Aspyr/Guitar Hero III/Save`) and put it back after the run. The 2026-10-09 tools are in `~/.cache/rockgod-gh3/tools/`.
 
 ### GH3 characters
 
@@ -216,7 +217,7 @@ These variables are for checks and captures. Normal play needs none of them.
 | `GH3_SKIN_FORCE_STAR_POWER_ACTIVE=1` | Display-only active Star Power (cyan gems, hit colors) |
 | `GH3_SKIN_FORCE_WHAMMY=<Hz>` | Sends a cosine whammy to Clone Hero's whammy input. Tests the sustain bend |
 | `GH3_SKIN_KEEP_STOCK_GEMS=1`, `GH3_SKIN_KEEP_STOCK_FLAMES=1` | Keeps Clone Hero's gems or hit effects, for comparisons |
-| `GH3_SKIN_DEBUG_VIEW="x,y,z,tx,ty,tz,fov[;...]"` | Fixes the stage camera and hides the highway; `GH3_SKIN_DEBUG_VIEW_SECONDS` cycles the views |
+| `GH3_SKIN_DEBUG_VIEW="x,y,z,tx,ty,tz,fov[;...]"` | Fixes the stage camera and hides the highway; `GH3_SKIN_DEBUG_VIEW_SECONDS` cycles the views. With `GH3_SKIN_DEBUG_VIEW_HEAD=1` the camera stays at the view position and looks at the guitarist's head (close-ups of hair and face) |
 | `GH3_SKIN_DEBUG_SHOW=<id,...>` | Keeps these GH3 objects created |
 | `GH3_SKIN_PROFILE=1` | Logs milliseconds, managed kilobytes, and gen-0 collections per subsystem each second; `tools/summarize-profile.py` reads the logs |
 | `GH3_SKIN_KEEP_BHAPTICS=1` | Keeps MelonLoader's bHaptics client |
