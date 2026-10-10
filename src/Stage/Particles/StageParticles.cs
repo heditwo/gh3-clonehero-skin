@@ -23,7 +23,7 @@ internal sealed class StageParticles : IDisposable
     private readonly StageParticleTechniques _techniques;
     private readonly DepthTextureMode _originalDepthMode;
     private readonly List<Material> _materials = new();
-    private readonly Dictionary<(uint Emitter, uint Texture, StageParticleMaterial Material, bool Lit), List<StageEffects.ParticleBatch>> _batches = new();
+    private readonly Dictionary<(uint Emitter, uint Texture, StageParticleMaterial Material, bool Lit), List<StageParticleBatch>> _batches = new();
     private readonly Dictionary<uint, StageParticleLightSet> _lighting = new();
     public IReadOnlyDictionary<uint, StageParticleLightSet> Lighting => _lighting;
     private readonly StageTeslaRenderer _tesla;
@@ -87,17 +87,17 @@ internal sealed class StageParticles : IDisposable
         DrawOrder = StageParticleRenderOrder.Sort(RenderedEmitters.Select(id => RenderKeys[id]).ToArray()).Select(index => RenderedEmitters[index]).ToArray();
 
         Mark("p.order");
-        var submission = new List<StageEffects.ParticleBatch>();
-        var current = new Dictionary<(uint Emitter, uint Texture, bool Lit), StageEffects.ParticleBatch>();
-        var submitted = new HashSet<StageEffects.ParticleBatch>();
+        var submission = new List<StageParticleBatch>();
+        var current = new Dictionary<(uint Emitter, uint Texture, bool Lit), StageParticleBatch>();
+        var submitted = new HashSet<StageParticleBatch>();
         (uint, uint, bool) lastKey = default;
-        StageEffects.ParticleBatch? lastBatch = null;
-        StageEffects.ParticleBatch ParticleBatch(uint texture, in StageParticleSample particle, StageParticleAxes lighting, bool allowLighting = true)
+        StageParticleBatch? lastBatch = null;
+        StageParticleBatch ParticleBatch(uint texture, in StageParticleSample particle, StageParticleAxes lighting, bool allowLighting = true)
         {
             var definition = particle.Definition;
             var lit = definition.Material.Lighting && allowLighting;
             var key = (particle.Emitter, texture, lit);
-            StageEffects.ParticleBatch batch;
+            StageParticleBatch batch;
             if (lastBatch != null && key == lastKey && !lastBatch.Full) batch = lastBatch;
             else
             {
@@ -188,7 +188,7 @@ internal sealed class StageParticles : IDisposable
         Mark("p.tesla");
     }
 
-    private StageEffects.ParticleBatch Batch(uint emitter, uint textureId, StageParticleDefinition particle, bool lit)
+    private StageParticleBatch Batch(uint emitter, uint textureId, StageParticleDefinition particle, bool lit)
     {
         var definition = particle.Material;
         var quads = particle.Type == TextureRibbonTrailKey || particle.Type == FlatRibbonTrailKey ? particle.History + 1 :
@@ -224,7 +224,7 @@ internal sealed class StageParticles : IDisposable
         var forward = _camera.transform.forward;
         material.SetVector("_Gh3CameraForward", new(forward.x, forward.y, forward.z, 0));
         _materials.Add(material);
-        var created = new StageEffects.ParticleBatch(_assets, _root, _layer, _shader, texture, definition.Blend == Gh3Checksum.Value("add"), capacity,
+        var created = new StageParticleBatch(_assets, _root, _layer, _shader, texture, definition.Blend == Gh3Checksum.Value("add"), capacity,
             "GH3 Source Particles " + textureId.ToString("x8"), sourceMaterial: material);
         created.Begin(_camera.transform.right, _camera.transform.up);
         batches.Add(created);

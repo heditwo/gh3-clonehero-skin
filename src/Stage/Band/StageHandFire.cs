@@ -11,7 +11,7 @@ internal sealed class StageHandFire
     private const int LeftHandBone = 45;
     private const int RightHandBone = 48;
     private readonly StageHandFireState _state;
-    private readonly StageEffects.ParticleBatch[] _batches;
+    private readonly StageParticleBatch[] _batches;
     private readonly Transform _left;
     private readonly Transform _right;
     private readonly Transform _root;
@@ -27,7 +27,7 @@ internal sealed class StageHandFire
         _camera = camera;
         _left = left;
         _right = right;
-        _batches = new StageEffects.ParticleBatch[definition.Emitters.Length];
+        _batches = new StageParticleBatch[definition.Emitters.Length];
         for (var i = 0; i < _batches.Length; i++)
         {
             var emitter = definition.Emitters[i];
@@ -36,7 +36,7 @@ internal sealed class StageHandFire
                 throw new InvalidDataException("Invalid hand-fire texture");
             texture.wrapMode = TextureWrapMode.Clamp;
             texture.filterMode = FilterMode.Bilinear;
-            _batches[i] = new StageEffects.ParticleBatch(assets, root, layer, Shader.Find("Particles/Standard Unlit"), texture, true, BatchCapacity,
+            _batches[i] = new StageParticleBatch(assets, root, layer, Shader.Find("Particles/Standard Unlit"), texture, true, BatchCapacity,
                 i == 0 ? "GH3 Hand Flames" : "GH3 Hand Sparks", emitter.Atlas);
         }
     }
