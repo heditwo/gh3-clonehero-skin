@@ -13,6 +13,7 @@
     <Compile Include="../src/Hud/HudTuning.cs" Link="HudTuning.cs" />
     <Compile Include="../src/Hud/ReadyAnimationTrigger.cs" Link="ReadyAnimationTrigger.cs" />
     <Compile Include="../src/Hud/HudViewport.cs" Link="HudViewport.cs" />
+    <Compile Include="../src/Hud/HudConstants.cs" Link="HudConstants.cs" />
     <Compile Include="../src/Gameplay/HighwayView.cs" Link="HighwayView.cs" />
     <Compile Include="../src/Hud/HudState.cs" Link="HudState.cs" />
     <Compile Include="../src/Hud/ComboReelAnimation.cs" Link="ComboReelAnimation.cs" />

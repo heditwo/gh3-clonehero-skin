@@ -5,9 +5,28 @@ internal readonly record struct RockMeterPose(float Scale, float Angle, float X,
     public static RockMeterPose Rest => new(1, 0, 0, 0);
 }
 
+// The Star Power bulbs 4-6 of the rock meter and the meter pulse when the charge reaches half (PARITY-NOTES.md#hud).
 internal sealed class StarPowerBulbAnimation
 {
-    // GH3 interrupts the meter morphs before their endpoints; measured poses retain that motion.
+    // GH3: HUD script 0x63f57f24.0x3ab79ef5. Bulbs 4-6 (index 3-5) slide out 0.2 s apart, each slide 0.4 s. Retraction
+    // runs in reverse order: 10 % farther out for 0.1 s, then 0.4 s back.
+    private const int FirstSlidingBulb = 3;
+    private const int LastSlidingBulb = 5;
+    private const int SlidingBulbs = 3;
+    private const float SlideStagger = 0.2f;
+    private const float SlideSeconds = 0.4f;
+    private const float RetractOvershoot = 1.1f;
+    private const float RetractOvershootSeconds = 0.1f;
+    private const float ExpandSeconds = 0.8f;
+    private const float RetractSeconds = 0.9f;
+    // GH3: Star Power is ready at half charge.
+    private const float ReadyCharge = 0.5f;
+    // The pulse of EntryPoses: 27 frames at 60 fps.
+    private const float PulseFramesPerSecond = 60;
+    private const float PulseSeconds = 27f / 60;
+
+    // Measured: the meter pose of each 60 fps frame of the GH3 recording. GH3 interrupts the meter morphs before their
+    // endpoints; the measured poses keep that motion.
     private static readonly RockMeterPose[] EntryPoses =
     {
         RockMeterPose.Rest,
@@ -26,7 +45,7 @@ internal sealed class StarPowerBulbAnimation
         new(0.8771f, -3.79f, 0.65f, 15.78f), new(0.9532f, -1.44f, 0.30f, 6.02f),
         RockMeterPose.Rest
     };
-    private readonly float[] _from = new float[3];
+    private readonly float[] _from = new float[SlidingBulbs];
     private bool _expanded;
     private bool _initialized;
     private bool _animating;
@@ -48,7 +67,7 @@ internal sealed class StarPowerBulbAnimation
     public bool Update(float power, bool active, float now)
     {
         var wasAnimating = _animating;
-        var expanded = active || power >= 0.5f;
+        var expanded = active || power >= ReadyCharge;
         _now = now;
         var changed = expanded != _expanded;
         if (!_initialized && active)
@@ -57,36 +76,36 @@ internal sealed class StarPowerBulbAnimation
         }
         else if (changed)
         {
-            for (var bulb = 0; bulb < 3; bulb++)
-                _from[bulb] = Extension(bulb + 3);
+            for (var bulb = 0; bulb < SlidingBulbs; bulb++)
+                _from[bulb] = Extension(bulb + FirstSlidingBulb);
             _expanded = expanded;
             _started = now;
-            if (expanded && now - _pulseStarted >= 27f / 60)
+            if (expanded && now - _pulseStarted >= PulseSeconds)
                 _pulseStarted = now;
         }
         _initialized = true;
-        _animating = now - _started < (_expanded ? 0.8f : 0.9f) || now - _pulseStarted < 27f / 60;
+        _animating = now - _started < (_expanded ? ExpandSeconds : RetractSeconds) || now - _pulseStarted < PulseSeconds;
         return changed || wasAnimating || _animating;
     }
 
     public float Extension(int bulb)
     {
-        if (bulb < 3)
+        if (bulb < FirstSlidingBulb)
             return 1;
         var elapsed = _now - _started;
         if (_expanded)
-            return Lerp(_from[bulb - 3], 1, (elapsed - (bulb - 3) * 0.2f) / 0.4f);
-        elapsed -= (5 - bulb) * 0.2f;
-        var start = _from[bulb - 3];
-        return elapsed < 0.1f ? Lerp(start, start * 1.1f, elapsed / 0.1f) :
-            Lerp(start * 1.1f, 0, (elapsed - 0.1f) / 0.4f);
+            return Lerp(_from[bulb - FirstSlidingBulb], 1, (elapsed - (bulb - FirstSlidingBulb) * SlideStagger) / SlideSeconds);
+        elapsed -= (LastSlidingBulb - bulb) * SlideStagger;
+        var start = _from[bulb - FirstSlidingBulb];
+        return elapsed < RetractOvershootSeconds ? Lerp(start, start * RetractOvershoot, elapsed / RetractOvershootSeconds) :
+            Lerp(start * RetractOvershoot, 0, (elapsed - RetractOvershootSeconds) / SlideSeconds);
     }
 
     public RockMeterPose Pose
     {
         get
         {
-            var frame = (_now - _pulseStarted) * 60;
+            var frame = (_now - _pulseStarted) * PulseFramesPerSecond;
             if (frame < 0 || frame >= EntryPoses.Length - 1)
                 return RockMeterPose.Rest;
             var index = (int)frame;

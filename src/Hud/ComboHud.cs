@@ -8,6 +8,14 @@ namespace Gh3Skin;
 // the counter opens at ComboReelLayout.Split and inserts copies of a middle drum reel and a tileable body strip.
 internal sealed class ComboHud
 {
+    // GH3: the counter shows from a 25-note streak.
+    private const int FirstShownCombo = 25;
+    // GH3: the drum strip and the note icon in the container (HUD_counter_drum at y 40, the icon 64 x 64 at (44, 40)).
+    private const float DrumY = 40;
+    private const float IconX = 44, IconSize = 64;
+    // Measured: 720p screen pixels per GH3 unit in the recordings (the GH3 HUD is at 0.7 scale).
+    private const float RecordingPixelsPerUnit = 0.7f;
+    // Measured: the counter's entrance offsets (720p screen pixels), one per 60 fps frame.
     private static readonly float[] EntryOffsets =
     {
         62, 50, 32, 20, 10, -6, -20, -30, -37, -41, -40, -20,
@@ -46,18 +54,19 @@ internal sealed class ComboHud
         var drum = textures["HUD_counter_drum"];
         var body = textures["HUD_counter_body"];
         var tile = textures["HUD_counter_body_tile"];
-        _drumLeft = Slice(_fit, "comboDrumLeft", drum, 0, DrumSplit, ComboReelLayout.DrumX, 40);
-        Slice(_fit, "comboDrumRight", drum, DrumSplit, drum.width, ComboReelLayout.Split, 40);
+        _drumLeft = Slice(_fit, "comboDrumLeft", drum, 0, DrumSplit, ComboReelLayout.DrumX, DrumY);
+        Slice(_fit, "comboDrumRight", drum, DrumSplit, drum.width, ComboReelLayout.Split, DrumY);
         for (var k = 0; k < _drumReels.Length; k++)
-            _drumReels[k] = Slice(_fit, $"comboDrumReel{k}", drum, DrumSplit, DrumSplit + ComboReelLayout.Pitch, 0, 40);
+            _drumReels[k] = Slice(_fit, $"comboDrumReel{k}", drum, DrumSplit, DrumSplit + ComboReelLayout.Pitch, 0, DrumY);
         _bodyLeft = Slice(_fit, "comboBodyLeft", body, 0, ComboReelLayout.Split, 0, 0);
         Slice(_fit, "comboBodyRight", body, ComboReelLayout.Split, body.width, ComboReelLayout.Split, 0);
         for (var k = 0; k < _bodyReels.Length; k++)
             _bodyReels[k] = Slice(_fit, $"comboBodyReel{k}", tile, 0, tile.width, 0, 0);
         for (var place = 0; place < _digits.Length; place++)
             _digits[place] = new ComboDigitHud(_fit, place, font, tuning);
-        _icon = HudVisual.Image(_fit, "comboIcon", textures["HUD_counter_drum_icon"], new Rect(44, 40, 64, 64));
+        _icon = HudVisual.Image(_fit, "comboIcon", textures["HUD_counter_drum_icon"], new Rect(IconX, DrumY, IconSize, IconSize));
         _flash = HudVisual.Image(_motion, "comboFlash", textures["hud-glowburst"], new Rect(), new Vector2(0.5f, 0.5f));
+        // GH3: hud_glowburst_alert's color (245, 255, 200).
         _flash.color = new Color(245 / 255f, 1, 200 / 255f, 0);
         _flash.enabled = false;
     }
@@ -73,11 +82,11 @@ internal sealed class ComboHud
     public void Update(int combo, float time)
     {
         combo = Math.Clamp(combo, 0, ComboReelLayout.MaxCombo);
-        var visible = combo >= 25;
-        if (visible && _shownCombo < 25) _entryStarted = time;
+        var visible = combo >= FirstShownCombo;
+        if (visible && _shownCombo < FirstShownCombo) _entryStarted = time;
         if (_first || combo != _shownCombo)
         {
-            var broke = !visible && _shownCombo >= 25;
+            var broke = !visible && _shownCombo >= FirstShownCombo;
             if (broke && _shownDigits > 4)
             {
                 _reel.Close(time);
@@ -107,7 +116,7 @@ internal sealed class ComboHud
         if (previous.Length > digits.Length) previous = previous[^digits.Length..];
         _icon.enabled = digits.Length == 3;
         // GH3 rolls only the highest digit that changed; on a carry the lower digits switch at once.
-        var counting = visible && _shownCombo >= 25 && combo > _shownCombo && !_reel.Closing;
+        var counting = visible && _shownCombo >= FirstShownCombo && combo > _shownCombo && !_reel.Closing;
         var highest = Enumerable.Range(0, digits.Length).FirstOrDefault(index => previous[index] != digits[index], -1);
         for (var place = 0; place < _digits.Length; place++)
         {
@@ -138,7 +147,7 @@ internal sealed class ComboHud
         var squash = _reel.Squash(time);
         _fit.localScale = new Vector3(fit, fit * squash, 1);
         HudVisual.Position(_fit, new Vector2(ComboReelLayout.BodyRight * (1 - fit), ComboReelLayout.CenterY * (1 - fit * squash)));
-        HudVisual.Position(_drumLeft.rectTransform, new Vector2(ComboReelLayout.DrumX - width, 40));
+        HudVisual.Position(_drumLeft.rectTransform, new Vector2(ComboReelLayout.DrumX - width, DrumY));
         HudVisual.Position(_bodyLeft.rectTransform, new Vector2(-width, 0));
         for (var k = 0; k < _drumReels.Length; k++)
         {
@@ -149,7 +158,7 @@ internal sealed class ComboHud
             if (visible <= 0) continue;
             // A partly open reel shows its right side, as if it slides out from under the first reel.
             drum.uvRect = new Rect((DrumSplit + ComboReelLayout.Pitch - visible) / drum.texture.width, 0, visible / drum.texture.width, 1);
-            HudVisual.Layout(drum, new Rect(x, 40, visible, drum.texture.height));
+            HudVisual.Layout(drum, new Rect(x, DrumY, visible, drum.texture.height));
             body.uvRect = new Rect(1 - visible / ComboReelLayout.Pitch, 0, visible / ComboReelLayout.Pitch, 1);
             HudVisual.Layout(body, new Rect(x, 0, visible, body.texture.height));
         }
@@ -175,7 +184,6 @@ internal sealed class ComboHud
         var index = (int)frame;
         if (index >= EntryOffsets.Length - 1) return 0;
         var fraction = frame - index;
-        // The entrance offsets are 720p screen pixels; one GH3 unit is 0.7 of those.
-        return (EntryOffsets[index] * (1 - fraction) + EntryOffsets[index + 1] * fraction) / 0.7f;
+        return (EntryOffsets[index] * (1 - fraction) + EntryOffsets[index + 1] * fraction) / RecordingPixelsPerUnit;
     }
 }

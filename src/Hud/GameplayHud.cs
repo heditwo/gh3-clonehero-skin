@@ -4,6 +4,8 @@ namespace Gh3Skin;
 
 internal sealed class GameplayHud
 {
+    // Above Clone Hero's own canvases.
+    private const int CanvasSortingOrder = 500;
     private readonly SkinAssets _assets;
     private readonly HudTuning _tuning;
     private readonly bool _hitEffects;
@@ -52,7 +54,7 @@ internal sealed class GameplayHud
         _canvas = new GameObject("GH3 Gameplay HUD").AddComponent<Canvas>();
         _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         _canvas.overrideSorting = true;
-        _canvas.sortingOrder = 500;
+        _canvas.sortingOrder = CanvasSortingOrder;
         _highway = new HighwayHud(_canvas.transform, _assets);
         if (_hitEffects) _hits = new HitEffectsHud(_highway.Root, _assets);
         _screenRoot = HudVisual.Group("Screen HUD", _canvas.transform);
@@ -80,7 +82,7 @@ internal sealed class GameplayHud
         }
         var rect = camera.pixelRect;
         var highway = HudViewport.ForHighway(Screen.height, rect.x, rect.y, rect.width, rect.height, camera.fieldOfView);
-        var rise = intro ? IntroHudAnimation.HighwayOffset(songTime) * Screen.height / 720f : 0;
+        var rise = intro ? IntroHudAnimation.HighwayOffset(songTime) * Screen.height / HudCanvas.Gh3Height : 0;
         if (_highwayViewport != highway || rise != _highwayRise)
         {
             HudVisual.Viewport(_highway!.Root, highway, highway.CenterOffsetY + rise);

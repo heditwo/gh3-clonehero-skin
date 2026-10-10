@@ -21,6 +21,22 @@ internal sealed class YouRockAnimation
     private const float Frame = 1f / 60;
     // The shadow element is the same character in black at 1.3 x 1.2 the text scale, one z step below the text.
     public static readonly Vector2 ShadowScale = new(1.3f, 1.2f);
+    // Any fixed seed gives a repeatable show; this is GH3's boot seed (Gh3Random.BootSeed).
+    private const uint DefaultSeed = 0x6680bf3;
+    // GH3: explode_text_array_elements draws the target of each letter in its corner: x and y ranges in screen units,
+    // and a rotation of 0-180 degrees.
+    private const float LeftX0 = -2000f, LeftX1 = 0f, RightX0 = 1280f, RightX1 = 3280f;
+    private const float TopY0 = -2000f, TopY1 = -200f, BottomY0 = 920f, BottomY1 = 2720f;
+    private const float MaximumTargetRotation = 180;
+    // GH3: jiggle_text_array_elements offsets each letter by -10..10 x and -10 y, turns it 0-3 degrees, and scales it
+    // 0.7-1.3.
+    private const float JiggleOffset = 10;
+    private const float MaximumJiggleRotation = 3;
+    private const float MinimumJiggleScale = 0.7f;
+    private const float MaximumJiggleScale = 1.3f;
+    // Primes that give each jiggle step and letter its own random stream.
+    private const int StepPrime = 7919;
+    private const int LetterPrime = 104729;
 
     private readonly Vector2[] _rest;
     private readonly (Vector2 Position, float Rotation)[] _targets;
@@ -29,7 +45,7 @@ internal sealed class YouRockAnimation
     public int Count => Text.Length;
 
     // fitWidth is the width of the text in the fit font (text_a1) at scale 1, from GetScreenElementDims.
-    public YouRockAnimation(float fitWidth, uint seed = 0x6680bf3)
+    public YouRockAnimation(float fitWidth, uint seed = DefaultSeed)
     {
         var fit = Math.Min(Text.Length * FitPerCharacter, MaxFitWidth);
         BaseScale = fitWidth > 0 ? fit / fitWidth : 1;
@@ -45,12 +61,12 @@ internal sealed class YouRockAnimation
         {
             var (x0, x1, y0, y1) = (i % 4) switch
             {
-                0 => (-2000f, 0f, -2000f, -200f),
-                1 => (1280f, 3280f, -2000f, -200f),
-                2 => (1280f, 3280f, 920f, 2720f),
-                _ => (-2000f, 0f, 920f, 2720f),
+                0 => (LeftX0, LeftX1, TopY0, TopY1),
+                1 => (RightX0, RightX1, TopY0, TopY1),
+                2 => (RightX0, RightX1, BottomY0, BottomY1),
+                _ => (LeftX0, LeftX1, BottomY0, BottomY1),
             };
-            _targets[i] = (new(Range(ref random, x0, x1), Range(ref random, y0, y1)), Range(ref random, 0, 180));
+            _targets[i] = (new(Range(ref random, x0, x1), Range(ref random, y0, y1)), Range(ref random, 0, MaximumTargetRotation));
         }
     }
 
@@ -65,11 +81,11 @@ internal sealed class YouRockAnimation
         var held = jiggling && age - step * cycle < JiggleHold;
         for (var i = 0; i < Text.Length; i++)
         {
-            var random = _seed ^ (uint)(step * 7919 + i * 104729 + 1);
+            var random = _seed ^ (uint)(step * StepPrime + i * LetterPrime + 1);
             Next(ref random);
-            var offset = new Vector2(MathF.Round(Range(ref random, -10, 10)), -10);
-            var rotation = MathF.Round(Range(ref random, 0, 3));
-            var scale = Range(ref random, 0.7f, 1.3f);
+            var offset = new Vector2(MathF.Round(Range(ref random, -JiggleOffset, JiggleOffset)), -JiggleOffset);
+            var rotation = MathF.Round(Range(ref random, 0, MaximumJiggleRotation));
+            var scale = Range(ref random, MinimumJiggleScale, MaximumJiggleScale);
             var position = _rest[i];
             var letterScale = BaseScale;
             if (held)
@@ -91,6 +107,7 @@ internal sealed class YouRockAnimation
         }
     }
 
+    // xorshift32 (Marsaglia).
     private static uint Next(ref uint state)
     {
         state ^= state << 13;

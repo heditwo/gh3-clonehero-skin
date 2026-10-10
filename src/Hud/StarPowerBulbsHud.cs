@@ -3,8 +3,14 @@ using UnityEngine.UI;
 
 namespace Gh3Skin;
 
+// The six Star Power bulbs of the rock meter. Bulbs 4-6 slide out of the meter (StarPowerBulbAnimation).
 internal sealed class StarPowerBulbsHud
 {
+    // GH3: the sliding bulbs move along 0, 21, and 42 degrees from vertical.
+    private const int SlideAngleStep = 21;
+    // Tuned: the hidden distance of a retracted bulb on this canvas (GH3: 170 HUD units).
+    private const float HiddenDistance = 178.5f;
+    // Tuned: bulb layouts (x, y, width, height) and tilts in degrees, from GH3 frames.
     private static readonly (Rect Layout, float Angle)[] Bulbs =
     {
         (new(0, 0, 48, 84), 40), (new(26, -22, 46, 84), 27), (new(58, -28, 50, 100), 14),
@@ -53,8 +59,8 @@ internal sealed class StarPowerBulbsHud
             _glow[bulb].texture = active || power >= 0.5f ? _blueGlow : _normalGlow;
             if (bulb < 3) continue;
             var position = Bulbs[bulb].Layout.position;
-            var angle = (bulb - 3) * 21 * Mathf.Deg2Rad;
-            var hiddenDistance = (1 - extension) * 178.5f;
+            var angle = (bulb - 3) * SlideAngleStep * Mathf.Deg2Rad;
+            var hiddenDistance = (1 - extension) * HiddenDistance;
             position += new Vector2(-Mathf.Sin(angle), Mathf.Cos(angle)) * hiddenDistance;
             HudVisual.Position(_bulbs[bulb], position);
         }

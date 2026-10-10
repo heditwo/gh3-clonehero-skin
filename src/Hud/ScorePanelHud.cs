@@ -4,6 +4,10 @@ namespace Gh3Skin;
 
 internal sealed class ScorePanelHud
 {
+    // Tuned: the amp position in the panel, from GH3 frames.
+    private const float AmpX = -7, AmpY = -20.5f;
+    // GH3: career_hud_2d_elements, counter_pos (330, 810) minus score_pos (300, 650).
+    private const float ComboX = 30, ComboY = 160;
     private readonly AmpHud _amp;
     private readonly ComboHud _combo;
     private readonly Vector2 _ampMount;
@@ -16,9 +20,8 @@ internal sealed class ScorePanelHud
     {
         Root = HudVisual.Group("Score panel", parent);
         _amp = new AmpHud(Root, textures, ampMaterial, scoreFont);
-        _ampMount = new Vector2(-7 + tuning.ScoreOffsetX, -20.5f + tuning.ScoreOffsetY);
-        // career_hud_2d_elements: counter_pos (330, 810) minus score_pos (300, 650).
-        var comboOffset = new Vector2(30 * HudVisual.Gh3Scale, 160 * HudVisual.Gh3Scale);
+        _ampMount = new Vector2(AmpX + tuning.ScoreOffsetX, AmpY + tuning.ScoreOffsetY);
+        var comboOffset = new Vector2(ComboX * HudVisual.Gh3Scale, ComboY * HudVisual.Gh3Scale);
         _comboMount = _ampMount + comboOffset;
         // The lamp column ends at the amp frame's left edge; long streaks must not cover it.
         _combo = new ComboHud(Root, tuning, textures, counterFont,

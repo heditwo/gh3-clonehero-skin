@@ -5,6 +5,8 @@ namespace Gh3Skin;
 
 internal sealed class HighwayHud
 {
+    // Tuned: top of the active Star Power rail images on the 1080-line canvas.
+    private const float ActiveHighwayTop = 456;
     private readonly RawImage _edges;
     private readonly RawImage _active;
     private readonly Texture2D _normalEdges;
@@ -22,8 +24,8 @@ internal sealed class HighwayHud
         _blueEdges = assets.Textures["highway-edges-blue"];
         _activeFrames = Enumerable.Range(0, StarPowerHighwayAnimation.FrameCount)
             .Select(frame => assets.Textures[$"active-highway-{frame:00}"]).ToArray();
-        _edges = HudVisual.Image(Root, "highwayEdges", _normalEdges, new Rect(0, 0, 1920, 1080));
-        _active = HudVisual.Image(Root, "activeHighway", _activeFrames[0], new Rect(0, 456, 1920, 624));
+        _edges = HudVisual.Image(Root, "highwayEdges", _normalEdges, new Rect(0, 0, HudCanvas.Width, HudCanvas.Height));
+        _active = HudVisual.Image(Root, "activeHighway", _activeFrames[0], new Rect(0, ActiveHighwayTop, HudCanvas.Width, HudCanvas.Height - ActiveHighwayTop));
         _ready = new ReadyBannerHud(Root, assets);
     }
 

@@ -9,6 +9,10 @@ internal static class HudState
     public const float RockHighThreshold = 2f / 3;
     public const float RockRedBoundaryAngle = 19.5f;
     public const float RockGreenBoundaryAngle = -18.5f;
+    // GH3 (calibrated against GH3 frames, PARITY-NOTES.md#hud): the needle angle at 0 % and 100 % rock.
+    public const float RockEmptyAngle = 43;
+    public const float RockFullAngle = -43;
+    public const float RockMiddle = 0.5f;
 
     public static string MultiplierTexture(int multiplier, bool active) => active
         ? $"HUD_score_nixie_{Math.Clamp(multiplier / 2, 1, 4) * 2}b"
@@ -23,12 +27,12 @@ internal static class HudState
     {
         rock = UnitValue(rock);
         if (rock <= RockLowThreshold)
-            return RockRedBoundaryAngle + (43 - RockRedBoundaryAngle) * ((RockLowThreshold - rock) / RockLowThreshold);
-        if (rock <= 0.5f)
+            return RockRedBoundaryAngle + (RockEmptyAngle - RockRedBoundaryAngle) * ((RockLowThreshold - rock) / RockLowThreshold);
+        if (rock <= RockMiddle)
             return RockRedBoundaryAngle * ((0.5f - rock) / (0.5f - RockLowThreshold));
         if (rock <= RockHighThreshold)
-            return RockGreenBoundaryAngle * ((rock - 0.5f) / (RockHighThreshold - 0.5f));
-        return RockGreenBoundaryAngle + (-43 - RockGreenBoundaryAngle) * ((rock - RockHighThreshold) / (1 - RockHighThreshold));
+            return RockGreenBoundaryAngle * ((rock - RockMiddle) / (RockHighThreshold - RockMiddle));
+        return RockGreenBoundaryAngle + (RockFullAngle - RockGreenBoundaryAngle) * ((rock - RockHighThreshold) / (1 - RockHighThreshold));
     }
 
     public static float StarPowerBulbFill(float power, int bulb) => Math.Clamp(UnitValue(power) * 6 - bulb, 0, 1);

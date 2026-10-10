@@ -5,6 +5,9 @@ namespace Gh3Skin;
 
 internal sealed class LampColumnHud
 {
+    // Lamp sprites are 32 units high and overlap by one unit.
+    private const int LampPitch = 31;
+    private const float LampHeight = 32;
     public const float Width = 32;
     private readonly IReadOnlyDictionary<string, Texture2D> _textures;
     private readonly RawImage[] _lamps = new RawImage[5];
@@ -20,7 +23,7 @@ internal sealed class LampColumnHud
         HudVisual.Position(front, mount);
         for (var light = 0; light < _lamps.Length; light++)
         {
-            var layout = new Rect(0, light * 31, Width, 32);
+            var layout = new Rect(0, light * LampPitch, Width, LampHeight);
             _lamps[light] = HudVisual.Image(back, $"scoreLight{light}", textures["HUD_score_light_0"], layout);
             _glows[light] = HudVisual.Image(front, $"scoreLightGlow{light}", textures["HUD_score_light_0"], layout);
         }

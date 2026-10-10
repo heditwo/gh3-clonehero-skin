@@ -41,7 +41,7 @@ internal sealed class YouRockHud
             texture.filterMode = FilterMode.Bilinear;
             texture.wrapMode = TextureWrapMode.Clamp;
             texture.hideFlags = HideFlags.DontUnloadUnusedAsset;
-            _flames = HudVisual.Image(_root, "flames", texture, new Rect(0, 0, 1920, 1080));
+            _flames = HudVisual.Image(_root, "flames", texture, new Rect(0, 0, HudCanvas.Width, HudCanvas.Height));
             _flames.enabled = false;
         }
         for (var i = 0; i < _animation.Count * 2; i++)

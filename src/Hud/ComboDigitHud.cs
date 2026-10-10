@@ -5,6 +5,10 @@ namespace Gh3Skin;
 // One note-streak digit: a num_a7 text element on the drum, as created by create_2d_hud_elements.
 internal sealed class ComboDigitHud
 {
+    // GH3: create_2d_hud_elements, digit i at y 78.
+    private const float DigitY = 78;
+    // Measured: 720p screen pixels per GH3 unit in the recordings (the GH3 HUD is at 0.7 scale).
+    private const float RecordingPixelsPerUnit = 0.7f;
     private readonly HudTuning _tuning;
     private readonly HudText _text;
     private readonly Color _color;
@@ -19,11 +23,11 @@ internal sealed class ComboDigitHud
     public ComboDigitHud(Transform parent, int place, HudFont font, HudTuning tuning)
     {
         _tuning = tuning;
-        // The ones digit is dark on the white drum; the others are light on the dark drums.
+        // GH3: the ones digit is dark (15, 15, 70, 200) on the white drum; the others are light (230, 230, 230, 200).
         _color = place == 0 ? new Color(15 / 255f, 15 / 255f, 70 / 255f, 200 / 255f) : new Color(230 / 255f, 230 / 255f, 230 / 255f, 200 / 255f);
-        _anchorX = _x = 222 - ComboReelLayout.Pitch * (place + 1);
+        _anchorX = _x = ComboReelLayout.FirstDigitRight - ComboReelLayout.Pitch * (place + 1);
         // GH3 frames show these digits at one texel per 1080p pixel, not at the HUD's 1.05 scale.
-        _text = new HudText(parent, $"Combo digit {place}", font, new Vector2(_anchorX, 78), Vector2.zero, 1 / HudVisual.Gh3Scale)
+        _text = new HudText(parent, $"Combo digit {place}", font, new Vector2(_anchorX, DigitY), Vector2.zero, 1 / HudVisual.Gh3Scale)
         {
             Color = _color
         };
@@ -67,8 +71,7 @@ internal sealed class ComboDigitHud
             var elapsed = Math.Max(0, time - _started);
             var frame = Math.Clamp((int)(elapsed * 60), 0, _tuning.RollAlphas.Length - 1);
             alpha = _tuning.RollAlphas[frame];
-            // Offsets are 720p screen pixels; one GH3 unit is 0.7 of those.
-            offset = _tuning.RollOffsets[frame] / 0.7f;
+            offset = _tuning.RollOffsets[frame] / RecordingPixelsPerUnit;
         }
         _text.Offset = new Vector2(_x - _anchorX, offset);
         _text.Color = new Color(_color.r, _color.g, _color.b, _color.a * alpha * _alpha);

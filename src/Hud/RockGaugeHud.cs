@@ -3,6 +3,8 @@ using UnityEngine.UI;
 
 namespace Gh3Skin;
 
+// The rock meter gauge: the three backgrounds, the lights, and the needle. GH3: the HUD_rock_* sprites, laid out in
+// texels of their 256 x 256 body.
 internal sealed class RockGaugeHud
 {
     private readonly RockMeterState _state = new();
@@ -19,13 +21,17 @@ internal sealed class RockGaugeHud
         Rect Scale(float x, float y, float width, float height) =>
             new(x * tuning.RockScale, y * tuning.RockVerticalScale, width * tuning.RockScale, height * tuning.RockVerticalScale);
         var colors = new[] { "red", "yellow", "green" };
+        // Tuned: the HUD_rock_* sprite rectangles in texels of the 256 x 256 meter body, calibrated against GH3 frames.
         var body = Scale(0, 0, 256, 256);
         for (var index = 0; index < colors.Length; index++)
             _backgrounds[index] = HudVisual.Image(Root, "rockBackground" + colors[index], textures["HUD_rock_BG_" + colors[index]], body);
         HudVisual.Image(Root, "rockLights", textures["HUD_rock_lights_all"], Scale(0, 0, 256, 128));
+        // Tuned: the light sprites overlap.
         _lights[2] = HudVisual.Image(Root, "rockLightgreen", textures["HUD_rock_lights_green"], Scale(128, 0, 128, 128));
+        // Tuned: the yellow light.
         _lights[1] = HudVisual.Image(Root, "rockLightyellow", textures["HUD_rock_lights_yellow"], Scale(62, 0, 128, 128));
         _lights[0] = HudVisual.Image(Root, "rockLightred", textures["HUD_rock_lights_red"], Scale(0, 0, 128, 128));
+        // Tuned: the needle pivots at its bottom center.
         _needle = HudVisual.Image(Root, "rockNeedle", textures["HUD_rock_needle"], Scale(128, 165, 16, 114), new Vector2(0.5f, 0));
         HudVisual.Image(Root, "rockBody", textures["HUD_rock_body"], body);
     }

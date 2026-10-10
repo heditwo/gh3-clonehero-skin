@@ -11,6 +11,8 @@ namespace Gh3Skin;
 // onto the player camera. Clone Hero's own hit effects are hidden by GameplaySpriteRenderer.
 internal sealed class HitEffectsHud
 {
+    // Clone Hero note lane bits after the open-note bit: green to orange.
+    internal const int FretLaneMask = 31;
     private const float CanvasScale = 1920f / 1280;
     private readonly HitEffectState _state = new();
     private readonly NoteHitScanner _scanner = new();
@@ -77,7 +79,7 @@ internal sealed class HitEffectsHud
         var held = 0;
         if (_noteRenderer != null)
             foreach (var note in _noteRenderer.HeldSustainNotes)
-                held |= (note.field_Public_UInt16_0 >> 1) & 31;
+                held |= (note.field_Public_UInt16_0 >> 1) & FretLaneMask;
         for (var lane = 0; lane < HitEffectState.Lanes; lane++)
             if (((held ^ _heldLanes) & (1 << lane)) != 0) _state.SetWhammy(lane, (held & (1 << lane)) != 0);
         _heldLanes = held;
@@ -198,7 +200,7 @@ internal sealed class NoteHitScanner
             var hit = (state & NoteState.Hit) != 0;
             // Bit 0 is the open note, which GH3 does not have; bits 1-5 are green to orange.
             if (hit && !_seen[index] && time >= _time)
-                hits.Add(((CloneHeroBindings.NoteLanes(note) >> 1) & 31, PhraseComplete(index)));
+                hits.Add(((CloneHeroBindings.NoteLanes(note) >> 1) & HitEffectsHud.FretLaneMask, PhraseComplete(index)));
             _seen[index] = hit;
             if (index == _first && (hit || (state & NoteState.Missed) != 0 || note.field_Public_Double_0 < time - 1)) _first++;
         }
