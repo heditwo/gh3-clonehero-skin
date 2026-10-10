@@ -4,7 +4,7 @@ using UnityEngine;
 namespace Gh3Skin;
 
 // Test aid for the picker without a mouse (scripts/capture-menu.sh). GH3_SKIN_PICKER_TEST is a list of steps separated by
-// ';': `ready` (wait for the package import), `wait <seconds>`, `open`, `close`, `apply stage=<id> <role>=<id> venueTrack=on|off generatedDirection=on|off ...`,
+// ';': `ready` (wait for the package import), `wait <seconds>`, `open`, `close`, `apply stage=<id> <role>=<id> guitar=<id> bass=<id> venueTrack=on|off ...`,
 // `capture <png path>`, `quit`. The steps run in Clone Hero's menus only. Off when the variable is not set.
 internal sealed class PickerTest
 {

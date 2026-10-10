@@ -13,6 +13,7 @@ internal sealed class GameplayStage
     private Packages.StageDecision? _decision;
     private Packages.InstalledPackage? _songPackage;
     private readonly Dictionary<string, Packages.InstalledPackage> _characterPackages = new();
+    private readonly Dictionary<string, Packages.InstalledPackage> _instrumentPackages = new();
     private static string _previousRandom = "";
     private static readonly System.Random StageRandom = new();
     private string _directory = "";
@@ -120,6 +121,16 @@ internal sealed class GameplayStage
                 MelonLogger.Warning($"GH3 band {role}: character {id} is not installed or did not import; the venue default plays");
             else _characterPackages[role] = character;
         }
+        _instrumentPackages.Clear();
+        foreach (var role in Packages.PlayerChoices.InstrumentRoles)
+        {
+            var id = Environment.GetEnvironmentVariable("GH3_SKIN_INSTRUMENT_" + role.ToUpperInvariant()) ?? choices.Instrument(role);
+            if (id == Packages.PlayerChoices.DefaultInstrument || id.Length == 0) continue;
+            var instrument = manager.Find(Packages.PackageKind.Instrument, id);
+            if (instrument == null || instrument.State == Packages.PackageState.Failed)
+                MelonLogger.Warning($"GH3 band {role}: instrument {id} is not installed or did not import; the default instrument plays");
+            else _instrumentPackages[role] = instrument;
+        }
     }
 
     // The stage and the library come from their package cache folders. The shader bundles come from the mod installation
@@ -145,11 +156,11 @@ internal sealed class GameplayStage
         if (stage == null) return SourceState.Missing;
         var requirement = stage.Manifest.Requires.FirstOrDefault(r => r.Id.StartsWith("gh3-band-", StringComparison.Ordinal));
         var library = manager.Find(Packages.PackageKind.Library, requirement.Id ?? "gh3-band-v1");
-        if (Busy(stage) || Busy(library) || _characterPackages.Values.Any(Busy))
+        if (Busy(stage) || Busy(library) || _characterPackages.Values.Any(Busy) || _instrumentPackages.Values.Any(Busy))
         {
             manager.Prioritize(stage);
-            foreach (var character in _characterPackages.Values) manager.Prioritize(character);
-            return Wait($"the import of {string.Join(", ", new[] { stage, library }.Concat(_characterPackages.Values).Where(Busy).Select(p => p!.Manifest.Id))}");
+            foreach (var character in _characterPackages.Values.Concat(_instrumentPackages.Values)) manager.Prioritize(character);
+            return Wait($"the import of {string.Join(", ", new[] { stage, library }.Concat(_characterPackages.Values).Concat(_instrumentPackages.Values).Where(Busy).Select(p => p!.Manifest.Id))}");
         }
         if (stage.State != Packages.PackageState.Ready || library?.State != Packages.PackageState.Ready)
         {
@@ -190,6 +201,32 @@ internal sealed class GameplayStage
             catch (Exception error) when (error is IOException or Packages.PackageException or System.Text.Json.JsonException or UnauthorizedAccessException)
             {
                 MelonLogger.Warning($"GH3 band {role}: character {package.Manifest.Id} could not load ({error.Message}); the venue default plays");
+            }
+        }
+        return result;
+    }
+
+    // The player's instruments: a guitar for the guitarist and a bass for the bassist.
+    private Dictionary<string, Packages.InstrumentModel> LoadInstruments()
+    {
+        var result = new Dictionary<string, Packages.InstrumentModel>();
+        foreach (var (role, package) in _instrumentPackages)
+        {
+            if (package.State != Packages.PackageState.Ready)
+            {
+                MelonLogger.Warning($"GH3 band {role}: instrument {package.Manifest.Id} is not ready ({package.State} {package.Error}); the default instrument plays");
+                continue;
+            }
+            try
+            {
+                var model = Packages.InstrumentModel.Load(package.CacheDirectory);
+                if (model.Role != role)
+                    MelonLogger.Warning($"GH3 band {role}: instrument {model.Id} is a {model.Kind} for the {model.Role}; the default instrument plays");
+                else result[role] = model;
+            }
+            catch (Exception error) when (error is IOException or Packages.PackageException or System.Text.Json.JsonException or UnauthorizedAccessException)
+            {
+                MelonLogger.Warning($"GH3 band {role}: instrument {package.Manifest.Id} could not load ({error.Message}); the default instrument plays");
             }
         }
         return result;
@@ -262,6 +299,8 @@ internal sealed class GameplayStage
         _decision = null;
         _songPackage = null;
         _characterPackages.Clear();
+        _instrumentPackages.Clear();
+        HighwayChoice.Clear();
         if (PerformanceClipCache.LateLoads > 0)
             MelonLogger.Warning($"GH3 clips: {PerformanceClipCache.LateLoads} clips loaded on the main thread during play ({PerformanceClipCache.LateMilliseconds:0.0} ms)");
         PerformanceClipCache.LateLoads = 0;
@@ -459,7 +498,10 @@ internal sealed class GameplayStage
             var surfaceShader = LoadSurfaceShader(_render);
             _assets.Load(_directory, _root, Layer, lighting: lighting != null, surfaceShader: surfaceShader);
             _band = new StageBand();
-            _band.Load(Path.Combine(library, "band"), _assets, _root, Layer, lighting != null, pack.Band, surfaceShader, LoadCharacters());
+            var characters = LoadCharacters();
+            var instruments = LoadInstruments();
+            _band.Load(Path.Combine(library, "band"), _assets, _root, Layer, lighting != null, pack.Band, surfaceShader, characters, instruments);
+            HighwayChoice.Choose(HighwayChoice.PlayerRole(player), characters, instruments);
             _fixtures = new StageFixtures();
             _fixtures.Load(Path.Combine(_directory, "fixtures"), _root, Layer);
             _actors = new StageActors();

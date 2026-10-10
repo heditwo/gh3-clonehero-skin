@@ -154,7 +154,7 @@ internal static class PickerLogicTests
     }
 
     // A small glTF binary with the accessors that the tests need.
-    private sealed class GlbBuilder
+    internal sealed class GlbBuilder
     {
         private readonly List<byte> _bin = new();
         public JsonObject Json { get; } = new()
@@ -210,10 +210,10 @@ internal static class PickerLogicTests
         }
     }
 
-    private static byte[] Png4() =>
+    internal static byte[] Png4() =>
         PackageLogicTests.PngFile(4, 4, 6, 8, Enumerable.Range(0, 4).SelectMany(_ => new byte[] { 0 }.Concat(Enumerable.Repeat(new byte[] { 10, 20, 30, 255 }, 4).SelectMany(p => p))).ToArray());
 
-    private static string Manifest(string format, string id, string entry, string requires = "") =>
+    internal static string Manifest(string format, string id, string entry, string requires = "") =>
         $"{{\"format\":\"{format}\",\"id\":\"{id}\",\"version\":\"1.0.0\",\"name\":\"{id}\",\"authors\":[{{\"name\":\"T\"}}],\"license\":\"CC0-1.0\"," +
         $"\"permissions\":{{\"redistribute\":true,\"modify\":true,\"commercial\":true}},{requires}\"entry\":{entry},\"files\":{{}}}}";
 

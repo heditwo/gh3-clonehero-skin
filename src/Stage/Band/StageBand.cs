@@ -48,7 +48,7 @@ internal sealed class StageBand : IDisposable
 
     public void Load(string directory, StageAssets stage, GameObject root, int layer, bool lighting = false,
         IReadOnlyDictionary<string, StagePlacement>? placements = null, Shader? surfaceShader = null,
-        IReadOnlyDictionary<string, Packages.CharacterModel>? characters = null)
+        IReadOnlyDictionary<string, Packages.CharacterModel>? characters = null, IReadOnlyDictionary<string, Packages.InstrumentModel>? instruments = null)
     {
         var path = Path.Combine(directory, "band.json");
         if (!File.Exists(path))
@@ -71,6 +71,7 @@ internal sealed class StageBand : IDisposable
             using var reader = new BinaryReader(File.OpenRead(Path.Combine(folder, "animation.bin")));
             var roleAnimation = new BandAnimation(reader);
             var character = characters != null && characters.TryGetValue(member.Role, out var chosen) ? chosen : null;
+            var instrument = instruments != null && instruments.TryGetValue(member.Role, out var picked) ? picked : null;
             CharacterMotion? motion = null;
             if (character != null && character.Library.Length > 0 && member.Role is not ("guitarist" or "bassist"))
             {
@@ -118,7 +119,7 @@ internal sealed class StageBand : IDisposable
                 performer.transform.localScale = new Vector3(motion.Profile.Scale, motion.Profile.Scale, motion.Profile.Scale);
                 animation = BandAnimation.FromRig(motion.Profile.Parents, motion.Profile.Bind);
                 bones = Bones(animation);
-                assets = LoadOwnCharacter(character!, motion, directory, member, performer, layer, bones, roleAnimation, lighting, surfaceShader);
+                assets = LoadOwnCharacter(character!, motion, directory, member, performer, layer, bones, roleAnimation, lighting, surfaceShader, instrument, animation);
                 if (assets == null)
                 {
                     for (var i = performer.transform.childCount - 1; i >= 0; i--) UnityEngine.Object.Destroy(performer.transform.GetChild(i).gameObject);
@@ -132,8 +133,10 @@ internal sealed class StageBand : IDisposable
             {
                 bones = Bones(animation);
                 if (character != null)
-                    assets = LoadCharacter(character, directory, member, performer, layer, bones, lighting, surfaceShader, hair, out characterHair);
+                    assets = LoadCharacter(character, directory, member, performer, layer, bones, lighting, surfaceShader, hair, out characterHair, instrument, animation);
             }
+            if (assets == null && instrument != null)
+                assets = LoadMemberWithInstrument(directory, member, performer, layer, bones, animation, lighting, surfaceShader, instrument);
             if (assets == null)
             {
                 var model = new StageAssets();
@@ -166,7 +169,8 @@ internal sealed class StageBand : IDisposable
     // plays in the role of its profile; otherwise the role's instrument comes from the library band model (BandAttachments).
     // In another role, `characterHair` is the hair of its profile on the role's rig. Null: use the venue default.
     private static List<StageAssets>? LoadCharacter(Packages.CharacterModel character, string directory, BandMember member, GameObject performer, int layer,
-        Transform[] bones, bool lighting, Shader? surfaceShader, HairBank? hair, out HairDefinition? characterHair)
+        Transform[] bones, bool lighting, Shader? surfaceShader, HairBank? hair, out HairDefinition? characterHair, Packages.InstrumentModel? instrument,
+        BandAnimation roleRig)
     {
         var role = member.Role;
         var children = performer.transform.childCount;
@@ -194,10 +198,18 @@ internal sealed class StageBand : IDisposable
             var parts = Packages.BandAttachments.ReadParts(Path.Combine(character.Folder, "meshes.bin"));
             var ownParts = Packages.BandAttachments.AttachmentParts(parts, body, map);
             var (add, keepOwn, note) = Packages.BandAttachments.Choose(ownParts.Length > 0, ownRole, character.Instrument, member.Instrument, role);
+            var picked = instrument != null && CanHold(instrument, rig);
+            if (picked) (add, keepOwn) = (false, false);
             assets = new StageAssets();
             assets.Load(character.Folder, performer, layer, map.Select(i => bones[i]).ToArray(), lighting, surfaceShader: surfaceShader, bindposes: bindposes,
                 parts: keepOwn || ownParts.Length == 0 ? null : Enumerable.Range(0, parts.Length).Except(ownParts).ToArray());
             var result = new List<StageAssets> { assets };
+            if (picked)
+            {
+                var problem = LoadPicked(instrument!, rig, roleRig, performer, layer, bones, lighting, surfaceShader, result);
+                if (problem == null) note = Picked(instrument!);
+                else (add, note) = (true, $"{problem}; instrument {member.Instrument} from the library");
+            }
             if (add) note = LoadInstrument(Path.Combine(directory, role), body, performer, layer, bones, lighting, surfaceShader, result) ?? note;
             MelonLogger.Msg($"GH3 band {role}: character {character.Id} ({character.Name}, {character.Role} profile) with {note}" +
                 (characterHair != null ? $"; hair of the {character.Role} profile ({characterHair.Joints.Length} joints)" : ""));
@@ -219,7 +231,8 @@ internal sealed class StageBand : IDisposable
     // bass with its own animation set), the role's library instrument hangs on the bones with the same names, bound
     // with the role rig's rest pose, so that it follows the character's instrument bones.
     private static List<StageAssets>? LoadOwnCharacter(Packages.CharacterModel character, CharacterMotion motion, string directory, BandMember member,
-        GameObject performer, int layer, Transform[] bones, BandAnimation roleRig, bool lighting, Shader? surfaceShader)
+        GameObject performer, int layer, Transform[] bones, BandAnimation roleRig, bool lighting, Shader? surfaceShader, Packages.InstrumentModel? instrument,
+        BandAnimation profileRig)
     {
         var role = member.Role;
         StageAssets? assets = null;
@@ -234,10 +247,19 @@ internal sealed class StageBand : IDisposable
             var ownParts = Packages.BandAttachments.AttachmentParts(parts, body, map);
             var ownRole = character.Role == role;
             var (add, keepOwn, note) = Packages.BandAttachments.Choose(ownParts.Length > 0, ownRole, character.Instrument, member.Instrument, role);
+            var picked = instrument != null && CanHold(instrument, profile.Bones);
+            if (picked) (add, keepOwn) = (false, false);
             assets = new StageAssets();
             assets.Load(character.Folder, performer, layer, map.Select(i => bones[i]).ToArray(), lighting, surfaceShader: surfaceShader, bindposes: bindposes,
                 parts: keepOwn || ownParts.Length == 0 ? null : Enumerable.Range(0, parts.Length).Except(ownParts).ToArray());
             var result = new List<StageAssets> { assets };
+            if (picked)
+            {
+                // GH3 binds the instrument to the rest pose of the band member's own skeleton.
+                var problem = LoadPicked(instrument!, profile.Bones, profileRig, performer, layer, bones, lighting, surfaceShader, result);
+                if (problem == null) note = Picked(instrument!);
+                else (add, note) = (true, $"{problem}; instrument {member.Instrument} from the library");
+            }
             if (add)
             {
                 var library = Path.GetDirectoryName(Path.GetFullPath(directory))!;
@@ -313,6 +335,76 @@ internal sealed class StageBand : IDisposable
                 UnityEngine.Object.Destroy(performer.transform.GetChild(i).gameObject);
             MelonLogger.Warning($"GH3 band: the library instrument could not load ({error.Message})");
             return "no instrument";
+        }
+    }
+
+    // A library band member with the player's instrument: the member's body parts without its library instrument
+    // (BandAttachments), then the chosen instrument on the role's bones. Null: the default member plays.
+    private static List<StageAssets>? LoadMemberWithInstrument(string directory, BandMember member, GameObject performer, int layer, Transform[] bones,
+        BandAnimation rig, bool lighting, Shader? surfaceShader, Packages.InstrumentModel instrument)
+    {
+        var children = performer.transform.childCount;
+        var result = new List<StageAssets>();
+        try
+        {
+            var library = Path.GetDirectoryName(Path.GetFullPath(directory))!;
+            var (rigBones, parents, _) = Packages.CharacterImporter.Rig(library, member.Role);
+            if (!CanHold(instrument, rigBones)) return null;
+            var folder = Path.Combine(directory, member.Role);
+            var parts = Packages.BandAttachments.ReadParts(Path.Combine(folder, "meshes.bin"));
+            var own = Packages.BandAttachments.AttachmentParts(parts, Packages.BandAttachments.BodyJoints(rigBones, parents));
+            var body = new StageAssets();
+            result.Add(body);
+            body.Load(folder, performer, layer, bones, lighting, surfaceShader: surfaceShader, parts: Enumerable.Range(0, parts.Length).Except(own).ToArray());
+            var problem = LoadPicked(instrument, rigBones, rig, performer, layer, bones, lighting, surfaceShader, result);
+            if (problem != null) throw new InvalidDataException(problem);
+            MelonLogger.Msg($"GH3 band {member.Role}: the venue default with {Picked(instrument)}");
+            return result;
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or Packages.PackageException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            foreach (var part in result) part.Dispose();
+            for (var i = performer.transform.childCount - 1; i >= children; i--)
+                UnityEngine.Object.Destroy(performer.transform.GetChild(i).gameObject);
+            MelonLogger.Warning($"GH3 band {member.Role}: instrument {instrument.Id} could not load ({error.Message}); the venue default plays");
+            return null;
+        }
+    }
+
+    private static string Picked(Packages.InstrumentModel instrument) => $"instrument {instrument.Id} ({instrument.Name}; the player's choice)";
+
+    // The band member's rig has every joint of the instrument (the GH3 guitarist and bassist rigs have the instrument bones).
+    private static bool CanHold(Packages.InstrumentModel instrument, string[] rigBones)
+    {
+        if (instrument.Joints.All(joint => Array.IndexOf(rigBones, joint) >= 0)) return true;
+        MelonLogger.Warning($"GH3 band: instrument {instrument.Id} has joints that the band member's rig does not have; it is not used");
+        return false;
+    }
+
+    // The chosen instrument on the band member's bones (`bones` in the order of `rigBones`), bound to the rest pose of
+    // that rig as GH3 binds an instrument to the skeleton of the band member. Returns a problem text, or null.
+    private static string? LoadPicked(Packages.InstrumentModel instrument, string[] rigBones, BandAnimation rig, GameObject performer, int layer,
+        Transform[] bones, bool lighting, Shader? surfaceShader, List<StageAssets> result)
+    {
+        var children = performer.transform.childCount;
+        StageAssets? assets = null;
+        try
+        {
+            var map = instrument.Joints.Select(joint => Array.IndexOf(rigBones, joint)).ToArray();
+            var rest = RestBindposes(rig);
+            assets = new StageAssets();
+            assets.Load(instrument.Folder, performer, layer, map.Select(i => bones[i]).ToArray(), lighting, surfaceShader: surfaceShader,
+                bindposes: map.Select(i => rest[i]).ToArray());
+            result.Add(assets);
+            return null;
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            assets?.Dispose();
+            for (var i = performer.transform.childCount - 1; i >= children; i--)
+                UnityEngine.Object.Destroy(performer.transform.GetChild(i).gameObject);
+            MelonLogger.Warning($"GH3 band: instrument {instrument.Id} could not load ({error.Message})");
+            return $"instrument {instrument.Id} did not load";
         }
     }
 

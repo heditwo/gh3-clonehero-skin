@@ -242,7 +242,7 @@ internal sealed class SkinAssets
         _sprites[name] = sprite;
     }
 
-    private static Texture2D LoadTexture(string file)
+    internal static Texture2D LoadTexture(string file)
     {
         var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
         if (!texture.LoadImage(new Il2CppStructArray<byte>(File.ReadAllBytes(file)), true))

@@ -45,8 +45,8 @@ internal sealed class CharacterImporter
         var entry = _package.Manifest.Entry;
         var character = Object(_package.Read(entry["character"]));
         var minor = _package.Manifest.Format.EndsWith(".0") ? 0 : 1;
-        Fields(character, "character.json", minor == 0 ? new[] { "version", "library", "profile", "hairMaterials", "attachments" } :
-            new[] { "version", "library", "profile", "animations", "hairMaterials", "attachments" }, "version", "library", "profile");
+        Fields(character, "character.json", minor == 0 ? new[] { "version", "library", "profile", "hairMaterials", "attachments", "highway" } :
+            new[] { "version", "library", "profile", "animations", "hairMaterials", "attachments", "highway" }, "version", "library", "profile");
         if (Number(character["version"], "version") != 1) throw new PackageException("character.json version must be 1");
         var profile = Text(character["profile"]) ?? "";
         var libraryId = Text(character["library"]) ?? "";
@@ -74,7 +74,43 @@ internal sealed class CharacterImporter
         }
         var hair = (character["hairMaterials"] as JsonArray ?? new JsonArray()).Select(n => Text(n) ?? throw new PackageException("invalid hair material")).ToHashSet();
         var instrument = Instrument(character["attachments"]);
-        var glb = new GlbDocument(_package.Read(entry["model"]));
+        var highway = Highway(character["highway"], folder);
+        var (names, parts) = ImportModel(folder, entry["model"], profile, rigBones, rigParents, rigBind, hair);
+        Write(Path.Combine(folder, "character.json"), new JsonObject
+        {
+            ["version"] = 1, ["id"] = _package.Manifest.Id, ["name"] = _package.Manifest.Name, ["profile"] = profile, ["role"] = role,
+            ["instrument"] = instrument, ["joints"] = new JsonArray(names.Select(n => (JsonNode?)n).ToArray()),
+            ["library"] = libraryId, ["animations"] = animations, ["highway"] = highway,
+        });
+        return (role, names.Length, parts.Count, parts.Sum(p => p.Count));
+    }
+
+    public const string HighwayFile = "highway.png";
+
+    // A highway image (character.json or instrument.json `highway`): a PNG of the package, copied to the cache as
+    // highway.png. The game decodes it when the song loads. Returns the cache file name, or "" without a highway.
+    public string Highway(JsonNode? reference, string folder)
+    {
+        if (reference == null) return "";
+        var path = Text(reference) ?? throw new PackageException("highway must be a package path");
+        if (!path.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || !_package.Contains(path)) throw new PackageException($"the highway file {path} is missing");
+        var png = _package.Read(path);
+        if (png.Length < 24 || png[0] != 0x89 || png[1] != (byte)'P') throw new PackageException($"the highway {path} is not a PNG file");
+        var width = BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(16));
+        var height = BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(20));
+        if (width is < 1 or > 4096 || height is < 1 or > 4096) throw new PackageException($"the highway {path} must be 1 to 4096 pixels on each side");
+        if (width * 2 != height) Warnings.Add($"the highway is {width} x {height} pixels; GH3 highways are 512 x 1024 (other sizes stretch)");
+        Directory.CreateDirectory(folder);
+        File.WriteAllBytes(Path.Combine(folder, HighwayFile), png);
+        return HighwayFile;
+    }
+
+    // The skinned GLB `model` on a rig profile, as a band model folder (meshes.bin, stage.json, textures, bindposes.bin).
+    // Characters and instruments share it. Returns the GH3 bone name of each skin joint and the mesh parts.
+    public (string[] Names, List<MeshPart> Parts) ImportModel(string folder, string model, string profile, string[] rigBones, int[] rigParents, float[][] rigBind,
+        ISet<string> hair)
+    {
+        var glb = new GlbDocument(_package.Read(model));
         if (glb.List("animations").Count > 0) Warnings.Add("the GLB animations are ignored; the library supplies the clips");
         var skins = glb.List("skins");
         if (skins.Count != 1) throw new PackageException("a character GLB needs one skin");
@@ -253,13 +289,7 @@ internal sealed class CharacterImporter
             foreach (var matrix in bindposes)
                 for (var r = 0; r < 4; r++) for (var c = 0; c < 4; c++) writer.Write((float)matrix[r, c]);
         }
-        Write(Path.Combine(folder, "character.json"), new JsonObject
-        {
-            ["version"] = 1, ["id"] = _package.Manifest.Id, ["name"] = _package.Manifest.Name, ["profile"] = profile, ["role"] = role,
-            ["instrument"] = instrument, ["joints"] = new JsonArray(names.Select(n => (JsonNode?)n).ToArray()),
-            ["library"] = libraryId, ["animations"] = animations,
-        });
-        return (role, joints.Length, parts.Count, parts.Sum(p => p.Count));
+        return (names, parts);
     }
 
     // attachments.instrument: a library instrument ID (band/band.json `instrument`), or "" for the default. StageBand

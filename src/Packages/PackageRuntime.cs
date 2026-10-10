@@ -71,7 +71,7 @@ internal static class PackageRuntime
             version,
             Environment.GetEnvironmentVariable("GH3_SKIN_STAGE") ?? (Choices.Stage == PlayerChoices.SongStage ? PlayerChoices.FallbackStage : Choices.Stage),
             Math.Clamp(Environment.ProcessorCount / 2, 1, 4));
-        MelonLogger.Msg($"GH3 packages: scanning {string.Join(", ", custom.SelectMany(c => new[] { Path.Combine(c, "Stages"), Path.Combine(c, "Characters") }).Append(settings.ModPackages))}; " +
+        MelonLogger.Msg($"GH3 packages: scanning {string.Join(", ", custom.SelectMany(c => PackageManager.CustomFolders.Select(f => Path.Combine(c, f))).Append(settings.ModPackages))}; " +
             $"cache {settings.CacheRoot}; textures {(compressed ? "BC1/BC3" : "RGBA32 (BC1/BC3 not supported)")}; {settings.Platform} {settings.GraphicsApi}");
         Manager = new PackageManager(settings);
         Manager.Start();

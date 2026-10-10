@@ -17,6 +17,8 @@ internal sealed class CharacterModel
     public string Animations { get; private init; } = "";
     // The cache folder of `Library`; the stage sets it before the band loads.
     public string LibraryFolder { get; set; } = "";
+    // The highway image of the character (cache highway.png), or "" when the package has none.
+    public string Highway { get; private init; } = "";
     public string[] Joints { get; private init; } = Array.Empty<string>();
     public float[][] Bindposes { get; private init; } = Array.Empty<float[]>();
 
@@ -36,6 +38,7 @@ internal sealed class CharacterModel
             Instrument = PackageJson.Text(info["instrument"]) ?? "", Library = PackageJson.Text(info["library"]) ?? "",
             Profile = PackageJson.Text(info["profile"]) ?? "", Animations = PackageJson.Text(info["animations"]) ?? "",
             Joints = joints, Bindposes = bindposes,
+            Highway = PackageJson.Text(info["highway"]) is { Length: > 0 } highway ? Path.Combine(folder, highway) : "",
         };
     }
 

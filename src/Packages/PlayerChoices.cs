@@ -11,6 +11,10 @@ internal sealed class PlayerChoices
     // The stage of "Song's choice" when the song selects none, and of a chosen stage that is not installed.
     public const string FallbackStage = "gh3.budokan";
     public static readonly string[] Roles = { "guitarist", "bassist", "drummer", "singer" };
+    // The roles that hold a selectable instrument: guitars for the guitarist, basses for the bassist (GH3 store lists).
+    public static readonly string[] InstrumentRoles = { "guitarist", "bassist" };
+    // "default": the character's own instrument in the role of its profile, else the role's library instrument.
+    public const string DefaultInstrument = "default";
 
     public string Stage { get; set; } = SongStage;
     public bool SongSuggestions { get; set; } = true;
@@ -23,13 +27,20 @@ internal sealed class PlayerChoices
     public bool ReduceFlashing { get; set; }
     public Dictionary<string, string> Characters { get; } = Roles.ToDictionary(role => role, _ => DefaultCharacter);
 
+    public Dictionary<string, string> Instruments { get; } = InstrumentRoles.ToDictionary(role => role, _ => DefaultInstrument);
+
     public string Character(string role) => Characters.TryGetValue(role, out var id) ? id : DefaultCharacter;
+
+    public string Instrument(string role) => Instruments.TryGetValue(role, out var id) ? id : DefaultInstrument;
 
     // The first ID of the next (or previous) character group: IDs that share the part before the second dot are one
     // character in several outfits (gh3.judy.outfit1.style2), so that 70 GH3 variants do not need 70 clicks.
-    public static string Jump(IReadOnlyList<string> ids, int index, int direction)
+    public static string Jump(IReadOnlyList<string> ids, int index, int direction) =>
+        Jump(ids, index, direction, id => id.IndexOf('.', id.IndexOf('.') + 1) is var dot and > 0 ? id[..dot] : id);
+
+    // As Jump, with another grouping (for example the instruments of one model in several finishes).
+    public static string Jump(IReadOnlyList<string> ids, int index, int direction, Func<string, string> Group)
     {
-        static string Group(string id) => id.IndexOf('.', id.IndexOf('.') + 1) is var dot and > 0 ? id[..dot] : id;
         var group = Group(ids[index]);
         var i = index;
         do i = (i + direction + ids.Count) % ids.Count;
@@ -62,6 +73,9 @@ internal sealed class PlayerChoices
             if (root["characters"] is JsonObject characters)
                 foreach (var role in Roles)
                     if (PackageJson.Text(characters[role]) is { } id && (id == DefaultCharacter || PackageManifest.ValidId(id))) choices.Characters[role] = id;
+            if (root["instruments"] is JsonObject instruments)
+                foreach (var role in InstrumentRoles)
+                    if (PackageJson.Text(instruments[role]) is { } id && (id == DefaultInstrument || PackageManifest.ValidId(id))) choices.Instruments[role] = id;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or PackageException or System.Text.Json.JsonException)
         {
@@ -78,6 +92,7 @@ internal sealed class PlayerChoices
             ["version"] = 1, ["stage"] = Stage, ["songSuggestions"] = SongSuggestions, ["showHint"] = ShowHint,
             ["venueTrack"] = VenueTrack, ["generatedDirection"] = GeneratedDirection, ["reduceFlashing"] = ReduceFlashing,
             ["characters"] = new JsonObject(Roles.Select(role => KeyValuePair.Create(role, (JsonNode?)Character(role)))),
+            ["instruments"] = new JsonObject(InstrumentRoles.Select(role => KeyValuePair.Create(role, (JsonNode?)Instrument(role)))),
         });
         File.Move(temporary, path, true);
     }

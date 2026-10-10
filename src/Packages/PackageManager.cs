@@ -196,7 +196,7 @@ internal sealed class PackageManager
                         .OrderBy(p => p.Manifest.Kind == PackageKind.Library ? 0 : 1)
                         .ThenBy(p => _priority.IndexOf(p.Location) is var index and >= 0 ? index : int.MaxValue)
                         .ThenBy(p => p.Manifest.Id == _settings.PreferredStage ? 0 : 1)
-                        .ThenBy(p => p.Manifest.Kind == PackageKind.Character ? 0 : 1)
+                        .ThenBy(p => p.Manifest.Kind switch { PackageKind.Character => 0, PackageKind.Instrument => 1, _ => 2 })
                         .ThenBy(p => p.Manifest.Id, StringComparer.Ordinal).FirstOrDefault();
                     if (next != null) next.State = PackageState.Importing;
                     else _stopping = true;
@@ -224,11 +224,13 @@ internal sealed class PackageManager
         }
     }
 
-    // Package files and folders: Custom/Stages and Custom/Characters of each Clone Hero content folder (group subfolders
-    // to depth 4), then the packages that ship with the mod.
+    public static readonly string[] CustomFolders = { "Stages", "Characters", "Instruments" };
+
+    // Package files and folders: Custom/Stages, Custom/Characters, and Custom/Instruments of each Clone Hero content folder
+    // (group subfolders to depth 4), then the packages that ship with the mod.
     public static IEnumerable<string> Candidates(PackageSettings settings)
     {
-        var roots = settings.CustomContent.SelectMany(custom => new[] { Path.Combine(custom, "Stages"), Path.Combine(custom, "Characters") })
+        var roots = settings.CustomContent.SelectMany(custom => CustomFolders.Select(folder => Path.Combine(custom, folder)))
             .Append(settings.ModPackages);
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var root in roots)
@@ -268,8 +270,9 @@ internal sealed class PackageManager
                 var manifest = PackageManifest.Parse(source.ReadAll("manifest.json"), kind, _settings.ModVersion);
                 VerifiedPackage.CheckFileList(source, manifest);
                 var folder = Path.GetFileName(Path.GetDirectoryName(path)) ?? "";
-                if (kind == PackageKind.Character && folder.Equals("Stages", StringComparison.OrdinalIgnoreCase) ||
-                    kind == PackageKind.Stage && folder.Equals("Characters", StringComparison.OrdinalIgnoreCase))
+                var expected = kind switch { PackageKind.Stage => "Stages", PackageKind.Character => "Characters", PackageKind.Instrument => "Instruments", _ => "" };
+                if (expected.Length > 0 && CustomFolders.Any(f => f.Equals(folder, StringComparison.OrdinalIgnoreCase)) &&
+                    !folder.Equals(expected, StringComparison.OrdinalIgnoreCase))
                     Warn($"{path} is a {PackageManifest.Extension(kind)} file in the {folder} folder; it loads as its extension says");
                 found.Add(new InstalledPackage(path, manifest, order++));
             }
@@ -296,6 +299,7 @@ internal sealed class PackageManager
                 continue;
             }
             if (package.Manifest.Kind == PackageKind.Character) Log($"found character {package.Label}");
+            if (package.Manifest.Kind == PackageKind.Instrument) Log($"found instrument {package.Label}");
             lock (_gate) _packages.Add(package);
         }
     }
@@ -449,6 +453,17 @@ internal sealed class PackageManager
                 verified.VerifyRemaining();
                 foreach (var warning in importer.Warnings.Distinct().Take(8)) Warn($"{package.Manifest.Id}: {warning}");
                 detail = $"{result.Role} profile, {result.Joints} joints, {result.Meshes} meshes, {result.Vertices} vertices";
+            }
+            else if (package.Manifest.Kind == PackageKind.Instrument)
+            {
+                var library = Find(PackageKind.Library, "gh3-band-v1") is { State: PackageState.Ready } band ? band.CacheDirectory
+                    : throw new PackageException("an instrument needs the band library (requires gh3-band-v1)");
+                var importer = new InstrumentImporter(verified, textures, library);
+                var result = importer.Import(temporary);
+                CopyPreview(verified, temporary);
+                verified.VerifyRemaining();
+                foreach (var warning in importer.Warnings.Distinct().Take(8)) Warn($"{package.Manifest.Id}: {warning}");
+                detail = $"{result.Kind}, {result.Joints} joints, {result.Meshes} meshes, {result.Vertices} vertices";
             }
             else
             {

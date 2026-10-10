@@ -14,9 +14,12 @@ internal sealed class PickerOverlay
     private const float DesignHeight = 720;
     private sealed record StageRow(string Id, string Name, string Detail, string Preview);
     private sealed record CharacterRow(string Id, string Name, string Role);
+    // Family: the name without the finish, so that << and >> jump over the finishes of one model.
+    private sealed record InstrumentRow(string Id, string Name, string Role, string Family);
     private readonly Dictionary<string, Texture2D?> _previews = new();
     private List<StageRow> _stages = new();
     private List<CharacterRow> _characters = new();
+    private List<InstrumentRow> _instruments = new();
     private Dictionary<string, string[]> _rigs = new();
     private EventSystem? _blockedEvents;
     private Vector2 _scroll;
@@ -46,7 +49,7 @@ internal sealed class PickerOverlay
             }
         }
         catch (Exception error) { MelonLogger.Warning($"GH3 picker: Clone Hero's menu input could not pause ({error.Message})"); }
-        MelonLogger.Msg($"GH3 picker opened: {_stages.Count} stages, {_characters.Count} characters");
+        MelonLogger.Msg($"GH3 picker opened: {_stages.Count} stages, {_characters.Count} characters, {_instruments.Count} instruments");
     }
 
     public void Close()
@@ -60,7 +63,8 @@ internal sealed class PickerOverlay
         MelonLogger.Msg($"GH3 picker closed: stage {choices.Stage}, song suggestions {(choices.SongSuggestions ? "on" : "off")}, " +
             $"VENUE tracks {(choices.VenueTrack ? "on" : "off")}, generated direction {(choices.GeneratedDirection ? "on" : "off")}, " +
             $"reduce flashing {(choices.ReduceFlashing ? "on" : "off")}, " +
-            string.Join(", ", PlayerChoices.Roles.Select(role => $"{role} {choices.Character(role)}")));
+            string.Join(", ", PlayerChoices.Roles.Select(role => $"{role} {choices.Character(role)}")) + ", " +
+            string.Join(", ", PlayerChoices.InstrumentRoles.Select(role => $"{role} instrument {choices.Instrument(role)}")));
     }
 
     // Scene changes destroy nothing of ours, but Clone Hero makes a new EventSystem; give the old one back first.
@@ -106,6 +110,16 @@ internal sealed class PickerOverlay
                     _incompatible.Add((package.Manifest.Id, role));
             }
             catch (Exception error) when (error is IOException or PackageException or System.Text.Json.JsonException) { }
+        _instruments = new List<InstrumentRow>();
+        foreach (var package in packages.Where(p => p.Manifest.Kind == PackageKind.Instrument && p.State == PackageState.Ready))
+            try
+            {
+                var model = InstrumentModel.Load(package.CacheDirectory);
+                var name = package.Manifest.Name;
+                _instruments.Add(new InstrumentRow(package.Manifest.Id, name, model.Role, name.EndsWith(')') && name.LastIndexOf(" (", StringComparison.Ordinal) is var cut and > 0 ? name[..cut] : name));
+            }
+            catch (Exception error) when (error is IOException or PackageException or System.Text.Json.JsonException) { }
+        _instruments = _instruments.OrderBy(i => i.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     private readonly HashSet<(string Id, string Role)> _incompatible = new();
@@ -146,11 +160,11 @@ internal sealed class PickerOverlay
                 GUI.Label(new Rect(width / 2 - 200, 4, 400, 20), $"<color=#ffffffb0>GH3 stage: {StageLabel(PackageRuntime.Choices.Stage)}   (F6: stage and band)</color>");
             return;
         }
-        var panel = new Rect(width / 2 - 470, 40, 940, 640);
+        var panel = new Rect(width / 2 - 470, 24, 940, 672);
         GUI.Box(panel, GUIContent.none, Style(Background()));
         GUI.Label(new Rect(panel.x + 16, panel.y + 10, 600, 24), "<b><size=18>GH3 Skin: stage and band</size></b>");
-        DrawStages(new Rect(panel.x + 16, panel.y + 44, 420, 560));
-        DrawDetails(new Rect(panel.x + 452, panel.y + 44, 472, 560));
+        DrawStages(new Rect(panel.x + 16, panel.y + 44, 420, 592));
+        DrawDetails(new Rect(panel.x + 452, panel.y + 44, 472, 592));
         if (GUI.Button(new Rect(panel.xMax - 136, panel.yMax - 36, 120, 28), "Close (F6)")) Close();
         GUI.Label(new Rect(panel.x + 16, panel.yMax - 32, 640, 24), "Click to select. The choice applies to the next song.");
     }
@@ -190,19 +204,25 @@ internal sealed class PickerOverlay
     {
         var choices = PackageRuntime.Choices;
         var shown = _stages.FirstOrDefault(s => s.Id == _hover) ?? _stages.FirstOrDefault(s => s.Id == choices.Stage);
-        var image = new Rect(area.x, area.y, 448, 252);
+        var image = new Rect(area.x, area.y, 384, 216);
         GUI.Box(image, "");
         // GUI.DrawTexture is stripped in this build; a style background draws the image stretched to the 16:9 box.
         if (shown != null && Preview(shown) is { } texture) GUI.Box(image, GUIContent.none, Style(texture));
-        else GUI.Label(new Rect(image.x + 16, image.y + 116, 420, 22), shown == null ? StageLabel(_hover.Length > 0 ? _hover : choices.Stage) : "No preview image");
+        else GUI.Label(new Rect(image.x + 16, image.y + 98, 360, 22), shown == null ? StageLabel(_hover.Length > 0 ? _hover : choices.Stage) : "No preview image");
         GUI.Label(new Rect(area.x, image.yMax + 4, 448, 22), shown?.Name ?? StageLabel(choices.Stage));
         Option(new Rect(area.x, image.yMax + 30, 448, 22), choices.SongSuggestions, " Songs can select their stage", value => choices.SongSuggestions = value);
         Option(new Rect(area.x, image.yMax + 54, 448, 22), choices.ShowHint, " Show the F6 hint in the menus", value => choices.ShowHint = value);
         GUI.Label(new Rect(area.x, image.yMax + 86, 448, 22), "<b>Band</b>" + (_characters.Count == 0 ? "  <color=#999999>(no character packages in Custom/Characters)</color>" : ""));
-        for (var i = 0; i < PlayerChoices.Roles.Length; i++)
+        var rows = PlayerChoices.Roles.SelectMany(role => PlayerChoices.InstrumentRoles.Contains(role) ? new[] { (role, false), (role, true) } : new[] { (role, false) }).ToArray();
+        for (var i = 0; i < rows.Length; i++)
         {
-            var role = PlayerChoices.Roles[i];
+            var (role, instrumentRow) = rows[i];
             var y = image.yMax + 112 + i * 32;
+            if (instrumentRow)
+            {
+                DrawInstrument(area, y, role);
+                continue;
+            }
             var options = Choices(role);
             var ids = new List<string> { PlayerChoices.DefaultCharacter };
             ids.AddRange(options.Select(c => c.Id));
@@ -215,20 +235,51 @@ internal sealed class PickerOverlay
             var row = options.FirstOrDefault(c => c.Id == current);
             var label = current == PlayerChoices.DefaultCharacter ? "Default (venue)" :
                 row == null ? current + " (not installed)" : row.Role == role ? row.Name : $"{row.Name} <color=#999999>(a {row.Role})</color>";
-            GUI.Box(new Rect(area.x + 150, y, 238, 26), label);
+            GUI.Box(new Rect(area.x + 150, y, 238, 26), Fit(label));
             if (step != 0 || jump != 0)
             {
                 choices.Characters[role] = step != 0 ? ids[((index < 0 ? 0 : index) + step + ids.Count) % ids.Count] : PlayerChoices.Jump(ids, index < 0 ? 0 : index, jump);
                 PackageRuntime.SaveChoices();
             }
         }
-        var direction = image.yMax + 112 + PlayerChoices.Roles.Length * 32 + 2;
+        var direction = image.yMax + 112 + rows.Length * 32 + 2;
         Option(new Rect(area.x, direction, 448, 22), choices.VenueTrack, " Use Rock Band VENUE tracks", value => choices.VenueTrack = value);
         Option(new Rect(area.x, direction + 22, 448, 22), choices.GeneratedDirection, " Generate direction for charts without it",
             value => choices.GeneratedDirection = value);
         Option(new Rect(area.x, direction + 44, 448, 22), choices.ReduceFlashing, " Reduce flashing (Rock Band flares and strobes)",
             value => choices.ReduceFlashing = value);
     }
+
+    // The guitar of the guitarist or the bass of the bassist. "Default" keeps the character's own instrument in the role of
+    // its profile, else the role's library instrument.
+    private void DrawInstrument(Rect area, float y, string role)
+    {
+        var choices = PackageRuntime.Choices;
+        var options = _instruments.Where(i => i.Role == role).ToList();
+        var ids = new List<string> { PlayerChoices.DefaultInstrument };
+        ids.AddRange(options.Select(i => i.Id));
+        var current = choices.Instrument(role);
+        var index = ids.IndexOf(current);
+        GUI.Label(new Rect(area.x + 12, y + 4, 80, 22), role == "bassist" ? "Bass" : "Guitar");
+        var jump = GUI.Button(new Rect(area.x + 90, y, 30, 26), "<<") ? -1 : GUI.Button(new Rect(area.x + 418, y, 30, 26), ">>") ? 1 : 0;
+        var step = GUI.Button(new Rect(area.x + 122, y, 26, 26), "<") ? -1 : GUI.Button(new Rect(area.x + 390, y, 26, 26), ">") ? 1 : 0;
+        var row = options.FirstOrDefault(i => i.Id == current);
+        var label = current == PlayerChoices.DefaultInstrument ? "Default (the character's own)" : row == null ? current + " (not installed)" : row.Name;
+        GUI.Box(new Rect(area.x + 150, y, 238, 26), Fit(label));
+        if (step == 0 && jump == 0) return;
+        string Family(string id) => options.FirstOrDefault(i => i.Id == id)?.Family ?? id;
+        choices.Instruments[role] = step != 0 ? ids[((index < 0 ? 0 : index) + step + ids.Count) % ids.Count] :
+            PlayerChoices.Jump(ids, index < 0 ? 0 : index, jump, Family);
+        PackageRuntime.SaveChoices();
+    }
+
+    // Long names (GH3 guitars with their finish, characters with outfit and style) get a smaller font to fit the box.
+    private static string Fit(string label) => System.Text.RegularExpressions.Regex.Replace(label, "<[^>]*>", "").Length switch
+    {
+        > 38 => $"<size=10>{label}</size>",
+        > 30 => $"<size=11>{label}</size>",
+        _ => label,
+    };
 
     // A check box that saves the choices when it changes.
     private static void Option(Rect rect, bool value, string label, Action<bool> set)
@@ -276,7 +327,7 @@ internal sealed class PickerOverlay
     }
 
     // Test aid (GH3_SKIN_PICKER_TEST, scripts/capture-menu.sh): the same selection code as the buttons, without a mouse.
-    // `venueTrack`, `generatedDirection`, and `reduceFlashing` take `on` or `off`.
+    // `venueTrack`, `generatedDirection`, and `reduceFlashing` take `on` or `off`; `guitar` and `bass` take an instrument ID.
     public void Apply(string stage, IReadOnlyDictionary<string, string> characters)
     {
         Refresh();
@@ -286,6 +337,12 @@ internal sealed class PickerOverlay
             if (role == "venueTrack") choices.VenueTrack = id == "on";
             else if (role == "generatedDirection") choices.GeneratedDirection = id == "on";
             else if (role == "reduceFlashing") choices.ReduceFlashing = id == "on";
+            else if (role is "guitar" or "bass")
+            {
+                var holder = role == "guitar" ? "guitarist" : "bassist";
+                if (id == PlayerChoices.DefaultInstrument || _instruments.Any(i => i.Id == id && i.Role == holder)) choices.Instruments[holder] = id;
+                else MelonLogger.Warning($"GH3 picker test: {id} is not an installed {role}");
+            }
             else if (PlayerChoices.Roles.Contains(role) && (id == PlayerChoices.DefaultCharacter || Choices(role).Any(c => c.Id == id))) choices.Characters[role] = id;
             else MelonLogger.Warning($"GH3 picker test: {id} cannot play the {role}");
         _hover = choices.Stage;

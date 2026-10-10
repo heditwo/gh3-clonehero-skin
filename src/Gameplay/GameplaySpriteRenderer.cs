@@ -52,6 +52,7 @@ internal sealed partial class GameplaySpriteRenderer
         _neck = null;
         _highwayApplied = false;
         _scroll = null;
+        _appliedHighway = "";
         _stockNeckHeight = 0;
         _speedSet = 0;
         _noteRenderersSet = false;
@@ -113,6 +114,7 @@ internal sealed partial class GameplaySpriteRenderer
             if (_stockNeckHeight == 0) _stockNeckHeight = _neck.localScale.y;
             _neck.localScale = new Vector3(HighwayView.NeckWidth, HighwayView.NeckLength, 1);
         }
+        FollowHighwayChoice();
         KeepHighwayAtNoteSpeed();
         FadeHighwayTop();
         if (_starParticles != null)

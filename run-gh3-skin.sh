@@ -27,7 +27,7 @@ if [[ "${1:-}" == "--preview" ]]; then
     exit 1
   fi
   exec ./clonehero --melonloader.disablestartscreen \
-    --song "$song_dir" --player Guitar,Expert \
+    --song "$song_dir" --player "${GH3_SKIN_PREVIEW_PLAYER:-Guitar,Expert}" \
     -screen-fullscreen 0 -screen-width "$preview_width" -screen-height "$preview_height" "$@"
 fi
 

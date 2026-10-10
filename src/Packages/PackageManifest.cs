@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace Gh3Skin.Packages;
 
-internal enum PackageKind { Stage, Character, Library }
+internal enum PackageKind { Stage, Character, Library, Instrument }
 
 internal readonly record struct PackageFile(long Size, string Sha256);
 internal readonly record struct PackageRequirement(string Id, SemanticVersion Version);
@@ -14,7 +14,7 @@ internal sealed class PackageManifest
 {
     public const int FormatMajor = 1;
     // The highest minor of each kind that this mod reads: format 1.1 adds the character library and its profiles.
-    public static int FormatMinor(PackageKind kind) => kind == PackageKind.Stage ? 0 : 1;
+    public static int FormatMinor(PackageKind kind) => kind is PackageKind.Stage or PackageKind.Instrument ? 0 : 1;
     public PackageKind Kind { get; private init; }
     public string Format { get; private init; } = "";
     public string Id { get; private init; } = "";
@@ -28,12 +28,12 @@ internal sealed class PackageManifest
 
     public static string Extension(PackageKind kind) => kind switch
     {
-        PackageKind.Stage => ".chstage", PackageKind.Character => ".chchar", _ => ".chlib",
+        PackageKind.Stage => ".chstage", PackageKind.Character => ".chchar", PackageKind.Instrument => ".chinst", _ => ".chlib",
     };
 
     public static PackageKind? KindOf(string path) => Path.GetExtension(path).ToLowerInvariant() switch
     {
-        ".chstage" => PackageKind.Stage, ".chchar" => PackageKind.Character, ".chlib" => PackageKind.Library, _ => null,
+        ".chstage" => PackageKind.Stage, ".chchar" => PackageKind.Character, ".chinst" => PackageKind.Instrument, ".chlib" => PackageKind.Library, _ => null,
     };
 
     public static bool ValidId(string id) => Regex.IsMatch(id, @"\A[a-z0-9](?:[a-z0-9.-]{0,95})\z") && id.Length <= 96;
@@ -56,9 +56,12 @@ internal sealed class PackageManifest
         string Text(string name) => root[name] is JsonValue value && value.TryGetValue<string>(out var text) ? text :
             throw new PackageException($"manifest.json needs the text field '{name}'");
         var format = Text("format");
-        var match = Regex.Match(format, @"\A(chstage|chchar|chlib)/([0-9]+)\.([0-9]+)\z");
+        var match = Regex.Match(format, @"\A(chstage|chchar|chinst|chlib)/([0-9]+)\.([0-9]+)\z");
         if (!match.Success) throw new PackageException($"unknown package format '{format}'");
-        var formatKind = match.Groups[1].Value switch { "chstage" => PackageKind.Stage, "chchar" => PackageKind.Character, _ => PackageKind.Library };
+        var formatKind = match.Groups[1].Value switch
+        {
+            "chstage" => PackageKind.Stage, "chchar" => PackageKind.Character, "chinst" => PackageKind.Instrument, _ => PackageKind.Library,
+        };
         if (formatKind != kind) throw new PackageException($"format '{format}' does not agree with the file extension {Extension(kind)}");
         var major = int.Parse(match.Groups[2].Value);
         var minor = int.Parse(match.Groups[3].Value);
@@ -107,6 +110,7 @@ internal sealed class PackageManifest
         {
             PackageKind.Stage => new[] { "model", "placements", "cameras" },
             PackageKind.Character => new[] { "model", "character" },
+            PackageKind.Instrument => new[] { "model", "instrument" },
             // Format 1.1 adds the character library (section 10.1); a band library keeps its three entries.
             _ when minor >= 1 && entry.ContainsKey("characters") => new[] { "characters" },
             _ => new[] { "catalog", "band", "performance" },

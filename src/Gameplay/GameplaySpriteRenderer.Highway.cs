@@ -29,7 +29,21 @@ internal sealed partial class GameplaySpriteRenderer
         if (scroll == null) { MelonLogger.Warning("GH3 highway: HighwayScroll was not found"); return; }
         CloneHeroBindings.SetHighwayTexture(scroll, _assets.HighwayTexture);
         _scroll = scroll;
+        _appliedHighway = "";
         MelonLogger.Msg("Applied GH3 highway through Clone Hero's highway scroll");
+    }
+
+    private string _appliedHighway = "";
+
+    // The stage chooses the highway of the player's band member when the band loads (HighwayChoice).
+    private void FollowHighwayChoice()
+    {
+        if (_scroll == null || HighwayChoice.Path == _appliedHighway) return;
+        var texture = HighwayChoice.Path.Length == 0 ? _assets.HighwayTexture : HighwayChoice.Texture(HighwayChoice.Path);
+        _appliedHighway = HighwayChoice.Path;
+        if (texture == null) return;
+        CloneHeroBindings.SetHighwayTexture(_scroll, texture);
+        MelonLogger.Msg($"GH3 highway: applied {HighwayChoice.Source}");
     }
 
     // HighwayScroll sizes the texture for the stock neck. The skin sets GH3's repeat length and scrolls it with the notes.
