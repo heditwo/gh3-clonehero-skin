@@ -15,7 +15,7 @@ from pipeline.gh3.band_formats import (
     skeleton,
     solve_guitar_arms,
 )
-from pipeline.gh3.formats import find_array, key, pak_entries
+from pipeline.gh3.formats import find_array, is_qb_file, key, pak_entries
 from pipeline.gh3.hair_mesh import combine_hair
 from pipeline.gh3.mesh_cutout import trim_prop_cutouts
 
@@ -81,7 +81,7 @@ def convert(data_dir, output, shared=False):
         nodes = next(
             array
             for _, _, data in venue
-            if len(data) > 28 and data[8:12] == bytes.fromhex("1c080204")
+            if is_qb_file(data)
             if (array := find_array(data, "z_budokan_NodeArray")) is not None
         )
         nodes = {node[key("Name")]: node for node in nodes if key("Name") in node}

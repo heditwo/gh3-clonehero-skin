@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 from pipeline import songtool
-from pipeline.gh3.formats import find_struct, key, pak_entries
+from pipeline.gh3.formats import find_struct, is_qb_file, key, pak_entries
 
 
 def extract(source, song_id):
@@ -27,7 +27,7 @@ def export_library(data_directory, destination):
     pab = (data_directory / "PAK/qb.pab.xen").read_bytes()
     metadata = {}
     for _, _, data in pak_entries(pak + pab):
-        if len(data) > 28 and data[8:12] == bytes.fromhex("1c080204"):
+        if is_qb_file(data):
             for section in ("permanent_songlist_props", "download_songlist_props"):
                 properties = find_struct(data, section)
                 if properties:

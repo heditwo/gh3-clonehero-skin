@@ -13,7 +13,7 @@ from pipeline.gh3.band_formats import (
     skeleton,
 )
 from pipeline.gh3.direction import Source, cameras, name, scalar, script
-from pipeline.gh3.formats import find_array, find_struct, key, values
+from pipeline.gh3.formats import find_array, find_struct, is_qb_file, key, values
 
 # The last column lists extra paks with clips: Axel's model pak holds his intro and win animations.
 MEMBERS = [
@@ -162,7 +162,7 @@ def convert(data_directory, output, shared=False):
             if factor is not None:
                 definition["constants"][f"{table}/{pitch}"] = factor
     for _kind, _, data in [] if shared else source.load("ZONES/z_budokan.pak.xen"):
-        if len(data) < 28 or data[8:12] != bytes.fromhex("1c080204"):
+        if not is_qb_file(data):
             continue
         nodes = find_array(data, "z_budokan_NodeArray")
         if nodes is not None:
