@@ -12,7 +12,7 @@ internal sealed class HandFireDefinition
     public static HandFireDefinition? Load(string path)
     {
         if (!File.Exists(path)) return null;
-        var value = JsonSerializer.Deserialize<HandFireDefinition>(File.ReadAllText(path), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var value = JsonSerializer.Deserialize<HandFireDefinition>(File.ReadAllText(path), Packages.PackageJson.CaseInsensitive);
         if (value?.Version != 1 || value.Bones.Length != 2 || value.Emitters.Length != 2)
             throw new InvalidDataException("Invalid hand-fire definition");
         foreach (var emitter in value.Emitters) emitter.Validate();

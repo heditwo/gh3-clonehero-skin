@@ -26,7 +26,7 @@ internal sealed class StageSoundBank
 
     public static StageSoundBank Load(string path)
     {
-        var bank = JsonSerializer.Deserialize<StageSoundBank>(File.ReadAllText(path), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var bank = JsonSerializer.Deserialize<StageSoundBank>(File.ReadAllText(path), Packages.PackageJson.CaseInsensitive);
         if (bank?.Version != 1 || bank.Samples.Count > 10000 || bank.Definitions.Count > 10000 ||
             bank.Samples.Any(pair => pair.Key.Length != 8 || !pair.Key.All(Uri.IsHexDigit) || pair.Value is not { Rate: >= 8000 and <= 192000, Channels: 1 or 2, Frames: > 0 and <= 57600000 } ||
                 pair.Value.LoopStart < 0 || pair.Value.LoopEnd <= pair.Value.LoopStart || pair.Value.LoopEnd > pair.Value.Frames))

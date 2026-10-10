@@ -27,7 +27,7 @@ internal sealed class StageActorBank
 
     public static StageActorBank Load(string path)
     {
-        var bank = JsonSerializer.Deserialize<StageActorBank>(File.ReadAllText(path), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var bank = JsonSerializer.Deserialize<StageActorBank>(File.ReadAllText(path), Packages.PackageJson.CaseInsensitive);
         if (bank?.Version != 1 || bank.Actors == null || bank.Actors.Length > 128 ||
             bank.Actors.Select(actor => actor.Id).Distinct().Count() != bank.Actors.Length)
             throw new InvalidDataException("Invalid stage actors");

@@ -17,7 +17,7 @@ internal sealed class StageParticleTechniques
 
     public static StageParticleTechniques Load(string path)
     {
-        var value = JsonSerializer.Deserialize<StageParticleTechniques>(File.ReadAllText(path), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var value = JsonSerializer.Deserialize<StageParticleTechniques>(File.ReadAllText(path), Packages.PackageJson.CaseInsensitive);
         if (value == null || value.Version != 1 || value.Lit.Length != 128 || value.Unlit.Length != 16)
             throw new InvalidDataException("Invalid particle material techniques: " + path);
         return value;

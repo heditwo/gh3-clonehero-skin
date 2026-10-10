@@ -38,10 +38,23 @@ internal sealed class StageScripts : IDisposable
         _objects = assets.Objects.ToDictionary(pair => Convert.ToUInt32(pair.Key, 16), pair => pair.Value);
     }
 
-    public static StageScripts? Load(string directory, string library, StageAssets assets, StageFixtures fixtures, StageActors actors, StageLighting? lighting, StageTimeline timeline, string venue)
+    // The script banks have no Unity objects; the stage load reads them on a worker thread while it builds the scene.
+    public static Task<StageScriptBank>? ReadBank(string directory, string library)
     {
         var path = Path.Combine(directory, "scripts.json");
-        return File.Exists(path) ? new(StageScriptBank.Load(path, Path.Combine(library, "scripts.json")), assets, fixtures, actors, lighting, timeline, venue) : null;
+        return File.Exists(path) ? Task.Run(() => StageScriptBank.Load(path, Path.Combine(library, "scripts.json"))) : null;
+    }
+
+    public static StageScripts? Load(Task<StageScriptBank>? reading, StageAssets assets, StageFixtures fixtures, StageActors actors, StageLighting? lighting, StageTimeline timeline, string venue)
+    {
+        if (reading == null) return null;
+        var section = LoadTiming.Now;
+        var bank = reading.GetAwaiter().GetResult();
+        LoadTiming.Add("scripts: wait for the banks", section);
+        section = LoadTiming.Now;
+        var scripts = new StageScripts(bank, assets, fixtures, actors, lighting, timeline, venue);
+        LoadTiming.Add("scripts: state", section);
+        return scripts;
     }
 
     public void Update(double time, float rock, IReadOnlyList<uint>? events = null)

@@ -57,7 +57,7 @@ internal sealed class StageCameraBank
     public static StageCameraBank? Load(string path)
     {
         if (!File.Exists(path)) return null;
-        var bank = JsonSerializer.Deserialize<StageCameraBank>(File.ReadAllText(path), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var bank = JsonSerializer.Deserialize<StageCameraBank>(File.ReadAllText(path), Packages.PackageJson.CaseInsensitive);
         if (bank?.Version != 1 || !bank.Arrays.ContainsKey("cameras") || bank.Arrays.Count > 128)
             throw new InvalidDataException("Invalid original camera library");
         foreach (var shot in bank.Arrays.Values.SelectMany(s => s))

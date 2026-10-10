@@ -500,6 +500,23 @@ internal sealed class GameplayStage
         return shader;
     }
 
+    // The model folders that this stage load builds: the stage, its fixtures and actors, the band, the crowd, and the
+    // characters and instruments. Worker threads read them while the main thread builds the scene in order.
+    private void PrefetchModels()
+    {
+        StageModelPrefetch.Start(_directory, skinned: false);
+        StageModelPrefetch.StartAll(Path.Combine(_directory, "fixtures"), skinned: false);
+        StageModelPrefetch.StartAll(Path.Combine(_directory, "actors"), skinned: true);
+        if (Directory.Exists(Path.Combine(_directory, "actors")))
+            foreach (var actor in Directory.EnumerateDirectories(Path.Combine(_directory, "actors")))
+                StageModelPrefetch.StartAnimation(Path.Combine(actor, "animation.bin"));
+        StageModelPrefetch.StartAll(Path.Combine(_library, "band"), skinned: true);
+        foreach (var package in _characterPackages.Values.Concat(_instrumentPackages.Values))
+            if (package.State == Packages.PackageState.Ready) StageModelPrefetch.Start(package.CacheDirectory, skinned: true);
+        StageModelPrefetch.StartAll(Path.Combine(_library, "crowd"), skinned: true);
+        StageModelPrefetch.StartAll(Path.Combine(_library, "crowd", "hands"), skinned: true);
+    }
+
     private void Create(BasePlayer player)
     {
         var state = ResolveSources();
@@ -515,8 +532,11 @@ internal sealed class GameplayStage
         var steps = new LoadTiming.Steps();
         LoadTiming.Mark("stage load starts");
         var texturesBefore = (StageAssets.TexturesUploaded, StageAssets.TextureMilliseconds);
+        Task<StageScriptBank>? scriptBank = null;
         try
         {
+            scriptBank = StageScripts.ReadBank(_directory, _library);
+            PrefetchModels();
             var pack = StagePack.Load(_directory);
             var library = _library;
             _root = new GameObject("GH3 Stage") { layer = Layer };
@@ -536,9 +556,10 @@ internal sealed class GameplayStage
             HighwayChoice.Choose(HighwayChoice.PlayerRole(player), characters, instruments);
             _fixtures = new StageFixtures();
             _fixtures.Load(Path.Combine(_directory, "fixtures"), _root, Layer);
+            steps.Step("fixtures");
             _actors = new StageActors();
             _actors.Load(_directory, _assets, _root, Layer, surfaceShader);
-            steps.Step("fixtures and actors");
+            steps.Step("actors");
             var definition = _assets.Definition;
             _cameraPath = new StageCameraPath(new StageCameraPose(
                 new System.Numerics.Vector3(definition.CameraPosition[0], definition.CameraPosition[1], definition.CameraPosition[2]),
@@ -607,8 +628,9 @@ internal sealed class GameplayStage
             _audio = StageAudio.Load(Path.Combine(library, "audio"), _timeline, pack.Id, GlobalVariables.instance?.isPracticeEnabled == true);
             steps.Step("audio");
             var stageLighting = lighting == null ? null : new StageLighting(lighting, _timeline);
-            _scripts = StageScripts.Load(_directory, library, _assets, _fixtures, _actors, stageLighting, _timeline, pack.Id);
-            steps.Step("lighting and scripts");
+            steps.Step("lighting");
+            _scripts = StageScripts.Load(scriptBank, _assets, _fixtures, _actors, stageLighting, _timeline, pack.Id);
+            steps.Step("scripts");
             if (_scripts != null)
             {
                 var viewTime = double.NaN;
@@ -640,8 +662,10 @@ internal sealed class GameplayStage
                 stageLighting, _fixtures, pack.Effects) { SourcePyro = _scripts?.State.SourcePyro == true };
             if (surfaceShader != null) _highwayMask = new StageHighwayMask(_assets, _camera, surfaceShader, Layer);
             _handFire = StageHandFire.Load(Path.Combine(library, "hand-fire"), _assets, _root, _camera, Layer, _band);
+            StageModelPrefetch.Clear();
             steps.Step("crowd clips, effects, hand fire");
             steps.Finish("stage loaded");
+            LoadTiming.FlushSections("stage load");
             MelonLogger.Msg($"GH3 stage loaded: {_assets.Definition.Name}");
             MelonLogger.Msg($"GH3 stage load time: {loadClock.Elapsed.TotalMilliseconds:0} ms on the main thread " +
                 $"({StageAssets.TexturesUploaded - texturesBefore.Item1} cache textures in {StageAssets.TextureMilliseconds - texturesBefore.Item2:0} ms; " +
@@ -653,12 +677,14 @@ internal sealed class GameplayStage
         }
         catch (StageShaderUnsupportedException error)
         {
+            StageModelPrefetch.Clear();
             Reset();
             _attempted = true;
             MelonLogger.Error(error.Message);
         }
         catch (Exception error)
         {
+            StageModelPrefetch.Clear();
             Reset();
             _attempted = true;
             MelonLogger.Warning($"GH3 stage could not load: {error}");

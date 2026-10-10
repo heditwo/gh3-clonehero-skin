@@ -19,14 +19,32 @@ internal sealed class StageScriptBank
     public IReadOnlyDictionary<uint, string> TexturePaths { get; private set; } = new Dictionary<uint, string>();
     public IReadOnlyDictionary<uint, Gh3QbValue> Values { get; private set; } = new Dictionary<uint, Gh3QbValue>();
 
+    private static readonly object SharedGate = new();
+    private static (string Key, StageScriptBank Bank)? _shared;
+
+    // The library bank (12 MB of JSON for gh3-band-v1) is the same for every song; it is read again only when the file
+    // changes. Its values are immutable records, and Load copies its dictionaries before it adds the stage's values.
+    private static StageScriptBank Shared(string path)
+    {
+        var info = new FileInfo(path);
+        var key = $"{info.FullName}:{info.Length}:{info.LastWriteTimeUtc.Ticks}";
+        lock (SharedGate)
+        {
+            if (_shared is { } cached && cached.Key == key) return cached.Bank;
+            var bank = Load(path);
+            _shared = (key, bank);
+            return bank;
+        }
+    }
+
     public static StageScriptBank Load(string path, string? shared = null)
     {
-        var bank = JsonSerializer.Deserialize<StageScriptBank>(File.ReadAllText(path), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var bank = JsonSerializer.Deserialize<StageScriptBank>(File.ReadAllText(path), Packages.PackageJson.CaseInsensitive);
         if (bank?.Version != 1 || bank.Definitions.Count > 50000 || bank.Startup.Length > 256 ||
             bank.Definitions.Keys.Any(key => key.Length != 8 || !key.All(Uri.IsHexDigit)))
             throw new InvalidDataException("Invalid stage script library");
         if (bank.Nodes.Length > 256 || bank.Textures.Count > 2048) throw new InvalidDataException("Too many stage script resources");
-        var library = shared != null && File.Exists(shared) ? Load(shared) : null;
+        var library = shared != null && File.Exists(shared) ? Shared(shared) : null;
         var values = library != null ? new Dictionary<uint, Gh3QbValue>(library.Values) : new();
         var textures = library != null ? new Dictionary<uint, string>(library.TexturePaths) : new();
         var directory = Path.GetFullPath(Path.GetDirectoryName(path)!) + Path.DirectorySeparatorChar;

@@ -35,7 +35,7 @@ internal sealed class StagePack
     public static StagePack Load(string directory)
     {
         var pack = JsonSerializer.Deserialize<StagePack>(File.ReadAllText(Path.Combine(directory, "pack.json")),
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            Packages.PackageJson.CaseInsensitive);
         if (pack?.Version != 1 || !ValidId(pack.Id) || pack.Library != "gh3-band-v1" || pack.Band.Count is < 1 or > 4 ||
             pack.Band.Keys.Any(r => r is not ("guitarist" or "bassist" or "singer" or "drummer")) ||
             pack.Band.Values.Concat(pack.Waypoints.Values).Any(p => !p.Valid) ||

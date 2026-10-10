@@ -60,7 +60,7 @@ internal sealed class StageLightingBank
     {
         var path = Path.Combine(directory, "lighting.json");
         if (!File.Exists(path)) return null;
-        var bank = JsonSerializer.Deserialize<StageLightingBank>(File.ReadAllText(path), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var bank = JsonSerializer.Deserialize<StageLightingBank>(File.ReadAllText(path), Packages.PackageJson.CaseInsensitive);
         if (bank?.Version != 1 || bank.Lights.Length is < 1 or > 128 || bank.Snapshots.Count is < 1 or > 256 ||
             !bank.Moods.ContainsKey("intro") || !bank.Moods.ContainsKey("blackout") ||
             bank.Moods.Values.Any(m => m.Length == 0 || m.Any(s => !bank.Snapshots.ContainsKey(s))))

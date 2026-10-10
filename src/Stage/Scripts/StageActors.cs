@@ -23,8 +23,10 @@ internal sealed class StageActors : IDisposable
         foreach (var actor in bank.Actors)
         {
             var folder = Path.Combine(directory, "actors", actor.Id);
-            using var reader = new BinaryReader(File.OpenRead(Path.Combine(folder, "animation.bin")));
-            var animation = new BandAnimation(reader);
+            var section = LoadTiming.Now;
+            var animationPath = Path.Combine(folder, "animation.bin");
+            var animation = StageModelPrefetch.TakeAnimation(animationPath) ?? StageModelPrefetch.ReadAnimation(animationPath);
+            LoadTiming.Add("actors: animation.bin", section);
             if (actor.Clip < 0 || actor.Clip >= animation.Clips.Length) throw new InvalidDataException("Invalid stage actor clip");
             var obj = new GameObject("Stage Actor " + actor.Id) { layer = layer };
             obj.transform.SetParent(root.transform, false);

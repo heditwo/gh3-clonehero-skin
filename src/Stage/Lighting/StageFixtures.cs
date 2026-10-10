@@ -40,13 +40,14 @@ internal sealed class StageFixtures : IDisposable
         var path = Path.Combine(directory, "fixtures.json");
         if (!File.Exists(path)) return;
         var definition = JsonSerializer.Deserialize<StageFixtureDefinition>(File.ReadAllText(path),
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            Packages.PackageJson.CaseInsensitive);
         if (definition?.Version != 1 || definition.Housings.Length is < 1 or > 256 ||
             definition.Housings.Select(h => h.Id).Distinct().Count() != definition.Housings.Length ||
             definition.Housings.Any(h => h.Id.Length != 8 || !h.Id.All(Uri.IsHexDigit) || h.Model.Length != 8 || !h.Model.All(Uri.IsHexDigit) ||
                 h.Position.Length != 3 || !h.Position.All(float.IsFinite) || h.Rotation.Length != 4 || !h.Rotation.All(float.IsFinite) ||
                 Math.Abs(h.Rotation.Sum(v => v * v) - 1) > 0.01))
             throw new InvalidDataException("Invalid light housing definitions");
+        var section = LoadTiming.Now;
         var models = new Dictionary<string, (Mesh Mesh, Material Material)[]>();
         foreach (var model in definition.Housings.Select(h => h.Model).Distinct())
         {
@@ -59,6 +60,8 @@ internal sealed class StageFixtures : IDisposable
                 .Select(filter => (filter.sharedMesh, filter.GetComponent<MeshRenderer>().sharedMaterial)).ToArray());
             prototype.SetActive(false);
         }
+        LoadTiming.Add("fixtures: models", section);
+        section = LoadTiming.Now;
         foreach (var housing in definition.Housings)
         {
             var obj = new GameObject("GH3 Light Housing " + housing.Id) { layer = layer };
@@ -91,6 +94,7 @@ internal sealed class StageFixtures : IDisposable
                 throw new InvalidDataException($"Duplicate light housing object {source:x8} in {path}: housing {housing.Id}, source '{housing.Object}', prior beams {string.Join(", ", ObjectBeams.Select(pair => $"{pair.Key:x8}={pair.Value}"))}");
             ObjectBeams.Add(source, housing.Id);
         }
+        LoadTiming.Add("fixtures: housings", section);
         MelonLogger.Msg($"GH3 light housings: {_housings.Count} fixtures; {models.Count} shared models");
     }
 

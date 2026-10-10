@@ -20,7 +20,7 @@ internal sealed class CrowdDefinition
 
     public static CrowdDefinition Load(string path)
     {
-        var bank = JsonSerializer.Deserialize<CrowdDefinition>(File.ReadAllText(path), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var bank = JsonSerializer.Deserialize<CrowdDefinition>(File.ReadAllText(path), Packages.PackageJson.CaseInsensitive);
         if (bank == null || bank.Version is not (1 or 2) || bank.Models.Length is < 1 or > 64 || bank.Version == 1 && bank.Models.Length > 8 || bank.Models.Distinct().Count() != bank.Models.Length ||
             bank.Models.Any(name => name.Length is < 1 or > 64 || name.Any(c => !char.IsLetterOrDigit(c) && c != '_')))
             throw new InvalidDataException("Invalid crowd definition.");

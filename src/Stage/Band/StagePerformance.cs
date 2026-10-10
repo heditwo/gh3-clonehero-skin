@@ -32,7 +32,7 @@ internal sealed class StagePerformance
     public static StagePerformance? Load(string path)
     {
         if (!File.Exists(path)) return null;
-        var bank = JsonSerializer.Deserialize<StagePerformance>(File.ReadAllText(path), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var bank = JsonSerializer.Deserialize<StagePerformance>(File.ReadAllText(path), Packages.PackageJson.CaseInsensitive);
         if (bank?.Version != 1 || bank.Members.Count is < 1 or > 4)
             throw new InvalidDataException("Invalid original performance library");
         foreach (var member in bank.Members.Values)

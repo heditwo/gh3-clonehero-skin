@@ -8,6 +8,9 @@ namespace Gh3Skin.Packages;
 internal static class PackageJson
 {
     private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+    // One options object for the runtime JSON files: System.Text.Json builds its type metadata once for each options
+    // object, so a new object for each file made every read pay that cost again.
+    public static readonly JsonSerializerOptions CaseInsensitive = new() { PropertyNameCaseInsensitive = true };
 
     public static JsonNode Parse(byte[] data) => JsonNode.Parse(data) ?? throw new PackageException("empty JSON file");
     public static JsonObject Object(byte[] data) => Parse(data) as JsonObject ?? throw new PackageException("expected a JSON object");

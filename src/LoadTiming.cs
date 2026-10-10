@@ -48,6 +48,24 @@ internal static class LoadTiming
         }
     }
 
+    private static readonly Dictionary<string, double> Sections = new();
+
+    // Adds the time since `start` (Stopwatch.GetTimestamp) to a named section; Finish prints and clears the sections.
+    public static void Add(string section, long start)
+    {
+        if (!Enabled) return;
+        Sections[section] = Sections.GetValueOrDefault(section) + (Stopwatch.GetTimestamp() - start) * 1000.0 / Stopwatch.Frequency;
+    }
+
+    public static long Now => Enabled ? Stopwatch.GetTimestamp() : 0;
+
+    public static void FlushSections(string phase)
+    {
+        if (!Enabled || Sections.Count == 0) return;
+        MelonLogger.Msg($"[timing] {phase} sections [ms: {string.Join(", ", Sections.OrderByDescending(pair => pair.Value).Select(pair => $"{pair.Key} {pair.Value:0}"))}]");
+        Sections.Clear();
+    }
+
     public static void SceneLoaded(string scene)
     {
         if (!Enabled) return;

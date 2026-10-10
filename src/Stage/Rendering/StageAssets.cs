@@ -319,8 +319,9 @@ internal sealed class StageAssets : IDisposable
     {
         if (bindposes != null && (bones == null || bindposes.Length != bones.Length)) throw new InvalidDataException("Bind poses do not match the bones");
         if (parts != null && bones == null) throw new InvalidDataException("Only band models can load some of their parts");
-        Definition = JsonSerializer.Deserialize<StageDefinition>(File.ReadAllText(Path.Combine(directory, "stage.json")),
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? throw new InvalidDataException("Missing stage definition");
+        var section = LoadTiming.Now;
+        var model = (parts == null ? StageModelPrefetch.Take(directory, bones != null) : null) ?? StageModelData.Read(directory, bones != null, parts);
+        Definition = model.Definition;
         if (Definition.Version != 1 || Definition.Materials.Count > 2048 ||
             Definition.CameraPosition.Length != 3 || Definition.CameraTarget.Length != 3 ||
             !Definition.CameraPosition.Concat(Definition.CameraTarget).All(float.IsFinite) ||
@@ -330,10 +331,7 @@ internal sealed class StageAssets : IDisposable
         var shader = Shader.Find("Particles/Standard Unlit");
         if (shader == null) throw new InvalidOperationException("The stage shader is not available");
         var meshPath = Path.Combine(directory, "meshes.bin");
-        string header;
-        using (var stream = File.OpenRead(meshPath)) header = System.Text.Encoding.ASCII.GetString(new BinaryReader(stream).ReadBytes(8));
         // GH3STG04 static meshes and GH3BND02 skinned meshes carry the original GH3 vertex streams for the translated templates.
-        if (header != (bones == null ? "GH3STG04" : "GH3BND02")) throw new InvalidDataException("Invalid stage mesh header");
         var textures = new Dictionary<string, Texture2D>();
         Texture2D LoadAddressedTexture(string name, bool clampU, bool clampV)
         {
@@ -359,6 +357,8 @@ internal sealed class StageAssets : IDisposable
             textures.Add(cacheKey, texture);
             return texture;
         }
+        LoadTiming.Add("assets: stage.json", section);
+        section = LoadTiming.Now;
         var materials = new Dictionary<uint, Material>();
         var outlines = new Dictionary<uint, Material>();
         if (Definition.Materials.Values.Any(m => !StageHairLayer.Valid(m.HairLayer))) throw new InvalidDataException("Unknown hair layer");
@@ -446,13 +446,9 @@ internal sealed class StageAssets : IDisposable
             if (source.MovieSlot is < -1 or > 31) throw new InvalidDataException("Invalid movie surface slot");
             if (source.MovieSlot >= 0) MovieSurfaces.Add((source.MovieSlot, material, material.mainTexture));
         }
-        using var reader = new BinaryReader(File.OpenRead(meshPath));
-        reader.ReadBytes(8);
-        // Static vertices also carry lightmap, layer, and mask UVs for the stage surface model.
-        var lightmapped = bones == null;
-        var layered = bones == null;
-        var meshCount = reader.ReadInt32();
-        if (meshCount < 1 || meshCount > 10000) throw new InvalidDataException("Invalid stage mesh count");
+        LoadTiming.Add("assets: materials and textures", section);
+        section = LoadTiming.Now;
+        var meshCount = model.Parts.Length;
         if (Definition.LightGroups.Length != 0 && Definition.LightGroups.Length != meshCount)
             throw new InvalidDataException("Stage light groups do not match the meshes");
         if (Definition.VisibilityGroups.Length != 0 && Definition.VisibilityGroups.Length != meshCount ||
@@ -478,85 +474,19 @@ internal sealed class StageAssets : IDisposable
         var shapes = morphs != null && bones != null ? ReadMorphs(morphs, meshCount) : null;
         for (var part = 0; part < meshCount; part++)
         {
-            var materialId = reader.ReadUInt32();
-            var vertexCount = reader.ReadInt32();
-            var indexCount = reader.ReadInt32();
-            if (vertexCount < 1 || vertexCount > 65535 || indexCount < 0 || indexCount > 1000000 || indexCount % 3 != 0)
-                throw new InvalidDataException("Invalid stage mesh size");
-            if (parts != null && !parts.Contains(part))
-            {
-                reader.BaseStream.Seek((long)vertexCount * Packages.StageGeometry.SkinnedStride + indexCount * 4L, SeekOrigin.Current);
-                continue;
-            }
+            LoadTiming.Add("assets: objects and renderers", section);
+            section = LoadTiming.Now;
+            if (model.Parts[part] is not { } data) continue;
+            var materialId = data.MaterialId;
+            var vertexCount = data.VertexCount;
+            if (bones != null && data.MaxBone >= bones.Length) throw new InvalidDataException("Invalid band skin weights");
             var material = materials[materialId];
             var sorted = bones != null && Definition.Materials[materialId.ToString("x8")].SortedTransparency;
-            var vertices = new Vector3[vertexCount];
-            var normals = new Vector3[vertexCount];
-            var uv = new Vector2[vertexCount];
-            var lightmapUv = lightmapped ? new Vector2[vertexCount] : null;
-            var layerUv = layered ? new Vector2[vertexCount] : null;
-            var maskUv = layered ? new Vector2[vertexCount] : null;
-            var colors = new Color32[vertexCount];
-            // GH3 vertex streams: UV sets 0-3, texcoord4, texcoord5, binormal 0, position 1.
-            var streams = new Vector2[6][];
-            for (var i = 0; i < 6; i++) streams[i] = new Vector2[vertexCount];
-            var binormals = new Vector4[vertexCount];
-            var pivotXy = new Vector2[vertexCount];
-            var pivotZ = new Vector2[vertexCount];
-            var binormal1Xy = new Vector2[vertexCount];
-            var binormal1Z = new Vector2[vertexCount];
-            var tangents = bones != null ? new Vector4[vertexCount] : null;
-            var weights = bones == null ? null : new List<SkinWeight>(vertexCount * 3);
-            var boneCounts = bones == null ? null : new byte[vertexCount];
-            for (var v = 0; v < vertexCount; v++)
-            {
-                vertices[v] = ReadVector(reader);
-                normals[v] = ReadVector(reader);
-                uv[v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
-                colors[v] = new Color32(reader.ReadByte(), reader.ReadByte(), reader.ReadByte(), reader.ReadByte());
-                if (lightmapUv != null) lightmapUv[v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
-                if (layerUv != null) layerUv[v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
-                if (maskUv != null) maskUv[v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
-                if (bones == null)
-                {
-                    for (var i = 0; i < 6; i++) streams[i][v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
-                    var b = ReadVector(reader);
-                    binormals[v] = new Vector4 { x = b.x, y = b.y, z = b.z, w = 1 };
-                    var p = ReadVector(reader);
-                    pivotXy[v] = new Vector2(p.x, p.y);
-                    pivotZ[v] = new Vector2(p.z, 0);
-                    var b1 = ReadVector(reader);
-                    binormal1Xy[v] = new Vector2(b1.x, b1.y);
-                    binormal1Z[v] = new Vector2(b1.z, 0);
-                }
-                if (weights != null && bones != null)
-                {
-                    var indicesForVertex = reader.ReadBytes(4);
-                    var influences = new SkinWeight[4];
-                    for (var i = 0; i < 4; i++) influences[i] = new SkinWeight { Bone = indicesForVertex[i], Weight = ReadFloat(reader) };
-                    if (influences.Any(w => w.Bone >= bones.Length || w.Weight < 0) ||
-                        Math.Abs(influences.Sum(w => w.Weight) - 1) > 0.001f)
-                        throw new InvalidDataException("Invalid band skin weights");
-                    var used = influences.Where(w => w.Weight > 0).OrderByDescending(w => w.Weight).ToArray();
-                    boneCounts![v] = (byte)used.Length;
-                    weights.AddRange(used);
-                }
-                if (tangents != null)
-                {
-                    for (var i = 0; i < 6; i++) streams[i][v] = new Vector2(ReadFloat(reader), ReadFloat(reader));
-                    var b = ReadVector(reader);
-                    var t = ReadVector(reader);
-                    // The translated vertex shader rebuilds binormal 0 as normal x tangent with this sign (see pipeline/gh3/shader.py VERTEX_MAIN).
-                    var sign = Vector3.Dot(b, Vector3.Cross(normals[v], t)) < 0 ? -1f : 1f;
-                    tangents[v] = new Vector4 { x = t.x, y = t.y, z = t.z, w = sign };
-                }
-            }
-            var indices = new int[indexCount];
-            for (var i = 0; i < indexCount; i++)
-            {
-                indices[i] = reader.ReadInt32();
-                if (indices[i] < 0 || indices[i] >= vertexCount) throw new InvalidDataException("Invalid stage triangle");
-            }
+            var (vertices, normals, uv, lightmapUv, layerUv, maskUv, colors) = (data.Vertices, data.Normals, data.Uv, data.LightmapUv, data.LayerUv, data.MaskUv, data.Colors);
+            var (streams, binormals, pivotXy, pivotZ, binormal1Xy, binormal1Z) = (data.Streams, data.Binormals, data.PivotXy, data.PivotZ, data.Binormal1Xy, data.Binormal1Z);
+            var (tangents, boneCounts, weights, indices) = (data.Tangents, data.BoneCounts, data.Weights, data.Indices);
+            LoadTiming.Add("assets: mesh read", section);
+            section = LoadTiming.Now;
             var mesh = Own(new Mesh());
             mesh.name = "GH3 Stage Mesh " + part;
             mesh.vertices = new Il2CppStructArray<Vector3>(vertices);
@@ -593,7 +523,7 @@ internal sealed class StageAssets : IDisposable
             mesh.triangles = new Il2CppStructArray<int>(indices);
             if (weights != null && bones != null)
             {
-                SetSkinWeights(mesh, boneCounts!, weights.ToArray());
+                SetSkinWeights(mesh, boneCounts!, weights);
                 // Characters bring the inverse bind matrices of their GLB; the library members use their rig at bind time.
                 mesh.bindposes = new Il2CppStructArray<Matrix4x4>(bindposes ?? bones.Select(bone =>
                     bone.worldToLocalMatrix * root.transform.localToWorldMatrix).ToArray());
@@ -628,6 +558,8 @@ internal sealed class StageAssets : IDisposable
             var dynamicColors = lighting && shadedMode < 0 && (bones != null || Definition.LightGroups.Length > 0);
             if (dynamicColors || sorted) mesh.MarkDynamic();
             mesh.UploadMeshData(!dynamicColors && !sorted);
+            LoadTiming.Add("assets: mesh upload", section);
+            section = LoadTiming.Now;
             var item = new GameObject(mesh.name) { layer = layer };
             item.transform.SetParent(root.transform, false);
             var objectId = Definition.ObjectIds.Length == 0 ? "" : Definition.ObjectIds[part];
@@ -680,7 +612,7 @@ internal sealed class StageAssets : IDisposable
                 renderer.enabled = !Definition.HiddenGroups.Contains(visibility);
             }
         }
-        if (reader.BaseStream.Position != reader.BaseStream.Length) throw new InvalidDataException("Extra stage mesh data");
+        LoadTiming.Add("assets: objects and renderers", section);
     }
 
     // morphs.bin of CharacterImporter: for each mesh part, its shapes (face slot, position deltas).
@@ -753,7 +685,6 @@ internal sealed class StageAssets : IDisposable
         }
     }
 
-    private static Vector3 ReadVector(BinaryReader reader) => new(ReadFloat(reader), ReadFloat(reader), ReadFloat(reader));
     public static Vector3 Vector(float[] value) => new(value[0], value[1], value[2]);
 
     public void Dispose()
