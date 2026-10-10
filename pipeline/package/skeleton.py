@@ -23,6 +23,7 @@ REQUIRED = ("hips", "spine", "head", "leftUpperArm", "leftLowerArm", "leftHand",
 SPINE = ("spine", "chest", "upperChest")
 TWIST = ("leftUpperArmTwist", "leftLowerArmTwist", "rightUpperArmTwist", "rightLowerArmTwist")
 FINGERS = ("Thumb", "Index", "Middle", "Ring", "Little")
+KNUCKLES = ("Middle", "Ring", "Index", "Little")
 THUMB_PARTS = ("Metacarpal", "Proximal", "Distal")
 FINGER_PARTS = ("Proximal", "Intermediate", "Distal")
 GH3_FINGERS = {
@@ -73,13 +74,43 @@ def next_role(role, has):
     for side in ("left", "right"):
         if not role.startswith(side): continue
         part = role[len(side):]
-        following = {"Shoulder": "UpperArm", "UpperArm": "LowerArm", "LowerArm": "Hand", "Hand": "MiddleProximal", "UpperLeg": "LowerLeg",
+        following = {"Shoulder": "UpperArm", "UpperArm": "LowerArm", "LowerArm": "Hand", "UpperLeg": "LowerLeg",
                      "LowerLeg": "Foot", "Foot": "Toes", "ThumbMetacarpal": "ThumbProximal", "ThumbProximal": "ThumbDistal"}.get(part)
+        if part == "Hand": return knuckle(side, has)
         for finger in FINGERS[1:]:
             if part == finger + "Proximal": following = finger + "Intermediate"
             elif part == finger + "Intermediate": following = finger + "Distal"
         return side + following if following else None
     return None
+
+
+def knuckle(side, has):
+    """The finger base that gives the direction of a hand: the middle finger, else the ring, index, or little finger."""
+    return next((side + f + "Proximal" for f in KNUCKLES if has(side + f + "Proximal")), None)
+
+
+def palm_line(side, has):
+    """The two finger bases across the palm (index side, little side) for the roll of a hand, or None."""
+    first = next((side + f + "Proximal" for f in ("Index", "Middle") if has(side + f + "Proximal")), None)
+    last = next((side + f + "Proximal" for f in ("Little", "Ring") if has(side + f + "Proximal")), None)
+    return (first, last) if first and last and first != last else None
+
+
+def torso_between(parents, humanoid, rest_p):
+    """Joints without a role between two torso roles (hips, spine, chest, upper chest, neck, head), as (joint, upper
+    role joint, lower role joint, fraction of the way down to up): the retarget turns them part of the way, so a long
+    spine or neck bends along its whole length."""
+    torso = [humanoid[r] for r in ("hips",) + SPINE + ("neck", "head") if r in humanoid]
+    out = []
+    for lower in torso:
+        path, x = [], parents[lower]
+        while x >= 0 and x not in torso: path.append(x); x = parents[x]
+        if x < 0 or not path: continue
+        points = [rest_p[x]] + [rest_p[b] for b in reversed(path)] + [rest_p[lower]]
+        steps = np.cumsum([0.0] + [float(np.linalg.norm(points[i + 1] - points[i])) for i in range(len(points) - 1)])
+        total = steps[-1] if steps[-1] > 1e-9 else 1.0
+        for k, bone in enumerate(reversed(path)): out.append((bone, x, lower, steps[k + 1] / total))
+    return out
 
 
 def hierarchy():
@@ -507,9 +538,9 @@ class Retarget:
             if following is None or t(following) < 0 or s(following) < 0: continue
             a, b = tp[t(following)] - tp[bone], sp[s(following)] - sp[self.map[bone]]
             if np.dot(a, a) < 1e-10 or np.dot(b, b) < 1e-10: continue
-            if r.endswith("Hand"):
-                side = r[:-4]
-                ti, tl, si, sl = t(side + "IndexProximal"), t(side + "LittleProximal"), s(side + "IndexProximal"), s(side + "LittleProximal")
+            line = palm_line(r[:-4], lambda x: t(x) >= 0 and s(x) >= 0) if r.endswith("Hand") else None
+            if line:
+                ti, tl, si, sl = t(line[0]), t(line[1]), s(line[0]), s(line[1])
                 if min(ti, tl, si, sl) >= 0:
                     align[bone], aligned[bone] = _frame_turn(a, tp[ti] - tp[tl], b, sp[si] - sp[sl]), True
                     continue
@@ -567,22 +598,29 @@ class Retarget:
                 rest = qnorm(qmul(qinv(tq[lo]), tq[h]))
                 twist = lt if lt >= 0 and _above(self.parents, lo, lt) and _above(self.parents, lt, h) else -1
                 self.lower_twist.append((lo, twist, h, axis, rest))
+        self.between = {bone: (upper, lower, fraction) for bone, upper, lower, fraction in torso_between(self.parents, humanoid, tp)
+                        if self.map[bone] < 0 and self.map[upper] >= 0 and self.map[lower] >= 0}
         self.followers = [(b, src, w, qnorm(qmul(qinv(tq[b]), tq[src]))) for b, src, w in followers
                           if 0 <= b < count and 0 <= src < count and self.map[b] < 0 and b != src]
         self.follower_of = {f[0]: f for f in self.followers}
         self.order = _order(self.parents, [(f[0], f[1]) for f in self.followers])
         self.arms, self.legs = [], []
+        # The GH3 joints of each IK chain (by the target upper joint): the GH3 elbow or knee gives the bend direction.
+        self.poles = {}
         for side, sign in (("left", -1), ("right", 1)):
             u, lo, h, sh = t(side + "UpperArm"), t(side + "LowerArm"), t(side + "Hand"), s(side + "Hand")
             if min(u, lo, h, sh) >= 0 and _above(self.parents, u, lo) and _above(self.parents, lo, h):
-                tk = t(side + "MiddleProximal")
+                base = knuckle(side, lambda x: t(x) >= 0 and s(x) >= 0)
+                tk = t(base) if base else -1
                 offset = qrotate(qinv(tq[h]), tp[tk] - tp[h]) if tk >= 0 else np.zeros(3)
                 reach = np.linalg.norm(tp[u] - tp[lo]) + np.linalg.norm(tp[lo] - tp[h])
-                self.arms.append((u, lo, h, sh, s(side + "MiddleProximal") if tk >= 0 else -1, offset, sign, reach))
+                self.arms.append((u, lo, h, sh, s(base) if tk >= 0 else -1, offset, sign, reach))
+                self.poles[u] = (s(side + "UpperArm"), s(side + "LowerArm"), sh)
             ul, ll, f, sf, su = t(side + "UpperLeg"), t(side + "LowerLeg"), t(side + "Foot"), s(side + "Foot"), s(side + "UpperLeg")
             if min(ul, ll, f, sf, su) >= 0 and _above(self.parents, ul, ll) and _above(self.parents, ll, f):
                 lift = tp[f][1] - (tp[ul][1] + (sp[sf][1] - sp[su][1]) * self.hip_scale)
                 self.legs.append((ul, ll, f, sf, su, lift))
+                self.poles[ul] = (su, s(side + "LowerLeg"), sf)
         self.attachments = []
         if role in ("guitarist", "bassist") and source_index.get(_key("bone_guitar_body"), -1) >= 0:
             self.attachments.append((source_index[_key("bone_guitar_body")], "chest"))
@@ -591,6 +629,29 @@ class Retarget:
         if self.chest_source < 0 or self.chest_target < 0: self.attachments = []
         self.palms = (s("leftHand"), s("rightHand"))
         self.hands = (t("leftHand"), t("rightHand"))
+
+    def arm_gains(self, source_t, source_q):
+        """(right, left) arm IK strengths (frames) for a clip without the game's arm events: 1 while the GH3 hand is on
+        the instrument (within 10 cm of an instrument joint), 0 beyond 25 cm. The game takes the strengths from the
+        performance (hero_toggle_arms); the Blender preview and Check Clips use this."""
+        frames = source_t.shape[0]
+        count = len(self.source_parents)
+        sp, sq = np.zeros((frames, count, 3)), np.zeros((frames, count, 4))
+        for bone in self.source_order:
+            parent = self.source_parents[bone]
+            if parent < 0: sp[:, bone], sq[:, bone] = source_t[:, bone], source_q[:, bone]
+            else:
+                sp[:, bone] = sp[:, parent] + qrotate(sq[:, parent], source_t[:, bone])
+                sq[:, bone] = qnorm(qmul(sq[:, parent], source_q[:, bone]))
+        roots = [root for root, mode in self.attachments if mode == "chest"]
+        instrument = [b for b in range(count) if any(b == r or _above(self.source_parents, r, b) for r in roots)]
+        gains = {1: np.ones(frames), -1: np.ones(frames)}
+        if not instrument: return gains[1], gains[-1]
+        for _, _, _, source_end, _, _, side, _ in self.arms:
+            near = np.min(np.linalg.norm(sp[:, instrument] - sp[:, source_end, None], axis=-1), axis=1)
+            x = np.clip((0.25 - near) / 0.15, 0, 1)
+            gains[side] = x * x * (3 - 2 * x)
+        return gains[1], gains[-1]
 
     def apply(self, source_t, source_q, right=1.0, left=1.0):
         """Local poses (frames, source bones, 3 and 4) to the local poses of the skeleton (frames, joints, 3 and 4),
@@ -606,6 +667,8 @@ class Retarget:
             else:
                 sp[:, bone] = sp[:, parent] + qrotate(sq[:, parent], source_t[:, bone])
                 sq[:, bone] = qnorm(qmul(sq[:, parent], source_q[:, bone]))
+        self.source_p, self.source_q = sp, sq
+        self.goals = []
         count = len(self.parents)
         self.desired = np.zeros((frames, count, 4))
         self.driven = np.zeros((frames, count), bool)
@@ -642,14 +705,15 @@ class Retarget:
             if instrument < 0: return sp[:, bone] + chest_move
             return sp[:, instrument] + chest_move + (sp[:, bone] - sp[:, instrument]) * self.instrument_scale
 
-        for upper, lower, end, source_end, knuckle, offset, side, _ in self.arms:
+        for upper, lower, end, source_end, base, offset, side, _ in self.arms:
             gain = left if side < 0 else right
-            goal = goal_of(knuckle if knuckle >= 0 else source_end)
-            if knuckle >= 0: goal = goal - qrotate(self.desired[:, end], np.broadcast_to(offset, (frames, 3)))
-            self._solve(upper, lower, end, goal, gain)
+            goal = goal_of(base if base >= 0 else source_end)
+            if base >= 0: goal = goal - qrotate(self.desired[:, end], np.broadcast_to(offset, (frames, 3)))
+            self._solve(upper, lower, end, goal, gain, self._pole(sp, upper))
+            self.goals.append((end, goal, gain, base >= 0, offset))
         for upper, lower, end, source_end, source_upper, lift in self.legs:
             goal = self.wp[:, upper] + (sp[:, source_end] - sp[:, source_upper]) * self.hip_scale + [0, lift, 0]
-            self._solve(upper, lower, end, goal, np.ones(frames))
+            self._solve(upper, lower, end, goal, np.ones(frames), self._pole(sp, upper))
         self._forward(move)
         t, q = np.zeros((frames, count, 3)), np.zeros((frames, count, 4))
         for bone in range(count):
@@ -669,10 +733,10 @@ class Retarget:
         shift = np.zeros_like(move)
         for _ in range(2):
             step = np.zeros_like(move)
-            for upper, lower, end, source_end, knuckle, offset, side, reach in self.arms:
+            for upper, lower, end, source_end, base, offset, side, reach in self.arms:
                 gain = left if side < 0 else right
-                goal = self._goal(sp, knuckle if knuckle >= 0 else source_end, instrument, move + shift)
-                if knuckle >= 0: goal = goal - qrotate(self.desired[:, end], np.broadcast_to(offset, goal.shape))
+                goal = self._goal(sp, base if base >= 0 else source_end, instrument, move + shift)
+                if base >= 0: goal = goal - qrotate(self.desired[:, end], np.broadcast_to(offset, goal.shape))
                 vector = goal - self.wp[:, upper]
                 excess = np.linalg.norm(vector, axis=-1) - reach * 0.98
                 step -= _unit(vector) * (np.maximum(excess, 0) * np.where(gain > 0, gain, 0))[:, None]
@@ -689,6 +753,12 @@ class Retarget:
             self.wp[:, bone] = self.rest_p[bone] + move if bone == self.root_motion else parent_p + qrotate(parent_q, np.broadcast_to(rest_p, (frames, 3)))
             carried = qnorm(qmul(parent_q, rest_q))
             rotation = np.where(self.driven[:, bone, None], self.desired[:, bone], carried)
+            if bone in self.between:
+                upper, lower, fraction = self.between[bone]
+                turn_u = qmul(self.desired[:, upper], qinv(self.rest_q[upper]))
+                turn_l = qmul(self.desired[:, lower], qinv(self.rest_q[lower]))
+                turn = qmul(turn_u, power(qmul(qinv(turn_u), turn_l), fraction))
+                rotation = qnorm(qmul(turn, self.rest_q[bone]))
             if bone in self.follower_of:
                 _, source, weight, frame = self.follower_of[bone]
                 source_parent = self.parents[source]
@@ -712,13 +782,25 @@ class Retarget:
                     rotation = np.where(self.driven[:, hand, None], turned, rotation)
             self.wq[:, bone] = rotation
 
-    def _solve(self, upper, lower, end, goal, gain):
+    def _pole(self, sp, upper):
+        """The direction in which the GH3 elbow or knee sticks out of its shoulder-hand or hip-foot line (frames, 3)."""
+        su, sl, se = self.poles.get(upper, (-1, -1, -1))
+        if min(su, sl, se) < 0: return np.zeros((sp.shape[0], 3))
+        line = _unit(sp[:, se] - sp[:, su])
+        off = sp[:, sl] - sp[:, su]
+        return off - line * np.sum(off * line, -1, keepdims=True)
+
+    def _solve(self, upper, lower, end, goal, gain, pole=None):
         a, b, c = self.wp[:, upper], self.wp[:, lower], self.wp[:, end]
         upper_length, lower_length = np.linalg.norm(b - a, axis=-1), np.linalg.norm(c - b, axis=-1)
         to_goal = goal - a
         distance = np.clip(np.linalg.norm(to_goal, axis=-1), np.abs(upper_length - lower_length) + 1e-4, (upper_length + lower_length) * 0.9999)
         u = _unit(to_goal)
         bend = (b - a) - u * np.sum((b - a) * u, -1, keepdims=True)
+        if pole is not None:
+            # The bend plane of the GH3 limb (its elbow or knee direction) when the GH3 limb is bent; else the pose's own plane.
+            hint = pole - u * np.sum(pole * u, -1, keepdims=True)
+            bend = np.where((np.linalg.norm(pole, axis=-1) > 0.005)[:, None] & (np.sum(hint ** 2, -1) > 1e-8)[:, None], hint, bend)
         fallback = (c - a) - u * np.sum((c - a) * u, -1, keepdims=True)
         bend = np.where((np.sum(bend ** 2, -1) < 1e-10)[:, None], fallback, bend)
         v = _unit(bend)

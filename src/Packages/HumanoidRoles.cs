@@ -65,6 +65,24 @@ internal static class HumanoidRoles
         _ => new[] { Gh3Checksum.Of("bone_stomach_lower"), Gh3Checksum.Of("bone_stomach_upper"), Gh3Checksum.Of("bone_chest") },
     };
 
+    private static readonly string[] Knuckles = { "Middle", "Ring", "Index", "Little" };
+
+    // The finger base that gives the direction of a hand: the middle finger, else the ring, index, or little finger.
+    public static string? Knuckle(string side, Func<string, bool> has)
+    {
+        foreach (var finger in Knuckles)
+            if (has(side + finger + "Proximal")) return side + finger + "Proximal";
+        return null;
+    }
+
+    // The two finger bases across the palm (index side, little side) for the roll of a hand, or null.
+    public static (string First, string Last)? PalmLine(string side, Func<string, bool> has)
+    {
+        var first = new[] { "Index", "Middle" }.Select(f => side + f + "Proximal").FirstOrDefault(has);
+        var last = new[] { "Little", "Ring" }.Select(f => side + f + "Proximal").FirstOrDefault(has);
+        return first != null && last != null && first != last ? (first, last) : null;
+    }
+
     // The role whose joint gives the direction of a role's bone (null: the bone keeps the world rest frame or the
     // correction of its parent).
     public static string? Next(string role, Func<string, bool> has)
@@ -79,9 +97,10 @@ internal static class HumanoidRoles
         {
             if (!role.StartsWith(side, StringComparison.Ordinal)) continue;
             var part = role[side.Length..];
+            if (part == "Hand") return Knuckle(side, has);
             string? next = part switch
             {
-                "Shoulder" => "UpperArm", "UpperArm" => "LowerArm", "LowerArm" => "Hand", "Hand" => "MiddleProximal",
+                "Shoulder" => "UpperArm", "UpperArm" => "LowerArm", "LowerArm" => "Hand",
                 "UpperLeg" => "LowerLeg", "LowerLeg" => "Foot", "Foot" => "Toes",
                 "ThumbMetacarpal" => "ThumbProximal", "ThumbProximal" => "ThumbDistal",
                 _ => null,

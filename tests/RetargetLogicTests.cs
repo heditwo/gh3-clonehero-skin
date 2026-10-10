@@ -47,8 +47,9 @@ internal static class RetargetLogicTests
         CheckDirections();
         CheckTwistAndFollowers();
         CheckRootMotionAndIk();
-        CheckPythonFixture();
-        Console.WriteLine("Retarget identity, rest-pose correction (T-pose, bone rolls, scale), twist bones, followers, root motion, and IK checks passed.");
+        CheckPythonFixture("retarget-case.json");
+        CheckPythonFixture("retarget-any-rig.json");
+        Console.WriteLine("Retarget identity, rest-pose correction (T-pose, bone rolls, scale), twist bones, followers, root motion, IK, and the two Python fixtures passed.");
     }
 
     private static string Key(string name) => name.StartsWith("bone-") ? name[5..] : Gh3Checksum.Of(name);
@@ -283,14 +284,16 @@ internal static class RetargetLogicTests
         Check(retarget.HandMiss < 0.03f, $"the hands reach their goals ({retarget.HandMiss * 1000:0.#} mm)");
     }
 
-    // tests/fixtures/retarget-case.json (tests/test_skeleton.py): the Python retarget of the Blender preview gives the same
-    // poses as the game for an MMD-like skeleton with twist bones, followers, a T-pose, and bone rolls.
-    private static void CheckPythonFixture()
+    // tests/fixtures/*.json (tests/test_skeleton.py): the Python retarget of the Blender preview gives the same poses as the
+    // game for an MMD-like skeleton with twist bones, followers, a T-pose, and bone rolls (retarget-case.json), and for a
+    // skeleton of another rig family: a long spine and neck with joints between the roles, hands without a middle finger,
+    // two-joint thumbs, no shoulders and toes, an A-pose (retarget-any-rig.json).
+    private static void CheckPythonFixture(string file)
     {
         var directory = new DirectoryInfo(Directory.GetCurrentDirectory());
-        while (directory != null && !File.Exists(Path.Combine(directory.FullName, "tests", "fixtures", "retarget-case.json"))) directory = directory.Parent;
-        Check(directory != null, "the fixture tests/fixtures/retarget-case.json exists");
-        var root = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(directory!.FullName, "tests", "fixtures", "retarget-case.json")))!;
+        while (directory != null && !File.Exists(Path.Combine(directory.FullName, "tests", "fixtures", file))) directory = directory.Parent;
+        Check(directory != null, $"the fixture tests/fixtures/{file} exists");
+        var root = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(directory!.FullName, "tests", "fixtures", file)))!;
         float[] F(System.Text.Json.Nodes.JsonNode? n) => n!.AsArray().Select(v => (float)v!.GetValue<double>()).ToArray();
         BandPose Pose(float[] r) => new(new Vector3(r[0], r[1], r[2]), Quaternion.Normalize(new Quaternion(r[3], r[4], r[5], r[6])));
         var sourceBones = root["sourceBones"]!.AsArray().Select(n => n!.GetValue<string>()).ToArray();
@@ -328,7 +331,7 @@ internal static class RetargetLogicTests
                 worstAngle = Math.Max(worstAngle, angle);
             }
         }
-        Check(worstPosition < 1e-4f && worstAngle < 0.005f, $"the game and the Python preview agree ({worstPosition * 1000:0.###} mm, {worstAngle:0.###}°)");
+        Check(worstPosition < 1e-4f && worstAngle < 0.005f, $"the game and the Python preview agree on {file} ({worstPosition * 1000:0.###} mm, {worstAngle:0.###}°)");
     }
 
     private static void Check(bool condition, string message)

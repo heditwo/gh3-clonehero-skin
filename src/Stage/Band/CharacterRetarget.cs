@@ -58,8 +58,9 @@ internal sealed class CharacterRetarget
     private readonly (int Lower, int Twist, int Hand, Vector3 Axis, Quaternion HandRest)[] _lowerTwist;
     private readonly (int Bone, int Source, float Weight, Quaternion Frame)[] _followers;
     private readonly int[] _followerOf;
-    private readonly (int Upper, int Lower, int End, int SourceEnd, int Knuckle, Vector3 KnuckleOffset, int Side, float Reach)[] _arms;
-    private readonly (int Upper, int Lower, int End, int SourceEnd, int SourceUpper, float Lift)[] _legs;
+    private readonly (int Upper, int Lower, float Fraction)[] _between;
+    private readonly (int Upper, int Lower, int End, int SourceEnd, int Knuckle, Vector3 KnuckleOffset, int Side, float Reach, int SourceUpper, int SourceLower)[] _arms;
+    private readonly (int Upper, int Lower, int End, int SourceEnd, int SourceUpper, float Lift, int SourceLower)[] _legs;
     private readonly (int Root, int Mode)[] _attachments;
     private readonly int[] _palms = new int[2];
     private readonly int[] _hands = new int[2];
@@ -112,10 +113,9 @@ internal sealed class CharacterRetarget
             var from = _restPosition[T(next)] - _restPosition[bone];
             var to = sourceRestP[S(next)] - sourceRestP[_map[bone]];
             if (from.LengthSquared() < 1e-10f || to.LengthSquared() < 1e-10f) continue;
-            if (role2.EndsWith("Hand", StringComparison.Ordinal))
+            if (role2.EndsWith("Hand", StringComparison.Ordinal) && HumanoidRoles.PalmLine(role2[..^4], r => T(r) >= 0 && S(r) >= 0) is var (first, last))
             {
-                var side = role2[..^4];
-                var (ti, tl, si, sl) = (T(side + "IndexProximal"), T(side + "LittleProximal"), S(side + "IndexProximal"), S(side + "LittleProximal"));
+                var (ti, tl, si, sl) = (T(first), T(last), S(first), S(last));
                 if (ti >= 0 && tl >= 0 && si >= 0 && sl >= 0)
                 {
                     align[bone] = FrameTurn(from, _restPosition[ti] - _restPosition[tl], to, sourceRestP[si] - sourceRestP[sl]);
@@ -189,6 +189,26 @@ internal sealed class CharacterRetarget
         _upperTwist = upper.ToArray();
         _lowerTwist = lower.ToArray();
 
+        // Joints without a role between two torso roles turn part of the way, so a long spine or neck bends along its length.
+        _between = Enumerable.Repeat((-1, -1, 0f), count).ToArray();
+        var torso = new[] { "hips", "spine", "chest", "upperChest", "neck", "head" }.Select(T).Where(b => b >= 0).ToArray();
+        foreach (var below in torso)
+        {
+            var path = new List<int>();
+            var x = target.Parents[below];
+            while (x >= 0 && Array.IndexOf(torso, x) < 0) { path.Add(x); x = target.Parents[x]; }
+            if (x < 0 || path.Count == 0 || _map[x] < 0 || _map[below] < 0) continue;
+            path.Reverse();
+            var points = new List<Vector3> { _restPosition[x] };
+            points.AddRange(path.Select(b => _restPosition[b]));
+            points.Add(_restPosition[below]);
+            var along = new float[points.Count];
+            for (var i = 1; i < points.Count; i++) along[i] = along[i - 1] + Vector3.Distance(points[i - 1], points[i]);
+            var total = along[^1] > 1e-9f ? along[^1] : 1;
+            for (var i = 0; i < path.Count; i++)
+                if (_map[path[i]] < 0) _between[path[i]] = (x, below, along[i + 1] / total);
+        }
+
         // Followers: the source rotation from rest, turned into the follower's rest frame.
         _followers = target.Followers.Where(f => f.Bone >= 0 && f.Bone < count && f.Source >= 0 && f.Source < count && _map[f.Bone] < 0 && f.Bone != f.Source)
             .Select(f => (f.Bone, f.Source, f.Weight, Quaternion.Normalize(Quaternion.Inverse(_restRotation[f.Bone]) * _restRotation[f.Source]))).ToArray();
@@ -197,18 +217,19 @@ internal sealed class CharacterRetarget
         _order = Order(target.Parents, _followers.Select(f => (f.Bone, f.Source)).ToArray());
 
         // IK chains with the character's own lengths.
-        var arms = new List<(int, int, int, int, int, Vector3, int, float)>();
-        var legs = new List<(int, int, int, int, int, float)>();
+        var arms = new List<(int, int, int, int, int, Vector3, int, float, int, int)>();
+        var legs = new List<(int, int, int, int, int, float, int)>();
         foreach (var (side, sign) in new[] { ("left", -1), ("right", 1) })
         {
             var (u, l, h, s) = (T(side + "UpperArm"), T(side + "LowerArm"), T(side + "Hand"), S(side + "Hand"));
             if (u >= 0 && l >= 0 && h >= 0 && s >= 0 && IsAbove(target.Parents, u, l) && IsAbove(target.Parents, l, h))
             {
-                var knuckle = S(side + "MiddleProximal");
-                var tk = T(side + "MiddleProximal");
+                var finger = HumanoidRoles.Knuckle(side, r => T(r) >= 0 && S(r) >= 0);
+                var knuckle = finger != null ? S(finger) : -1;
+                var tk = finger != null ? T(finger) : -1;
                 var offset = tk >= 0 ? Vector3.Transform(_restPosition[tk] - _restPosition[h], Quaternion.Inverse(_restRotation[h])) : Vector3.Zero;
                 var reach = Vector3.Distance(_restPosition[u], _restPosition[l]) + Vector3.Distance(_restPosition[l], _restPosition[h]);
-                arms.Add((u, l, h, s, tk >= 0 ? knuckle : -1, offset, sign, reach));
+                arms.Add((u, l, h, s, tk >= 0 ? knuckle : -1, offset, sign, reach, S(side + "UpperArm"), S(side + "LowerArm")));
             }
             var (ul, ll, f, sf) = (T(side + "UpperLeg"), T(side + "LowerLeg"), T(side + "Foot"), S(side + "Foot"));
             var su = S(side + "UpperLeg");
@@ -217,7 +238,7 @@ internal sealed class CharacterRetarget
                 // The foot goes where the GH3 foot is from the GH3 hip, scaled by the hip height; the lift keeps the
                 // character's own ankle height at rest (GH3 rigs have higher ankles than many models).
                 var lift = _restPosition[f].Y - (_restPosition[ul].Y + (sourceRestP[sf].Y - sourceRestP[su].Y) * HipScale);
-                legs.Add((ul, ll, f, sf, su, lift));
+                legs.Add((ul, ll, f, sf, su, lift, S(side + "LowerLeg")));
             }
         }
         _arms = arms.ToArray();
@@ -318,14 +339,14 @@ internal sealed class CharacterRetarget
             if (gain <= 0) continue;
             var goal = Goal(arm.Knuckle >= 0 ? arm.Knuckle : arm.SourceEnd, instrument, chestMove);
             if (arm.Knuckle >= 0) goal -= Vector3.Transform(arm.KnuckleOffset, _desired[arm.End]);
-            Solve(arm.Upper, arm.Lower, arm.End, goal, gain);
+            Solve(arm.Upper, arm.Lower, arm.End, goal, gain, Pole(arm.SourceUpper, arm.SourceLower, arm.SourceEnd));
             changed = true;
         }
         foreach (var leg in _legs)
         {
             var goal = _wp[leg.Upper] + (_sp[leg.SourceEnd] - _sp[leg.SourceUpper]) * HipScale;
             goal.Y += leg.Lift;
-            Solve(leg.Upper, leg.Lower, leg.End, goal, 1);
+            Solve(leg.Upper, leg.Lower, leg.End, goal, 1, Pole(leg.SourceUpper, leg.SourceLower, leg.SourceEnd));
             changed = true;
         }
         if (changed) Forward(pelvisMove);
@@ -388,6 +409,13 @@ internal sealed class CharacterRetarget
             var parentQ = parent < 0 ? Quaternion.Identity : _wq[parent];
             _wp[bone] = bone == _rootMotion ? _restPosition[bone] + pelvisMove : parentP + Vector3.Transform(rest.Position, parentQ);
             var rotation = _driven[bone] ? _desired[bone] : Quaternion.Normalize(parentQ * rest.Rotation);
+            var (upperTorso, lowerTorso, fraction) = _between[bone];
+            if (upperTorso >= 0)
+            {
+                var turnUpper = _desired[upperTorso] * Quaternion.Inverse(_restRotation[upperTorso]);
+                var turnLower = _desired[lowerTorso] * Quaternion.Inverse(_restRotation[lowerTorso]);
+                rotation = Quaternion.Normalize(turnUpper * Power(Quaternion.Inverse(turnUpper) * turnLower, fraction) * _restRotation[bone]);
+            }
             var follower = _followerOf[bone];
             if (follower >= 0)
             {
@@ -425,8 +453,20 @@ internal sealed class CharacterRetarget
         }
     }
 
-    // Two-bone IK in world space: bends the middle joint in the plane of the current pose, then turns the chain to the goal.
-    private void Solve(int upper, int lower, int end, Vector3 goal, float gain)
+    // The direction in which the GH3 elbow or knee sticks out of its shoulder-hand or hip-foot line (zero without one).
+    private Vector3 Pole(int upper, int lower, int end)
+    {
+        if (upper < 0 || lower < 0 || end < 0) return Vector3.Zero;
+        var line = _sp[end] - _sp[upper];
+        if (line.LengthSquared() < 1e-12f) return Vector3.Zero;
+        line = Vector3.Normalize(line);
+        var offset = _sp[lower] - _sp[upper];
+        return offset - line * Vector3.Dot(offset, line);
+    }
+
+    // Two-bone IK in world space: bends the middle joint in the plane of the GH3 limb (its elbow or knee direction, so the
+    // bend does not flip when the character's limb is nearly straight), else of the current pose, then turns the chain to the goal.
+    private void Solve(int upper, int lower, int end, Vector3 goal, float gain, Vector3 pole)
     {
         var a = _wp[upper];
         var b = _wp[lower];
@@ -439,6 +479,8 @@ internal sealed class CharacterRetarget
         if (toGoal.LengthSquared() < 1e-10f) return;
         var u = Vector3.Normalize(toGoal);
         var bend = b - a - u * Vector3.Dot(b - a, u);
+        var hint = pole - u * Vector3.Dot(pole, u);
+        if (pole.Length() > 0.005f && hint.LengthSquared() > 1e-8f) bend = hint;
         if (bend.LengthSquared() < 1e-10f)
         {
             bend = c - a - u * Vector3.Dot(c - a, u);
