@@ -203,6 +203,28 @@ Sources: `Musician_Profiles` (`guitar_band_profile.qb`: name, skeletons, ragdoll
 - `musician_instrument`: 113 rows, 88 guitars and 20 basses (and the drum kit and four microphones). Store lists: `Free_Guitars` 3, `Bonus_Guitars` 23, `Bonus_Guitar_Finishes` 49, `Secret_Guitars` 13, `Free_Basses` 1, `Bonus_Basses` 5, `Bonus_Bass_Finishes` 6, `Secret_Basses` 8.
 - Each model PAK also has the magazine photo of the variant (`.img` `Mag_Photo`, 512 × 512 DDS), the startup script that loads the highway texture, and the intro and win clips.
 
+### Instruments and highways
+
+Sources: `musician_instrument` (`guitar_band_profile_data.qb`), the store lists (`store_data.qb`), the instrument PAKs, the startup script of each PAK, and the scripts `create_guitarist`, `setup_highway`, `create_guitarist_profile`, `setup_character_tags` (decompiled from `qb.pak.xen`, 2026-10-10).
+
+| Data | Value |
+| --- | --- |
+| Guitars and basses | `musician_instrument` rows with `Type` `guitar` (88) or `bass` (20). Fields: `desc_id` and `desc_name` (`Instrument_<name>`), `logo` (brand), `name`, `name2` (series), `finish`, `blurb` (store text), `mesh`, `pak`. The drum kit and the four microphones have no `Type` |
+| Store | `Free_Guitars` (Explorer White, SG Worn Red, Les Paul Black), `Bonus_Guitars` 23, `Bonus_Guitar_Finishes` 49, `Secret_Guitars` 13 (with an unlock icon), `Free_Basses` (`Instrument_LP_VBRST`), `Bonus_Basses` 5, `Bonus_Bass_Finishes` 6, `Secret_Basses` 8. Prices 200–10,000 |
+| Instrument PAK | One `.skin` (2–3 mesh parts, 761–7,909 vertices) and one `.tex`. The startup script `<name>_startup` loads only these two files. Every vertex follows `bone_guitar_body`, a bone of every guitarist and bassist skeleton. The PAK has **no** highway texture |
+| Default | `default_characterguitartags`: `current_selected_guitar` `Instrument_Les_Paul_Black`, `current_selected_bass` `Instrument_LP_VBRST`. `setup_character_tags` gives each profile its `musician_instrument` (the profile's own guitar, for example `Instrument_Explorer_White` for Axel). An instrument that is not available (`is_musician_instrument_downloaded`) becomes the Les Paul Black or the LP bass |
+| Selection | `player_status.instrument_id`. In co-op, `create_guitarist_profile` takes the instrument of the player's status for both players; the character's tags keep `current_selected_guitar` and `current_selected_bass`, and the song's rhythm part selects which one plays (`current_instrument`). In boss battles, the bassist plays the boss's own instrument |
+| Highway | `create_guitarist` (`guitar_character.qb`): `AddToMaterialLibrary scene = Guitarist_<name>_Outfit<o>_Style<s>`, then `highway_material = sys_<profile name>_1_highway_sys_<profile name>_1_highway` into `player_status`. `setup_highway` (`guitar_highway.qb`) draws `Highway_2D<player>` with `clonematerial = player_status.highway_material`. The texture is `<name>_1_Highway.tex` of the character's model PAK (512 × 1024): **the highway follows the character, not the instrument.** All outfits and styles of a character load the same `<name>_1_Highway` |
+| Highways | 13, one for each guitarist profile: Axel (the bullet belt, the mod's default highway), Casey, Izzy, Judy, Johnny, Lars, Midori, Xavier, Slash, Morello, Lou (`Satan_1_Highway`, also for Thick Izzy), God of Rock, Grim Ripper. The bassist, drummer, and singer PAKs have none |
+| Co-op | Each player has a `Highway_2D<player>` with the highway of that player's character (`player1_status`, `player2_status`) |
+| Other instrument effects | Two in the scripts: the store preview scales the Obliviaxe (`Instrument_Guitar_Demonik`) to 0.8 and moves it and the Pendulaxe, and `CameraCuts_SetArrayPrefix` selects the shot type `demonik` (the solo arrays of the Dive, Hell, and Budokan have such shots) for player 1 with the Obliviaxe when its caller gives `selectguitartype`. No script gives that parameter. `Cheat_AirGuitar` removes the instrument |
+
+Mod rules (from the table):
+
+- The F6 picker has a guitar line for the guitarist and a bass line for the bassist. **Default** keeps the current rule: a character's own instrument plays in the role of its profile, else the role's library instrument. A chosen instrument replaces the character's own instrument or the library instrument in that role.
+- The highway of the Clone Hero player (the guitarist, or the bassist for a bass or rhythm part) is the highway of the character of that role. A GH3 character package has the highway of its GH3 profile. A creator instrument can have its own highway (an addition of the mod: GH3 instruments have none); when the player selects it, it wins over the character's highway. Without a character and without an instrument highway, Axel's highway (the default) stays.
+- Not implemented: the `demonik` camera shots (no GH3 script turns them on).
+
 ### God of Rock hair
 
 Measured on the GH3 PC data (2026-10-09). `GH3_Guitarist_RockGod` and `GH3_Guitarist_Axel` have the same 125 bones. The body bones are the same (at most 1 mm); the face bones are up to 3.7 cm apart; seven accessory bones (`Bone_ACC_09`–`15`) have other parents and other places:

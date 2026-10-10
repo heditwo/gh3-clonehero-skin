@@ -47,7 +47,7 @@ The mod keeps its files here (Windows paths; Linux uses `/`):
 | Mod, stages, characters, and shaders (about 1.65 GB) | `<game>\Mods\Gh3Skin.dll`, `<game>\Mods\GH3Skin\` |
 | Cache of the imported packages (about 1.9 GB) | `<game>\UserData\GH3Skin\Cache\` |
 | Your choices in the picker | `<game>\UserData\GH3Skin\choices.json` |
-| Your stages and characters | `Custom\Stages\` and `Custom\Characters\` (see [section 6](#6-add-stages-and-characters)) |
+| Your stages, characters, and instruments | `Custom\Stages\`, `Custom\Characters\`, and `Custom\Instruments\` (see [section 6](#6-add-stages-characters-and-instruments)) |
 | Log | `<game>\MelonLoader\Latest.log` |
 
 To remove the cache, close the game and delete `UserData\GH3Skin\Cache\`. The mod makes it again at the next start.
@@ -135,7 +135,19 @@ If a character cannot load, the venue default plays, and the log tells you why.
 
 Each GH3 guitarist character plays its GH3 guitar when it is the guitarist, for example the white Explorer for Axel Steel and Lars Umlaut, the worn red SG for Judy Nails, Johnny Napalm, and Midori, and the black Les Paul for Casey Lynch, Izzy Sparks, and Xavier Stone. The female singer has her GH3 microphone.
 
-When a character plays another member, it plays the instrument of that member: a guitarist character that plays the bassist has the bass of the GH3 bassist. A character without an instrument in its model gets the instrument of the member that it plays (the guitarist plays the guitar, the bassist the bass, the drummer the drum kit, and the singer has the microphone and stand). The log line `GH3 band <member>: character <id> ... with <instrument>` tells you which instrument plays. You cannot select another instrument yet.
+When a character plays another member, it plays the instrument of that member: a guitarist character that plays the bassist has the bass of the GH3 bassist. A character without an instrument in its model gets the instrument of the member that it plays (the guitarist plays the guitar, the bassist the bass, the drummer the drum kit, and the singer has the microphone and stand). The log line `GH3 band <member>: character <id> ... with <instrument>` tells you which instrument plays.
+
+To select an instrument, use the **Guitar** line below the guitarist and the **Bass** line below the bassist:
+
+1. Click **<** or **>** to go through the instruments one at a time.
+2. Click **<<** or **>>** to go to the previous or next model (for example from the Les Paul Standard finishes to the Les Paul Custom).
+3. **Default (the character's own)** keeps the rules above.
+
+The mod has all 88 guitars and 20 basses of GH3, with all finishes, for example "Gibson X-Plorer Standard (Alpine White)", "Obliviaxe: Lou's", and "Tobias Killer B Four String (Natural)". All are available; you do not buy them as in GH3. The chosen instrument plays with every character and with the venue's band member.
+
+### Highway
+
+As in GH3, the highway image comes from your character: Judy Nails has her highway, Lars Umlaut his, and so on. The mod uses the character of the member that you play: the guitarist, or the bassist when you play a bass or rhythm part. Without a character, the highway of GH3's Axel Steel shows. A GH3 guitar does not change the highway, as in GH3. An instrument that a creator makes can have its own highway; when you select it, its highway shows.
 
 ## 5. Direction options
 
@@ -147,12 +159,13 @@ Three check boxes at the bottom of the picker control the camera and light direc
 | **Generate direction for charts without it** | A chart without camera or light direction gets camera cuts and light changes from its sections | Such a chart keeps one light mood and the automatic cameras |
 | **Reduce flashing** | Rock Band light flashes are weak and come at most once each second; strobes change at most five times each second | Light flashes follow the chart, at most about three each second |
 
-## 6. Add stages and characters
+## 6. Add stages, characters, and instruments
 
 1. Find your Clone Hero `Custom` folder. This is the folder that has `Highways` and `Image Backgrounds`. On Linux, it is usually `~/.clonehero/Custom`. On Windows, it is `Documents\Clone Hero\Custom` after a typical installation. In portable mode (and when you extract the Windows zip file), it is `PlayerData\Custom` in the game folder.
 2. Put stage files (`.chstage`) in `Custom/Stages/`.
 3. Put character files (`.chchar`) in `Custom/Characters/`.
-4. Start the game. The mod imports new files one time and keeps the result in `UserData/GH3Skin/Cache/` in the game folder. A large stage can take some seconds.
+4. Put instrument files (`.chinst`) in `Custom/Instruments/`.
+5. Start the game. The mod imports new files one time and keeps the result in `UserData/GH3Skin/Cache/` in the game folder. A large stage can take some seconds.
 
 You can use group folders, for example `Custom/Stages/My Stages/`, to a depth of four folders.
 

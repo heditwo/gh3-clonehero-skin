@@ -188,6 +188,12 @@ The GH3 guitarists play on their own rig profiles (format 1.1). Check their moti
 
 On 2026-10-09 (38 runs on gh3.dive, two guitarist characters and one singer in each run) every variant had a close-up in one role, each character family as guitarist and as bassist, and the colors and outfits agreed with the photos.
 
+### Instruments and highways
+
+1. Select instruments with `GH3_SKIN_INSTRUMENT_GUITARIST` and `_BASSIST`, with and without characters. The log has `GH3 band <role>: ... with instrument <id> (<name>; the player's choice)` and `GH3 highway: <source> (the player is the <role>)`.
+2. Fix close-up cameras on the guitarist and the bassist (`GH3_SKIN_DEBUG_VIEW`, two views, `GH3_SKIN_DEBUG_VIEW_SECONDS=4`) and look at the hands: the fret hand on the neck and the strum hand at the strings, for different body shapes (Explorer, Flying V, Les Paul, SG, the GH3 designs, basses).
+3. For the highway, capture the board (song times 10–30 s) with the default band, with characters, and with `GH3_SKIN_PREVIEW_PLAYER=Bass,Expert` and a chart with a bass part. Compare with the GH3 images in `assets/instruments/highways/`. The default run must look as `main` (the board differs between two runs only by timing).
+
 ## Runtime variables
 
 These variables are for checks and captures. Normal play needs none of them.
@@ -196,7 +202,9 @@ These variables are for checks and captures. Normal play needs none of them.
 | --- | --- |
 | `GH3_SKIN_STAGE` | Stage ID of an installed package, for example `gh3.hell` or `example.studio`; it overrides the picker and the song's stage. `random` or `song` act as the picker items. `off` shows the stock background. Without the variable, the picker choice (`UserData/GH3Skin/choices.json`, default `song`: the song's stage, else `gh3.budokan`) applies |
 | `GH3_SKIN_CHARACTER_GUITARIST`, `_BASSIST`, `_DRUMMER`, `_SINGER` | Character package ID for a band role (or `default`); overrides the picker |
-| `GH3_SKIN_PICKER_TEST` | Picker steps in the menus without a mouse (`src/Menu/PickerTest.cs`), for `scripts/capture-menu.sh` |
+| `GH3_SKIN_INSTRUMENT_GUITARIST`, `_BASSIST` | Instrument package ID (a guitar for the guitarist, a bass for the bassist) or `default`; overrides the picker |
+| `GH3_SKIN_PICKER_TEST` | Picker steps in the menus without a mouse (`src/Menu/PickerTest.cs`), for `scripts/capture-menu.sh`. `apply` takes `stage=`, `<role>=`, `guitar=`, `bass=`, and the direction options |
+| `GH3_SKIN_PREVIEW_PLAYER` | The `--player` value of `run-gh3-skin.sh --preview`, default `Guitar,Expert`; `Bass,Expert` plays the bass part (the chart needs one) and makes the player the bassist for the highway |
 | `GH3_SKIN_CAMERA` | `auto` (default), `fixed`, or a shot group: `wide`, `singer`, `guitarist`, `bassist`, `drummer`, `orbit` |
 | `GH3_SKIN_CAMERA_SHOT` | Forces one shot name, to match a GH3 reference frame |
 | `GH3_SKIN_VENUE_TRACK=off` | Ignores Rock Band `VENUE` tracks. Overrides the picker option; another value turns the tracks on |

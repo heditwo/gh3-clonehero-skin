@@ -1,6 +1,6 @@
-# Creator guide: stages and characters
+# Creator guide: stages, characters, and instruments
 
-This guide tells you how to make a stage (`.chstage`) and a character (`.chchar`) for the mod with Blender and the CH Stage Tools add-on. The reference for each panel is [BLENDER-ADDON.md](BLENDER-ADDON.md). The reference for the file format is [PACKAGE-FORMAT.md](PACKAGE-FORMAT.md).
+This guide tells you how to make a stage (`.chstage`), a character (`.chchar`), and an instrument (`.chinst`) for the mod with Blender and the CH Stage Tools add-on. The reference for each panel is [BLENDER-ADDON.md](BLENDER-ADDON.md). The reference for the file format is [PACKAGE-FORMAT.md](PACKAGE-FORMAT.md).
 
 The folder [`examples/`](../examples/) has an example stage and an example character. Open them in Blender to see a finished result.
 
@@ -20,7 +20,7 @@ You need:
 2. Open the menu at the top right (the arrow), and click **Install from Disk**.
 3. Select `chstage_tools-<version>.zip`. Do not extract the zip file. Blender installs and enables the add-on.
 4. Open **Edit > Preferences > Add-ons > CH Stage Tools**, and set these fields:
-   - **Custom/Stages folder** and **Custom/Characters folder**: the folders of Clone Hero (see [PLAYER-GUIDE.md section 6](PLAYER-GUIDE.md#6-add-stages-and-characters)). Export can then copy your package into the game.
+   - **Custom/Stages folder** and **Custom/Characters folder**: the folders of Clone Hero (see [PLAYER-GUIDE.md section 6](PLAYER-GUIDE.md#6-add-stages-characters-and-instruments)). Export can then copy your package into the game.
    - **GH3 library (.chlib)**: `gh3-band-v1.chlib`.
    - **GH3 character library (.chlib)**: `gh3-characters-v1.chlib`. You can keep it empty when the file is in the folder of the GH3 library.
 
@@ -212,7 +212,29 @@ To use the character:
 
 The example `.blend` file has no helpers (the GH3 body and the guitar are not in the file). Set the library in the preferences, then click the reload button in **Weights and Hair** to load them.
 
-## 6. Direction in charts
+## 6. Make an instrument
+
+An instrument is a guitar or a bass that the player can select in the picker. It can have its own highway image. The Blender add-on has no instrument panel yet; use the character template and the command-line packer.
+
+1. Click **File > New > New Character from GH3 Rig** and select the guitarist (for a guitar) or the bassist (for a bass). The scene has the rig and the GH3 instrument as a preview.
+2. Model your instrument at the place of the preview instrument. The neck goes along `bone_guitar_neck`; the hands of the band member hold it at `BONE_GUITAR_FRET_POS` and `BONE_GUITAR_STRUM_POS`. Use PNG images.
+3. Give every vertex the weight 1 on `bone_guitar_body` (the GH3 instruments do the same). Do not move the rig.
+4. Export the scene as GLB from Blender (glTF Binary, +Y up, the armature in its rest position).
+5. Optional: draw a highway image, a PNG of 512 × 1024 pixels. The bottom of the image is near the player; the image repeats along the highway.
+6. Pack and check the instrument (the `--split` option keeps only the mesh parts on the instrument bones, so the export can contain the body):
+
+```sh
+MISE_QUIET=1 uv run --with numpy python -m pipeline.package.instrument my-guitar.glb --id me.my-guitar --name "My Guitar" \
+  --kind guitar --highway my-highway.png --author "My Name" --license CC-BY-4.0 --split \
+  --library assets/packages/gh3-band-v1.chlib --output out
+```
+
+7. Put `out/me.my-guitar.chinst` into `Custom/Instruments` of Clone Hero.
+8. In the picker, select your instrument in the **Guitar** (or **Bass**) line. When you play the guitarist, your highway image shows.
+
+The format is in [PACKAGE-FORMAT.md section 9.4](PACKAGE-FORMAT.md#94-instrument-chinst).
+
+## 7. Direction in charts
 
 The mod plays camera cuts, lights, and effects from the chart. Your stage gets them through its camera groups and moods. Chart authors can use these sources:
 
@@ -227,7 +249,7 @@ The mod plays camera cuts, lights, and effects from the chart. Your stage gets t
 
 On a custom stage, the GH3 camera notes select these groups: 84 and 86 close-up shots, 85 mid shots, 87 `wide`, 88 `singer`, 89 `drummer`, 95 `guitarist`, 97 `bassist`, the orbit notes `orbit`, and the other notes `default`. Give your stage shots in these groups, so that charts can cut to each band member.
 
-## 7. Problems
+## 8. Problems
 
 ### Validate and export messages
 

@@ -65,6 +65,8 @@ The shared library owns the original instruments and animated props. A character
 
 Characters are `.chchar` packages: one skinned GLB on a fixed profile rig and `character.json`. The format is in [PACKAGE-FORMAT.md section 9](PACKAGE-FORMAT.md#9-character-chchar), the import in [section 20.6](PACKAGE-FORMAT.md#206-characters), and the Blender workflow in [CREATOR-GUIDE.md section 5](CREATOR-GUIDE.md#5-make-a-character-on-a-gh3-rig). An earlier plan of this document had a `skin.json` skin pack; the `.chchar` package replaces it.
 
+Instruments are `.chinst` packages: a guitar or a bass on the guitarist or bassist rig, with an optional highway image ([PACKAGE-FORMAT.md section 9.4](PACKAGE-FORMAT.md#94-instrument-chinst), [CREATOR-GUIDE.md section 6](CREATOR-GUIDE.md#6-make-an-instrument)).
+
 ## 5. Stage pack
 
 The manifest is `stage-pack.json`. Example: [stage-pack.json](examples/custom-content/stage-pack.json).

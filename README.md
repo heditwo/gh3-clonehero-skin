@@ -17,7 +17,7 @@ Status: release readiness. Nothing is published yet ([STATUS.md](docs/STATUS.md)
 - You need Clone Hero **v1.1.0.6142-final** (64-bit) for Linux or Windows, and the release zip of the mod for your system. The install script installs MelonLoader 0.7.3 ([install steps](docs/PLAYER-GUIDE.md#1-install-the-mod)).
 - macOS is not supported ([STATUS.md](docs/STATUS.md#platforms)).
 - In the menus, push **F6** to select the stage and the band.
-- Put stages (`.chstage`) in `Custom/Stages` and characters (`.chchar`) in `Custom/Characters` ([PLAYER-GUIDE.md section 6](docs/PLAYER-GUIDE.md#6-add-stages-and-characters)).
+- Put stages (`.chstage`) in `Custom/Stages`, characters (`.chchar`) in `Custom/Characters`, and instruments (`.chinst`) in `Custom/Instruments` ([PLAYER-GUIDE.md section 6](docs/PLAYER-GUIDE.md#6-add-stages-characters-and-instruments)).
 - Limits: one five-fret guitar player; landscape screens only ([STATUS.md](docs/STATUS.md#known-differences-from-gh3)).
 
 ## For creators

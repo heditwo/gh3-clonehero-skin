@@ -25,7 +25,7 @@ GH3_REFERENCE_VIDEO=/path/to/gh3-long-star-power-1600x900.mp4 MISE_QUIET=1 scrip
 MISE_QUIET=1 bash install.sh
 ```
 
-`--clean` deletes `assets/libraries/gh3-band-v1`, `assets/libraries/gh3-characters-v1`, `assets/characters`, `assets/stages`, and the generated packs in `assets/stage-packs` before the build. Use it for a clean build. Without it, files from earlier exports can stay in the output folders.
+`--clean` deletes `assets/libraries/gh3-band-v1`, `assets/libraries/gh3-characters-v1`, `assets/characters`, `assets/instruments`, `assets/stages`, and the generated packs in `assets/stage-packs` before the build. Use it for a clean build. Without it, files from earlier exports can stay in the output folders.
 
 The script runs the steps one after the other. On a machine with little memory (for example 16 GB), do not run other large jobs at the same time. The venue export is the largest step (about 6 minutes, more than 1 GB of memory). When other agents or jobs can run, put the command under a shared lock:
 
@@ -45,6 +45,8 @@ flowchart LR
     library --> characters
     characters --> render
     characters --> packages
+    instruments --> render
+    instruments --> packages
     venues --> packages
     events --> packages
     template --> packages
@@ -56,17 +58,18 @@ flowchart LR
 | --- | --- | --- |
 | `library` | `python -m pipeline.library --data DATA` | `assets/libraries/gh3-band-v1/`: band, direction clips, hair, hand fire, crowd, stage audio, global scripts, Video Shoot movies, Tesla noise, `catalog.json`, `library.json` |
 | `characters` | `python -m pipeline.character_library --data DATA`, then `python -m pipeline.characters --data DATA` | `assets/libraries/gh3-characters-v1/` (`characters.json`, `clips/*.bin.gz`), and `assets/characters/<id>/` (`meshes.bin`, `stage.json`, `textures/`, `character.json`) for the 72 playable GH3 characters, and `assets/characters/inventory.json` ([GH3 characters](#gh3-characters)) |
+| `instruments` | `python -m pipeline.instruments --data DATA` | `assets/instruments/<id>/` (`meshes.bin`, `stage.json`, `textures/`, `instrument.json`) for the 88 guitars and 20 basses of GH3, `assets/instruments/highways/<character>.png` (the 13 GH3 highways), and `inventory.json` ([GH3 instruments](#gh3-instruments)) |
 | `venues` | `python -m pipeline.venues --data DATA` | `assets/stage-packs/gh3.*` (editable source packs) and `assets/stages/gh3.*` (compiled packs), `assets/stages/index.json` |
 | `events` | `python3 -m pipeline.events DATA --library --output assets/stages/events` | Original song direction for all songs, `index.json`, `export-report.json` |
 | `render` | `python -m pipeline.render.shaders --game GAME --windows-game WINDOWS_GAME` and `python -m pipeline.render.particle_materials` | `render/*.bundle`, `render/stage-templates.json`, `render/particle-materials.json` in the library |
 | `hud` | `python -m pipeline.hud.textures`, `pipeline.hud.hit_effects`, `pipeline.hud.fonts` | `assets/gems/`, `sustains/`, `highway/` (with `beat-lines/`), `hud/` (`clear.png`, `rock-meter/`, `score/`, `counter/`, `messages/`, `you-rock/`), `fonts/`, `hit-effects/` |
 | `hud-video` | `python -m pipeline.hud.star_power --video V`, `pipeline.hud.ready_animation --video V` | `assets/highway/star-power/active-highway-*.png`, `assets/hud/ready/` (`ready-*.png`, `ready-animation.json`) |
 | `template` | `python -m pipeline.stagepack.template`, then `python -m pipeline.stagepack.install assets/stage-packs/example.studio` | The `example.studio` custom stage |
-| `packages` | `python -m pipeline.package.build`, then `python -m pipeline.package.validate` | `assets/packages/*.chstage`, `gh3-band-v1.chlib`, `gh3-characters-v1.chlib`, and `gh3.*.chchar` (package format v1 and 1.1), the same packages as folders in `assets/packages/unpacked/`, `build-report.json` |
+| `packages` | `python -m pipeline.package.build`, then `python -m pipeline.package.validate` | `assets/packages/*.chstage`, `gh3-band-v1.chlib`, `gh3-characters-v1.chlib`, `gh3.*.chchar`, and `gh3.*.chinst` (package format v1 and 1.1), the same packages as folders in `assets/packages/unpacked/`, `build-report.json` |
 
 Each command uses `uv run --with ...` for its Python packages. See `scripts/regenerate.sh` for the exact package list of each step.
 
-**The `render` step must come after `venues`, `library`, and `characters`.** The stage shader contains only the GH3 material templates that the compiled venues, the band, the crowd, and the GH3 characters use (the characters add five templates: `SkinShader_Pass1_Pass2`, `SkinShader_Pass2`, `SkinShaderEnvMap`, `SkinShader_VertexColor_Pass3`, `SkinShaderEnvMap_VertexColor`). If you run it first, the shader has too few templates and the materials use the approximate fallback model.
+**The `render` step must come after `venues`, `library`, `characters`, and `instruments`.** The stage shader contains only the GH3 material templates that the compiled venues, the band, the crowd, the GH3 characters, and the GH3 instruments use (the instruments add `EnvMask_D_N_S_2ChkBox_Pass1`) (the characters add five templates: `SkinShader_Pass1_Pass2`, `SkinShader_Pass2`, `SkinShaderEnvMap`, `SkinShader_VertexColor_Pass3`, `SkinShaderEnvMap_VertexColor`). If you run it first, the shader has too few templates and the materials use the approximate fallback model.
 
 The `venues` step compiles each pack against the library catalog. Thus run `library` first.
 
@@ -104,6 +107,15 @@ The pipeline output keeps the GH3CLP01 clips (`clips/<clip>.bin.gz`); the `packa
 
 Sizes (2026-10-09): 72 packages, 411,351,870 bytes (2.1–8.3 MB, mean 5.7 MB); with the guitarists on their own rigs (format 1.1) 411,307,452 bytes, and the character library `gh3-characters-v1.chlib` 33,614,373 bytes (35,247,296 bytes as a folder: 1,995 clips and `characters.json`, 1.1 MB). Its cache folder is 34,964,581 bytes; its cold import takes 0.13–0.15 s. Cold import of the band library and the 72 characters with `tools/PackageImport`: 18.2–18.4 s with the format 1.0 characters, 18.6–19.3 s with the character library and the format 1.1 characters; cache 1,362,197,700 against 1,397,163,753 bytes. Release zips (`scripts/build-release.sh`, commit 35d862f) 1,640,161,639 bytes (Linux) and 1,640,164,985 bytes (Windows), against 1,228.78 MB before. Installed `Mods/GH3Skin` 1,640,198,608 bytes (was 1,228,837,531). Cache after the first start 1.92 GB (the characters 0.50 GB). Cold import of all packages 45.1 s (was 22.0 s); the stage still waits only for the library, the venue, and the selected characters.
 
+## GH3 instruments
+
+`python -m pipeline.instruments` reads `musician_instrument` and the store lists of the GH3 QB files ([PARITY-NOTES.md](PARITY-NOTES.md#instruments-and-highways)) and exports every guitar and bass (`Type` `guitar` or `bass`; 108). `--only <id>` exports one instrument. It takes about 17 s and 0.2 GB of memory; the output is about 96 MB.
+
+- Each instrument keeps its GH3 mesh parts, materials (templates and constants), and textures, as the characters do (`pipeline.characters.load_models`). The export stops when a vertex follows another bone than `bone_guitar_body`.
+- IDs: `gh3.<desc_name without Instrument_ and Guitar_>`, for example `gh3.es335-red`, `gh3.demonik`, `gh3.tobias-b4`. Names: brand, model, series, and finish, for example "Gibson Les Paul Standard (Ebony)"; GH3's own designs read "Obliviaxe: Lou's". The manifest description has the GH3 store text and how GH3 offers the instrument.
+- The `packages` step binds each instrument to the rig of `gh3-guitarist-axel-v1` (guitars) or `gh3-bassist-v1` (basses) and writes `gh3.<name>.chinst`.
+- Highways: the export also writes `<name>_1_Highway` of the model PAK of each GH3 guitarist profile (13 images, 512 × 1024) to `highways/`. Axel's highway is byte-equal to `assets/highway/highway.png`. The `packages` step adds the highway of the profile to each guitarist character (`character.json` `highway`). All outfits and styles of a profile have the same highway (checked: 70 of 70).
+
 ## Shader tools
 
 The `render` step makes an OpenGL Core program and a Direct3D 11 program for each shader (see [ARCHITECTURE.md](ARCHITECTURE.md#shader-programs-for-each-graphics-api)). `pipeline/render/toolchain.py` gets the Direct3D 11 tools. They need no system package and no root access:
@@ -138,8 +150,9 @@ GH3_WINE=~/games/gh3-test-tools/wine-root/usr/bin/wine GH3_ACCEPT_WINDOWS_SDK_LI
 | Venue preview images (`assets/previews/<id>.png`) | `GH3_CLONE_HERO_DIR=<game copy> scripts/capture-venue-previews.sh [id ...]` (one game run for each venue, under the record lock), then `python -m pipeline.package.build --no-library` |
 | Test characters from the library members | `python -m pipeline.package.character --library assets/packages/gh3-band-v1.chlib --output DIR [--role ROLE ...]` writes `gh3.<role>.chchar` (body and hair, no instrument). Do not write them to `assets/packages`: `install.sh` installs `assets/packages/gh3.*.chchar` |
 | GH3 characters | `python -m pipeline.character_library`, `python -m pipeline.characters [--only ID ...]`, then `render` (new templates only), then `python -m pipeline.package.build --no-venues --no-library` |
+| GH3 instruments or highways | `python -m pipeline.instruments [--only ID ...]`, then `render` (new templates only), then `python -m pipeline.package.build --no-venues --no-library --no-character-library` (the characters carry the highways) |
 
-After a change, run `install.sh`. The installer copies the skin folders (`gems`, `sustains`, `highway`, `hud`, `fonts`, `hit-effects`) to `Mods/GH3Skin/assets/` with the same layout, the packages (`assets/packages/*.chstage`, `gh3-band-v1.chlib`, `gh3-characters-v1.chlib`, and the GH3 characters `gh3.*.chchar`, zip form, with their file times) to `Mods/GH3Skin/Packages/`, and the shader bundles (`assets/libraries/gh3-band-v1/render/*.bundle`, `stage-templates.json`) to `Mods/GH3Skin/render/`. It first removes the skin folders and the files of earlier installs (the flat files in `Mods/GH3Skin/assets/`, `Mods/GH3Skin/counter-tuning.json`, and the older install in `Mods/GH3Skin/assets/stages` and `assets/libraries`), so that no old file stays. The mod loads stages only from packages. A changed package gets a new cache entry in `UserData/GH3Skin/Cache/` at the next start.
+After a change, run `install.sh`. The installer copies the skin folders (`gems`, `sustains`, `highway`, `hud`, `fonts`, `hit-effects`) to `Mods/GH3Skin/assets/` with the same layout, the packages (`assets/packages/*.chstage`, `gh3-band-v1.chlib`, `gh3-characters-v1.chlib`, the GH3 characters `gh3.*.chchar`, and the GH3 instruments `gh3.*.chinst`, zip form, with their file times) to `Mods/GH3Skin/Packages/`, and the shader bundles (`assets/libraries/gh3-band-v1/render/*.bundle`, `stage-templates.json`) to `Mods/GH3Skin/render/`. It first removes the skin folders and the files of earlier installs (the flat files in `Mods/GH3Skin/assets/`, `Mods/GH3Skin/counter-tuning.json`, and the older install in `Mods/GH3Skin/assets/stages` and `assets/libraries`), so that no old file stays. The mod loads stages only from packages. A changed package gets a new cache entry in `UserData/GH3Skin/Cache/` at the next start.
 
 `assets/stages` (the compiled venues and `stages/events`) and `assets/libraries` (the compiled library and the shader bundles) are intermediate outputs: the `packages` step (`pipeline.package.build`) reads them, and the tests (`GH3_PACK_ASSETS`, `GH3_PACKAGE_ASSETS`) and `tools/audit-materials.py` check them. The installer does not copy them, except the shader bundles.
 

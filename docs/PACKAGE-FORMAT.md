@@ -1,6 +1,6 @@
 # Package format v1
 
-Status: **frozen** (PACKAGING-PLAN step 3, part 1), with the additive minor 1.1 for characters and libraries ([changelog](#21-changelog)). This document is the reference for venue, character, and library packages. The JSON Schemas are in [`schemas/`](../schemas). The validator is `pipeline/package/validate.py`. The converter is `pipeline/package/build.py` ([section 19](#19-converter)). The C# importer is `src/Packages/` ([section 20](#20-c-importer)).
+Status: **frozen** (PACKAGING-PLAN step 3, part 1), with the additive minor 1.1 for characters and libraries ([changelog](#21-changelog)). Before the first release, changes go into the current versions directly (PACKAGING-PLAN decision 12). This document is the reference for venue, character, instrument, and library packages. The JSON Schemas are in [`schemas/`](../schemas). The validator is `pipeline/package/validate.py`. The converter is `pipeline/package/build.py` ([section 19](#19-converter)). The C# importer is `src/Packages/` ([section 20](#20-c-importer)).
 
 The words "must" and "must not" give rules. The validator reports a rule failure as an error. "Should" gives a recommendation. The validator reports it as a warning.
 
@@ -18,7 +18,8 @@ flowchart LR
 | Kind | Extension | `format` | Contents |
 |---|---|---|---|
 | Venue | `.chstage` | `chstage/1.0` | `stage.glb`, cameras, lighting, scripts, placements, actors |
-| Character | `.chchar` | `chchar/1.0`, `chchar/1.1` | One skinned GLB on a GH3 rig profile, `character.json`. 1.0: a fixed profile of the band library. 1.1: also a profile of a character library |
+| Character | `.chchar` | `chchar/1.0`, `chchar/1.1` | One skinned GLB on a GH3 rig profile, `character.json`, an optional highway image. 1.0: a fixed profile of the band library. 1.1: also a profile of a character library |
+| Instrument | `.chinst` | `chinst/1.0` | A guitar or a bass: one skinned GLB on the guitarist or bassist profile, `instrument.json`, an optional highway image ([section 9.4](#94-instrument-chinst)) |
 | Library | `.chlib` | `chlib/1.0`, `chlib/1.1` | 1.0: the shared GH3 band, crowd, clips, audio, movies, particle textures, and song direction (`gh3-band-v1`). 1.1: also a character library (`gh3-characters-v1`, [section 10.1](#101-character-library-format-11)) |
 
 The extension selects the kind. The `format` field in `manifest.json` must agree with the extension.
@@ -295,6 +296,7 @@ The field meanings are the same as in [CUSTOM-CONTENT.md, section 5](CUSTOM-CONT
 | `profile` | Yes | `gh3-guitarist-axel-v1`, `gh3-bassist-v1`, `gh3-singer-male-v1`, or `gh3-drummer-v1` (the fixed profiles of `gh3-band-v1`). Format 1.1: also a profile of the character library that `library` names, for example `gh3-guitarist-judy-v1` ([section 10.1](#101-character-library-format-11)). The profile also selects the band role |
 | `animations` | No | Format 1.1 only: an animation set of the same character library. Absent: the set of the profile. A format 1.0 package must not have this field |
 | `hairMaterials` | No | GLB material names with sorted hair transparency |
+| `highway` | No | Package path of the highway image of the character: a PNG, 512 × 1024 in GH3 (other sizes stretch; the validator warns). When the character plays the role of the Clone Hero player, the player's highway uses it, as GH3 `create_guitarist` does ([PARITY-NOTES.md](PARITY-NOTES.md#instruments-and-highways)). The GH3 guitarist packages have the highway of their GH3 profile |
 | `attachments` | No | `instrument`: a library instrument ID (the `instrument` of a `band/band.json` member: `SG_Black`, `tobB4`, `Microphone001`, `Drum_Set001`). Absent: the default. The v1 library has one instrument for each band role, and the instrument follows the role that the character plays (rules in [section 20.6](#206-characters)). Do not model the instrument in the character GLB |
 
 ### 9.2 GLB rules
@@ -316,6 +318,44 @@ The field meanings are the same as in [CUSTOM-CONTENT.md, section 5](CUSTOM-CONT
 | `world(joint) · IBM − world(mesh node)` | 1e-4 | 7e-7 | 2.0–2.2 |
 
 After the check, the importer uses the profile local transforms for clip playback and the GLB inverse bind matrices for skinning.
+
+### 9.4 Instrument (`.chinst`)
+
+A guitar or a bass that the player can select for the guitarist or the bassist in the picker. The GH3 release has the 88 guitars and 20 basses of GH3 as `gh3.<name>.chinst`. A creator makes one from a Blender export of the guitarist or bassist template ([CREATOR-GUIDE.md](CREATOR-GUIDE.md#6-make-an-instrument)).
+
+| `entry` key | Contents |
+|---|---|
+| `model` | One skinned GLB on a fixed profile of the band library (section 9.2 rules) |
+| `instrument` | `instrument.json` ([schema](../schemas/instrument.schema.json)) |
+
+| `instrument.json` field | Required | Meaning |
+|---|---|---|
+| `version` | Yes | `1` |
+| `library` | Yes | `gh3-band-v1` |
+| `profile` | Yes | `gh3-guitarist-axel-v1` or `gh3-bassist-v1`: the rig of the GLB joints |
+| `kind` | Yes | `guitar` (the guitarist can hold it) or `bass` (the bassist can hold it) |
+| `highway` | No | Package path of a highway image (PNG, 512 × 1024 in GH3). When the player selects this instrument for the role of the Clone Hero player, the highway uses it, and it wins over the highway of the character. GH3 instruments have no highway: in GH3 the highway follows the character |
+| `brand`, `model`, `series`, `finish` | No | Display texts (1–64 characters). The manifest `name` is the name in the picker |
+
+Rules:
+
+- The skin has the joints of the profile, with the section 9.3 tolerances. Every mesh part follows the instrument joints: more than half of its vertices have their largest weight outside the body joints (the subtree of the parent of `bone_pelvis`; `BandAttachments`). A part on the body is an error. GH3 weights every vertex of an instrument to `bone_guitar_body`.
+- The game binds the instrument to the rest pose of the band member that holds it, as GH3 binds an instrument to the skeleton of the band member. The GH3 guitarist skeletons put `bone_guitar_body` up to 9 mm and 2° from Axel's; the instrument follows the band member's own bone.
+- Materials, textures, and vertex streams follow the character rules (section 20.6).
+- `python -m pipeline.package.instrument GLB --id ID --name NAME --kind guitar --output DIR [--highway PNG] [--split]` packs and validates an instrument; `--split` keeps only the mesh parts on the instrument joints of a full template export.
+
+**Layout decision: one package for each instrument.** The other choice was one `.chlib` with all instruments and highways. One package for each instrument was chosen:
+
+| Item | One `.chinst` for each instrument (chosen) | One library with all instruments |
+|---|---|---|
+| Size (108 GH3 instruments, measured) | 101.7 MB zip (0.51–2.06 MB each), 101.7 MB as folders | About the same: GLB and PNG are stored |
+| Cold import (measured, `tools/PackageImport`) | 0.04–0.10 s each, 5.6 s for all 108 on the background thread; the stage waits only for the selected instruments | One import of all instruments; a song with one instrument waits for all |
+| Update of one instrument | One package imports again | The whole library imports again |
+| Creators | The same kind as the GH3 instruments: one file in `Custom/Instruments/` | A second format for one instrument |
+| Scan at start (measured) | 194 packages in 102–147 ms, all ready from the cache in 169–219 ms | Fewer files |
+| Cache (measured) | 138.7 MB for the 108 instruments | The same textures and meshes |
+
+The GH3 highways are in the character packages (13 images in 70 guitarist packages, 23.6 MB), because GH3 takes the highway from the character.
 
 ## 10. Library (`.chlib`)
 
@@ -475,10 +515,10 @@ Measured error (spike): 0.0072° maximum rotation error, 0.03 cm maximum fingert
 
 ## 13. Folders and discovery
 
-- User packages: `Custom/Stages/` and `Custom/Characters/` in each folder of `GlobalVariables.uniqueCustomContentPaths` (this includes portable mode and `custom_content_directories`). Do not use a fixed path.
+- User packages: `Custom/Stages/`, `Custom/Characters/`, and `Custom/Instruments/` in each folder of `GlobalVariables.uniqueCustomContentPaths` (this includes portable mode and `custom_content_directories`). Do not use a fixed path.
 - Group subfolders are permitted, to a depth of 4.
-- Packages that the mod release ships (the GH3 venues and the library): `<game>/Mods/GH3Skin/Packages/`.
-- The extension selects the kind, not the folder. A `.chchar` file in `Custom/Stages/` loads as a character, with a warning.
+- Packages that the mod release ships (the GH3 venues, the libraries, the GH3 characters, and the GH3 instruments): `<game>/Mods/GH3Skin/Packages/`.
+- The extension selects the kind, not the folder. A `.chchar` file in `Custom/Stages/` loads as a character, with a warning (the same for the other kinds in the wrong one of the three folders).
 - With two packages of one `id`, the mod uses the higher version. With equal versions, the first in scan order wins: the `Custom` folders in the order of `uniqueCustomContentPaths`, then the mod folder. The mod logs the other package.
 
 ## 14. Cache
@@ -509,7 +549,7 @@ MISE_QUIET=1 uv run --with numpy --with brotli python -m pipeline.package.valida
   [--character-library assets/packages/gh3-characters-v1.chlib]
 ```
 
-- The validator reads a zip or a development folder. It checks the container, the paths, the manifest, the hashes, the schemas, the references, the GLB rules, and the extras. For a character, `--library` adds the profile rig check (section 9.3); the value is a library package (`gh3-band-v1.chlib`, the rig comes from `band/<role>/model.glb`) or the current library folder. For a format 1.1 character on a character library profile, `--character-library` (`gh3-characters-v1.chlib` or the folder `assets/libraries/gh3-characters-v1`) gives the rig. For a library, it decodes all clips (needs the `brotli` module) and checks the library schemas and file references (sections 10 and 10.1).
+- The validator reads a zip or a development folder. It checks the container, the paths, the manifest, the hashes, the schemas, the references, the GLB rules, and the extras. For a character, `--library` adds the profile rig check (section 9.3); the value is a library package (`gh3-band-v1.chlib`, the rig comes from `band/<role>/model.glb`) or the current library folder. For a format 1.1 character on a character library profile, `--character-library` (`gh3-characters-v1.chlib` or the folder `assets/libraries/gh3-characters-v1`) gives the rig. For an instrument, `--library` adds the same rig check; without it, the validator checks that every mesh part follows the instrument joints. A highway image that is not 512 × 1024 gives a warning. For a library, it decodes all clips (needs the `brotli` module) and checks the library schemas and file references (sections 10 and 10.1).
 - `pipeline/package/schema.py` evaluates the schemas without third-party packages, so the Blender add-on can bundle the validator (`blender/build.py` copies `pipeline/package` and `schemas/`). The tests compare it with the `jsonschema` reference implementation.
 - Dry conversion check of the current outputs: `python -m pipeline.package.sources --json report.json` (see [section 16](#16-mapping-of-the-current-pipeline-outputs)).
 
@@ -592,7 +632,7 @@ Evidence: `~/.cache/gh3-evidence/format-v1/brotli-Latest.log`. A run without `GH
 
 ## 19. Converter
 
-`python -m pipeline.package.build` (the `packages` step of `scripts/regenerate.sh`) writes all packages to `assets/packages/`: `<id>.chstage` for each source pack, `gh3-band-v1.chlib`, `gh3-characters-v1.chlib` (from `assets/libraries/gh3-characters-v1`, `--no-character-library` skips it), the GH3 characters, and the same packages as development folders in `assets/packages/unpacked/`. The folder and the zip have the same files, with a full `files` list in `manifest.json`.
+`python -m pipeline.package.build` (the `packages` step of `scripts/regenerate.sh`) writes all packages to `assets/packages/`: `<id>.chstage` for each source pack, `gh3-band-v1.chlib`, `gh3-characters-v1.chlib` (from `assets/libraries/gh3-characters-v1`, `--no-character-library` skips it), the GH3 characters (with the highway of their GH3 profile from `assets/instruments/highways/`), the GH3 instruments `gh3.<name>.chinst` (from `assets/instruments`, `--no-instruments` skips them), and the same packages as development folders in `assets/packages/unpacked/`. The folder and the zip have the same files, with a full `files` list in `manifest.json`.
 
 ### 19.1 Texture references
 
@@ -657,6 +697,8 @@ Not carried into the library package, by design: the shader bundles and `render/
 | **`gh3-band-v1.chlib`** | **856.9** | **658.1** |
 | `gh3-characters-v1.chlib` (format 1.1, 2026-10-09) | 35.2 | 33.6 |
 | **Total** | **1,429.3** | **1,209.0** |
+| 108 GH3 instruments (`gh3.*.chinst`, 2026-10-10) | 101.7 | 101.7 |
+| Highways in the 70 GH3 guitarist characters (2026-10-10) | 23.6 | 23.6 |
 
 Library parts:
 
@@ -688,7 +730,7 @@ flowchart LR
 
 ### 20.1 Discovery and checks
 
-- Folders: `Custom/Stages` and `Custom/Characters` of each `GlobalVariables.uniqueCustomContentPaths` entry (group subfolders to depth 4), then `Mods/GH3Skin/Packages/`. Zip files and development folders.
+- Folders: `Custom/Stages`, `Custom/Characters`, and `Custom/Instruments` of each `GlobalVariables.uniqueCustomContentPaths` entry (group subfolders to depth 4), then `Mods/GH3Skin/Packages/`. Zip files and development folders.
 - Each bad package gives one warning line and is skipped: unknown or newer format (`needs a newer mod`), wrong extension for the format, newer `minModVersion`, a missing or unlisted file, a wrong size (at the scan), a wrong SHA-256 (at the import, `the package is damaged`), a missing required package (`requires gh3-band-v1 1.0.0 … which is not installed`), a failed import of the required library.
 - With two packages of one ID, the higher version wins; with equal versions, the first in scan order.
 - Characters (`.chchar`) import after the library ([section 20.6](#206-characters)).
@@ -790,6 +832,19 @@ flowchart TD
 
 The instrument parts load with the library materials and textures of the role's band model (only the materials of these parts), on the role's bones with the library bind pose. The cache `character.json` keeps the `instrument` name; a cache that is older than this field reads as "no name". The format and the importer version did not change.
 
+**The player's instrument.** The picker (and `GH3_SKIN_INSTRUMENT_GUITARIST`, `GH3_SKIN_INSTRUMENT_BASSIST`) can select an instrument package for the guitarist and the bassist (`choices.json` `instruments`; `default` keeps the rules above). `InstrumentImporter` writes the same band model folder as a character, with `instrument.json` (ID, name, kind, joint names, highway) and `highway.png`. At load (`StageBand`):
+
+| Band member | The chosen instrument |
+| --- | --- |
+| Venue default (no character) | The library member without its library instrument parts, and the chosen instrument |
+| A character in any role | Replaces its own instrument and the library instrument |
+| Rig | The instrument joints map by name to the performer's bones (the role rig, or the profile rig of a format 1.1 character); the inverse bind matrices are the rest pose of that rig |
+| Wrong kind, missing, or failed | A warning; the default rules apply |
+
+The highway of the Clone Hero player (`HighwayChoice`): the player's role is the bassist for a bass or rhythm part, else the guitarist. The image is the `highway` of the chosen instrument of that role, else the `highway` of its character, else the default GH3 highway. The image is decoded at the stage load and given to Clone Hero's `HighwayScroll` as the default highway is.
+
+The cache `character.json` keeps `highway`; a cache that is older than this field reads as "no highway". The importer version did not change (decision 12): a GH3 character package with a highway has a new SHA-256 and imports again.
+
 Checks (2026-10-09):
 
 - Split: `tests/AttachmentLogicTests.cs` (C#, on the cache band models) and `tests/test_blender_addon_characters.py` (Python, on the library GLBs) find the same attachment parts: guitarist 11–13, bassist 1–2, singer 4–5, drummer 1.
@@ -822,4 +877,5 @@ When all imports end (or at a warm start, on a worker thread), `PackageManager.C
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-10-09 | First frozen version |
+| 1.0 | 2026-10-10 | Before the first release (PACKAGING-PLAN decision 12), in 1.0: the kind instrument (`.chinst`, `chinst/1.0`, section 9.4) and the folder `Custom/Instruments/`; `character.json` `highway` (section 9.1) |
 | 1.1 | 2026-10-09 | Additive, for `chchar` and `chlib` only (`chstage` stays 1.0). The character library: a `chlib/1.1` package with the entry `characters` (section 10.1): rig profiles, animation sets, hair with hinge and prismatic joints, IK chains, and `clips/`. `character.json` of a `chchar/1.1` package can name a profile of a required character library and an optional `animations` set (section 9.1). Mod 0.9.9 reads 1.1; packages of 1.1 set `minModVersion` 0.9.9. Format 1.0 packages and readers are unchanged: mod 0.9.8 rejects 1.1 packages with "needs a newer mod", and mod 0.9.9 reads all 1.0 packages as before |
