@@ -310,8 +310,12 @@ internal sealed class StageAssets : IDisposable
         }
     }
 
+    // The face blend shapes of a character with its own skeleton (morphs.bin): for each renderer, the blend shape index
+    // of each face slot (-1: the part does not have the slot).
+    public List<(SkinnedMeshRenderer Renderer, int[] Slots)> BlendShapes { get; } = new();
+
     public void Load(string directory, GameObject root, int layer, Transform[]? bones = null, bool lighting = false, string? lightGroup = null, Shader? surfaceShader = null,
-        System.Numerics.Vector3? lightAt = null, Matrix4x4[]? bindposes = null, IReadOnlyCollection<int>? parts = null)
+        System.Numerics.Vector3? lightAt = null, Matrix4x4[]? bindposes = null, IReadOnlyCollection<int>? parts = null, string? morphs = null)
     {
         if (bindposes != null && (bones == null || bindposes.Length != bones.Length)) throw new InvalidDataException("Bind poses do not match the bones");
         if (parts != null && bones == null) throw new InvalidDataException("Only band models can load some of their parts");
@@ -471,6 +475,7 @@ internal sealed class StageAssets : IDisposable
             obj.SetActive(placement.Created);
             Objects.Add(id, obj.transform);
         }
+        var shapes = morphs != null && bones != null ? ReadMorphs(morphs, meshCount) : null;
         for (var part = 0; part < meshCount; part++)
         {
             var materialId = reader.ReadUInt32();
@@ -593,6 +598,14 @@ internal sealed class StageAssets : IDisposable
                 mesh.bindposes = new Il2CppStructArray<Matrix4x4>(bindposes ?? bones.Select(bone =>
                     bone.worldToLocalMatrix * root.transform.localToWorldMatrix).ToArray());
             }
+            var slots = shapes?[part].Count > 0 ? Enumerable.Repeat(-1, Packages.CharacterSkeleton.FaceSlots.Length).ToArray() : null;
+            if (slots != null)
+                foreach (var (slot, deltas) in shapes![part])
+                {
+                    if (deltas.Length != vertexCount) throw new InvalidDataException("Invalid character blend shape");
+                    slots[slot] = mesh.blendShapeCount;
+                    mesh.AddBlendShapeFrame(Packages.CharacterSkeleton.FaceSlots[slot], 100, new Il2CppStructArray<Vector3>(deltas), null, null);
+                }
             mesh.RecalculateBounds();
             if (templateMesh && TemplateMaterials[material].Extra == "position1")
             {
@@ -644,6 +657,7 @@ internal sealed class StageAssets : IDisposable
                 renderer = skin;
                 if (lighting && shadedMode < 0) BandMeshes.Add(new(skin, colors, lightGroup ?? Gh3Checksum.Of("Band")));
                 if (sorted) TransparentMeshes.Add(new(this, skin, vertexCount, indices));
+                if (slots != null) BlendShapes.Add((skin, slots));
             }
             renderer.sharedMaterial = material;
             if (outlines.TryGetValue(materialId, out var outlineMaterial))
@@ -667,6 +681,32 @@ internal sealed class StageAssets : IDisposable
             }
         }
         if (reader.BaseStream.Position != reader.BaseStream.Length) throw new InvalidDataException("Extra stage mesh data");
+    }
+
+    // morphs.bin of CharacterImporter: for each mesh part, its shapes (face slot, position deltas).
+    private static List<(int Slot, Vector3[] Deltas)>[] ReadMorphs(string path, int meshCount)
+    {
+        using var reader = new BinaryReader(File.OpenRead(path));
+        if (System.Text.Encoding.ASCII.GetString(reader.ReadBytes(8)) != "GH3MRP01" || reader.ReadInt32() != meshCount)
+            throw new InvalidDataException("Invalid character blend shapes");
+        // A shape: the face slot (byte), the vertex count, and the position deltas.
+        var result = new List<(int, Vector3[])>[meshCount];
+        for (var part = 0; part < meshCount; part++)
+        {
+            result[part] = new();
+            var count = reader.ReadInt32();
+            if (count is < 0 or > 6) throw new InvalidDataException("Invalid character blend shapes");
+            for (var k = 0; k < count; k++)
+            {
+                var slot = reader.ReadByte();
+                var vertices = reader.ReadInt32();
+                if (slot >= Packages.CharacterSkeleton.FaceSlots.Length || vertices is < 1 or > 65535) throw new InvalidDataException("Invalid character blend shape");
+                var deltas = new Vector3[vertices];
+                for (var v = 0; v < vertices; v++) deltas[v] = new Vector3(ReadFloat(reader), ReadFloat(reader), ReadFloat(reader));
+                result[part].Add((slot, deltas));
+            }
+        }
+        return result;
     }
 
     public static int TexturesUploaded;

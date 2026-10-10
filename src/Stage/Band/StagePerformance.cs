@@ -294,6 +294,8 @@ internal sealed class PerformancePlayer
     public BandPose[] Pose { get; }
     public string CurrentClip { get; private set; } = "";
     public string CurrentStance { get; private set; } = "stance_a";
+    // The arm IK strength (strum arm, fret arm) of the last Sample; a retargeted character uses it for its own arm IK.
+    public (float Right, float Left) ArmGain { get; private set; }
 
     // `motion`: a character on a character library profile; its animation set replaces `member`, and the song facial clips
     // come from the band library member of the role (CharacterMotion).
@@ -384,10 +386,12 @@ internal sealed class PerformancePlayer
                 for (var bone = 0; bone < Pose.Length; bone++) Pose[bone] = BandPose.Mix(Pose[bone], _previous[bone], walkWeight);
             }
         }
+        ArmGain = (0, 0);
         if (_drummer != null)
         {
             _drummer.Apply(Pose, _bind, time, Clip);
             _rig?.Apply(Pose, 1, 1);
+            if (_rig != null) ArmGain = (1, 1);
         }
         else if (_rig != null) Arms(time);
         var face = Last(_timeline.Track("face", _role), time);
@@ -448,6 +452,7 @@ internal sealed class PerformancePlayer
     private void Arms(double time)
     {
         var (right, left) = ArmStrength(time);
+        ArmGain = (right, left);
         if (right > 0 || left > 0)
         {
             Array.Fill(_armDelta, new BandPose(Vector3.Zero, Quaternion.Identity));

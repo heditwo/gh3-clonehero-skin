@@ -8,7 +8,8 @@ namespace Gh3Skin;
 // 570 GH3 singer facial clips (tools/lipsync-shapes.py) and add to the body clip as GH3's applydifference does.
 internal sealed class StageLipSync
 {
-    internal readonly record struct Syllable(double On, double Off, float Jaw, float Round);
+    // Vowel: the mouth shape of a character with face blend shapes ('a', 'i', 'u', 'e', 'o'; 'n' for a closed mouth).
+    internal readonly record struct Syllable(double On, double Off, float Jaw, float Round, char Vowel = 'a');
 
     // GH3_SKIN_LIPSYNC=off keeps the face still on charts without GH3 facial clips. A menu option can set this before the song loads.
     public static bool Enabled { get; set; } = Environment.GetEnvironmentVariable("GH3_SKIN_LIPSYNC") is not ("off" or "0");
@@ -37,22 +38,23 @@ internal sealed class StageLipSync
         Syllables = syllables;
         _mouth = mouth;
         _lids = lids;
+        _blinks = syllables.Length > 0 ? BlinkTimes(syllables[0].On - 1, syllables[^1].Off + 2, 0x9e3779b9) : Array.Empty<double>();
+    }
+
+    // The GH3 facial clips show about 6 blinks per minute (eyelid closed by more than 20 degrees), with long gaps.
+    public static double[] BlinkTimes(double start, double end, uint seed)
+    {
         var blinks = new List<double>();
-        if (syllables.Length > 0)
+        for (var time = start; time < end;)
         {
-            // The GH3 facial clips show about 6 blinks per minute (eyelid closed by more than 20 degrees), with long gaps.
-            uint seed = 0x9e3779b9;
-            for (var time = syllables[0].On - 1; time < syllables[^1].Off + 2;)
-            {
-                blinks.Add(time);
-                seed ^= seed << 13;
-                seed ^= seed >> 17;
-                seed ^= seed << 5;
-                var random = (seed % 1000) / 1000.0;
-                time += 2 + 16 * random * random;
-            }
+            blinks.Add(time);
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            var random = (seed % 1000) / 1000.0;
+            time += 2 + 16 * random * random;
         }
-        _blinks = blinks.ToArray();
+        return blinks.ToArray();
     }
 
     public static StageLipSync? Create(StageTimeline timeline, string role, string[] bones)
@@ -65,10 +67,19 @@ internal sealed class StageLipSync
         return mouth[0] < 0 ? null : new StageLipSync(syllables, mouth, LidBones.Select(Find).ToArray());
     }
 
+    // The sung syllables without bones, for the face blend shapes of a character with its own skeleton (the GH3 rig of
+    // the role may have no jaw).
+    public static StageLipSync? Shapes(StageTimeline timeline, string role)
+    {
+        if (!Enabled || role != "singer" || timeline.Track("face", role).Length > 0) return null;
+        var syllables = Build(timeline.Track("sing", role));
+        return syllables.Length == 0 ? null : new StageLipSync(syllables, Array.Empty<int>(), Array.Empty<int>());
+    }
+
     // One syllable per sung note. "+" continues the previous syllable (a slide); "#" and "^" mark spoken notes.
     public static Syllable[] Build(IReadOnlyList<StageCue> cues)
     {
-        var notes = new List<(double Start, double End, float Jaw, float Round)>();
+        var notes = new List<(double Start, double End, float Jaw, float Round, char Vowel)>();
         foreach (var cue in cues.OrderBy(c => c.Time))
         {
             var text = cue.Value.Trim();
@@ -83,7 +94,7 @@ internal sealed class StageLipSync
             // Small deterministic variation, so that equal syllables do not look mechanical.
             var hash = Gh3Checksum.Value(text + notes.Count);
             jaw *= 0.85f + 0.3f * (hash % 1000) / 1000f;
-            notes.Add((cue.Time, end, Math.Min(jaw, MaxJaw), round));
+            notes.Add((cue.Time, end, Math.Min(jaw, MaxJaw), round, Letter(text)));
         }
         var result = new Syllable[notes.Count];
         for (var i = 0; i < notes.Count; i++)
@@ -92,9 +103,54 @@ internal sealed class StageLipSync
             var off = notes[i].End;
             // Close the mouth a little before the next syllable, so that consecutive syllables show a consonant.
             if (i + 1 < notes.Count) off = Math.Min(off, notes[i + 1].Start - Lead - Gap);
-            result[i] = new(on, Math.Max(off, on + 0.06), notes[i].Jaw, notes[i].Round);
+            result[i] = new(on, Math.Max(off, on + 0.06), notes[i].Jaw, notes[i].Round, notes[i].Vowel);
         }
         return result;
+    }
+
+    // The mouth shape of the first vowel, with the rules of Vowel: "ow" and "aw" round to 'o'.
+    public static char Letter(string text)
+    {
+        var letters = new string(text.ToLowerInvariant().Where(char.IsLetter).ToArray());
+        for (var i = 0; i < letters.Length; i++)
+        {
+            var next = i + 1 < letters.Length ? letters[i + 1] : ' ';
+            switch (letters[i])
+            {
+                case 'a': return next is 'w' or 'u' ? 'o' : 'a';
+                case 'o' when next is 'w' or 'u' && !letters.StartsWith("you"): return 'a';
+                case 'o': return 'o';
+                case 'u': return 'u';
+                case 'e': return 'e';
+                case 'i': return 'i';
+                case 'y' when i > 0: return 'i';
+            }
+        }
+        return 'n';
+    }
+
+    // Blend shape weights (0-1) of the mouth shapes a, i, u, e, o: the envelope of each syllable, scaled by its jaw
+    // opening against the normal opening.
+    public void Visemes(double time, float[] weights)
+    {
+        Array.Clear(weights, 0, weights.Length);
+        var index = StageTimeline.UpperBound(Syllables, time, s => s.On) - 1;
+        for (var i = index; i >= 0 && i > index - 4; i--)
+        {
+            var syllable = Syllables[i];
+            var level = Envelope(syllable, time) * Math.Min(1, syllable.Jaw / OpenJaw);
+            var slot = syllable.Vowel switch { 'a' => 0, 'i' => 1, 'u' => 2, 'e' => 3, 'o' => 4, _ => 0 };
+            weights[slot] += syllable.Vowel == 'n' ? level * 0.3f : level;
+        }
+        for (var i = 0; i < weights.Length; i++) weights[i] = Math.Min(1, weights[i]);
+    }
+
+    public static float BlinkAt(double[] blinks, double time)
+    {
+        var index = StageTimeline.UpperBound(blinks, time, t => t) - 1;
+        if (index < 0) return 0;
+        var age = time - blinks[index];
+        return (float)(age < 0.05 ? age / 0.05 : age < 0.08 ? 1 : age < 0.17 ? 1 - (age - 0.08) / 0.09 : 0);
     }
 
     // Jaw degrees and mouth width for the first vowel of the syllable: "a" opens, "o" and "u" round, "e" and "i" widen.
@@ -139,13 +195,7 @@ internal sealed class StageLipSync
         return (float)(time < syllable.Off ? Level(time) : Level(syllable.Off) * (1 - Smooth((time - syllable.Off) / Release)));
     }
 
-    public float Blink(double time)
-    {
-        var index = StageTimeline.UpperBound(_blinks, time, t => t) - 1;
-        if (index < 0) return 0;
-        var age = time - _blinks[index];
-        return (float)(age < 0.05 ? age / 0.05 : age < 0.08 ? 1 : age < 0.17 ? 1 - (age - 0.08) / 0.09 : 0);
-    }
+    public float Blink(double time) => BlinkAt(_blinks, time);
 
     public void Apply(BandPose[] pose, double time)
     {

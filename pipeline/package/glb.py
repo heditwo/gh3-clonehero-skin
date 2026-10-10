@@ -67,7 +67,10 @@ class Glb:
         dtype = np.dtype(COMPONENTS[accessor["componentType"]])
         columns = COLUMNS[accessor["type"]]
         count = accessor.get("count", 0)
-        if "bufferView" not in accessor: raise GlbError("Accessors need a buffer view")
+        if "bufferView" not in accessor:
+            # glTF: an accessor without a buffer view holds zeros (Blender writes these for unchanged morph targets).
+            if type(count) is not int or not 1 <= count <= 10_000_000: raise GlbError("Invalid accessor count")
+            return np.zeros((count, columns), dtype=dtype)
         data = self.view(accessor["bufferView"])
         stride = self.list("bufferViews")[accessor["bufferView"]].get("byteStride", columns * dtype.itemsize)
         offset = accessor.get("byteOffset", 0)

@@ -79,7 +79,7 @@ def joint_row(bone, settings, length, direction, side_axis=None, parent=None):
     return row
 
 
-def character_rows(glb_data, profile_names, joints, colliders, chains):
+def character_rows(glb_data, profile_names, joints, colliders, chains, own=False):
     """character.json bones, colliders, and chains of an exported character GLB.
 
     profile_names: the joint names of the profile rig (the GLB joints that are not added bones).
@@ -87,6 +87,7 @@ def character_rows(glb_data, profile_names, joints, colliders, chains):
     tail), "side": Blender world side axis of the bone (its X axis)}} for the added bones that are chain joints.
     colliders: [{"name", "bone", "radius", "a", "b"}] with the ends as Blender world points.
     chains: [{"name", "colliders": list of names or None}] in export order.
+    own: a character with its own skeleton (section 9.6): the joints are skeleton joints, and there are no added bones.
     Returns (bones, colliders, chains) rows; an empty dictionary for each part that has no rows."""
     rig = Rig(Glb(glb_data))
     keys = {bone_key(name) for name in profile_names}
@@ -96,9 +97,9 @@ def character_rows(glb_data, profile_names, joints, colliders, chains):
         parent = rig.parents[i]
         while parent >= 0: depth[i] += 1; parent = rig.parents[parent]
     # Parents first: the format needs an added parent bone and a parent joint before their children.
-    added = sorted((i for i, name in enumerate(rig.names) if bone_key(name) not in keys), key=lambda i: (depth[i], i))
+    added = sorted((i for i, name in enumerate(rig.names) if own or bone_key(name) not in keys), key=lambda i: (depth[i], i))
     bones = []
-    for i in added:
+    for i in ([] if own else added):
         parent = rig.parents[i]
         if parent < 0: raise ValueError(f"the added bone {rig.names[i]} has no parent in the rig")
         bones.append({"name": rig.names[i], "parent": rig.names[parent], "bind": [round(v, 7) for v in runtime_bind(rig.local[i])]})

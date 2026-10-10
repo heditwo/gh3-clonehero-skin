@@ -48,6 +48,20 @@
       "maxItems": 16,
       "items": { "$ref": "#/$defs/chain" }
     },
+    "skeleton": {
+      "description": "The character keeps its own skeleton: the GLB skin joints. The mod retargets the clips of the profile (its animation set and band role) to it with the humanoid map. Without it, the GLB joints are the profile rig.",
+      "$ref": "#/$defs/skeleton"
+    },
+    "face": {
+      "description": "Morph target names (GLB mesh extras targetNames) of the face shapes: blink and the mouth shapes a, i, u, e, o. Needs 'skeleton'.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "blink": { "$ref": "#/$defs/morphName" }, "a": { "$ref": "#/$defs/morphName" }, "i": { "$ref": "#/$defs/morphName" },
+        "u": { "$ref": "#/$defs/morphName" }, "e": { "$ref": "#/$defs/morphName" }, "o": { "$ref": "#/$defs/morphName" }
+      }
+    },
     "attachments": {
       "description": "Attachment slot to a library instrument ID (band/band.json member instrument). An absent slot uses the default. The instrument follows the band role that the character plays.",
       "type": "object",
@@ -59,9 +73,114 @@
   },
   "$defs": {
     "boneName": {
-      "description": "A rig bone: a GH3 bone name, 'bone-' and its 8-digit checksum, or the name of an added bone.",
+      "description": "A rig bone: a GH3 bone name, 'bone-' and its 8-digit checksum, the name of an added bone, or a joint of the character's own skeleton.",
       "type": "string",
-      "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+      "pattern": "^[^\\u0000-\\u001f]{1,64}$"
+    },
+    "jointName": {
+      "description": "A joint (GLB node name) of the character's own skeleton.",
+      "type": "string",
+      "pattern": "^[^\\u0000-\\u001f]{1,64}$"
+    },
+    "morphName": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "skeleton": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["humanoid"],
+      "properties": {
+        "humanoid": {
+          "description": "Humanoid role (VRM 1.0 bone names, and the twist bones of the arms) to the joint that has the role. The 15 VRM required roles are required; map the fingers for good fret and strum hands.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["hips", "spine", "head", "leftUpperArm", "leftLowerArm", "leftHand", "rightUpperArm", "rightLowerArm", "rightHand", "leftUpperLeg", "leftLowerLeg", "leftFoot", "rightUpperLeg", "rightLowerLeg", "rightFoot"],
+          "properties": {
+          "hips": { "$ref": "#/$defs/jointName" },
+          "spine": { "$ref": "#/$defs/jointName" },
+          "chest": { "$ref": "#/$defs/jointName" },
+          "upperChest": { "$ref": "#/$defs/jointName" },
+          "neck": { "$ref": "#/$defs/jointName" },
+          "head": { "$ref": "#/$defs/jointName" },
+          "jaw": { "$ref": "#/$defs/jointName" },
+          "leftEye": { "$ref": "#/$defs/jointName" },
+          "rightEye": { "$ref": "#/$defs/jointName" },
+          "leftShoulder": { "$ref": "#/$defs/jointName" },
+          "leftUpperArm": { "$ref": "#/$defs/jointName" },
+          "leftUpperArmTwist": { "$ref": "#/$defs/jointName" },
+          "leftLowerArm": { "$ref": "#/$defs/jointName" },
+          "leftLowerArmTwist": { "$ref": "#/$defs/jointName" },
+          "leftHand": { "$ref": "#/$defs/jointName" },
+          "leftUpperLeg": { "$ref": "#/$defs/jointName" },
+          "leftLowerLeg": { "$ref": "#/$defs/jointName" },
+          "leftFoot": { "$ref": "#/$defs/jointName" },
+          "leftToes": { "$ref": "#/$defs/jointName" },
+          "leftThumbMetacarpal": { "$ref": "#/$defs/jointName" },
+          "leftThumbProximal": { "$ref": "#/$defs/jointName" },
+          "leftThumbDistal": { "$ref": "#/$defs/jointName" },
+          "leftIndexProximal": { "$ref": "#/$defs/jointName" },
+          "leftIndexIntermediate": { "$ref": "#/$defs/jointName" },
+          "leftIndexDistal": { "$ref": "#/$defs/jointName" },
+          "leftMiddleProximal": { "$ref": "#/$defs/jointName" },
+          "leftMiddleIntermediate": { "$ref": "#/$defs/jointName" },
+          "leftMiddleDistal": { "$ref": "#/$defs/jointName" },
+          "leftRingProximal": { "$ref": "#/$defs/jointName" },
+          "leftRingIntermediate": { "$ref": "#/$defs/jointName" },
+          "leftRingDistal": { "$ref": "#/$defs/jointName" },
+          "leftLittleProximal": { "$ref": "#/$defs/jointName" },
+          "leftLittleIntermediate": { "$ref": "#/$defs/jointName" },
+          "leftLittleDistal": { "$ref": "#/$defs/jointName" },
+          "rightShoulder": { "$ref": "#/$defs/jointName" },
+          "rightUpperArm": { "$ref": "#/$defs/jointName" },
+          "rightUpperArmTwist": { "$ref": "#/$defs/jointName" },
+          "rightLowerArm": { "$ref": "#/$defs/jointName" },
+          "rightLowerArmTwist": { "$ref": "#/$defs/jointName" },
+          "rightHand": { "$ref": "#/$defs/jointName" },
+          "rightUpperLeg": { "$ref": "#/$defs/jointName" },
+          "rightLowerLeg": { "$ref": "#/$defs/jointName" },
+          "rightFoot": { "$ref": "#/$defs/jointName" },
+          "rightToes": { "$ref": "#/$defs/jointName" },
+          "rightThumbMetacarpal": { "$ref": "#/$defs/jointName" },
+          "rightThumbProximal": { "$ref": "#/$defs/jointName" },
+          "rightThumbDistal": { "$ref": "#/$defs/jointName" },
+          "rightIndexProximal": { "$ref": "#/$defs/jointName" },
+          "rightIndexIntermediate": { "$ref": "#/$defs/jointName" },
+          "rightIndexDistal": { "$ref": "#/$defs/jointName" },
+          "rightMiddleProximal": { "$ref": "#/$defs/jointName" },
+          "rightMiddleIntermediate": { "$ref": "#/$defs/jointName" },
+          "rightMiddleDistal": { "$ref": "#/$defs/jointName" },
+          "rightRingProximal": { "$ref": "#/$defs/jointName" },
+          "rightRingIntermediate": { "$ref": "#/$defs/jointName" },
+          "rightRingDistal": { "$ref": "#/$defs/jointName" },
+          "rightLittleProximal": { "$ref": "#/$defs/jointName" },
+          "rightLittleIntermediate": { "$ref": "#/$defs/jointName" },
+          "rightLittleDistal": { "$ref": "#/$defs/jointName" }
+          }
+        },
+        "followers": {
+          "description": "Bones that turn with another bone (MMD append rotation): 'weight' times the rotation of 'source' from its rest pose.",
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["bone", "source", "weight"],
+            "properties": {
+              "bone": { "$ref": "#/$defs/jointName" },
+              "source": { "$ref": "#/$defs/jointName" },
+              "weight": { "type": "number", "minimum": -4, "maximum": 4 }
+            }
+          }
+        },
+        "instrument": {
+          "description": "Where the instrument hangs: the joint whose movement it follows (default: the top spine joint), an offset in metres (runtime coordinates, in the GH3 frame of the chest), and its scale.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bone": { "$ref": "#/$defs/jointName" },
+            "offset": { "$ref": "common.schema.json#/$defs/vec3" },
+            "scale": { "description": "The size of the instrument and of its distance from the chest. Absent: the arm length of the character against the arm length of the GH3 rig.", "type": "number", "minimum": 0.5, "maximum": 1.5 }
+          }
+        }
+      }
     },
     "bone": {
       "type": "object",

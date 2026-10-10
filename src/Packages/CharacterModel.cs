@@ -26,6 +26,11 @@ internal sealed class CharacterModel
     public ChainCollider[] Colliders { get; private init; } = Array.Empty<ChainCollider>();
     public ChainJoint[] ChainJoints { get; private init; } = Array.Empty<ChainJoint>();
     public float[][] Bindposes { get; private init; } = Array.Empty<float[]>();
+    // character.json skeleton (PACKAGE-FORMAT.md section 9.6): the character keeps its own skeleton (the joints, in skin
+    // order) and the mod retargets the clips of its profile to it. Null for a character on a GH3 rig.
+    public OwnSkeleton? Skeleton { get; private init; }
+    // The morph target of each face slot (CharacterSkeleton.FaceSlots; "" when absent); the shapes are in morphs.bin.
+    public string[] Face { get; private init; } = Array.Empty<string>();
 
     public static CharacterModel Load(string folder)
     {
@@ -50,6 +55,8 @@ internal sealed class CharacterModel
             ChainJoints = Rows(info["chains"], n => new ChainJoint(PackageJson.Text(n["bone"]) ?? "", PackageJson.Text(n["parent"]) ?? "",
                 (long)PackageJson.Number(n["colliderMask"], "colliderMask"), Joint(n))),
             Highway = PackageJson.Text(info["highway"]) is { Length: > 0 } highway ? Path.Combine(folder, highway) : "",
+            Skeleton = info["skeleton"] is System.Text.Json.Nodes.JsonObject skeleton ? OwnSkeleton.Read(skeleton, joints.Length) : null,
+            Face = info["face"] is System.Text.Json.Nodes.JsonArray face ? face.Select(n => PackageJson.Text(n) ?? "").ToArray() : Array.Empty<string>(),
         };
     }
 
@@ -85,3 +92,35 @@ internal sealed record AddedBone(string Name, string Parent, float[] Bind);
 internal sealed record ChainCollider(string Bone, float Radius, float[] A, float[] B);
 // A joint of a custom chain; Joint holds the physics fields (its Bone and Parent indices are set on the rig that plays it).
 internal sealed record ChainJoint(string Bone, string Parent, long ColliderMask, HairJoint Joint);
+
+// The cache row of a character skeleton (CharacterSkeleton.Cache).
+internal sealed class OwnSkeleton
+{
+    public string[] Names { get; private init; } = Array.Empty<string>();
+    public int[] Parents { get; private init; } = Array.Empty<int>();
+    public float[][] Bind { get; private init; } = Array.Empty<float[]>();
+    public Dictionary<string, int> Humanoid { get; private init; } = new(StringComparer.Ordinal);
+    public (int Bone, int Source, float Weight)[] Followers { get; private init; } = Array.Empty<(int, int, float)>();
+    public int InstrumentBone { get; private init; } = -1;
+    public float[] InstrumentOffset { get; private init; } = { 0, 0, 0 };
+    public float InstrumentScale { get; private init; }
+
+    public static OwnSkeleton Read(System.Text.Json.Nodes.JsonObject row, int joints)
+    {
+        int Index(System.Text.Json.Nodes.JsonNode? node) => (int)PackageJson.Integer(node, -1, joints - 1, "skeleton joint");
+        var names = (row["names"] as System.Text.Json.Nodes.JsonArray ?? new()).Select(n => PackageJson.Text(n) ?? "").ToArray();
+        var parents = (row["parents"] as System.Text.Json.Nodes.JsonArray ?? new()).Select(Index).ToArray();
+        var bind = (row["bind"] as System.Text.Json.Nodes.JsonArray ?? new()).Select(n => PackageJson.Vector(n, 7, "skeleton bind").Select(v => (float)v).ToArray()).ToArray();
+        if (names.Length != joints || parents.Length != joints || bind.Length != joints) throw new PackageException("invalid character skeleton");
+        return new OwnSkeleton
+        {
+            Names = names, Parents = parents, Bind = bind,
+            Humanoid = (row["humanoid"] as System.Text.Json.Nodes.JsonObject ?? new()).ToDictionary(p => p.Key, p => Index(p.Value), StringComparer.Ordinal),
+            Followers = (row["followers"] as System.Text.Json.Nodes.JsonArray ?? new()).Select(n => n as System.Text.Json.Nodes.JsonArray ?? throw new PackageException("invalid follower"))
+                .Select(f => (Index(f[0]), Index(f[1]), (float)PackageJson.Number(f[2], -4, 4, "follower weight"))).ToArray(),
+            InstrumentBone = row["instrumentBone"] == null ? -1 : Index(row["instrumentBone"]),
+            InstrumentOffset = row["instrumentOffset"] == null ? new float[3] : PackageJson.Vector(row["instrumentOffset"], 3, "instrument offset").Select(v => (float)v).ToArray(),
+            InstrumentScale = row["instrumentScale"] == null ? 0 : (float)PackageJson.Number(row["instrumentScale"], 0, 1.5, "instrument scale"),
+        };
+    }
+}

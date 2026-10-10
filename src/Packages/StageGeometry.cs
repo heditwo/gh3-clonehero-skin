@@ -216,6 +216,17 @@ internal static class StageGeometry
         }
     }
 
+    // The source vertex indices of each part of Split, in the order of the part vertices.
+    public static IEnumerable<int[]> SplitOrders(int[] faces)
+    {
+        for (var start = 0; start < faces.Length; start += 60000)
+        {
+            var used = new SortedSet<int>();
+            for (var i = 0; i < Math.Min(60000, faces.Length - start); i++) used.Add(faces[start + i]);
+            yield return used.ToArray();
+        }
+    }
+
     public static void WriteMeshes(string path, IReadOnlyList<MeshPart> meshes, bool skinned)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);

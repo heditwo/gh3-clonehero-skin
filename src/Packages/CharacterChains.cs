@@ -21,7 +21,9 @@ internal static class CharacterChains
 
     public sealed record Result(string[] Bones, int[] Parents, float[][] Bind, JsonArray AddedBones, JsonArray Colliders, JsonArray Joints);
 
-    public static Result Read(JsonObject character, string[] rigBones, int[] rigParents, float[][] rigBind)
+    // `chainBones`: for a character with its own skeleton (section 9.6), the skeleton joints that can be chain joints;
+    // null: the joints must be added bones.
+    public static Result Read(JsonObject character, string[] rigBones, int[] rigParents, float[][] rigBind, ISet<string>? chainBones = null)
     {
         var bones = rigBones.ToList();
         var parents = rigParents.ToList();
@@ -44,7 +46,7 @@ internal static class CharacterChains
             bones.Add(key); parents.Add(parentIndex); bind.Add(values.Select(v => (float)v).ToArray());
             added.Add(new JsonObject { ["name"] = key, ["parent"] = parent, ["bind"] = Array(values) });
         }
-        var addedKeys = added.Select(b => Text(b!["name"])!).ToHashSet();
+        var addedKeys = chainBones ?? added.Select(b => Text(b!["name"])!).ToHashSet();
         var chainRows = List(character["chains"], "chains", 16);
         var jointBones = new List<string>();
         foreach (var chain in chainRows)
@@ -83,7 +85,9 @@ internal static class CharacterChains
                 Fields(joint, "chain joint", JointFields, "bone", "length", "mass", "friction", "angularDamping");
                 var key = CharacterImporter.JointChecksum(Name(joint["bone"], "joint bone"));
                 var label = $"chain '{chainName}' joint {Text(joint["bone"])}";
-                if (!addedKeys.Contains(key)) throw new PackageException($"{label}: the joint bone must be a bone of 'bones'");
+                if (!addedKeys.Contains(key))
+                    throw new PackageException(chainBones == null ? $"{label}: the joint bone must be a bone of 'bones'" :
+                        $"{label}: the joint bone must be a skeleton joint without a humanoid role, not a parent of one, and not a follower");
                 if (!seen.Add(key)) throw new PackageException($"{label}: the bone is a joint of an earlier chain or joint");
                 var parent = joint["parent"] == null ? bones[parents[index[key]]] : CharacterImporter.JointChecksum(Name(joint["parent"], "joint parent"));
                 if (!index.ContainsKey(parent) || parent == key) throw new PackageException($"{label}: the parent is not another bone of the rig");
@@ -145,7 +149,8 @@ internal static class CharacterChains
     private static string Name(JsonNode? node, string what)
     {
         var text = Text(node) ?? throw new PackageException($"{what} must be a text");
-        if (!Regex.IsMatch(text, @"\A[A-Za-z0-9_.-]{1,64}\z")) throw new PackageException($"invalid {what} '{text}'");
+        // Bone names of a character with its own skeleton can be in any script (MMD names are Japanese).
+        if (!Regex.IsMatch(text, @"\A[^\u0000-\u001f]{1,64}\z")) throw new PackageException($"invalid {what} '{text}'");
         return text;
     }
 

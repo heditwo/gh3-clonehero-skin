@@ -399,9 +399,11 @@ internal sealed class GameplayStage
         camera.transform.localPosition = new Vector3(view[0], view[1], view[2]);
         camera.transform.LookAt(_root!.transform.position + new Vector3(view[3], view[4], view[5]));
         var headMode = Environment.GetEnvironmentVariable("GH3_SKIN_DEBUG_VIEW_HEAD");
-        if (headMode == "1" && _band?.Anchor("guitarist", "ddec28af") is { } head)
+        // GH3_SKIN_DEBUG_VIEW_ROLE: the band member of the head views (default the guitarist).
+        var headRole = Environment.GetEnvironmentVariable("GH3_SKIN_DEBUG_VIEW_ROLE") ?? "guitarist";
+        if (headMode == "1" && _band?.Anchor(headRole, "ddec28af") is { } head)
             camera.transform.LookAt(new Vector3(head.Position.X, head.Position.Y, head.Position.Z));
-        if (headMode == "local" && _band?.Anchor("guitarist", "ddec28af") is { } face)
+        if (headMode == "local" && _band?.Anchor(headRole, "ddec28af") is { } face)
         {
             // Position and target in the frame of the head bone (on the Midori rig, local +X points up and +Y to the front of
             // the face), so the camera keeps the same view of the face while the head moves.

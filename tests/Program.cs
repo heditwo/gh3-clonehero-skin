@@ -14,6 +14,12 @@ if (Environment.GetEnvironmentVariable("GH3_HAIR_BENCH") is { } hairProfile)
     return;
 }
 
+if (Environment.GetEnvironmentVariable("GH3_RETARGET_ONLY") == "1")
+{
+    RetargetLogicTests.Run();
+    return;
+}
+
 if (Environment.GetEnvironmentVariable("GH3_BENCH") is { } benchVenue)
 {
     ScriptBench.Run(benchVenue);
@@ -58,6 +64,7 @@ BandLogicTests.Run();
 LipSyncLogicTests.Run();
 HairLogicTests.Run();
 CharacterMotionLogicTests.Run();
+RetargetLogicTests.Run();
 DirectionLogicTests.Run();
 ShowFlowLogicTests.Run();
 HitEffectLogicTests.Run();

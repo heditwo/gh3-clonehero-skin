@@ -45,7 +45,7 @@ internal sealed class CharacterImporter
         var entry = _package.Manifest.Entry;
         var character = Object(_package.Read(entry["character"]));
         Fields(character, "character.json", new[] { "version", "library", "profile", "animations", "hairMaterials", "attachments", "highway",
-            "bones", "colliders", "chains" }, "version", "library", "profile");
+            "bones", "colliders", "chains", "skeleton", "face" }, "version", "library", "profile");
         if (Number(character["version"], "version") != 1) throw new PackageException("character.json version must be 1");
         var profile = Text(character["profile"]) ?? "";
         var libraryId = Text(character["library"]) ?? "";
@@ -71,20 +71,43 @@ internal sealed class CharacterImporter
                 throw new PackageException($"library {libraryId} has no animation set '{animations}'");
             (role, rigBones, rigParents, rigBind) = (own.Role, own.Bones, own.Parents, own.Bind);
         }
-        // Custom chains (section 9.5): the added bones join the rig for the GLB check.
-        var chains = CharacterChains.Read(character, rigBones, rigParents, rigBind);
-        (rigBones, rigParents, rigBind) = (chains.Bones, chains.Parents, chains.Bind);
         var hair = (character["hairMaterials"] as JsonArray ?? new JsonArray()).Select(n => Text(n) ?? throw new PackageException("invalid hair material")).ToHashSet();
         var instrument = Instrument(character["attachments"]);
         var highway = Highway(character["highway"], folder);
-        var (names, parts) = ImportModel(folder, entry["model"], profile, rigBones, rigParents, rigBind, hair);
-        Write(Path.Combine(folder, "character.json"), new JsonObject
+        string[] names;
+        List<MeshPart> parts;
+        JsonNode? added = null, colliders, joints, skeletonRow = null, faceRow = null;
+        if (character["skeleton"] != null)
+        {
+            // Its own skeleton (section 9.6): the GLB joints are free; the humanoid map drives them with the profile's clips.
+            if (character["bones"] != null) throw new PackageException("a character with its own skeleton has no 'bones': its chain bones are skeleton joints");
+            var glb = new GlbDocument(_package.Read(entry["model"]));
+            var skeleton = CharacterSkeleton.Read(glb, character["skeleton"]!, Warnings);
+            var chains = CharacterChains.Read(character, skeleton.Keys, skeleton.Parents, skeleton.Bind, skeleton.ChainBones);
+            var face = CharacterSkeleton.Face(character["face"]);
+            (names, parts) = ImportModel(folder, entry["model"], profile, skeleton.Keys, skeleton.Parents, skeleton.Bind, hair, glb, ownSkeleton: true, face: face);
+            skeletonRow = skeleton.Cache(names);
+            faceRow = new JsonArray(face.Select(f => (JsonNode?)f).ToArray());
+            (colliders, joints) = (chains.Colliders, chains.Joints);
+        }
+        else
+        {
+            if (character["face"] != null) throw new PackageException("'face' needs 'skeleton': characters on a GH3 rig move the face with bones");
+            // Custom chains (section 9.5): the added bones join the rig for the GLB check.
+            var chains = CharacterChains.Read(character, rigBones, rigParents, rigBind);
+            (rigBones, rigParents, rigBind) = (chains.Bones, chains.Parents, chains.Bind);
+            (names, parts) = ImportModel(folder, entry["model"], profile, rigBones, rigParents, rigBind, hair);
+            (added, colliders, joints) = (chains.AddedBones, chains.Colliders, chains.Joints);
+        }
+        var info = new JsonObject
         {
             ["version"] = 1, ["id"] = _package.Manifest.Id, ["name"] = _package.Manifest.Name, ["profile"] = profile, ["role"] = role,
             ["instrument"] = instrument, ["joints"] = new JsonArray(names.Select(n => (JsonNode?)n).ToArray()),
             ["library"] = libraryId, ["animations"] = animations, ["highway"] = highway,
-            ["bones"] = chains.AddedBones, ["colliders"] = chains.Colliders, ["chains"] = chains.Joints,
-        });
+            ["bones"] = added ?? new JsonArray(), ["colliders"] = colliders, ["chains"] = joints,
+        };
+        if (skeletonRow != null) (info["skeleton"], info["face"]) = (skeletonRow, faceRow);
+        Write(Path.Combine(folder, "character.json"), info);
         return (role, names.Length, parts.Count, parts.Sum(p => p.Count));
     }
 
@@ -110,10 +133,12 @@ internal sealed class CharacterImporter
 
     // The skinned GLB `model` on a rig profile, as a band model folder (meshes.bin, stage.json, textures, bindposes.bin).
     // Characters and instruments share it. Returns the GH3 bone name of each skin joint and the mesh parts.
+    // `ownSkeleton`: the rig is the GLB skeleton itself (CharacterSkeleton), so the joints are not checked against a profile.
+    // `face`: the morph target names of the face slots (CharacterSkeleton.FaceSlots order; "" for none) to keep (morphs.bin).
     public (string[] Names, List<MeshPart> Parts) ImportModel(string folder, string model, string profile, string[] rigBones, int[] rigParents, float[][] rigBind,
-        ISet<string> hair)
+        ISet<string> hair, GlbDocument? document = null, bool ownSkeleton = false, string[]? face = null)
     {
-        var glb = new GlbDocument(_package.Read(model));
+        var glb = document ?? new GlbDocument(_package.Read(model));
         if (glb.List("animations").Count > 0) Warnings.Add("the GLB animations are ignored; the library supplies the clips");
         var skins = glb.List("skins");
         if (skins.Count != 1) throw new PackageException("a character GLB needs one skin");
@@ -158,6 +183,7 @@ internal sealed class CharacterImporter
             var angle = 4 * Math.Asin(Math.Min(1, chord / 2)) * 180 / Math.PI;
             worst = (Math.Max(worst.Position, position), Math.Max(worst.Rotation, angle), Math.Max(worst.Scale, scale.Max(s => Math.Abs(s - 1))));
         }
+        if (ownSkeleton) worst = default;
         if (worst.Position > JointPosition) throw new PackageException($"joint positions differ from profile {profile} by {worst.Position * 1000:0.###} mm (limit 0.1 mm)");
         if (worst.Rotation > JointRotation) throw new PackageException($"joint rotations differ from profile {profile} by {worst.Rotation:0.###}° (limit 0.01°)");
         if (worst.Scale > JointScale) throw new PackageException($"joint scale differs from 1 by {worst.Scale:g3} (limit 1e-4)");
@@ -192,10 +218,15 @@ internal sealed class CharacterImporter
         }
         var fallbackMaterial = Key("material-default");
         var parts = new List<MeshPart>();
+        var partMorphs = new List<float[]?[]>();
         var streamless = new HashSet<string>();
         var morphs = 0;
+        var faceFound = new bool[face?.Length ?? 0];
         foreach (var (_, node, _) in meshNodes)
-            foreach (var primitive in (JsonArray)glb.Item("meshes", node["mesh"]!.GetValue<int>())["primitives"]!)
+        {
+            var mesh = glb.Item("meshes", node["mesh"]!.GetValue<int>());
+            var targetNames = (mesh["extras"]?["targetNames"] as JsonArray)?.Select(n => Text(n) ?? "").ToArray() ?? System.Array.Empty<string>();
+            foreach (var primitive in (JsonArray)mesh["primitives"]!)
             {
                 if (GlbDocument.Int((JsonObject)primitive!, "mode", 4) != 4) throw new PackageException("triangulate the character meshes before export");
                 if (primitive!["targets"] is JsonArray { Count: > 0 }) morphs++;
@@ -207,12 +238,27 @@ internal sealed class CharacterImporter
                 if (faces.Length % 3 != 0 || faces.Any(f => f < 0 || f >= count)) throw new PackageException("invalid character triangles");
                 for (var i = 0; i < faces.Length; i += 3) (faces[i + 1], faces[i + 2]) = (faces[i + 2], faces[i + 1]);
                 if (faces.Length == 0) continue;
-                if (count <= 65535) parts.Add(new MeshPart(material, count, vertices, faces));
-                else parts.AddRange(StageGeometry.Split(material, vertices, StageGeometry.SkinnedStride, faces));
+                var shapes = face == null ? System.Array.Empty<float[]?>() : Morphs(glb, (JsonObject)primitive, targetNames, face, count, faceFound);
+                if (count <= 65535)
+                {
+                    parts.Add(new MeshPart(material, count, vertices, faces));
+                    partMorphs.Add(shapes);
+                }
+                else
+                {
+                    var split = StageGeometry.Split(material, vertices, StageGeometry.SkinnedStride, faces).ToList();
+                    parts.AddRange(split);
+                    foreach (var order in StageGeometry.SplitOrders(faces))
+                        partMorphs.Add(shapes.Select(shape => shape == null ? null : order.SelectMany(v => new[] { shape[v * 3], shape[v * 3 + 1], shape[v * 3 + 2] }).ToArray()).ToArray());
+                }
             }
-        if (morphs > 0) Warnings.Add($"{morphs} primitives have blend shapes; this mod version does not animate them");
+        }
+        if (face == null && morphs > 0) Warnings.Add($"{morphs} primitives have blend shapes; only a character with its own skeleton and 'face' uses them");
+        for (var slot = 0; slot < faceFound.Length; slot++)
+            if (face![slot].Length > 0 && !faceFound[slot]) throw new PackageException($"face.{CharacterSkeleton.FaceSlots[slot]}: no mesh has the morph target '{face[slot]}'");
         if (parts.Count == 0) throw new PackageException("the character has no triangles");
         StageGeometry.WriteMeshes(Path.Combine(folder, "meshes.bin"), parts, skinned: true);
+        if (face != null) WriteMorphs(Path.Combine(folder, MorphFile), partMorphs);
 
         var rows = new JsonObject();
         var referenced = new Dictionary<string, Func<byte[]>>();
@@ -307,6 +353,55 @@ internal sealed class CharacterImporter
                 for (var r = 0; r < 4; r++) for (var c = 0; c < 4; c++) writer.Write((float)matrix[r, c]);
         }
         return (names, parts);
+    }
+
+    public const string MorphFile = "morphs.bin";
+
+    // The position deltas (runtime coordinates) of the face slots in one primitive; null for a slot that it does not have
+    // or that does not move it.
+    private static float[]?[] Morphs(GlbDocument glb, JsonObject primitive, string[] targetNames, string[] face, int count, bool[] found)
+    {
+        var result = new float[]?[face.Length];
+        if (primitive["targets"] is not JsonArray targets) return result;
+        for (var slot = 0; slot < face.Length; slot++)
+        {
+            var index = face[slot].Length == 0 ? -1 : System.Array.IndexOf(targetNames, face[slot]);
+            if (index < 0 || index >= targets.Count || targets[index]?["POSITION"] is not JsonValue position) continue;
+            found[slot] = true;
+            var deltas = glb.Accessor(position.GetValue<int>());
+            if (deltas.Count != count || deltas.Columns != 3) throw new PackageException($"invalid morph target '{face[slot]}'");
+            var values = new float[count * 3];
+            var moves = false;
+            for (var v = 0; v < count; v++)
+            {
+                values[v * 3] = (float)deltas[v, 0];
+                values[v * 3 + 1] = (float)deltas[v, 1];
+                values[v * 3 + 2] = -(float)deltas[v, 2];
+                moves |= values[v * 3] != 0 || values[v * 3 + 1] != 0 || values[v * 3 + 2] != 0;
+            }
+            if (moves) result[slot] = values;
+        }
+        return result;
+    }
+
+    // morphs.bin (magic GH3MRP01): the part count, then for each mesh part the count of its shapes and, for each shape,
+    // the face slot (byte), the vertex count of the part, and the position deltas of all its vertices (float32 x, y, z).
+    private static void WriteMorphs(string path, List<float[]?[]> parts)
+    {
+        using var writer = new BinaryWriter(File.Create(path));
+        writer.Write(System.Text.Encoding.ASCII.GetBytes("GH3MRP01"));
+        writer.Write(parts.Count);
+        foreach (var shapes in parts)
+        {
+            writer.Write(shapes.Count(s => s != null));
+            for (var slot = 0; slot < shapes.Length; slot++)
+            {
+                if (shapes[slot] is not { } values) continue;
+                writer.Write((byte)slot);
+                writer.Write(values.Length / 3);
+                foreach (var value in values) writer.Write(value);
+            }
+        }
     }
 
     // gh3Toon (PACKAGE-FORMAT.md section 6.5) as the stage.json `toon` row (StageToon): the texture references become runtime

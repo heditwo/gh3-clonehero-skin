@@ -168,6 +168,31 @@ def compact(gltf, binary):
     return gltf, bytes(out)
 
 
+def keep_morphs(gltf, binary, names):
+    """Keep only the named morph targets (mesh extras targetNames) of the meshes, without their normal and tangent
+    deltas, and remove the data of the others. Returns (glTF JSON, binary)."""
+    wanted = set(names)
+    for mesh in gltf.get("meshes", []):
+        extras = mesh.get("extras") or {}
+        target_names = list(extras.get("targetNames", []))
+        keep = [i for i, name in enumerate(target_names) if name in wanted]
+        for primitive in mesh.get("primitives", []):
+            targets = primitive.get("targets", [])
+            kept = [{"POSITION": targets[i]["POSITION"]} for i in keep if i < len(targets) and "POSITION" in targets[i]]
+            if kept: primitive["targets"] = kept
+            else: primitive.pop("targets", None)
+        if keep and any("targets" in p for p in mesh.get("primitives", [])):
+            extras["targetNames"] = [target_names[i] for i in keep]
+            if "weights" in mesh: mesh["weights"] = [mesh["weights"][i] for i in keep if i < len(mesh["weights"])]
+            mesh["extras"] = extras
+        else:
+            extras.pop("targetNames", None)
+            mesh.pop("weights", None)
+            if extras: mesh["extras"] = extras
+            else: mesh.pop("extras", None)
+    return compact(gltf, binary)
+
+
 # Profile rigs.
 class Rig:
     """The joints of a skinned GLB: names ('bone-<checksum>'), parent joint indices, and glTF local matrices."""

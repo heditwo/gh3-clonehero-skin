@@ -570,6 +570,10 @@ class Validator:
                 above = glb.world(parents[joint], parents, cache)
                 if np.abs(above - np.eye(4)).max() > JOINT_POSITION:
                     self.report.error(entry["model"], "nodes above the root joint must have the identity transform")
+        if "skeleton" in character:
+            self.check_own_skeleton(entry, character, glb)
+            return
+        if "face" in character: self.report.error(entry["character"], "'face' needs 'skeleton': characters on a GH3 rig move the face with bones")
         if own is None and character["profile"] in PROFILES and self.library is not None:
             try:
                 own = load_profile(self.library, PROFILES[character["profile"]])
@@ -591,7 +595,30 @@ class Validator:
             self.report.warn(entry["character"], f"attachments.instrument '{instrument}' is not a library instrument ({', '.join(sorted(known))}); "
                              "the game uses the instrument of the band role")
 
-    def check_chains(self, where, character, profile):
+    def check_own_skeleton(self, entry, character, glb):
+        """character.json skeleton and face (PACKAGE-FORMAT.md section 9.6): the GLB joints are the skeleton."""
+        from . import skeleton
+        where = entry["character"]
+        if "bones" in character: self.report.error(where, "a character with its own skeleton has no 'bones': its chain bones are skeleton joints")
+        names, parents, bind, local = skeleton.glb_skeleton(glb)
+        scale = np.linalg.norm(local[:, :3, :3], axis=1)
+        if np.abs(scale - 1).max() > UNIT_SCALE: self.report.error(entry["model"], f"joint scale differs from 1 by {np.abs(scale - 1).max():.3g}; apply the scale before export")
+        if len(set(names)) != len(names) or "" in names: self.report.error(entry["model"], "skeleton joints need unique names"); return
+        own = character["skeleton"]
+        errors, warnings, chain_bones = skeleton.check_map(names, parents, bind, own["humanoid"], own.get("followers", []), own.get("instrument"))
+        for message in errors: self.report.error(where, message)
+        for message in warnings: self.report.warn(where, message)
+        morphs = skeleton.morph_names(glb)
+        for slot, name in character.get("face", {}).items():
+            if name not in morphs: self.report.error(where, f"face.{slot}: no mesh has the morph target '{name}'")
+        if errors: return
+        keys = [name[5:] if re.fullmatch(r"bone-[0-9a-f]{8}", name) else f"{gh3_key(name):08x}" for name in names]
+        local_glb = np.array(local)
+        translations = local_glb[:, :3, 3]
+        rotations = np.array([decompose(m)[1] for m in local_glb])
+        self.check_chains(where, character, (keys, parents, translations, rotations), chain_bones={bone_key(n) for n in chain_bones})
+
+    def check_chains(self, where, character, profile, chain_bones=None):
         """character.json bones, colliders, and chains (PACKAGE-FORMAT.md section 9.5). Returns the profile rig with the
         added bones (load_profile layout), or None after an error. Without profile parents (no library), only the
         references are checked."""
@@ -609,7 +636,7 @@ class Validator:
                 self.report.error(where, f"bone '{bone['name']}': the bind rotation must have unit length")
             if math.sqrt(sum(v * v for v in bind[:3])) > 5: self.report.error(where, f"bone '{bone['name']}' is more than 5 m from its parent")
             index[key] = len(names); names.append(key); parents.append(index[parent]); added.append(bone)
-        added_keys = {bone_key(b["name"]) for b in added}
+        added_keys = {bone_key(b["name"]) for b in added} if chain_bones is None else chain_bones
         joint_bones = [bone_key(j["bone"]) for chain in character.get("chains", []) for j in chain["joints"]]
         colliders = {}
         for collider in character.get("colliders", []):
@@ -632,7 +659,9 @@ class Validator:
             for joint in chain["joints"]:
                 label = f"chain '{chain['name']}' joint '{joint['bone']}'"
                 key = bone_key(joint["bone"])
-                if key not in added_keys: self.report.error(where, f"{label}: the joint bone must be a bone of 'bones'"); continue
+                if key not in added_keys:
+                    self.report.error(where, f"{label}: the joint bone must be a bone of 'bones'" if chain_bones is None else
+                                      f"{label}: the joint bone must be a skeleton joint without a humanoid role, not a parent of one, and not a follower"); continue
                 if key in seen: self.report.error(where, f"{label}: the bone is a joint of an earlier chain or joint"); continue
                 parent = bone_key(joint["parent"]) if "parent" in joint else names[parents[index[key]]]
                 if parent not in index or parent == key: self.report.error(where, f"{label}: the parent '{joint.get('parent')}' is not another bone of the rig")
@@ -641,6 +670,8 @@ class Validator:
                 rows[key] = (joint, parent)
                 self.check_chain_joint(where, label, joint)
         bind = {bone_key(b["name"]): b["bind"] for b in added}
+        if chain_bones is not None and translations is not None:
+            bind.update({name: list(np.asarray(translations[i]) * [1, 1, -1]) for i, name in enumerate(profile_names)})
         for key, (joint, parent) in rows.items():
             if parent not in rows: continue
             upper = rows[parent][0]

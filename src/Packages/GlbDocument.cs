@@ -76,6 +76,13 @@ internal sealed class GlbDocument
         {
             "SCALAR" => 1, "VEC2" => 2, "VEC3" => 3, "VEC4" => 4, "MAT4" => 16, _ => throw new PackageException("unsupported accessor type"),
         };
+        if (accessor["bufferView"] == null)
+        {
+            // glTF: an accessor without a buffer view holds zeros (Blender writes these for unchanged morph targets).
+            var zeros = accessor["count"]!.GetValue<int>();
+            if (zeros is < 1 or > 10000000) throw new PackageException("invalid glTF accessor range");
+            return new GlbAccessor(new double[zeros * columns], zeros, columns);
+        }
         var viewIndex = accessor["bufferView"]!.GetValue<int>();
         var view = Item("bufferViews", viewIndex);
         var data = View(viewIndex);
