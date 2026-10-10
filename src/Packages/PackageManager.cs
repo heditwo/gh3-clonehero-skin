@@ -154,7 +154,8 @@ internal sealed class PackageManager
         Activity = "scanning the package folders";
         try { Discover(); }
         catch (Exception error) { Warn($"the package scan stopped: {error.Message}"); }
-        Log($"found {_packages.Count} usable package(s) in {clock.ElapsedMilliseconds} ms");
+        Log($"found {_packages.Count} usable package(s) in {clock.ElapsedMilliseconds} ms: " +
+            string.Join(", ", Packages.GroupBy(p => p.Manifest.Kind).OrderBy(g => g.Key).Select(g => $"{g.Count()} {g.Key.ToString().ToLowerInvariant()}")));
     }
 
     private bool TryCacheHit(InstalledPackage package, JsonObject index)
@@ -342,8 +343,11 @@ internal sealed class PackageManager
                 Warn($"skipped {package.Label}: it requires {missing.Id} {missing.Version} (same major version or later), which is not installed");
                 continue;
             }
-            if (package.Manifest.Kind == PackageKind.Character) Log($"found character {package.Label}");
-            if (package.Manifest.Kind == PackageKind.Instrument) Log($"found instrument {package.Label}");
+            // One line for each package of the Custom folders; the ~190 packages that ship with the mod would cost the
+            // main thread about 0.1 s of log writes in the first menu frames.
+            var custom = !Path.GetFullPath(package.Location).StartsWith(Path.GetFullPath(_settings.ModPackages) + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+            if (custom && package.Manifest.Kind == PackageKind.Character) Log($"found character {package.Label}");
+            if (custom && package.Manifest.Kind == PackageKind.Instrument) Log($"found instrument {package.Label}");
             lock (_gate) _packages.Add(package);
         }
     }

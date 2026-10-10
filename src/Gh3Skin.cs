@@ -16,6 +16,7 @@ public sealed class SkinMod : MelonMod
     private GameplayStage? _stage;
     private readonly PickerOverlay _picker = new();
     private PickerTest? _pickerTest;
+    private SkinAssets? _assets;
     private readonly GameplayScene _scene = new();
     private bool _gameplay;
     private double _lastSongTime = double.NegativeInfinity;
@@ -62,15 +63,14 @@ public sealed class SkinMod : MelonMod
         _options = SkinOptions.FromEnvironment();
         _comboOverride = new ComboOverride(_options.ForceCombo, _options.ForceComboBreak);
         var tuning = HudTuning.Load(SkinAssetPaths.HudTuning(assetsDirectory));
-        var assets = new SkinAssets(assetsDirectory);
-        steps.Step("skin textures");
+        var assets = _assets = new SkinAssets(assetsDirectory);
+        steps.Step("skin texture plan");
         _renderer = new GameplaySpriteRenderer(assets, _options);
         _hud = new GameplayHud(assets, tuning, !_options.KeepStockFlames);
         _capture = new PreviewCapture(_options);
         _stage = new GameplayStage(assetsDirectory);
         _pickerTest = PickerTest.FromEnvironment();
         steps.Step("renderers");
-        MelonLogger.Msg($"Loaded {assets.GameplaySpriteCount} GH3 skin gameplay sprites");
         steps.Finish("mod init");
     }
 
@@ -78,6 +78,7 @@ public sealed class SkinMod : MelonMod
     {
         _gameplay = sceneName == "Gameplay";
         LoadTiming.SceneLoaded(sceneName);
+        if (_gameplay) UploadSkin(double.PositiveInfinity);
         _songClockMarked = 0;
         if (_stage != null) _picker.SceneChanged(!_gameplay);
         _scene.Reset();
@@ -95,6 +96,7 @@ public sealed class SkinMod : MelonMod
     {
         LoadTiming.Frame();
         if (_stage == null) return;
+        if (_assets is { Ready: false }) UploadSkin(4);
         Packages.PackageRuntime.Update();
         _picker.Update();
         _pickerTest?.Update(_picker);
@@ -130,6 +132,24 @@ public sealed class SkinMod : MelonMod
         _capture.Update(songTime);
         if (BindingTrace.Enabled) BindingTrace.Update(player, state, songTime, _stage?.AudioVoices ?? "none");
         FrameProfile.EndFrame(songTime);
+    }
+
+    // The skin textures upload a few milliseconds in each menu frame; the gameplay scene waits for the rest.
+    private void UploadSkin(double milliseconds)
+    {
+        if (_assets is not { Ready: false } assets) return;
+        try
+        {
+            if (assets.Upload(milliseconds)) LoadTiming.Mark("skin textures uploaded");
+        }
+        catch (Exception error)
+        {
+            MelonLogger.Error($"GH3 skin textures could not load; the skin is off: {error}");
+            _assets = null;
+            _renderer = null;
+            _hud = null;
+            _stage = null;
+        }
     }
 
     private int _songClockMarked;

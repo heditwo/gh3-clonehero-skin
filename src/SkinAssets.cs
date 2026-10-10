@@ -58,30 +58,83 @@ internal sealed class SkinAssets
     public string YouRockFlames => SkinAssetPaths.YouRockFlames(Root);
     public Texture2D? HighwayTexture { get; private set; }
 
+    // The constructor only plans the texture batches and starts to decode the images on worker threads. Upload puts the
+    // decoded images into Unity textures on the main thread, a few milliseconds in each menu frame, so the menu does not
+    // wait for the skin; Finish uploads the rest at once (the gameplay scene needs all of them).
     public SkinAssets(string root)
     {
         Root = root;
-        var steps = new LoadTiming.Steps();
-        LoadCoreTextures(root);
-        steps.Step("highway");
-        LoadReadyAnimation(root);
-        steps.Step("ready animation");
-        LoadGameplaySprites(root);
-        steps.Step("gems, beat lines, sustains");
-        LoadHudTextures(root);
-        // The decoded images (about 190 MB, mostly the ready animation) are garbage now; give the memory back at once.
-        GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
-        GC.Collect();
-        steps.Step("HUD");
-        steps.Finish("skin textures");
+        PlanCoreTextures(root);
+        PlanReadyAnimation(root);
+        PlanGameplaySprites(root);
+        PlanHudTextures(root);
+        _decoded = new DecodedImage?[_batches.Sum(batch => batch.Files.Count)];
+        var files = _batches.SelectMany(batch => batch.Files).ToArray();
+        _decoding = Task.Run(() => Parallel.For(0, files.Length, new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount / 2, 1, 8) },
+            index => Volatile.Write(ref _decoded[index], Decode(files[index]))));
     }
 
-    private void LoadCoreTextures(string root)
+    private sealed record DecodedImage(byte[] Data, int Width, int Height, bool Dxt5);
+    private readonly List<(IReadOnlyList<string> Files, Action<List<Texture2D>> Apply)> _batches = new();
+    private readonly DecodedImage?[] _decoded;
+    private readonly Task _decoding;
+    private readonly List<Texture2D> _uploaded = new();
+    private int _batch, _next;
+    public bool Ready => _batch == _batches.Count;
+
+    private void Plan(IReadOnlyList<string> files, Action<List<Texture2D>> apply) => _batches.Add((files, apply));
+
+    // Uploads decoded images until the time budget is used; false while images remain.
+    public bool Upload(double milliseconds)
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (!Ready)
+        {
+            if (_decoding.IsFaulted) _decoding.GetAwaiter().GetResult();
+            var (files, apply) = _batches[_batch];
+            if (_uploaded.Count < files.Count)
+            {
+                var image = Volatile.Read(ref _decoded[_next]);
+                if (image == null)
+                {
+                    if (clock.Elapsed.TotalMilliseconds >= milliseconds) return false;
+                    if (_decoding.IsCompleted) _decoding.GetAwaiter().GetResult();
+                    Thread.Sleep(1);
+                    continue;
+                }
+                _decoded[_next++] = null;
+                _uploaded.Add(image.Dxt5 ? UploadDxt5(image, files[_uploaded.Count]) : UploadRgba(image));
+            }
+            else
+            {
+                apply(_uploaded.ToList());
+                _uploaded.Clear();
+                _batch++;
+                if (Ready)
+                {
+                    // The decoded images (about 190 MB, mostly the ready animation) are garbage now; give the memory back at once.
+                    GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+                    GC.Collect();
+                    return true;
+                }
+            }
+            if (clock.Elapsed.TotalMilliseconds >= milliseconds) return false;
+        }
+        return true;
+    }
+
+    public void Finish() => Upload(double.PositiveInfinity);
+
+    private void PlanCoreTextures(string root)
     {
         var highway = SkinAssetPaths.Highway(root);
         var frames = Enumerable.Range(0, StarPowerHighwayAnimation.FrameCount).Select(frame => $"active-highway-{frame:00}").ToList();
-        var textures = LoadTextures(new[] { "highway", "highway-edges-blue", "highway-edges-normal" }.Select(name => Path.Combine(highway, name + ".png"))
-            .Concat(frames.Select(name => Path.Combine(SkinAssetPaths.StarPowerHighway(root), name + ".png"))).ToList());
+        Plan(new[] { "highway", "highway-edges-blue", "highway-edges-normal" }.Select(name => Path.Combine(highway, name + ".png"))
+            .Concat(frames.Select(name => Path.Combine(SkinAssetPaths.StarPowerHighway(root), name + ".png"))).ToList(), textures => ApplyCoreTextures(frames, textures));
+    }
+
+    private void ApplyCoreTextures(List<string> frames, List<Texture2D> textures)
+    {
         _textures["highway"] = textures[0];
         _textures["highway"].wrapMode = TextureWrapMode.Repeat;
         HighwayTexture = _textures["highway"];
@@ -96,41 +149,37 @@ internal sealed class SkinAssets
         }
     }
 
-    private void LoadReadyAnimation(string root)
+    private void PlanReadyAnimation(string root)
     {
         root = SkinAssetPaths.ReadyAnimation(root);
-        using (var animation = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "ready-animation.json"))))
-        {
-            if (animation.RootElement.GetProperty("fps").GetInt32() != 60)
-                throw new InvalidDataException("Ready animation must have 60 frames per second");
-            LoadAnimationFrames(root, "ready-animation", animation.RootElement.GetProperty("frames"), _readyFrames);
-            LoadAnimationFrames(root, "ready-lightning", animation.RootElement.GetProperty("lightning"), _readyLightningFrames);
-        }
-        if (_readyFrames.Count == 0 || _readyLightningFrames.Count == 0)
+        using var animation = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "ready-animation.json")));
+        if (animation.RootElement.GetProperty("fps").GetInt32() != 60)
+            throw new InvalidDataException("Ready animation must have 60 frames per second");
+        var frames = Layouts(animation.RootElement.GetProperty("frames"));
+        var lightning = Layouts(animation.RootElement.GetProperty("lightning"));
+        if (frames.Count == 0 || lightning.Count == 0)
             throw new InvalidDataException("Missing GH3 ready animation frames");
-        _textures["ready-animation-first"] = _readyFrames[0].Texture;
-        _textures["ready-lightning-first"] = _readyLightningFrames[0].Texture;
-    }
-
-    private static void LoadAnimationFrames(string root, string prefix, JsonElement entries, List<AnimationFrame> destination)
-    {
-        var frames = entries.EnumerateArray().ToList();
-        var textures = LoadTextures(Enumerable.Range(destination.Count, frames.Count).Select(index => Path.Combine(root, $"{prefix}-{index:000}.png")).ToList());
-        for (var index = 0; index < frames.Count; index++)
+        Plan(Enumerable.Range(0, frames.Count).Select(index => Path.Combine(root, $"ready-animation-{index:000}.png"))
+            .Concat(Enumerable.Range(0, lightning.Count).Select(index => Path.Combine(root, $"ready-lightning-{index:000}.png"))).ToList(), textures =>
         {
-            var frame = frames[index];
-            var texture = textures[index];
-            texture.filterMode = FilterMode.Point;
-            var layout = new Rect(
-                frame.GetProperty("x").GetInt32() * 1.2f,
-                frame.GetProperty("y").GetInt32() * 1.2f,
-                frame.GetProperty("width").GetInt32() * 1.2f,
-                frame.GetProperty("height").GetInt32() * 1.2f);
-            destination.Add(new AnimationFrame(texture, layout));
-        }
+            for (var index = 0; index < textures.Count; index++)
+            {
+                textures[index].filterMode = FilterMode.Point;
+                if (index < frames.Count) _readyFrames.Add(new AnimationFrame(textures[index], frames[index]));
+                else _readyLightningFrames.Add(new AnimationFrame(textures[index], lightning[index - frames.Count]));
+            }
+            _textures["ready-animation-first"] = _readyFrames[0].Texture;
+            _textures["ready-lightning-first"] = _readyLightningFrames[0].Texture;
+        });
     }
 
-    private void LoadGameplaySprites(string root)
+    private static List<Rect> Layouts(JsonElement entries) => entries.EnumerateArray().Select(frame => new Rect(
+        frame.GetProperty("x").GetInt32() * 1.2f,
+        frame.GetProperty("y").GetInt32() * 1.2f,
+        frame.GetProperty("width").GetInt32() * 1.2f,
+        frame.GetProperty("height").GetInt32() * 1.2f)).ToList();
+
+    private void PlanGameplaySprites(string root)
     {
         var gemSprites = new List<(string Name, string File, float PixelsPerUnit)>();
         foreach (var lane in Lanes.Append("active"))
@@ -141,10 +190,37 @@ internal sealed class SkinAssets
                 foreach (var kind in new[] { "star", "star-glow", "star-tap" })
                     gemSprites.Add(($"{lane}-{kind}-{frame}", Path.Combine(gems, $"{lane}-{kind}-{frame}.png"), 550));
         }
-        var gemTextures = LoadTextures(gemSprites.Select(sprite => sprite.File).ToList());
-        for (var index = 0; index < gemSprites.Count; index++)
-            AddSprite(gemSprites[index].Name, gemTextures[index], gemSprites[index].PixelsPerUnit, new Vector2(0.5f, 0.16f));
+        Plan(gemSprites.Select(sprite => sprite.File).ToList(), textures =>
+        {
+            for (var index = 0; index < gemSprites.Count; index++)
+                AddSprite(gemSprites[index].Name, textures[index], gemSprites[index].PixelsPerUnit, new Vector2(0.5f, 0.16f));
+            ApplyGems();
+        });
+        var lines = new[] { "beatline", "beatline-beat", "beatline-half" };
+        Plan(new[] { Path.Combine(SkinAssetPaths.Hud(root), "clear.png") }.Concat(lines.Select(name => Path.Combine(SkinAssetPaths.BeatLines(root), name + ".png"))).ToList(), textures =>
+        {
+            AddSprite("clear", textures[0], 20, new Vector2(0.5f, 0.16f));
+            for (var index = 0; index < lines.Length; index++)
+            {
+                AddSprite(lines[index], textures[1 + index], 1024, new Vector2(0.5f, 0));
+                _sprites[lines[index]].texture.wrapMode = TextureWrapMode.Clamp;
+            }
+        });
+        var sustains = SkinAssetPaths.Sustains(root);
+        var held = Enumerable.Range(0, SustainVariants.Length).Where(variant => (SustainVariant)variant != SustainVariant.Dead).ToList();
+        Plan(SustainVariants.Select(name => Path.Combine(sustains, $"sustain-{name}.png"))
+            .Concat(held.Select(variant => Path.Combine(sustains, $"sustain-held-{SustainVariants[variant]}.png"))).ToList(), textures =>
+        {
+            for (var variant = 0; variant < SustainVariants.Length; variant++)
+                _sustains[variant] = AddSustain($"sustain-{SustainVariants[variant]}", textures[variant]);
+            for (var variant = 0; variant < SustainVariants.Length; variant++)
+                _heldSustains[variant] = held.IndexOf(variant) is var at and >= 0
+                    ? AddSustain($"sustain-held-{SustainVariants[variant]}", textures[SustainVariants.Length + at]) : _sustains[variant];
+        });
+    }
 
+    private void ApplyGems()
+    {
         for (var lane = 0; lane < Lanes.Length; lane++)
             for (var frame = 0; frame < GemAnimation.FrameCount; frame++)
             {
@@ -165,24 +241,9 @@ internal sealed class SkinAssets
             _activeGems[4, frame] = _sprites["active-tap"];
             _activeGems[5, frame] = _sprites[$"active-star-tap-{frame}"];
         }
-
-        Load(SkinAssetPaths.Hud(root), "clear", 20, new Vector2(0.5f, 0.16f));
-        foreach (var name in new[] { "beatline", "beatline-beat", "beatline-half" })
-        {
-            Load(SkinAssetPaths.BeatLines(root), name, 1024, new Vector2(0.5f, 0));
-            _sprites[name].texture.wrapMode = TextureWrapMode.Clamp;
-        }
-        var sustains = SkinAssetPaths.Sustains(root);
-        for (var variant = 0; variant < SustainVariants.Length; variant++)
-        {
-            _sustains[variant] = LoadSustain(sustains, $"sustain-{SustainVariants[variant]}");
-            _heldSustains[variant] = (SustainVariant)variant == SustainVariant.Dead
-                ? _sustains[variant]
-                : LoadSustain(sustains, $"sustain-held-{SustainVariants[variant]}");
-        }
     }
 
-    private void LoadHudTextures(string root)
+    private void PlanHudTextures(string root)
     {
         var hudNames = new List<string>
         {
@@ -201,16 +262,19 @@ internal sealed class SkinAssets
         hudNames.AddRange(new[] { "", "_blue", "_green", "_purple" }.SelectMany(color =>
             Enumerable.Range(0, 3).Select(state => $"HUD_score_light_{state}{color}")));
 
-        foreach (var name in hudNames)
+        // The score body and the nixie digits are DXT5 blocks captured from GH3 (assets/hud/score).
+        Plan(hudNames.Select(name => Path.Combine(SkinAssetPaths.HudTextureFolder(root, name),
+            name + (name == "HUD_score_body" || name.StartsWith("HUD_score_nixie_", StringComparison.Ordinal) ? ".dds" : ".png"))).ToList(), textures =>
         {
-            var directory = SkinAssetPaths.HudTextureFolder(root, name);
-            var texture = name == "HUD_score_body" || name.StartsWith("HUD_score_nixie_", StringComparison.Ordinal)
-                ? LoadDxt5(Path.Combine(directory, name + ".dds"))
-                : LoadTexture(Path.Combine(directory, name + ".png"));
-            if (name.StartsWith("HUD_score_light_", StringComparison.Ordinal) || name.StartsWith("gh3-", StringComparison.Ordinal))
-                texture.wrapMode = TextureWrapMode.Clamp;
-            _textures[name] = texture;
-        }
+            for (var index = 0; index < hudNames.Count; index++)
+            {
+                var name = hudNames[index];
+                if (name.StartsWith("HUD_score_light_", StringComparison.Ordinal) || name.StartsWith("gh3-", StringComparison.Ordinal))
+                    textures[index].wrapMode = TextureWrapMode.Clamp;
+                _textures[name] = textures[index];
+            }
+            MelonLogger.Msg($"Loaded {GameplaySpriteCount} GH3 skin gameplay sprites");
+        });
     }
 
     public Sprite GetSprite(string name) => _sprites[name];
@@ -234,9 +298,8 @@ internal sealed class SkinAssets
     }
 
     // Matches Clone Hero's sliced sustain sprites: bottom pivot, 100 pixels per unit, and the cap above a 38-pixel top border.
-    private Sprite LoadSustain(string directory, string name)
+    private Sprite AddSustain(string name, Texture2D texture)
     {
-        var texture = LoadTexture(Path.Combine(directory, name + ".png"));
         texture.wrapMode = TextureWrapMode.Clamp;
         var sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), new Vector2(0.5f, 0), 100, 0,
             SpriteMeshType.FullRect, new Vector4(0, 0, 0, 38));
@@ -245,9 +308,6 @@ internal sealed class SkinAssets
         _sprites[name] = sprite;
         return sprite;
     }
-
-    private void Load(string directory, string name, float pixelsPerUnit, Vector2 pivot) =>
-        AddSprite(name, LoadTexture(Path.Combine(directory, name + ".png")), pixelsPerUnit, pivot);
 
     private void AddSprite(string name, Texture2D texture, float pixelsPerUnit, Vector2 pivot)
     {
@@ -258,29 +318,23 @@ internal sealed class SkinAssets
         _sprites[name] = sprite;
     }
 
-    // Decodes the PNG files on worker threads (Unity's LoadImage decodes on the main thread: 0.6 s for the skin at start),
-    // then uploads them in order on the main thread. The texels equal LoadImage's: 8-bit RGBA, bottom row first, sRGB.
-    private static List<Texture2D> LoadTextures(IReadOnlyList<string> files)
+    // PNG files decode with the managed decoder on worker threads (Unity's LoadImage decodes on the main thread: 0.6 s for
+    // the skin at start). The texels equal LoadImage's: 8-bit RGBA, bottom row first, sRGB.
+    private static DecodedImage Decode(string file)
     {
-        var decoded = new (byte[] Rgba, int Width, int Height)[files.Count];
-        Parallel.For(0, files.Count, new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount / 2, 1, 8) }, index =>
-        {
-            var rgba = Packages.Png.DecodeRgba(File.ReadAllBytes(files[index]), out var width, out var height);
-            decoded[index] = (rgba, width, height);
-        });
-        var textures = new List<Texture2D>(files.Count);
-        for (var index = 0; index < files.Count; index++)
-        {
-            var (rgba, width, height) = decoded[index];
-            decoded[index] = default;
-            var texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
-            texture.LoadRawTextureData(new Il2CppStructArray<byte>(rgba));
-            texture.Apply(false, true);
-            texture.filterMode = FilterMode.Bilinear;
-            texture.hideFlags = HideFlags.DontUnloadUnusedAsset;
-            textures.Add(texture);
-        }
-        return textures;
+        if (file.EndsWith(".dds", StringComparison.Ordinal)) return ReadDxt5(file);
+        var rgba = Packages.Png.DecodeRgba(File.ReadAllBytes(file), out var width, out var height);
+        return new DecodedImage(rgba, width, height, false);
+    }
+
+    private static Texture2D UploadRgba(DecodedImage image)
+    {
+        var texture = new Texture2D(image.Width, image.Height, TextureFormat.RGBA32, false);
+        texture.LoadRawTextureData(new Il2CppStructArray<byte>(image.Data));
+        texture.Apply(false, true);
+        texture.filterMode = FilterMode.Bilinear;
+        texture.hideFlags = HideFlags.DontUnloadUnusedAsset;
+        return texture;
     }
 
     internal static Texture2D LoadTexture(string file)
@@ -294,7 +348,7 @@ internal sealed class SkinAssets
         return texture;
     }
 
-    private static Texture2D LoadDxt5(string file)
+    private static DecodedImage ReadDxt5(string file)
     {
         var data = File.ReadAllBytes(file);
         if (data.Length < 128 || BinaryPrimitives.ReadUInt32LittleEndian(data) != 0x20534444 ||
@@ -305,14 +359,18 @@ internal sealed class SkinAssets
         if (width <= 0 || height <= 0 || width % 4 != 0 || height % 4 != 0 ||
             data.Length - 128 != (long)width * height)
             throw new InvalidDataException(file);
-        var texture = new Texture2D(width, height, TextureFormat.DXT5, false);
+        return new DecodedImage(data[128..], width, height, true);
+    }
+
+    private static Texture2D UploadDxt5(DecodedImage image, string file)
+    {
+        var texture = new Texture2D(image.Width, image.Height, TextureFormat.DXT5, false);
         texture.name = Path.GetFileNameWithoutExtension(file);
-        texture.LoadRawTextureData(new Il2CppStructArray<byte>(data[128..]));
+        texture.LoadRawTextureData(new Il2CppStructArray<byte>(image.Data));
         texture.Apply(false, true);
         texture.filterMode = FilterMode.Bilinear;
         texture.wrapMode = TextureWrapMode.Clamp;
         texture.hideFlags = HideFlags.DontUnloadUnusedAsset;
         return texture;
     }
-
 }
