@@ -138,6 +138,7 @@ internal sealed class GameplayStage
     private SourceState ResolveSources()
     {
         var manager = Packages.PackageRuntime.Manager;
+        if (_waitingFor.Length == 0) LoadTiming.Mark("stage resolves its packages");
         if (manager == null || !manager.Scanned) return Wait("the package scan");
         static bool Busy(Packages.InstalledPackage? package) => package?.State is Packages.PackageState.Pending or Packages.PackageState.Importing;
         if (_decision == null)
@@ -511,6 +512,8 @@ internal sealed class GameplayStage
             return;
         }
         var loadClock = System.Diagnostics.Stopwatch.StartNew();
+        var steps = new LoadTiming.Steps();
+        LoadTiming.Mark("stage load starts");
         var texturesBefore = (StageAssets.TexturesUploaded, StageAssets.TextureMilliseconds);
         try
         {
@@ -518,18 +521,24 @@ internal sealed class GameplayStage
             var library = _library;
             _root = new GameObject("GH3 Stage") { layer = Layer };
             var lighting = StageLightingBank.Load(_directory);
+            steps.Step("pack and lighting");
             _assets = new StageAssets();
             var surfaceShader = LoadSurfaceShader(_render);
+            steps.Step("surface shader");
             _assets.Load(_directory, _root, Layer, lighting: lighting != null, surfaceShader: surfaceShader);
+            steps.Step("stage meshes and textures");
             _band = new StageBand();
             var characters = LoadCharacters();
             var instruments = LoadInstruments();
+            steps.Step("character and instrument models");
             _band.Load(Path.Combine(library, "band"), _assets, _root, Layer, lighting != null, pack.Band, surfaceShader, characters, instruments);
+            steps.Step("band");
             HighwayChoice.Choose(HighwayChoice.PlayerRole(player), characters, instruments);
             _fixtures = new StageFixtures();
             _fixtures.Load(Path.Combine(_directory, "fixtures"), _root, Layer);
             _actors = new StageActors();
             _actors.Load(_directory, _assets, _root, Layer, surfaceShader);
+            steps.Step("fixtures and actors");
             var definition = _assets.Definition;
             _cameraPath = new StageCameraPath(new StageCameraPose(
                 new System.Numerics.Vector3(definition.CameraPosition[0], definition.CameraPosition[1], definition.CameraPosition[2]),
@@ -563,6 +572,7 @@ internal sealed class GameplayStage
             _camera.transform.LookAt(_root.transform.position + StageAssets.Vector(_assets.Definition.CameraTarget));
             _crowd = new StageCrowd();
             _crowd.Load(Path.Combine(library, "crowd"), _assets, _root, _camera, pack.Crowd, surfaceShader);
+            steps.Step("cameras and crowd");
             var performance = StagePerformance.Load(Path.Combine(library, "direction", "performance.json"));
             var entry = GlobalVariables.instance?.currentSongEntry;
             try
@@ -575,6 +585,7 @@ internal sealed class GameplayStage
                 _timeline = new StageTimeline(Array.Empty<StageCue>(), "invalid venue cues");
                 MelonLogger.Warning($"GH3 stage cues could not load: {error.Message}");
             }
+            steps.Step("chart and cues");
             if (GlobalVariables.instance?.isPracticeEnabled != true)
             {
                 var lastNote = LastNoteEnd(player);
@@ -589,11 +600,15 @@ internal sealed class GameplayStage
             _band.SetTimeline(Path.Combine(library, "direction"), _timeline, pack.Waypoints, performance);
             // The main thread waits here while worker threads decode the song's clips, so no other managed work runs
             // on the main thread at the same time (see docs/ARCHITECTURE.md, packages).
+            steps.Step("band timeline");
             var (clips, clipWorker, clipWait) = _band.WaitForClips();
+            steps.Step("band clips");
             _actors.SetTimeline(_timeline);
             _audio = StageAudio.Load(Path.Combine(library, "audio"), _timeline, pack.Id, GlobalVariables.instance?.isPracticeEnabled == true);
+            steps.Step("audio");
             var stageLighting = lighting == null ? null : new StageLighting(lighting, _timeline);
             _scripts = StageScripts.Load(_directory, library, _assets, _fixtures, _actors, stageLighting, _timeline, pack.Id);
+            steps.Step("lighting and scripts");
             if (_scripts != null)
             {
                 var viewTime = double.NaN;
@@ -618,12 +633,15 @@ internal sealed class GameplayStage
                 var outlines = Path.Combine(_render, "outline.bundle");
                 if (File.Exists(outlines)) _outlines = new(_scripts, _camera, _assets, _actors, outlines);
             }
+            steps.Step("particles, movies, screen effects, outlines");
             _crowd.SetTimeline(_timeline);
             clipWait += _crowd.Clips?.Wait() ?? 0;
             _effects = new StageEffects(_assets, _root, _camera, Layer,
                 stageLighting, _fixtures, pack.Effects) { SourcePyro = _scripts?.State.SourcePyro == true };
             if (surfaceShader != null) _highwayMask = new StageHighwayMask(_assets, _camera, surfaceShader, Layer);
             _handFire = StageHandFire.Load(Path.Combine(library, "hand-fire"), _assets, _root, _camera, Layer, _band);
+            steps.Step("crowd clips, effects, hand fire");
+            steps.Finish("stage loaded");
             MelonLogger.Msg($"GH3 stage loaded: {_assets.Definition.Name}");
             MelonLogger.Msg($"GH3 stage load time: {loadClock.Elapsed.TotalMilliseconds:0} ms on the main thread " +
                 $"({StageAssets.TexturesUploaded - texturesBefore.Item1} cache textures in {StageAssets.TextureMilliseconds - texturesBefore.Item2:0} ms; " +

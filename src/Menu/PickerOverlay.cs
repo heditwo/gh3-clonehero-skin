@@ -37,7 +37,9 @@ internal sealed class PickerOverlay
     public void Show()
     {
         if (!Menus || Open) return;
+        LoadTiming.Mark("picker opens");
         Refresh();
+        LoadTiming.Mark("picker lists ready");
         Open = true;
         try
         {
@@ -325,6 +327,7 @@ internal sealed class PickerOverlay
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException) { texture = null; }
         _previews[stage.Id] = texture;
+        LoadTiming.Mark($"picker preview of {stage.Id} loaded");
         return texture;
     }
 

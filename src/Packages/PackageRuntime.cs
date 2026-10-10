@@ -38,6 +38,7 @@ internal static class PackageRuntime
         }
     }
     private static int _frames;
+    private static bool _finishMarked;
 
     // MelonLoader's Mods folder, not one below the working folder: a shortcut or a launcher can start the game from another
     // folder (on Windows the base directory then follows it), and on macOS Mods is next to the app bundle.
@@ -55,6 +56,11 @@ internal static class PackageRuntime
         while (Manager!.TryDequeueLog(out var line))
             if (line.Warning) MelonLogger.Warning(line.Text);
             else MelonLogger.Msg(line.Text);
+        if (Manager.Finished && !_finishMarked)
+        {
+            _finishMarked = true;
+            LoadTiming.Mark("package imports finished");
+        }
     }
 
     private static void Start(List<string> custom)
@@ -73,8 +79,10 @@ internal static class PackageRuntime
             Math.Clamp(Environment.ProcessorCount / 2, 1, 4));
         MelonLogger.Msg($"GH3 packages: scanning {string.Join(", ", custom.SelectMany(c => PackageManager.CustomFolders.Select(f => Path.Combine(c, f))).Append(settings.ModPackages))}; " +
             $"cache {settings.CacheRoot}; textures {(compressed ? "BC1/BC3" : "RGBA32 (BC1/BC3 not supported)")}; {settings.Platform} {settings.GraphicsApi}");
+        LoadTiming.Mark("package scan starts");
         Manager = new PackageManager(settings);
         Manager.Start();
+        LoadTiming.Mark("package scan and cache check done");
         Update();
     }
 

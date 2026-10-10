@@ -25,6 +25,7 @@ public sealed class SkinMod : MelonMod
         // MelonLoader installs its Il2Cpp hooks after this call, so the guard is in place for them.
         var guard = HookPageGuard.Install() ?? $"off (Linux only; this is {System.Runtime.InteropServices.RuntimeInformation.OSDescription})";
         MelonLogger.Msg($"Linux hook page guard: {guard}");
+        LoadTiming.Mark("mod early init");
         // MelonLoader retries a bHaptics WebSocket on a timer; disposing those sockets has crashed the CLR in this game.
         if (Environment.GetEnvironmentVariable("GH3_SKIN_KEEP_BHAPTICS") == "1") return;
         try
@@ -41,6 +42,7 @@ public sealed class SkinMod : MelonMod
 
     public override void OnInitializeMelon()
     {
+        var steps = new LoadTiming.Steps();
         var placed = HookPageGuard.TakePlaced();
         if (placed.Length > 0) MelonLogger.Msg($"Linux hook page guard: {placed.Length} hook page(s) moved to safe pages ({string.Join(", ", placed)})");
         var problem = GameCompatibility.Problem(Application.version, Application.platform.ToString());
@@ -50,6 +52,7 @@ public sealed class SkinMod : MelonMod
             return;
         }
         var bindingError = CloneHeroBindings.Bind();
+        steps.Step("bindings");
         if (bindingError != null)
         {
             MelonLogger.Warning($"GH3 skin cannot bind to Clone Hero {Application.version} on {Application.platform}: {bindingError}. The skin is off.");
@@ -60,17 +63,22 @@ public sealed class SkinMod : MelonMod
         _comboOverride = new ComboOverride(_options.ForceCombo, _options.ForceComboBreak);
         var tuning = HudTuning.Load(SkinAssetPaths.HudTuning(assetsDirectory));
         var assets = new SkinAssets(assetsDirectory);
+        steps.Step("skin textures");
         _renderer = new GameplaySpriteRenderer(assets, _options);
         _hud = new GameplayHud(assets, tuning, !_options.KeepStockFlames);
         _capture = new PreviewCapture(_options);
         _stage = new GameplayStage(assetsDirectory);
         _pickerTest = PickerTest.FromEnvironment();
+        steps.Step("renderers");
         MelonLogger.Msg($"Loaded {assets.GameplaySpriteCount} GH3 skin gameplay sprites");
+        steps.Finish("mod init");
     }
 
     public override void OnSceneWasLoaded(int buildIndex, string sceneName)
     {
         _gameplay = sceneName == "Gameplay";
+        LoadTiming.SceneLoaded(sceneName);
+        _songClockMarked = 0;
         if (_stage != null) _picker.SceneChanged(!_gameplay);
         _scene.Reset();
         _lastSongTime = double.NegativeInfinity;
@@ -85,6 +93,7 @@ public sealed class SkinMod : MelonMod
 
     public override void OnUpdate()
     {
+        LoadTiming.Frame();
         if (_stage == null) return;
         Packages.PackageRuntime.Update();
         _picker.Update();
@@ -102,6 +111,7 @@ public sealed class SkinMod : MelonMod
             !_gameplay || !_scene.TryGetPlayer(out var player, out var score))
             return;
         var songTime = player.gameManager.songTime;
+        if (LoadTiming.Enabled) MarkSongClock(songTime);
         if (songTime < _lastSongTime - 0.1)
         {
             _renderer.Reset();
@@ -121,6 +131,35 @@ public sealed class SkinMod : MelonMod
         if (BindingTrace.Enabled) BindingTrace.Update(player, state, songTime, _stage?.AudioVoices ?? "none");
         FrameProfile.EndFrame(songTime);
     }
+
+    private int _songClockMarked;
+
+    // First frame with a running song clock (the notes move), and the song start (the audio plays).
+    private void MarkSongClock(double songTime)
+    {
+        if (_songClockMarked == 0 && double.IsFinite(_lastSongTime) && songTime > _lastSongTime)
+        {
+            _songClockMarked = 1;
+            LoadTiming.Mark($"song clock runs at song time {songTime:0.00} s");
+        }
+        if (_songClockMarked == 1 && songTime >= 0)
+        {
+            _songClockMarked = 2;
+            LoadTiming.Mark("song time 0");
+            _reloadAt = LoadTiming.Reloads > 0 ? Time.realtimeSinceStartup + 4 : 0;
+        }
+        if (_reloadAt > 0 && Time.realtimeSinceStartup >= _reloadAt)
+        {
+            // GH3_SKIN_TIMING_RELOADS: load the gameplay scene again (a song change without the menus) to measure the
+            // stage load of the next song and the memory after each song.
+            _reloadAt = 0;
+            LoadTiming.Reloads--;
+            LoadTiming.Mark("gameplay scene reloads");
+            UnityEngine.SceneManagement.SceneManager.LoadScene("Gameplay");
+        }
+    }
+
+    private float _reloadAt;
 
     public override void OnApplicationQuit() => CloseStage();
 
