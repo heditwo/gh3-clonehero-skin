@@ -122,6 +122,11 @@ internal static class LiteralGuardTests
             if (previous.Length == 0 && comments[start - 1].Length == 0) break;
             if (previous.Length == 0) { start--; continue; }
             // Braces of blocks are on their own lines (Allman style); a brace after code continues an expression.
+            if (previous.Trim() == "{" && start > 1 && Regex.IsMatch(code[start - 2].TrimEnd(), @"(\bswitch|=|=>|\bnew(\[\])?|\bnew \w+(\[\])?)$"))
+            {
+                start--;
+                continue;
+            }
             if (previous.EndsWith(';') || previous.Trim() is "{" or "}") break;
             start--;
         }

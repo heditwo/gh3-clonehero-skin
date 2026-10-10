@@ -160,7 +160,7 @@ internal static class StageChartReader
             "gh3-camera", "gh3-script", "gh3-scripts-note", "gh3-triggers-note", "fret", "drum", "vocal", "crowd", "stance", "perform", "face", "clip", "walk", "strum-style", "arms", "strum", "beat", "tempo",
             "stage-diver", "actor-play", "actor-hide", "actor-show", "crowd-lighters", "crowd-animation", "crowd-hand", "gh3-audio" };
         if (file.Events.Any(cue => !types.Contains(cue.Type) || cue.Value == null || cue.Role == null ||
-                cue.Type == "gh3-note" && (!int.TryParse(cue.Value, out var note) || note < 0 || note > 127) ||
+                cue.Type == "gh3-note" && (!int.TryParse(cue.Value, out var note) || note < 0 || note > Midi.MaximumDataByte) ||
                 cue.Type == "arms" && cue.Value is not ("0" or "1" or "2")))
         {
             throw new InvalidDataException("Invalid stage cue type or value");
@@ -175,7 +175,7 @@ internal static class StageChartReader
 
     private static void CheckSize(string path)
     {
-        if (new FileInfo(path).Length > 32 * 1024 * 1024) throw new InvalidDataException("Stage chart is too large");
+        if (new FileInfo(path).Length > Midi.MaximumFileBytes) throw new InvalidDataException("Stage chart is too large");
     }
 
     public static StageTimeline ReadChart(string text) => ParseChart(text).Timeline;
@@ -183,7 +183,7 @@ internal static class StageChartReader
     private static StageChartData ParseChart(string text)
     {
         var section = "";
-        var resolution = 192;
+        var resolution = ChartNote.DefaultResolution;
         var offset = 0.0;
         var tempos = new List<Tempo>();
         var cues = new List<TickCue>();
@@ -209,7 +209,7 @@ internal static class StageChartReader
             if (section == "SyncTrack" && right.StartsWith("B "))
             {
                 var bpm = double.Parse(right[2..], CultureInfo.InvariantCulture);
-                tempos.Add(new Tempo(tick, 60000000000 / bpm));
+                tempos.Add(new Tempo(tick, ChartNote.ChartTempoNumerator / bpm));
             }
             else if (right.StartsWith("E "))
             {
@@ -223,7 +223,7 @@ internal static class StageChartReader
             else if (DirectionTrack(section) is { Length: > 0 } direction && right.StartsWith("N "))
             {
                 var fields = right.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                if (fields.Length != 3 || !int.TryParse(fields[1], out var note) || note is < 0 or > 127 ||
+                if (fields.Length != 3 || !int.TryParse(fields[1], out var note) || note is < 0 or > Midi.MaximumDataByte ||
                     !long.TryParse(fields[2], out var length) || length < 0)
                     throw new InvalidDataException($"Invalid {section} direction note at tick {tick}");
                 cues.Add(new TickCue(tick, "", note, direction, Length: length));
@@ -274,8 +274,8 @@ internal static class StageChartReader
         var format = cursor.UInt16();
         var trackCount = cursor.UInt16();
         var resolution = cursor.UInt16();
-        if (format > 1 || (resolution & 0x8000) != 0) throw new InvalidDataException("The venue reader requires MIDI format 0/1 with PPQN timing");
-        cursor.Skip((int)headerSize - 6);
+        if (format > 1 || (resolution & Midi.SmpteDivision) != 0) throw new InvalidDataException("The venue reader requires MIDI format 0/1 with PPQN timing");
+        cursor.Skip((int)headerSize - Midi.HeaderSize);
         var tempos = new List<Tempo>();
         var cues = new List<TickCue>();
         var sections = new List<(long Tick, string Name)>();
@@ -298,7 +298,7 @@ internal static class StageChartReader
             {
                 tick = checked(tick + reader.Variable());
                 var status = reader.Peek();
-                if ((status & 0x80) != 0) reader.Byte();
+                if ((status & Midi.StatusBit) != 0) reader.Byte();
                 else
                 {
                     if (running == 0) throw new InvalidDataException("MIDI running status has no status byte");
@@ -309,35 +309,35 @@ internal static class StageChartReader
                     running = 0;
                     var type = reader.Byte();
                     var payload = reader.Bytes(reader.Variable());
-                    if (type == 0x03) trackName = Encoding.UTF8.GetString(payload).Trim().ToUpperInvariant();
-                    else if (type is 0x01 or 0x06) trackCues.Add(new TickCue(tick, Encoding.UTF8.GetString(payload)));
-                    else if (type == 0x05 && trackName is ("PART VOCALS" or "HARM1")) trackCues.Add(new TickCue(tick, Encoding.UTF8.GetString(payload), Type: "lyric"));
-                    else if (type == 0x51)
+                    if (type == Midi.MetaTrackName) trackName = Encoding.UTF8.GetString(payload).Trim().ToUpperInvariant();
+                    else if (type is Midi.MetaText or Midi.MetaMarker) trackCues.Add(new TickCue(tick, Encoding.UTF8.GetString(payload)));
+                    else if (type == Midi.MetaLyric && trackName is ("PART VOCALS" or "HARM1")) trackCues.Add(new TickCue(tick, Encoding.UTF8.GetString(payload), Type: "lyric"));
+                    else if (type == Midi.MetaTempo)
                     {
                         if (payload.Length != 3) throw new InvalidDataException("Invalid MIDI tempo");
-                        tempos.Add(new Tempo(tick, payload[0] * 65536 + payload[1] * 256 + payload[2]));
+                        tempos.Add(new Tempo(tick, payload[0] << 16 | payload[1] << 8 | payload[2]));
                     }
-                    else if (type == 0x2F) break;
+                    else if (type == Midi.MetaEndOfTrack) break;
                 }
-                else if (status is 0xF0 or 0xF7)
+                else if (status is Midi.SystemExclusive or Midi.SystemExclusiveEscape)
                 {
                     running = 0;
                     reader.Skip(reader.Variable());
                 }
-                else if (status >= 0x80 && status < 0xF0)
+                else if (status >= Midi.StatusBit && status < Midi.SystemExclusive)
                 {
                     running = status;
                     var first = reader.Byte();
-                    var second = (status & 0xF0) is 0xC0 or 0xD0 ? 0 : reader.Byte();
-                    if (first > 127 || second > 127) throw new InvalidDataException("Invalid MIDI data byte");
-                    var noteKey = (status & 15) * 128 + first;
-                    if ((status & 0xF0) == 0x90 && second > 0)
+                    var second = (status & Midi.StatusMask) is Midi.ProgramChange or Midi.ChannelPressure ? 0 : reader.Byte();
+                    if (first > Midi.MaximumDataByte || second > Midi.MaximumDataByte) throw new InvalidDataException("Invalid MIDI data byte");
+                    var noteKey = (status & Midi.ChannelMask) * 128 + first;
+                    if ((status & Midi.StatusMask) == Midi.NoteOn && second > 0)
                     {
                         if (!active.TryGetValue(noteKey, out var starts)) active[noteKey] = starts = new();
                         starts.Enqueue(trackCues.Count);
                         trackCues.Add(new TickCue(tick, "", first, Velocity: second));
                     }
-                    else if ((status & 0xF0) == 0x80 || (status & 0xF0) == 0x90 && second == 0)
+                    else if ((status & Midi.StatusMask) == Midi.NoteOff || (status & Midi.StatusMask) == Midi.NoteOn && second == 0)
                     {
                         if (active.TryGetValue(noteKey, out var starts) && starts.Count > 0)
                         {
@@ -365,9 +365,9 @@ internal static class StageChartReader
             else if (trackName is not ("VENUE" or "EVENTS")) cues.AddRange(trackCues.Where(c => c.Note < 0 && Gh3Text(c.Text)));
             if (trackName is "PART VOCALS" or "HARM1") vocals[trackName] = MidiVocals(trackCues, resolution).ToList();
             if (trackName is "PART GUITAR" or "PART BASS" or "PART RHYTHM")
-                cues.AddRange(trackCues.Where(c => c.Note is >= 96 and <= 100).Select(c => c with
+                cues.AddRange(trackCues.Where(c => c.Note is >= ChartNote.ExpertGreen and <= ChartNote.ExpertOrange).Select(c => c with
                 {
-                    Type = "strum", Role = trackName == "PART GUITAR" ? "guitarist" : "bassist", Note = 1 << (c.Note - 96)
+                    Type = "strum", Role = trackName == "PART GUITAR" ? "guitarist" : "bassist", Note = 1 << (c.Note - ChartNote.ExpertGreen)
                 }));
         }
         var venue = StageRockBandVenue.Decode(venueNotes, venueTexts, resolution, end, out var diagnostic, out var custom, Clock(tempos, resolution, 0));
@@ -383,10 +383,10 @@ internal static class StageChartReader
     private static IEnumerable<TickCue> MidiVocals(List<TickCue> track, int resolution)
     {
         var lyrics = track.Where(cue => cue.Note < 0 && (cue.Type == "lyric" || !cue.Text.TrimStart().StartsWith('['))).ToArray();
-        var notes = track.Where(cue => cue.Note is >= 36 and <= 84).OrderBy(cue => cue.Tick).ToArray();
+        var notes = track.Where(cue => cue.Note is >= ChartNote.VocalLowest and <= ChartNote.VocalHighest).OrderBy(cue => cue.Tick).ToArray();
         if (notes.Length == 0)
         {
-            var phrases = track.Where(cue => cue.Note is 105 or 106).SelectMany(cue => new[] { (cue.Tick, "phrase_start"), (cue.Tick + cue.Length, "phrase_end") });
+            var phrases = track.Where(cue => cue.Note is ChartNote.VocalPhrase or ChartNote.VocalPhrase2).SelectMany(cue => new[] { (cue.Tick, "phrase_start"), (cue.Tick + cue.Length, "phrase_end") });
             return ChartLyrics(lyrics.Select(cue => (cue.Tick, "lyric " + cue.Text)).Concat(phrases).ToList(), resolution);
         }
         var text = lyrics.GroupBy(cue => cue.Tick).ToDictionary(group => group.Key, group => group.First().Text.Trim());
@@ -415,15 +415,15 @@ internal static class StageChartReader
         {
             long previous = 0;
             var elapsed = offset;
-            var tempo = 500000.0;
+            var tempo = Midi.DefaultMicrosecondsPerBeat;
             foreach (var change in changes)
             {
                 if (change.Tick > tick) break;
-                elapsed += (change.Tick - previous) * tempo / (resolution * 1000000.0);
+                elapsed += (change.Tick - previous) * tempo / (resolution * Midi.MicrosecondsPerSecond);
                 previous = change.Tick;
                 tempo = change.Microseconds;
             }
-            return elapsed + (tick - previous) * tempo / (resolution * 1000000.0);
+            return elapsed + (tick - previous) * tempo / (resolution * Midi.MicrosecondsPerSecond);
         };
     }
 
@@ -436,24 +436,24 @@ internal static class StageChartReader
         var index = 0;
         long lastTick = 0;
         var seconds = offset;
-        var rate = 500000.0;
+        var rate = Midi.DefaultMicrosecondsPerBeat;
         var output = new List<StageCue>();
         var noteStrums = new List<StageCue>();
         var sung = new List<StageCue>();
         var clock = Clock(tempos, resolution, offset);
         double Seconds(long tick) => clock(tick);
         var timing = changes.Select(tempo => new StageCue(Seconds(tempo.Tick), "tempo",
-            (60000000 / tempo.Microseconds).ToString(CultureInfo.InvariantCulture))).ToArray();
+            (Midi.MicrosecondsPerMinute / tempo.Microseconds).ToString(CultureInfo.InvariantCulture))).ToArray();
         foreach (var cue in cues.OrderBy(c => c.Tick))
         {
             while (index < changes.Length && changes[index].Tick <= cue.Tick)
             {
                 var change = changes[index++];
-                seconds += (change.Tick - lastTick) * rate / (resolution * 1000000.0);
+                seconds += (change.Tick - lastTick) * rate / (resolution * Midi.MicrosecondsPerSecond);
                 lastTick = change.Tick;
                 rate = change.Microseconds;
             }
-            var time = seconds + (cue.Tick - lastTick) * rate / (resolution * 1000000.0);
+            var time = seconds + (cue.Tick - lastTick) * rate / (resolution * Midi.MicrosecondsPerSecond);
             if (cue.Type == "sing")
             {
                 sung.Add(new StageCue(time, "sing", cue.Text, Seconds(checked(cue.Tick + cue.Length)) - time, "singer"));
@@ -507,8 +507,8 @@ internal static class StageChartReader
             for (var i = 0; i < 4; i++)
             {
                 var value = Byte();
-                result = (result << 7) | (value & 127);
-                if (value < 128) return result;
+                result = (result << 7) | (value & Midi.MaximumDataByte);
+                if (value < Midi.StatusBit) return result;
             }
             throw new InvalidDataException("Invalid MIDI variable length value");
         }

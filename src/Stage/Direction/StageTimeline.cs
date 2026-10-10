@@ -1,5 +1,6 @@
 namespace Gh3Skin;
 
+// A light color (linear 0-1 RGB).
 internal readonly record struct StageColor(float R, float G, float B)
 {
     public static StageColor Mix(StageColor a, StageColor b, double amount)
@@ -10,6 +11,7 @@ internal readonly record struct StageColor(float R, float G, float B)
         return new(a.R + (b.R - a.R) * t, a.G + (b.G - a.G) * t, a.B + (b.B - a.B) * t);
     }
 
+    // Tuned: the colors of the GH3 color names and moods, by eye against GH3 frames.
     public static StageColor Named(string name) => name switch
     {
         "red" => new(1, 0.12f, 0.06f),
@@ -30,8 +32,23 @@ internal readonly record struct StageLightFrame(double Time, StageColor From, St
     public StageColor Sample(double time) => StageColor.Mix(From, To, Blend <= 0 ? 1 : (time - Time) / Blend);
 }
 
+// The song's direction cues on the song clock: camera, lighting, effects, and the per-role tracks, with lookups by time.
 internal sealed class StageTimeline
 {
+    private const int MaximumRepeat = 100;
+    private const int MaximumMidiValue = 127;
+    private const int MaximumBlendSeconds = 30;
+    // MIDI velocity of a note without one.
+    private const int DefaultVelocity = 100;
+    // Tempo limits in beats per minute, and the tempo of a song without a tempo map.
+    private const int MinimumTempo = 20;
+    private const int MaximumTempo = 400;
+    private const int DefaultTempo = 115;
+    // Tuned: every second snapshot of a mood is tinted toward magenta (chorus) or cyan by this amount.
+    private const double AlternateSnapshotTint = 0.65;
+    // Tuned: the fallback strobe (stages without GH3 lighting) is on for 0.08 s of each 0.16 s.
+    private const double StrobePeriod = 0.16;
+    private const double StrobeOnTime = 0.08;
     private readonly StageLightFrame[] _lights;
     public StageCue[] Effects { get; }
     public StageCue[] Cameras { get; }
@@ -74,8 +91,8 @@ internal sealed class StageTimeline
                 }
                 if (cue.Type is "vocal" or "crowd" or "gh3-scripts-note" or "gh3-triggers-note" ||
                     cue.Type == "gh3-note" && (!int.TryParse(cue.Value, out var light) || FromGh3Note(cue.Time, light) == null) ||
-                    cue.Type == "fret" && (!int.TryParse(cue.Value, out var fret) || fret is not (>= 101 and <= 110) and not (>= 118 and <= 127)) ||
-                    cue.Type == "drum" && (!int.TryParse(cue.Value, out var drum) || drum is not (>= 36 and <= 45) and not (>= 48 and <= 57)))
+                    cue.Type == "fret" && (!int.TryParse(cue.Value, out var fret) || fret is not (>= Gh3TrackNote.BassFretFirst and <= Gh3TrackNote.BassFretLast) and not (>= Gh3TrackNote.GuitarFretFirst and <= Gh3TrackNote.GuitarFretLast)) ||
+                    cue.Type == "drum" && (!int.TryParse(cue.Value, out var drum) || drum is not (>= Gh3TrackNote.DrumLeftFirst and <= Gh3TrackNote.DrumLeftLast) and not (>= Gh3TrackNote.DrumKick and <= Gh3TrackNote.DrumRightLast)))
                     Report($"GH3 {cue.Type} note {cue.Value}: no playback handler");
                 continue;
             }
@@ -90,8 +107,8 @@ internal sealed class StageTimeline
         _commandDiagnostics = diagnostics.Select(item => $"{item.Key} ({item.Value} events; source data retained).").ToArray();
         var ordered = playback.ToArray();
         if (authored.Length > StageLimits.MaximumCount || authored.Concat(ordered).Any(cue => !double.IsFinite(cue.Time) || Math.Abs(cue.Time) > StageLimits.MaximumSeconds ||
-                !double.IsFinite(cue.Duration) || cue.Duration < 0 || cue.Duration > StageLimits.MaximumSeconds || cue.Count is < 1 or > 100 ||
-                cue.DisableArms is < 0 or > 2 || cue.Velocity is < 0 or > 127))
+                !double.IsFinite(cue.Duration) || cue.Duration < 0 || cue.Duration > StageLimits.MaximumSeconds || cue.Count is < 1 or > MaximumRepeat ||
+                cue.DisableArms is < 0 or > 2 || cue.Velocity is < 0 or > MaximumMidiValue))
             throw new InvalidDataException("Invalid stage cue time or count");
         CueCount = authored.Length;
         Cues = authored;
@@ -100,7 +117,7 @@ internal sealed class StageTimeline
         _tracks = ordered.GroupBy(cue => cue.Type + "/" + cue.Role).ToDictionary(g => g.Key, g => g.ToArray());
         Cameras = ordered.Where(cue => cue.Type is "camera" or "gh3-camera").ToArray();
         if (Cameras.Any(cue => cue.Type == "camera" && !StageCameraPath.ValidShot(cue.Value) ||
-                cue.Type == "gh3-camera" && (!int.TryParse(cue.Value, out var pitch) || pitch is < 0 or > 127)))
+                cue.Type == "gh3-camera" && (!int.TryParse(cue.Value, out var pitch) || pitch is < 0 or > MaximumMidiValue)))
             throw new InvalidDataException("Invalid stage camera shot");
         var effects = new List<StageCue>();
         var lights = new List<StageLightFrame>();
@@ -124,7 +141,7 @@ internal sealed class StageTimeline
             {
                 case "blend":
                     if (!double.TryParse(cue.Value, System.Globalization.NumberStyles.Float,
-                            System.Globalization.CultureInfo.InvariantCulture, out blend) || !double.IsFinite(blend) || blend < 0 || blend > 30)
+                            System.Globalization.CultureInfo.InvariantCulture, out blend) || !double.IsFinite(blend) || blend < 0 || blend > MaximumBlendSeconds)
                         throw new InvalidDataException("Invalid light blend time");
                     continue;
                 case "lighting":
@@ -141,7 +158,7 @@ internal sealed class StageTimeline
             var color = StageColor.Named(colorOverride ?? mood);
             if (mood == "blackout") color = StageColor.Named("blackout");
             else if (colorOverride == null && snapshot % 2 == 1)
-                color = StageColor.Mix(color, StageColor.Named(mood == "chorus" ? "magenta" : "cyan"), 0.65);
+                color = StageColor.Mix(color, StageColor.Named(mood == "chorus" ? "magenta" : "cyan"), AlternateSnapshotTint);
             frame = new StageLightFrame(cue.Time, frame.Sample(cue.Time), color,
                 strobe || mood == "blackout" ? 0 : blend, strobe, lit);
             lights.Add(frame);
@@ -157,15 +174,15 @@ internal sealed class StageTimeline
         if (!int.TryParse(cue.Value, out var note)) return null;
         string command;
         var parameters = new List<Gh3QbField>();
-        if (cue.Type == "drum" && note == 70) command = "Countoff_NoteMap";
-        else if (cue.Type == "crowd" && note is >= 72 and <= 80)
+        if (cue.Type == "drum" && note == Gh3TrackNote.DrumCountoff) command = "Countoff_NoteMap";
+        else if (cue.Type == "crowd" && note is >= Gh3TrackNote.CrowdFirst and <= Gh3TrackNote.CrowdLast)
         {
             command = "GH3_Crowd_Event_Listener";
-            parameters.Add(new(Gh3Checksum.Value("event_type"), new(Gh3QbType.Checksum, -1, Gh3Checksum.Value(new[] { "applause", "surge_fast", "surge_slow" }[(note - 72) % 3]))));
-            if (note is <= 74 or >= 78) parameters.Add(new(Gh3Checksum.Value("override_state"), new(Gh3QbType.Integer, -1, 1u)));
+            parameters.Add(new(Gh3Checksum.Value("event_type"), new(Gh3QbType.Checksum, -1, Gh3Checksum.Value(new[] { "applause", "surge_fast", "surge_slow" }[(note - Gh3TrackNote.CrowdFirst) % 3]))));
+            if (note is <= Gh3TrackNote.CrowdOverrideLast or >= Gh3TrackNote.CrowdOverrideFirst) parameters.Add(new(Gh3Checksum.Value("override_state"), new(Gh3QbType.Integer, -1, 1u)));
         }
         else return null;
-        parameters.Add(new(Gh3Checksum.Value("velocity"), new(Gh3QbType.Integer, -1, (uint)(cue.Velocity ?? 100))));
+        parameters.Add(new(Gh3Checksum.Value("velocity"), new(Gh3QbType.Integer, -1, (uint)(cue.Velocity ?? DefaultVelocity))));
         parameters.Add(new(Gh3Checksum.Value("length"), new(Gh3QbType.Integer, -1, (uint)Math.Round(cue.Duration * 1000))));
         var call = new Gh3ScriptEvent(cue.Type == "drum" ? "drums" : "crowd", new(Gh3QbType.Structure, -1, new[] {
             new Gh3QbField(Gh3Checksum.Value("time"), new(Gh3QbType.Integer, -1, unchecked((uint)(int)Math.Round(cue.Time * 1000)))),
@@ -194,10 +211,10 @@ internal sealed class StageTimeline
             var tempos = Track("tempo");
             var at = UpperBound(tempos, time, c => c.Time) - 1;
             return at >= 0 && double.TryParse(tempos[at].Value, System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture, out var bpm) && double.IsFinite(bpm) ? Math.Clamp(bpm, 20, 400) : 115;
+                System.Globalization.CultureInfo.InvariantCulture, out var bpm) && double.IsFinite(bpm) ? Math.Clamp(bpm, MinimumTempo, MaximumTempo) : DefaultTempo;
         }
         var index = Math.Clamp(UpperBound(Beats, time, t => t) - 1, 0, Beats.Length - 2);
-        return Math.Clamp(60 / (Beats[index + 1] - Beats[index]), 20, 400);
+        return Math.Clamp(60 / (Beats[index + 1] - Beats[index]), MinimumTempo, MaximumTempo);
     }
 
     public StageColor Lighting(double time)
@@ -212,7 +229,7 @@ internal sealed class StageTimeline
         }
         if (lo == 0) return StageColor.Named("intro");
         var frame = _lights[lo - 1];
-        if (frame.Strobe && (!frame.Lit || (time - frame.Time) % 0.16 >= 0.08)) return new(0, 0, 0);
+        if (frame.Strobe && (!frame.Lit || (time - frame.Time) % StrobePeriod >= StrobeOnTime)) return new(0, 0, 0);
         return frame.Sample(time);
     }
 
@@ -244,12 +261,12 @@ internal sealed class StageTimeline
 
     public static StageCue? FromGh3Note(double time, int note) => note switch
     {
-        56 => new(time, "pyro"),
-        57 or 58 => new(time, "snapshot"),
-        60 => new(time, "strobe-toggle"),
-        >= 61 and <= 69 => new(time, "color", new[] { "purple", "orange", "off", "magenta", "white", "yellow", "blue", "red", "green" }[note - 61]),
-        >= 70 and <= 76 => new(time, "lighting", new[] { "strobe", "flare", "blackout", "solo", "chorus", "verse", "intro" }[note - 70]),
-        >= 39 and <= 53 => new(time, "blend", new[] { "0.15", "0", "0.05", "0.1", "0.15", "0.2", "0.25", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1" }[note - 39]),
+        Gh3LightshowNote.Pyro => new(time, "pyro"),
+        Gh3LightshowNote.NextState or Gh3LightshowNote.NextSnapshot => new(time, "snapshot"),
+        Gh3LightshowNote.StrobeToggle => new(time, "strobe-toggle"),
+        >= Gh3LightshowNote.ColorFirst and <= Gh3LightshowNote.ColorLast => new(time, "color", Gh3LightshowNote.Colors[note - Gh3LightshowNote.ColorFirst]),
+        >= Gh3LightshowNote.MoodFirst and <= Gh3LightshowNote.MoodLast => new(time, "lighting", Gh3LightshowNote.Moods[note - Gh3LightshowNote.MoodFirst]),
+        >= Gh3LightshowNote.BlendFirst and <= Gh3LightshowNote.BlendLast => new(time, "blend", Gh3LightshowNote.BlendTimes[note - Gh3LightshowNote.BlendFirst]),
         _ => null
     };
 

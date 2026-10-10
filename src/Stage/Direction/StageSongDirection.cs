@@ -19,8 +19,8 @@ internal static class StageSongDirection
         "sing" => "sing/" + cue.Role,
         "fret" when int.TryParse(cue.Value, out var note) => note switch
         {
-            >= 118 and <= 127 => "fret/guitarist",
-            >= 101 and <= 110 => "fret/bassist",
+            >= Gh3TrackNote.GuitarFretFirst and <= Gh3TrackNote.GuitarFretLast => "fret/guitarist",
+            >= Gh3TrackNote.BassFretFirst and <= Gh3TrackNote.BassFretLast => "fret/bassist",
             _ => "fret"
         },
         "drum" => "drum",
@@ -102,9 +102,9 @@ internal static class StageSongDirection
         {
             "pyro" or "sparks" or "fireworks" or "smoke" or "flash" or "snapshot" or "strobe-toggle" or "beat" => true,
             "arms" => cue.Value is "0" or "1" or "2",
-            "strum" => int.TryParse(cue.Value, out var mask) && mask is >= 0 and <= 31,
+            "strum" => int.TryParse(cue.Value, out var mask) && mask is >= 0 and <= Gh3TrackNote.LaneMask,
             "drum" or "fret" or "vocal" or "crowd" or "gh3-note" or "gh3-scripts-note" or "gh3-triggers-note" =>
-                int.TryParse(cue.Value, out var note) && note is >= 0 and <= 127,
+                int.TryParse(cue.Value, out var note) && note is >= 0 and <= Midi.MaximumDataByte,
             "tempo" => double.TryParse(cue.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var bpm) && double.IsFinite(bpm) && bpm > 0,
             "clip" or "face" => cue.Value.Length == 8 && cue.Value.All(Uri.IsHexDigit),
             "crowd-lighters" => cue.Value is "start" or "stop" or "on" or "off",

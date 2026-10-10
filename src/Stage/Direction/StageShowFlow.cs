@@ -10,6 +10,8 @@ internal static class StageShowFlow
     public const double WinDelay = 3.1;
     // waitAndKillHighway hides the highway 0.5 s after the "You Rock!" text appears.
     public const double HighwayHideDelay = 0.5;
+    // Orders a queued cue after the cue at the same time.
+    private const double QueueAfter = 0.001;
     private static readonly string[] Members = { "guitarist", "bassist", "singer", "drummer" };
 
     public static double WinTime(double lastNoteEnd) => lastNoteEnd + WinDelay;
@@ -47,15 +49,15 @@ internal static class StageShowFlow
         foreach (var role in Members)
         {
             yield return new(start, "stance", role == "drummer" ? "intro" : intro, Role: role, Immediate: true);
-            yield return new(start + 0.001, "stance", "stance_a", Role: role);
+            yield return new(start + QueueAfter, "stance", "stance_a", Role: role);
         }
-        // GH_SFX_Intro_WarmUp starts 100 ms into the transition. intro_sequence_props: the highway rises at -2000 ms
+        // GH3: GH_SFX_Intro_WarmUp starts 100 ms into the transition. intro_sequence_props: the highway rises at -2000 ms
         // (its sound 1.5 s before the move ends), the buttons ripple up at -800 ms, and the HUD kick plays when the
         // 200 ms HUD move from -400 ms ends.
         yield return Audio(start + 0.1, "GH_SFX_Intro_WarmUp");
-        yield return Audio(-1.5, "SoundEvent", ("event", "Song_Intro_Highway_Up"));
-        yield return Audio(-0.8, "SoundEvent", ("event", "Notes_Ripple_Up_SFX"));
-        yield return Audio(-0.2, "SoundEvent", ("event", "Song_Intro_Kick_SFX"));
+        yield return Audio(-1.5, "SoundEvent", ("event", "Song_Intro_Highway_Up")); // GH3: see above
+        yield return Audio(-0.8, "SoundEvent", ("event", "Notes_Ripple_Up_SFX")); // GH3: see above
+        yield return Audio(-0.2, "SoundEvent", ("event", "Song_Intro_Kick_SFX")); // GH3: see above
     }
 
     private static IEnumerable<StageCue> Win(double time, string venue)

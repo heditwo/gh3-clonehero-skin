@@ -12,7 +12,7 @@ internal sealed class OriginalCameraPoint
 {
     public float[] Position { get; set; } = Array.Empty<float>();
     public float[] Rotation { get; set; } = Array.Empty<float>();
-    public float FieldOfView { get; set; } = 72;
+    public float FieldOfView { get; set; } = 72; // GH3: the morph key default hfov
     public string LockTo { get; set; } = "world";
     public string LockBone { get; set; } = "00000000";
     public string LookAt { get; set; } = "";
@@ -54,6 +54,8 @@ internal sealed class StageCameraBank
     public Dictionary<string, OriginalCameraShot[]> Arrays { get; set; } = new();
     public Dictionary<int, OriginalCameraSelector> Notes { get; set; } = new();
 
+    private const float MaximumFieldOfView = 170;
+
     public static StageCameraBank? Load(string path)
     {
         if (!File.Exists(path)) return null;
@@ -75,7 +77,7 @@ internal sealed class StageCameraBank
             foreach (var point in shot.Points)
                 if (point.Position.Length != 3 || point.Rotation.Length != 4 || point.ScreenOffset.Length != 2 ||
                     !point.Position.Concat(point.Rotation).Concat(point.ScreenOffset).All(float.IsFinite) ||
-                    !float.IsFinite(point.FieldOfView) || point.FieldOfView is <= 0 or >= 170)
+                    !float.IsFinite(point.FieldOfView) || point.FieldOfView is <= 0 or >= MaximumFieldOfView)
                     throw new InvalidDataException("Invalid original camera point");
         }
         return bank;
@@ -85,8 +87,20 @@ internal sealed class StageCameraBank
 internal sealed class StageCameraPath
 {
     private sealed record Cut(double Time, double Duration, OriginalCameraShot Shot, int Zoom);
-    // GH3.exe seeds its script random generator with this value at boot (0x4016f3).
-    private const int BootSeed = 0x06680bf3;
+    private const int BootSeed = Gh3Random.BootSeed;
+    // GH3: CameraCuts_CalcTime, a camera note longer than 200 ms gives the cut length; else RandomRange(3, 8) seconds
+    // (3 + Rnd(6)), extended to the next lightshow note 58.
+    private const double MinimumNoteLength = 0.2;
+    private const int MinimumCutSeconds = 3;
+    private const int CutSecondsRange = 6;
+    private const string NextSnapshotNote = "58";
+    // GH3: CameraCuts_HandCam draws a zoom of 0-100.
+    private const int ZoomRange = 101;
+    // A cut is never shorter than this, so that the path always moves forward.
+    private const double MinimumCut = 0.001;
+    // Below this squared length the up axis is parallel to the view direction.
+    private const float ParallelTolerance = 0.00001f;
+
     // GH3 starts a cut on the first frame at or after a note, so a timer that ends within a frame of a note does not cut first.
     private const double FrameTolerance = 1.0 / 60;
     private readonly StageCameraPose _fixed;
@@ -102,7 +116,7 @@ internal sealed class StageCameraPath
     private double _next;
     private Gh3Random _random = new(BootSeed);
     private readonly string _forcedShot = Environment.GetEnvironmentVariable("GH3_SKIN_CAMERA_SHOT") ?? "";
-    public float Aspect { get; set; } = 16f / 9;
+    public float Aspect { get; set; } = 16f / 9; // GH3: 16:9 (GH3.exe 0x47b3a6)
     public int Seed { get; init; } = BootSeed;
 
     public StageCameraPath(StageCameraPose fixedPose, IReadOnlyDictionary<string, Vector3> band, string mode = "auto",
@@ -174,6 +188,7 @@ internal sealed class StageCameraPath
             position += Vector(shot.StepDirection) * MathF.Sin((float)(age / shot.StepTime) * shot.StepCount * 2 * MathF.PI);
         if (cut.Zoom >= 0)
         {
+            // GH3: CameraCuts_HandCam, the zoom thresholds and fields of view of long shots and mid shots.
             var zoom = shot.Type == "longshot" ? cut.Zoom < 25 ? 62 : cut.Zoom > 95 ? 78 : a.Fov :
                 cut.Zoom < 5 ? 64 : cut.Zoom > 85 ? 82 : a.Fov;
             var zoomed = Resolve(points[0], fov: zoom);
@@ -199,7 +214,7 @@ internal sealed class StageCameraPath
                 if (selector.Array.Length == 0) _enabled = selector.Enable;
                 else { _selector = selector; _enabled = true; }
             }
-            if (cue.Duration > 0.2) length = cue.Duration;
+            if (cue.Duration > MinimumNoteLength) length = cue.Duration;
         }
         if (!_enabled && _cuts.Count > 0)
         {
@@ -218,18 +233,18 @@ internal sealed class StageCameraPath
         var duration = length;
         if (duration <= 0)
         {
-            duration = 3 + _random.Next(6);
-            var downbeat = timeline.Cues.FirstOrDefault(c => c.Type == "gh3-note" && c.Value == "58" && c.Time > start + duration);
+            duration = MinimumCutSeconds + _random.Next(CutSecondsRange);
+            var downbeat = timeline.Cues.FirstOrDefault(c => c.Type == "gh3-note" && c.Value == NextSnapshotNote && c.Time > start + duration);
             if (downbeat != null) duration = downbeat.Time - start;
         }
-        _cuts.Add(new(start, Math.Max(0.001, duration), shot, Zoom(shot)));
+        _cuts.Add(new(start, Math.Max(MinimumCut, duration), shot, Zoom(shot)));
         _next = _enabled ? start + duration : double.PositiveInfinity;
         if (_mode == "auto") _next = NextCue(timeline, _next);
-        if (_next <= start) _next = start + 0.001;
+        if (_next <= start) _next = start + MinimumCut;
     }
 
     // CameraCuts_HandCam draws the zoom after CameraCuts_CalcTime, and only for LongShot and Mid shots.
-    private int Zoom(OriginalCameraShot shot) => shot.Control == "HandCam" && shot.Type is "longshot" or "mid" ? _random.Next(101) : -1;
+    private int Zoom(OriginalCameraShot shot) => shot.Control == "HandCam" && shot.Type is "longshot" or "mid" ? _random.Next(ZoomRange) : -1;
 
     // The exporter writes "normal" for shots without a GH3 Type, and GH3 then stores None as the last type.
     private static string LastType(OriginalCameraShot shot) => shot.Type == "normal" ? "" : shot.Type;
@@ -267,7 +282,7 @@ internal sealed class StageCameraPath
             var target = Anchor(point.LookAt, point.LookBone).Position;
             var forward = Vector3.Normalize(target - position);
             var right = Vector3.Cross(Vector3.Transform(Vector3.UnitY, rotation), forward);
-            if (right.LengthSquared() > 0.00001f)
+            if (right.LengthSquared() > ParallelTolerance)
             {
                 right = Vector3.Normalize(right);
                 var up = Vector3.Cross(forward, right);
@@ -288,6 +303,7 @@ internal sealed class StageCameraPath
         new BandPose(_band.GetValueOrDefault(role, Vector3.Zero), Quaternion.Identity);
 
     // Custom stages have no GH3 note table; GH3 camera notes (also the mapped Rock Band cuts) select their portable groups.
+    // GH3: the notes of CameraCuts_NoteMapping (Gh3CameraNote); docs/CUSTOM-CONTENT.md#camera-cuts lists the groups.
     private static OriginalCameraSelector? PortableNote(int note) => note switch
     {
         77 => new() { Enable = true },

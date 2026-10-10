@@ -19,7 +19,7 @@ internal static class StageGh3Events
             var notes = song.Array(section);
             if (notes.Count % 3 != 0) throw new InvalidDataException("Invalid native instrument note array.");
             for (var i = 0; i < notes.Count; i += 3)
-                cues.Add(new(notes[i].Integer / 1000.0, "strum", (notes[i + 2].Integer & 31).ToString(CultureInfo.InvariantCulture),
+                cues.Add(new(notes[i].Integer / 1000.0, "strum", (notes[i + 2].Integer & Gh3TrackNote.LaneMask).ToString(CultureInfo.InvariantCulture),
                     notes[i + 1].Integer / 1000.0, role));
         }
         foreach (var beat in song.Array("fretbars")) cues.Add(new(beat.Integer / 1000.0, "beat"));

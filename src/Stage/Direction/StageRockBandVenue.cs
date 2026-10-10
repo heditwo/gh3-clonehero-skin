@@ -14,6 +14,8 @@ internal static class StageRockBandVenue
     public const double MaxCameraHold = 8;
     private const double DefaultBlend = Gh3CommandDispatch.DefaultLightBlend;
     private const int StepLimit = 4096;
+    private const string NextSnapshotNote = "58"; // GH3: Gh3LightshowNote.NextSnapshot
+    private const string StrobeToggleNote = "60"; // GH3: Gh3LightshowNote.StrobeToggle
     private static readonly Regex Lighting = new(@"^lighting\s*\((.*)\)$", RegexOptions.CultureInvariant);
     private static readonly Regex Cut = new(@"^(?:do_(?:directed|optional)_cut\s+)?(directed_\w+)$", RegexOptions.CultureInvariant);
     private static readonly Regex Coop = new(@"^coop_([a-z]+)_(behind|near|far|closeup_hand|closeup_head|closeup)$", RegexOptions.CultureInvariant);
@@ -27,12 +29,18 @@ internal static class StageRockBandVenue
     // then a mood note a moment later). The peak is a fraction of the flare snapshot, not a white-out.
     private const double PulseRise = DefaultBlend;
     // WCAG 2.3.1: at most three flashes in any one second.
-    private static double MinPulseGap(bool reduce) => reduce ? 1 : 0.34;
-    private static double PulsePeak(bool reduce) => reduce ? 0.2 : 0.4;
+    private static double MinPulseGap(bool reduce) => reduce ? 1 : WcagFlashGap;
+    private const double WcagFlashGap = 0.34;
+    // Tuned: the pulse peak as a fraction of the flare snapshot (reduced: 0.2), and the shortest strobe toggle gap.
+    private static double PulsePeak(bool reduce) => reduce ? ReducedPulsePeak : NormalPulsePeak;
+    private const double NormalPulsePeak = 0.4;
+    private const double ReducedPulsePeak = 0.2;
     private const double MinToggleGap = 0.2;
     // Player option (PlayerChoices.ReduceFlashing): weaker and rarer flare pulses, and slower strobes.
     public static bool ReduceFlashing { get; set; }
 
+    // Rock Band lighting cue to GH3 mood and color, with blends and step rates (Tuned: the J rows of
+    // docs/CUSTOM-CONTENT.md#lighting).
     private static readonly Dictionary<string, Light> Lights = new()
     {
         [""] = new("verse", Keyframed: true),
@@ -101,11 +109,11 @@ internal static class StageRockBandVenue
             var pitches = group.Select(n => n.Note).ToHashSet();
             foreach (var note in pitches)
             {
-                if (note is >= 96 and <= 110) Ignore("post-processing");
-                else if (note is >= 85 and <= 87) Ignore("sing-along");
-                else if (note is >= 37 and <= 41) Ignore("spotlight");
-                else if (note is >= 48 and <= 50) keyframes.Add((group.Key, note == 48 ? "next" : note == 49 ? "prev" : "first"));
-                else if (note is not (>= 60 and <= 64 or >= 70 and <= 73)) Ignore("other note");
+                if (note is >= RockBandVenueNote.PostProcessingFirst and <= RockBandVenueNote.PostProcessingLast) Ignore("post-processing");
+                else if (note is >= RockBandVenueNote.SingAlongFirst and <= RockBandVenueNote.SingAlongLast) Ignore("sing-along");
+                else if (note is >= RockBandVenueNote.SpotlightFirst and <= RockBandVenueNote.SpotlightLast) Ignore("spotlight");
+                else if (note is >= RockBandVenueNote.KeyframeNext and <= RockBandVenueNote.KeyframeFirst) keyframes.Add((group.Key, note == RockBandVenueNote.KeyframeNext ? "next" : note == RockBandVenueNote.KeyframePrevious ? "prev" : "first"));
+                else if (note is not (>= RockBandVenueNote.CameraRandom and <= RockBandVenueNote.FocusVocalist or >= RockBandVenueNote.ConstraintFirst and <= RockBandVenueNote.NoCloseups)) Ignore("other note");
             }
             if (NoteCut(pitches) is { } cut) Camera(group.Key, 1, cut);
         }
@@ -124,7 +132,7 @@ internal static class StageRockBandVenue
             {
                 var note = Directed(directed.Groups[1].Value);
                 if (note == null) unknown.Add(text);
-                Camera(tick, 0, note ?? 79);
+                Camera(tick, 0, note ?? Gh3CameraNote.Any);
             }
             else if (Coop.Match(text) is { Success: true } coop && CoopCut(coop.Groups[1].Value, coop.Groups[2].Value) is { } standard)
                 Camera(tick, standard.Keys ? 3 : coop.Groups[2].Value == "behind" ? 2 : 1, standard.Note);
@@ -193,7 +201,7 @@ internal static class StageRockBandVenue
             // Reduce flashing: at most 2.5 strobe flashes (on and off) per second.
             if (ReduceFlashing && seconds(at) - lastToggle < MinToggleGap) return;
             lastToggle = seconds(at);
-            output.Add(new(at, "gh3-note", "60"));
+            output.Add(new(at, "gh3-note", StrobeToggleNote));
         }
         for (var i = 0; i < entries.Count; i++)
         {
@@ -227,7 +235,7 @@ internal static class StageRockBandVenue
             output.Add(new(tick, "lighting", light.Mood, Delay: delay));
             lightCount++;
             // GH3 keeps the running snapshot when the mood does not change, so a new override color needs a snapshot step.
-            if (recolor && i > 0 && entries[i - 1].Light.Mood == light.Mood) output.Add(new(tick, "gh3-note", "58", Delay: delay));
+            if (recolor && i > 0 && entries[i - 1].Light.Mood == light.Mood) output.Add(new(tick, "gh3-note", NextSnapshotNote, Delay: delay));
             var stepped = new HashSet<long> { tick, origin };
             for (; keyframe < keyframes.Count && keyframes[keyframe].Tick < next; keyframe++)
             {
@@ -235,7 +243,7 @@ internal static class StageRockBandVenue
                 if (!light.Keyframed) Ignore("keyframe in automatic lighting");
                 else if (light.Toggle && kind != "next") Ignore("stomp keyframe other than next");
                 else if (light.Toggle) Toggle(at);
-                else if (stepped.Add(at)) output.Add(new(at, "gh3-note", "58"));
+                else if (stepped.Add(at)) output.Add(new(at, "gh3-note", NextSnapshotNote));
             }
             if (light.StepBeats > 0)
             {
@@ -243,7 +251,7 @@ internal static class StageRockBandVenue
                 var count = 0;
                 for (var at = origin + step; at < next && count < StepLimit; at += step, count++)
                     if (light.Toggle) Toggle(at);
-                    else output.Add(new(at, "gh3-note", "58"));
+                    else output.Add(new(at, "gh3-note", NextSnapshotNote));
             }
         }
         for (; keyframe < keyframes.Count; keyframe++) Ignore(lights.Count == 0 ? "keyframe before lighting" : "keyframe in automatic lighting");
@@ -304,13 +312,17 @@ internal static class StageRockBandVenue
     // RB1/RB2 camera notes: 60 random, 61–64 focus on bass, drums, guitar, vocals; 70–73 constraints.
     private static int? NoteCut(HashSet<int> pitches)
     {
-        var focus = new[] { 61, 62, 63, 64 }.Where(pitches.Contains).ToArray();
-        if (focus.Length == 0 && !pitches.Contains(60)) return null;
-        var close = pitches.Contains(72);
-        if (focus.Length > 1) return 85;
+        var focus = new[] { RockBandVenueNote.FocusBassist, RockBandVenueNote.FocusDrummer, RockBandVenueNote.FocusGuitarist, RockBandVenueNote.FocusVocalist }.Where(pitches.Contains).ToArray();
+        if (focus.Length == 0 && !pitches.Contains(RockBandVenueNote.CameraRandom)) return null;
+        var close = pitches.Contains(RockBandVenueNote.OnlyCloseups);
+        if (focus.Length > 1) return Gh3CameraNote.Mid;
         if (focus.Length == 1)
-            return focus[0] switch { 61 => 97, 62 => 89, 63 => close ? 95 : 84, _ => close ? 104 : 88 };
-        return pitches.Contains(71) ? 87 : close ? 84 : pitches.Contains(73) ? 85 : 79;
+            return focus[0] switch
+            {
+                RockBandVenueNote.FocusBassist => Gh3CameraNote.Bassist, RockBandVenueNote.FocusDrummer => Gh3CameraNote.Drummer,
+                RockBandVenueNote.FocusGuitarist => close ? Gh3CameraNote.GuitarCloseup : Gh3CameraNote.Closeup, _ => close ? Gh3CameraNote.SingerCloseup : Gh3CameraNote.Singer
+            };
+        return pitches.Contains(RockBandVenueNote.OnlyFar) ? Gh3CameraNote.Wide : close ? Gh3CameraNote.Closeup : pitches.Contains(RockBandVenueNote.NoCloseups) ? Gh3CameraNote.Mid : Gh3CameraNote.Any;
     }
 
     // RB3 standard cuts. Keys has no GH3 performer, so it leaves the shot; the priority prefers cuts without keys.
@@ -320,83 +332,41 @@ internal static class StageRockBandVenue
         if (!band && who.Any(c => c is not ('g' or 'b' or 'd' or 'v' or 'k'))) return null;
         var keys = !band && who.Contains('k');
         var members = band ? who : who.Replace("k", "");
-        if (shot == "behind") return (102, keys);
-        if (shot == "far") return (87, keys);
+        if (shot == "behind") return (Gh3CameraNote.StageRear, keys);
+        if (shot == "far") return (Gh3CameraNote.Wide, keys);
         var note = members switch
         {
-            "g" => shot == "closeup_hand" ? 95 : 84,
-            "b" => 97,
-            "d" => 89,
-            "v" => shot is "closeup" or "closeup_head" ? 104 : 88,
-            "gv" => 114,
-            _ => 85
+            "g" => shot == "closeup_hand" ? Gh3CameraNote.GuitarCloseup : Gh3CameraNote.Closeup,
+            "b" => Gh3CameraNote.Bassist,
+            "d" => Gh3CameraNote.Drummer,
+            "v" => shot is "closeup" or "closeup_head" ? Gh3CameraNote.SingerCloseup : Gh3CameraNote.Singer,
+            "gv" => Gh3CameraNote.Pan,
+            _ => Gh3CameraNote.Mid
         };
         return (note, keys);
     }
 
     private static int? Directed(string cut) => cut switch
     {
-        "directed_all" => 85,
-        "directed_all_cam" => 112,
-        "directed_all_lt" => 113,
-        "directed_all_yeah" or "directed_brej" or "directed_crowd" => 87,
-        "directed_bre" => 82,
-        "directed_guitar" or "directed_guitar_np" or "directed_crowd_g" => 84,
-        "directed_guitar_cam" or "directed_guitar_cam_pr" or "directed_guitar_cam_pt" => 112,
-        "directed_guitar_cls" => 95,
-        "directed_bass" or "directed_bass_np" or "directed_bass_cam" or "directed_bass_cls" or "directed_crowd_b" => 97,
-        "directed_drums_lt" => 92,
-        "directed_drums" or "directed_drums_np" or "directed_drums_pnt" or "directed_drums_kd" or "directed_duo_drums" => 89,
+        "directed_all" => Gh3CameraNote.Mid,
+        "directed_all_cam" => Gh3CameraNote.ZoomFast,
+        "directed_all_lt" => Gh3CameraNote.ZoomOut,
+        "directed_all_yeah" or "directed_brej" or "directed_crowd" => Gh3CameraNote.Wide,
+        "directed_bre" => Gh3CameraNote.OrbitStage,
+        "directed_guitar" or "directed_guitar_np" or "directed_crowd_g" => Gh3CameraNote.Closeup,
+        "directed_guitar_cam" or "directed_guitar_cam_pr" or "directed_guitar_cam_pt" => Gh3CameraNote.ZoomFast,
+        "directed_guitar_cls" => Gh3CameraNote.GuitarCloseup,
+        "directed_bass" or "directed_bass_np" or "directed_bass_cam" or "directed_bass_cls" or "directed_crowd_b" => Gh3CameraNote.Bassist,
+        "directed_drums_lt" => Gh3CameraNote.OrbitDrummer,
+        "directed_drums" or "directed_drums_np" or "directed_drums_pnt" or "directed_drums_kd" or "directed_duo_drums" => Gh3CameraNote.Drummer,
         "directed_vocal" or "directed_vocals" or "directed_vocal_np" or "directed_vocals_np" or "directed_vocal_cam" or "directed_vocals_cam"
-            or "directed_vocals_cam_pr" or "directed_vocals_cam_pt" or "directed_duo_kv" => 88,
-        "directed_vocal_cls" or "directed_vocals_cls" => 104,
-        "directed_stagedive" or "directed_crowdsurf" => 117,
-        "directed_keys" or "directed_keys_np" or "directed_keys_cam" or "directed_duo_bass" or "directed_duo_gb" => 85,
-        "directed_duo_guitar" => 114,
-        "directed_duo_kg" => 84,
-        "directed_duo_kb" => 97,
+            or "directed_vocals_cam_pr" or "directed_vocals_cam_pt" or "directed_duo_kv" => Gh3CameraNote.Singer,
+        "directed_vocal_cls" or "directed_vocals_cls" => Gh3CameraNote.SingerCloseup,
+        "directed_stagedive" or "directed_crowdsurf" => Gh3CameraNote.StageDive,
+        "directed_keys" or "directed_keys_np" or "directed_keys_cam" or "directed_duo_bass" or "directed_duo_gb" => Gh3CameraNote.Mid,
+        "directed_duo_guitar" => Gh3CameraNote.Pan,
+        "directed_duo_kg" => Gh3CameraNote.Closeup,
+        "directed_duo_kb" => Gh3CameraNote.Bassist,
         _ => null
     };
-}
-
-// Cues for charts without direction: a light mood and a camera cut at each section, and a lightshow step on each bar.
-internal static class StageGeneratedDirection
-{
-    private const int StepLimit = 20000;
-
-    public static List<StageTickCue> FromSections(IReadOnlyList<(long Tick, string Name)> sections, int resolution, long end)
-    {
-        var output = new List<StageTickCue>();
-        if (sections.Count == 0) output.Add(new(0, "lighting", "verse"));
-        foreach (var (tick, name) in sections)
-        {
-            var mood = Mood(name);
-            output.Add(new(tick, "lighting", mood));
-            output.Add(new(tick, "gh3-camera", mood == "solo" ? "81" : "79"));
-        }
-        var starts = sections.Select(s => s.Tick).ToHashSet();
-        var bar = 4L * resolution;
-        var count = 0;
-        for (var at = (sections.Count > 0 ? sections[0].Tick : 0) + bar; at < end && count < StepLimit; at += bar, count++)
-            if (!starts.Contains(at)) output.Add(new(at, "gh3-note", "58"));
-        return output;
-    }
-
-    public static string? Section(string text)
-    {
-        var value = StageRockBandVenue.Normalize(text);
-        if (value.StartsWith("section ", StringComparison.Ordinal)) return value[8..].Trim();
-        if (value.StartsWith("section_", StringComparison.Ordinal)) return value[8..].Trim();
-        if (value.StartsWith("prc_", StringComparison.Ordinal)) return value[4..].Trim();
-        return null;
-    }
-
-    public static string Mood(string section)
-    {
-        var name = section.Replace('_', ' ').Replace('-', ' ');
-        if (name.Contains("solo")) return "solo";
-        if (name.Contains("chorus") && !name.Contains("pre chorus") && !name.Contains("prechorus")) return "chorus";
-        if (name.StartsWith("intro", StringComparison.Ordinal)) return "intro";
-        return "verse";
-    }
 }

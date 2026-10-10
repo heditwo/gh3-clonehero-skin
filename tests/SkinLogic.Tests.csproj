@@ -88,6 +88,9 @@
     <Compile Include="../src/Stage/Lighting/StageBeamMotion.cs" Link="StageBeamMotion.cs" />
     <Compile Include="../src/Stage/Direction/StageChartReader.cs" Link="StageChartReader.cs" />
     <Compile Include="../src/Stage/Direction/StageRockBandVenue.cs" Link="StageRockBandVenue.cs" />
+    <Compile Include="../src/Stage/Direction/Gh3NoteConstants.cs" Link="Gh3NoteConstants.cs" />
+    <Compile Include="../src/Stage/Direction/StageGeneratedDirection.cs" Link="StageGeneratedDirection.cs" />
+    <Compile Include="../src/Stage/Direction/MidiConstants.cs" Link="MidiConstants.cs" />
     <Compile Include="../src/Stage/Direction/StageNativeSong.cs" Link="StageNativeSong.cs" />
     <Compile Include="../src/Stage/Direction/StageSongDirection.cs" Link="StageSongDirection.cs" />
     <Compile Include="../src/Stage/Direction/StageShowFlow.cs" Link="StageShowFlow.cs" />
