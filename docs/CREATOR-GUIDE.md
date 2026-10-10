@@ -184,6 +184,8 @@ You can use a model that has its own skeleton, for example an MMD model (`.pmx`)
 
 1. Import the model. Blender cannot read `.pmx`: install the extension **MMD Tools** (Blender extensions platform). Import at the scale 0.08 (1 MMD unit is 8 cm).
 2. **Move the model onto the GH3 bind pose.** The add-on has no tool for this step. In Pose Mode of the model's armature, turn and scale the bones so that each joint is on the joint of the GH3 rig: hips, knees, ankles, toes, spine, neck, head, shoulders, elbows, wrists, and each finger joint. Then apply the Armature modifier of the mesh (**Object > Apply**), and delete the model's armature. Small differences in the proportions are normal: the GH3 rig sets the length of each bone, so the mesh stretches a little.
+   - If you move the mesh with a script, use only the vertex groups of deform bones, as the Armature modifier does. MMD Tools adds the vertex groups `mmd_edge_scale` and `mmd_vertex_order`; they are not bones. A script that used them as weights moved the parts of the head of the test model against each other by up to 1.4 cm: the bangs and the face skin then covered the inner part of the eyes, and the eyes looked too far apart.
+   - A model that comes from a Unity game (FBX from an asset tool) can be mirrored: object scale −1 and the face toward +Y. Mirror it so that the face looks toward −Y and the left side of the character is at +X, and check that the normals point out.
 3. Remove the shape keys (**Object Data > Shape Keys**). The mod does not play shape keys; the GH3 clips move the face with bones.
 4. **Materials.** Importers of MMD and VRM models make toon shader node groups. The glTF export does not read them, and the package then has no texture (the character is white in the game). Validate gives a warning for each such material. Give each material a **Principled BSDF** with the image on **Base Color**, and save the images as PNG. Images of 1024 × 1024 pixels are sufficient (the GH3 characters use 1024 pixels or less).
 5. Set the material panel: for example **Ambient** for the face (the face does not get dark), **Unlit** for parts that glow, **Blend** for hair cards and other parts with transparency.
@@ -193,6 +195,8 @@ You can use a model that has its own skeleton, for example an MMD model (`.pmx`)
    - Parts far from the body (a long tail, cables): they get the weights of the nearest body part (for example the heels). Paint them to `bone_pelvis`.
 7. **Long hair.** Select the vertices of each pigtail and assign them to a hair chain (**Assign to Hair Bones**). Midori has two pigtail chains (chain 1 and chain 2). The vertices below the end of the chain go to the last bone: the hair physics then moves them as one part. Add the hair materials to **Hair materials**.
 8. Click **Limit and Normalize**, look at some clips in **Clip Preview**, then Validate and export.
+
+Compare the face of your export with the source model: render both front-on in Blender (the export with **File > Import > glTF**). The eyes must be at the same places.
 
 Known limits: the character does not blink and does not move its mouth (the face is on the head bone). Long hair can go into the body or the guitar for a short time, because the hair physics knows only the bodies of the GH3 profile.
 
