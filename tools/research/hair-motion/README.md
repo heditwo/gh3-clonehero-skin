@@ -10,6 +10,7 @@ Tools of the 2026-10-10 hair motion check ([PARITY-NOTES.md](../../../docs/PARIT
 | `ring.py`, `evidence.py` | Ringing of the tips; the table and plot of PARITY-NOTES.md |
 | `fam.py` | Two solver builds on all profiles in My Curse (bounce, head capsule clearance) |
 | `limits.py`, `ragdoll_dump.py` | Live constraint angles against the limits; all bodies and constraints of a ragdoll |
+| `naturalness.py` | Custom chains (2026-10-10): test head motions for `GH3_HAIR_BENCH_MOTION`, the naturalness measures of a character bench output (end angle, end above the start, speed, settle, swings), and the VRM spring bone reference ([VERIFICATION.md](../../../docs/VERIFICATION.md#custom-chains)) |
 | `body_path.py`, `body_colliders.py` | Body collision experiment (2026-10-10): the paths of all recorded body bones for the bench (`GH3_HAIR_BENCH_BODIES`), and the GH3 ragdoll body capsules as colliders (`GH3_HAIR_BENCH_BODY`) |
 
 Work files go to `HAIR_MOTION_WORK` (default `~/.cache/hair-motion`). Run with `uv run --with numpy [--with matplotlib] python <tool>`.

@@ -225,7 +225,15 @@ GH3_CHARACTER_HAIR_ASSETS=$PWD/assets GH3_HAIR_BENCH=character:<package.chchar> 
   GH3_HAIR_BENCH_OUT=<file> dotnet tests/bin/Release/net10.0/SkinLogic.Tests.dll
 ```
 
-The bench imports the package, plays My Curse with the animation set of its profile, and prints: finite poses, the fastest joint end (m/s), the solver time for each frame, and the depth of the joint ends in their colliders (p50, p99, maximum). `GH3_HAIR_BENCH_DETAIL=1` prints each joint; `GH3_HAIR_BENCH_MIDDLE=1` also measures the joint middles. The output file has, for each frame, the time and the start and the end of each custom joint (float32). Run it at 60 and at 144 fps: the poses at common times must be equal. In the game, `GH3_SKIN_PROFILE=1` logs `band.hair`, the time of the hair solver of all performers.
+The bench imports the package (a `.chchar` zip or a development folder; a character with its own skeleton plays through the retarget of the game), plays My Curse with the animation set of its profile, and prints: finite poses, the fastest joint end (m/s), the solver time for each frame, and the depth of the joint ends in their colliders (p50, p99, maximum). `GH3_HAIR_BENCH_DETAIL=1` prints each joint; `GH3_HAIR_BENCH_MIDDLE=1` also measures the joint middles. The output file has, for each frame, the time, the head pose (x, y, z, qx, qy, qz, qw), and for each custom joint its start and end with physics and without physics (the bind shape on the animated rig; float32). `<file>.json` names the joints and their chain parents. `GH3_HAIR_BENCH_MOTION=<file>` plays a test head motion instead of the song (the head turns about its bind pose; the other bones keep the bind pose). Run it at 60 and at 144 fps: the poses at common times must be equal. In the game, `GH3_SKIN_PROFILE=1` logs `band.hair`, the time of the hair solver of all performers.
+
+Naturalness (`tools/research/hair-motion/naturalness.py`, `uv run --with numpy python`):
+
+1. `naturalness.py motions <dir>` writes three test head motions: `turn` (45° in 0.2 s, hold, back), `headbang` (±20° nods at 3 Hz for 2 s, then hold), and `sway` (±20° side tilts at 1.5 Hz for 2 s, then hold).
+2. `naturalness.py measure <bench file> [<motion>]` prints, for each chain, in the head frame: the angle of the chain end from its bind direction seen from the chain start (p50, p95, maximum), the share of frames with the chain end more than 1 cm above the chain start, and the speed of the chain end relative to the head (p50, p95, maximum). With a motion: the hang angle before the motion, and after each stop the settle time (the end stays within 1 cm of its final place) and the number of swings larger than 1 cm.
+3. `naturalness.py vrm <bench file> <out> --stiffness S --drag D --gravity G` runs the VRM spring bone (UniVRM VRMSpringBone, at 60 frames a second, no colliders) on the bind shape and the head motion of the bench file, and writes a bench file to measure. Use it as the reference: a natural chain trails, hangs, and settles as the VRM chain does.
+
+Targets for a long twin tail on the GH3 clips (from the VRM reference with stiffness 0.5, drag 0.4, gravity 0.2 on the two Mikus): end angle p95 below 60°, the end never above the chain start, settle within about 1 s after a head move with at most 2 swings.
 
 ### GH3 characters
 

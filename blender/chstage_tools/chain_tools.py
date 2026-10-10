@@ -43,13 +43,15 @@ def bone_name(label):
 # Properties.
 def joint_settings(joint):
     return {"mass": joint.mass, "friction": joint.friction, "damping": joint.damping, "cone": joint.cone, "planes": joint.planes,
-            "speed": joint.speed, "radius": joint.radius}
+            "speed": joint.speed, "radius": joint.radius, "stiffness": joint.stiffness, "drag": joint.drag, "gravity": joint.gravity}
 
 
-def apply_preset(joint, preset):
+def apply_preset(joint, preset, position=0.0):
+    """The preset values on a joint at `position` along its chain (0: the first joint, 1: the last joint)."""
     values = chain_format.PRESETS[preset]
     joint.mass, joint.friction, joint.damping, joint.cone = values["mass"], values["friction"], values["damping"], values["cone"]
     joint.planes, joint.speed, joint.radius = values["planes"], values["speed"], values["radius"]
+    joint.stiffness, joint.drag, joint.gravity = chain_format.preset_stiffness(preset, position), values["drag"], values["gravity"]
 
 
 def update_collider(self, context):
@@ -66,12 +68,18 @@ class CHSTAGE_PG_joint(PropertyGroup):
     damping: FloatProperty(name="Damping", default=1.0, min=0, max=100, description="Angular damping (per second): it slows all swings")
     cone: FloatProperty(name="Swing limit", default=15, min=0.5, max=90, description="Largest swing from the bind direction (degrees)")
     planes: FloatProperty(name="Side limit", default=0, min=0, max=90, description="Largest swing toward the X axis of the bone (degrees). 0: only the swing limit")
-    speed: FloatProperty(name="Speed limit", default=20, min=0, max=1000, description="Largest turn speed (radians per second). 0: no limit")
+    speed: FloatProperty(name="Speed limit", default=0, min=0, max=1000, description="Largest turn speed (radians per second). 0: no limit")
     radius: FloatProperty(name="Radius", default=0.02, min=0, max=0.5, description="Collision radius of the joint (m)")
+    stiffness: FloatProperty(name="Stiffness", default=30, min=0, max=chain_format.MAX_STIFFNESS,
+                             description="Pull toward the bind direction against the parent bone (per second squared). 0: the joint only hangs")
+    drag: FloatProperty(name="Drag", default=15, min=0, max=100, description="Damping of the swing against the parent bone (per second): it stops the swings after a move")
+    gravity: FloatProperty(name="Gravity", default=1, min=0, max=2, description="Share of gravity (1: full gravity, 0: no gravity)")
 
 
 class CHSTAGE_PG_chain(PropertyGroup):
     preset: EnumProperty(name="Preset", items=chain_format.PRESET_ITEMS, default="long_hair")
+    bend: FloatProperty(name="Bend limit", default=60, min=0, max=180,
+                        description="Largest angle of the chain end from its bind direction, seen from the chain start (degrees). 0: no limit")
     all_colliders: BoolProperty(name="All colliders", default=True, description="The joints collide with all colliders")
     colliders: StringProperty(name="Colliders", description="Names of the colliders that the joints collide with (comma-separated), when not all")
 
@@ -136,8 +144,15 @@ def add_collider(scene, bone, a, b, radius, name=None):
     obj.parent = rig
     obj.parent_type = "BONE"
     obj.parent_bone = bone
+    # The ends are rest-pose points: the collider takes its place on the bone at the rest pose (export reads it there).
+    position = rig.data.pose_position
+    rig.data.pose_position = "REST"
     scene.view_layers[0].update()
-    obj.matrix_world = matrix
+    try:
+        obj.matrix_world = matrix
+    finally:
+        rig.data.pose_position = position
+        scene.view_layers[0].update()
     return obj
 
 
@@ -188,15 +203,17 @@ def new_chain(scene, name, preset):
     chain = scene.chstage_chains.add()
     chain.name = chain_format.chain_name(name, {c.name for c in scene.chstage_chains if c != chain})
     chain.preset = preset
+    chain.bend = chain_format.PRESETS[preset]["bend"]
     scene.chstage_chains_index = len(scene.chstage_chains) - 1
     return chain
 
 
 def make_joints(scene, bones, chain, preset):
-    for bone in bones:
+    """The bones (parents first) as joints of the chain with the preset values; the stiffness falls off along the chain."""
+    for index, bone in enumerate(bones):
         joint = bone.chstage_joint
         joint.enabled, joint.chain = True, chain.name
-        apply_preset(joint, preset)
+        apply_preset(joint, preset, index / max(1, len(bones) - 1))
         if hasattr(bone, "color"): bone.color.palette = "THEME04"
 
 
@@ -360,7 +377,7 @@ def export_rows(scene, glb_data):
     joints = {}
     for bone in rig.data.bones:
         if bone.name not in added or not bone.chstage_joint.enabled: continue
-        axis = world.to_3x3() @ (bone.tail_local - bone.head_local)
+        axis = world.to_3x3() @ joint_vector(bone)
         side = world.to_3x3() @ bone.matrix_local.to_3x3() @ Vector((1, 0, 0))
         joints[bone.name] = {"settings": joint_settings(bone.chstage_joint), "chain": bone.chstage_joint.chain, "axis": list(axis), "side": list(side)}
     rows = collider_rows(scene)
@@ -368,8 +385,25 @@ def export_rows(scene, glb_data):
     chain_list = []
     for chain in scene.chstage_chains:
         wanted = None if chain.all_colliders else [n.strip() for n in chain.colliders.split(",") if n.strip() in names]
-        chain_list.append({"name": chain.name, "colliders": wanted})
+        chain_list.append({"name": chain.name, "colliders": wanted, "bend": chain.bend})
     return chain_format.character_rows(glb_data, profile, joints, rows, chain_list, own=own)
+
+
+def joint_vector(bone):
+    """The joint of a chain bone (armature space, from its head): to the head of the next joint of its chain below it,
+    else to the head of its only child bone, else to its tail. The bone tails of an imported rig (FBX, glTF) can point
+    away from the chain; the next joint can hang from a helper bone (an offset bone of a game rig)."""
+    chain = bone.chstage_joint.chain
+    queue = list(bone.children)
+    while queue:
+        child = queue.pop(0)
+        if child.chstage_joint.enabled:
+            if child.chstage_joint.chain == chain and (child.head_local - bone.head_local).length > 0.005: return child.head_local - bone.head_local
+            continue
+        queue.extend(child.children)
+    if len(bone.children) == 1 and not bone.children[0].chstage_joint.enabled and (bone.children[0].head_local - bone.head_local).length > 0.005:
+        return bone.children[0].head_local - bone.head_local
+    return bone.tail_local - bone.head_local
 
 
 def check(scene, issues):
@@ -431,6 +465,7 @@ def open_rows(scene, character, glb_data=None):
         by_key = {bone_key(b.name): b for b in rig.data.bones}
     for row in character.get("chains", []):
         chain = new_chain(scene, row["name"], "long_hair")
+        chain.bend = float(np.degrees(row.get("bendLimit", 0.0)))
         chain.all_colliders = "colliders" not in row
         chain.colliders = ", ".join(row.get("colliders", []))
         for joint in row["joints"]:
@@ -441,6 +476,7 @@ def open_rows(scene, character, glb_data=None):
             settings.mass, settings.damping = joint["mass"], joint["angularDamping"]
             settings.friction = joint["friction"] / max(joint["mass"], 1e-6)
             settings.speed, settings.radius = joint.get("maxAngularVelocity", 0), joint.get("radius", 0)
+            settings.stiffness, settings.drag, settings.gravity = joint.get("stiffness", 0), joint.get("drag", 0), joint.get("gravity", 1)
             if "limits" in joint:
                 settings.cone = float(np.degrees(joint["limits"]["coneLimit"][1]))
                 planes = joint["limits"].get("planesLimit")
@@ -487,8 +523,10 @@ def mmd_rows(armature, rigid_bodies, joints, names=None):
             continue
         if names is not None and rigid.bone not in names: continue
         body = obj.rigid_body
+        # Bullet damps the speed of the body (linear) and its turn (angular) in the world: the larger one is the damping.
+        damping = max(body.linear_damping, body.angular_damping) if body else 0.5
         by_object[obj.name] = {"bone": rigid.bone, "mass": float(body.mass) if body else 1.0,
-                               "damping": chain_format.mmd_damping(body.angular_damping if body else 0.5), "radius": float(min(radius, 0.1))}
+                               "damping": chain_format.mmd_damping(damping), "radius": float(min(radius, 0.1))}
     rows = {}
     for row in by_object.values():
         bone = bones[row["bone"]]
@@ -503,7 +541,7 @@ def mmd_rows(armature, rigid_bodies, joints, names=None):
                   constraint.limit_ang_z_lower, constraint.limit_ang_z_upper]
         frame = np.array(obj.matrix_world.to_3x3().normalized())
         row["cone"], row["planes"], row["plane_axis"] = chain_format.mmd_limits(row["tail"] - row["head"], frame, limits)
-        row["springs"] = any(abs(v) > 0 for v in getattr(getattr(obj, "mmd_joint", None), "spring_angular", (0, 0, 0)))
+        row["spring"] = max((abs(v) for v in getattr(getattr(obj, "mmd_joint", None), "spring_angular", (0, 0, 0))), default=0.0)
     return rows, statics
 
 
@@ -553,12 +591,11 @@ def import_mmd(scene, armature, rigid_bodies, joints, names=None, parent=None, p
         joint = bone.chstage_joint
         joint.mass = min(max(row["mass"], 0.05), 100)
         joint.damping = min(row["damping"], 100)
-        # MMD springs hold the shape inside wide limits; the chains have no spring, so the preset swing limit applies
-        # when it is smaller.
+        # The MMD values: the rotation limits, and the spring that holds the shape (the stiffness and its drag); the
+        # friction, the speed limit, and the chain bend limit come from the preset (MMD has none).
         joint.cone = float(np.degrees(row["cone"]))
-        if row.get("springs"):
-            joint.cone = min(joint.cone, chain_format.PRESETS[preset]["cone"])
-            joint.damping = max(joint.damping, chain_format.PRESETS[preset]["damping"])
+        joint.stiffness = chain_format.mmd_stiffness(row.get("spring", 0.0), row["mass"], np.linalg.norm(row["tail"] - row["head"]))
+        joint.drag = chain_format.mmd_drag(joint.stiffness, chain_format.PRESETS[preset]["drag"])
         joint.radius = row["radius"]
         if row.get("planes"):
             low, high = row["planes"]
@@ -569,6 +606,101 @@ def import_mmd(scene, armature, rigid_bodies, joints, names=None, parent=None, p
             target = nearest_body_bone(scene, (body["a"] + body["b"]) / 2)
             if target is None: continue
             made_colliders.append(add_collider(scene, target, body["a"], body["b"], body["radius"], f"mmd_{index + 1:02d}"))
+    return made, made_colliders
+
+
+# VRM spring bones.
+def gltf_document(path):
+    """The JSON of a .vrm or .glb file."""
+    import json
+    import struct
+    with open(path, "rb") as file:
+        header = file.read(20)
+        if header[:4] != b"glTF": raise ValueError(f"{path} is not a binary glTF (.vrm, .glb) file")
+        length = struct.unpack("<I", header[12:16])[0]
+        return json.loads(file.read(length))
+
+
+def gltf_worlds(document):
+    """The glTF world matrix of each node of a glTF JSON."""
+    nodes = document.get("nodes", [])
+    parent = {child: i for i, node in enumerate(nodes) for child in node.get("children", [])}
+    locals_ = []
+    for node in nodes:
+        if "matrix" in node: locals_.append(np.array(node["matrix"], dtype=float).reshape(4, 4).T); continue
+        x, y, z, w = node.get("rotation", [0, 0, 0, 1])
+        matrix = np.eye(4)
+        matrix[:3, :3] = np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)], [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                                   [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]]) * node.get("scale", [1, 1, 1])
+        matrix[:3, 3] = node.get("translation", [0, 0, 0])
+        locals_.append(matrix)
+    worlds = [None] * len(nodes)
+
+    def world(i):
+        if worlds[i] is None: worlds[i] = (world(parent[i]) if i in parent else np.eye(4)) @ locals_[i]
+        return worlds[i]
+
+    return [world(i) for i in range(len(nodes))]
+
+
+def similarity(source, target):
+    """Scale, rotation, and translation that move the source points onto the target points (least squares)."""
+    source, target = np.asarray(source, dtype=float), np.asarray(target, dtype=float)
+    a, b = source.mean(0), target.mean(0)
+    u, sigma, vt = np.linalg.svd((target - b).T @ (source - a))
+    d = np.eye(3)
+    d[2, 2] = np.sign(np.linalg.det(u @ vt))
+    rotation = u @ d @ vt
+    scale = float(np.trace(np.diag(sigma) @ d) / max(((source - a) ** 2).sum(), 1e-12))
+    return scale, rotation, b - scale * rotation @ a
+
+
+def import_vrm(scene, path, preset="long_hair", with_colliders=True):
+    """Chains from the spring bones of a VRM file (VRM 1.0 or 0.x) on the bones of the rig with the node names (a
+    character with its own skeleton from the VRM import): the VRM stiffness, drag, gravity, and hit radius for each
+    joint (chain_format.vrm_joint), the bend limit of the preset, and the VRM colliders on their bones. Returns the
+    chains and the colliders made."""
+    document = gltf_document(path)
+    springs, vrm_colliders = chain_format.vrm_springs(document)
+    if not springs: raise ValueError("the file has no VRM spring bones")
+    rig = character_tools.props(scene).rig
+    names = [node.get("name", "") for node in document.get("nodes", [])]
+    worlds = gltf_worlds(document)
+    # The VRM import can turn and scale the model: the bones of both give the transform from glTF to Blender world.
+    world = np.array(rig.matrix_world)
+    pairs = [(chain_format.AXES @ worlds[i][:3, 3], world[:3, :3] @ np.array(rig.data.bones[n].head_local) + world[:3, 3])
+             for i, n in enumerate(names) if n in rig.data.bones]
+    if len(pairs) < 3: raise ValueError("the rig does not have the bones of the VRM file (use the armature of the VRM import as the skeleton)")
+    scale, rotation, offset = similarity([p[0] for p in pairs], [p[1] for p in pairs])
+    made_colliders, collider_names = [], {}
+    if with_colliders:
+        for index, collider in enumerate(vrm_colliders):
+            bone = names[collider["node"]]
+            if bone not in rig.data.bones or rig.data.bones[bone].chstage_joint.enabled: continue
+            ends = [worlds[collider["node"]] @ np.r_[np.asarray(p, dtype=float), 1] for p in (collider["offset"], collider["tail"] or collider["offset"])]
+            a, b = (scale * rotation @ (chain_format.AXES @ e[:3]) + offset for e in ends)
+            obj = add_collider(scene, bone, a, b, max(collider["radius"] * scale, 0.001), f"vrm_{index + 1:02d}")
+            made_colliders.append(obj)
+            collider_names[index] = obj.chstage_collider.label
+    made = []
+    taken = {c.name for c in scene.chstage_chains}
+    for spring in springs:
+        bones = [names[j["node"]] for j in spring["joints"]]
+        joints = [(j, rig.data.bones[n]) for j, n in zip(spring["joints"][:-1], bones[:-1]) if n in rig.data.bones]
+        if not joints: continue
+        chain = new_chain(scene, chain_format.chain_name(spring["name"], taken), preset)
+        taken.add(chain.name)
+        make_joints(scene, [bone for _, bone in joints], chain, preset)
+        for row, bone in joints:
+            joint = bone.chstage_joint
+            values = chain_format.vrm_joint(row["stiffness"], row["drag"], row["gravity_power"], row["gravity_dir"], joint_vector(bone).length * rig.matrix_world.to_scale()[0] / max(scale, 1e-6))
+            joint.damping, joint.stiffness, joint.gravity, joint.drag = values["damping"], values["stiffness"], values["gravity"], values["drag"]
+            # VRM has no swing limits and no friction.
+            joint.cone, joint.planes, joint.friction, joint.speed = 90.0, 0.0, 0.0, 0.0
+            joint.radius = min(row["radius"] * scale, 0.5)
+        wanted = [collider_names[c] for c in spring["colliders"] if c in collider_names]
+        chain.all_colliders, chain.colliders = False, ", ".join(wanted)
+        made.append(chain)
     return made, made_colliders
 
 
@@ -770,7 +902,9 @@ class CHSTAGE_OT_chain_preset(Operator):
         scene = context.scene
         if not scene.chstage_chains: return {"CANCELLED"}
         chain = scene.chstage_chains[min(scene.chstage_chains_index, len(scene.chstage_chains) - 1)]
-        for bone in chain_bones(scene.chstage.character.rig, chain.name): apply_preset(bone.chstage_joint, chain.preset)
+        bones = chain_bones(scene.chstage.character.rig, chain.name)
+        for index, bone in enumerate(bones): apply_preset(bone.chstage_joint, chain.preset, index / max(1, len(bones) - 1))
+        chain.bend = chain_format.PRESETS[chain.preset]["bend"]
         return {"FINISHED"}
 
 
@@ -840,7 +974,7 @@ class CHSTAGE_OT_fit_colliders(Operator):
 
 
 class CHSTAGE_OT_import_mmd_physics(Operator):
-    """Make chains from the MMD rigid bodies and joints of an MMD Tools model in the scene: a new bone for each dynamic body, with the MMD mass, damping, and rotation limits. Fit the MMD model to the rig first"""
+    """Make chains from the MMD rigid bodies and joints of an MMD Tools model in the scene: a new bone for each dynamic body, with the MMD mass, damping, rotation limits, and spring (stiffness). Fit the MMD model to the rig first"""
     bl_idname = "chstage.import_mmd_physics"
     bl_label = "Chains from MMD Physics"
     bl_options = {"REGISTER", "UNDO"}
@@ -848,7 +982,7 @@ class CHSTAGE_OT_import_mmd_physics(Operator):
     armature: StringProperty(name="MMD armature", description="The armature object of the MMD Tools model")
     bones: StringProperty(name="MMD bones", description="Only the bodies of these MMD bones (comma-separated). Empty: all dynamic bodies")
     parent: StringProperty(name="Parent bone", description="Rig bone of the chain roots. Empty: the nearest body bone of each root")
-    preset: EnumProperty(name="Preset", items=chain_format.PRESET_ITEMS, default="long_hair", description="Values that MMD does not have (friction, speed limit)")
+    preset: EnumProperty(name="Preset", items=chain_format.PRESET_ITEMS, default="long_hair", description="Values that MMD does not have (friction, speed limit, the smallest drag, the bend limit)")
     colliders: BoolProperty(name="Colliders", default=False, description="Also make colliders from the static bodies (on the nearest body bone)")
     prefix: StringProperty(name="Bone names", default="mmd", description="The new bones get this name, '_', and the English MMD name or a number")
 
@@ -875,6 +1009,36 @@ class CHSTAGE_OT_import_mmd_physics(Operator):
             self.report({"WARNING"}, str(error))
             return {"CANCELLED"}
         self.report({"INFO"}, f"{len(made)} bones, {len(made_colliders)} colliders")
+        return {"FINISHED"}
+
+
+class CHSTAGE_OT_import_vrm_springs(Operator):
+    """Make chains from the spring bones of a VRM file (VRM 1.0 or 0.x) on the bones of the rig with the same names (use the armature of the VRM import as the skeleton): the VRM stiffness, drag, gravity, hit radius, and colliders"""
+    bl_idname = "chstage.import_vrm_springs"
+    bl_label = "Chains from VRM Spring Bones"
+    bl_options = {"REGISTER", "UNDO"}
+
+    filepath: StringProperty(subtype="FILE_PATH")
+    filter_glob: StringProperty(default="*.vrm;*.glb", options={"HIDDEN"})
+    preset: EnumProperty(name="Preset", items=chain_format.PRESET_ITEMS, default="long_hair", description="The bend limit of the chains (VRM has none)")
+    colliders: BoolProperty(name="Colliders", default=True, description="Also make the VRM colliders")
+
+    @classmethod
+    def poll(cls, context):
+        return character_rig(context)
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+    def execute(self, context):
+        try:
+            made, made_colliders = import_vrm(context.scene, bpy.path.abspath(self.filepath), self.preset, self.colliders)
+        except (OSError, ValueError, KeyError, IndexError) as error:
+            traceback.print_exc()
+            self.report({"WARNING"}, str(error))
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"{len(made)} chains, {len(made_colliders)} colliders")
         return {"FINISHED"}
 
 
@@ -907,6 +1071,7 @@ class CHSTAGE_PT_character_chains(Panel):
         column.operator("chstage.chain_from_strand", icon="CURVE_PATH")
         column.operator("chstage.chain_from_bones", icon="BONE_DATA")
         column.operator("chstage.import_mmd_physics", icon="PHYSICS")
+        column.operator("chstage.import_vrm_springs", icon="PHYSICS")
         layout.template_list("CHSTAGE_UL_chains", "", scene, "chstage_chains", scene, "chstage_chains_index", rows=3)
         if scene.chstage_chains:
             chain = scene.chstage_chains[min(scene.chstage_chains_index, len(scene.chstage_chains) - 1)]
@@ -915,6 +1080,7 @@ class CHSTAGE_PT_character_chains(Panel):
             row.prop(chain, "preset", text="")
             row.operator("chstage.chain_preset", text="Apply")
             row.operator("chstage.chain_remove", text="", icon="X")
+            box.prop(chain, "bend")
             box.prop(chain, "all_colliders")
             if not chain.all_colliders: box.prop(chain, "colliders")
             box.operator("chstage.chain_assign", icon="GROUP_VERTEX")
@@ -923,7 +1089,7 @@ class CHSTAGE_PT_character_chains(Panel):
             box = layout.box()
             box.label(text=f"Joint {bone.name} ({bone.chstage_joint.chain})", icon="BONE_DATA")
             joint = bone.chstage_joint
-            for field in ("cone", "planes", "mass", "friction", "damping", "speed", "radius"): box.prop(joint, field)
+            for field in ("stiffness", "drag", "gravity", "cone", "planes", "mass", "friction", "damping", "speed", "radius"): box.prop(joint, field)
         layout.label(text=f"Colliders ({len(colliders(scene))})")
         row = layout.row(align=True)
         row.operator("chstage.fit_colliders", icon="MESH_CAPSULE")
@@ -939,7 +1105,7 @@ class CHSTAGE_PT_character_chains(Panel):
 
 CLASSES = (CHSTAGE_PG_joint, CHSTAGE_PG_chain, CHSTAGE_PG_collider, CHSTAGE_OT_chain_from_bones, CHSTAGE_OT_chain_from_strand, CHSTAGE_OT_chain_assign,
            CHSTAGE_OT_chain_preset, CHSTAGE_OT_chain_remove, CHSTAGE_OT_add_collider, CHSTAGE_OT_fit_colliders, CHSTAGE_OT_import_mmd_physics,
-           CHSTAGE_UL_chains, CHSTAGE_PT_character_chains)
+           CHSTAGE_OT_import_vrm_springs, CHSTAGE_UL_chains, CHSTAGE_PT_character_chains)
 
 
 def register():

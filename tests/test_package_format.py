@@ -398,6 +398,12 @@ class CharacterPackageTests(unittest.TestCase):
         self.assertNotIn("tail_01", errors(chains=[{**chain, "joints": [{**hinge, "type": "hinge", "axis": [1, 0, 0], "range": [-1, 1]}]}]))
         report = validate(self.character(chain_glb(), **chain_json(chains=[{**chain, "joints": [{**joints[0], "length": 0.1}, joints[1]]}])), library=self.library)
         self.assertTrue(any("does not start at the end" in w for w in report.warnings), report.warnings)
+        springs = [{**j, "stiffness": 40, "drag": 15, "gravity": 0.5} for j in joints]
+        report = validate(self.character(chain_glb(), **chain_json(chains=[{**chain, "bendLimit": 1.0, "joints": springs}])), library=self.library)
+        self.assertEqual(report.errors, [])
+        self.assertIn("stiffness", errors(chains=[{**chain, "joints": [{**springs[0], "stiffness": 6000}, springs[1]]}]))
+        self.assertIn("gravity", errors(chains=[{**chain, "joints": [{**springs[0], "gravity": -1}, springs[1]]}]))
+        self.assertIn("bendLimit", errors(chains=[{**chain, "bendLimit": 4, "joints": springs}]))
         many = [{"name": f"b{i}", "parent": "bone-00000002" if i == 0 else f"b{i - 1}", "bind": [0, 0.01, 0, 0, 0, 0, 1]} for i in range(65)]
         self.assertIn("too many items", "\n".join(errors_of(self.character(chain_glb(), bones=many), library=self.library)))
 

@@ -59,6 +59,7 @@ internal static class CharacterChainRig
                 Friction = joint.Friction, AngularDamping = joint.AngularDamping, Limits = joint.Limits, Type = joint.Type, Axis = joint.Axis, Range = joint.Range,
                 TwistAxis = joint.TwistAxis, ConeAxis = joint.ConeAxis, PlaneAxis = joint.PlaneAxis, MaxAngularVelocity = joint.MaxAngularVelocity,
                 Direction = joint.Direction, Radius = joint.Radius, ColliderMask = chain.ColliderMask, HeadCapsule = false,
+                Custom = true, Stiffness = joint.Stiffness, Drag = joint.Drag, Gravity = joint.Gravity, BendLimit = joint.BendLimit,
             };
         }).ToArray();
         var colliders = character.Colliders.Select(collider =>

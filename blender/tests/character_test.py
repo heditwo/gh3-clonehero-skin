@@ -469,7 +469,10 @@ with bpy.context.temp_override(scene=scene, view_layer=view_layer, object=tail, 
 chain_bones = chain_tools.chain_bones(rig, "twin_tail_l")
 tail_weights = character_tools.vertex_weights(tail, character_tools.profile_groups(rig))
 check("chain along a strand: bones, joints, and weights", status == {"FINISHED"} and len(chain_bones) == 4 and chain_bones[0].parent.name == head_bone
-      and all(b.chstage_joint.enabled and abs(b.chstage_joint.cone - 22) < 1e-4 for b in chain_bones) and np.abs(tail_weights.sum(1) - 1).max() < 1e-5
+      and all(b.chstage_joint.enabled and abs(b.chstage_joint.cone - chain_format.PRESETS["long_hair"]["cone"]) < 1e-4 for b in chain_bones)
+      and abs(chain_bones[0].chstage_joint.stiffness - chain_format.PRESETS["long_hair"]["stiffness"]) < 1e-4
+      and chain_bones[-1].chstage_joint.stiffness < chain_bones[0].chstage_joint.stiffness and abs(scene.chstage_chains[0].bend - chain_format.PRESETS["long_hair"]["bend"]) < 1e-4
+      and np.abs(tail_weights.sum(1) - 1).max() < 1e-5
       and tail_weights[:, [character_tools.profile_groups(rig).index(b.name) for b in chain_bones]].sum() > 0.8 * len(tail_weights),
       [(b.name, b.parent.name if b.parent else None) for b in chain_bones])
 with bpy.context.temp_override(scene=scene, view_layer=view_layer):
@@ -494,7 +497,9 @@ joints = chain_json.get("chains", [{}])[0].get("joints", [])
 check("export chains: valid package with bones, chain, and colliders", status == {"FINISHED"} and chain_report is not None and chain_report.ok
       and [b["name"] for b in chain_json.get("bones", [])] == [b.name for b in chain_bones] and len(joints) == 4
       and chain_json["chains"][0]["colliders"] == ["chest", "head", "guitar"] and len(chain_json.get("colliders", [])) == len(fitted)
-      and all(abs(np.linalg.norm(j["direction"]) - 1) < 1e-4 for j in joints) and b"chstage" not in chain_glb,
+      and all(abs(np.linalg.norm(j["direction"]) - 1) < 1e-4 for j in joints) and b"chstage" not in chain_glb
+      and abs(chain_json["chains"][0].get("bendLimit", 0) - math.radians(chain_format.PRESETS["long_hair"]["bend"])) < 1e-5
+      and all(j.get("stiffness", 0) > 0 and j.get("drag", 0) > 0 and "gravity" not in j for j in joints),
       {k: summary["chains"][k] for k in ("export", "validator", "colliders")} | {"fitted": len(fitted), "chstage": chain_glb.count(b"chstage"),
                                                                                  "chainColliders": chain_json.get("chains", [{}])[0].get("colliders")})
 # The joint direction points to the next joint, in the runtime frame of the bone (glTF z negated).
@@ -537,16 +542,42 @@ with bpy.context.temp_override(scene=scene, view_layer=view_layer, active_object
     bpy.ops.object.mode_set(mode="OBJECT")
 bodies = [SimpleNamespace(name=f"rb{i}", matrix_world=Matrix.Translation(head + Vector((-0.15, 0.05, 0.1 - 0.1 * i))),
                           mmd_rigid=SimpleNamespace(bone=f"hair{i + 1}", type=str(0 if i == 0 else 1), shape="CAPSULE", size=(0.03, 0.2, 0)),
-                          rigid_body=SimpleNamespace(mass=0.5, angular_damping=0.9)) for i in range(3)]
+                          rigid_body=SimpleNamespace(mass=0.5, linear_damping=0.5, angular_damping=0.9)) for i in range(3)]
 limits = SimpleNamespace(limit_ang_x_lower=-0.5, limit_ang_x_upper=0.5, limit_ang_y_lower=-0.1, limit_ang_y_upper=0.2, limit_ang_z_lower=-0.05, limit_ang_z_upper=0.05)
-mmd_joints = [SimpleNamespace(name=f"j{i}", matrix_world=Matrix.Identity(4), rigid_body_constraint=SimpleNamespace(object1=bodies[i - 1], object2=bodies[i], **vars(limits)))
-              for i in (1, 2)]
+mmd_joints = [SimpleNamespace(name=f"j{i}", matrix_world=Matrix.Identity(4), rigid_body_constraint=SimpleNamespace(object1=bodies[i - 1], object2=bodies[i], **vars(limits)),
+                              mmd_joint=SimpleNamespace(spring_angular=(10.0, 10.0, 10.0))) for i in (1, 2)]
 made, _ = chain_tools.import_mmd(scene, mmd, bodies, mmd_joints, parent=head_bone)
 mmd_bones = [rig.data.bones[made[n]] for n in ("hair2", "hair3") if n in made]
 check("chains from MMD physics", len(made) == 2 and len(mmd_bones) == 2 and mmd_bones[0].parent.name == head_bone and mmd_bones[1].parent == mmd_bones[0]
       and all(b.chstage_joint.enabled for b in mmd_bones) and abs(mmd_bones[0].chstage_joint.cone - math.degrees(0.5)) < 1e-3
-      and abs(mmd_bones[0].chstage_joint.damping - chain_format.mmd_damping(0.9)) < 1e-4 and abs(mmd_bones[0].chstage_joint.mass - 0.5) < 1e-6,
-      {n: (b.parent.name, round(b.chstage_joint.cone, 3), round(b.chstage_joint.planes, 3)) for n, b in zip(("hair2", "hair3"), mmd_bones)})
+      and abs(mmd_bones[0].chstage_joint.damping - chain_format.mmd_damping(0.9)) < 1e-4 and abs(mmd_bones[0].chstage_joint.mass - 0.5) < 1e-6
+      and abs(mmd_bones[0].chstage_joint.stiffness - chain_format.mmd_stiffness(10, 0.5, 0.25)) < 1e-3
+      and abs(mmd_bones[0].chstage_joint.drag - chain_format.mmd_drag(mmd_bones[0].chstage_joint.stiffness, chain_format.PRESETS["long_hair"]["drag"])) < 1e-4,
+      {n: (b.parent.name, round(b.chstage_joint.cone, 3), round(b.chstage_joint.planes, 3), round(b.chstage_joint.stiffness, 3)) for n, b in zip(("hair2", "hair3"), mmd_bones)})
+# VRM spring bones: a VRM 1.0 file whose nodes have the names of rig bones (the head and the twin tail bones), at
+# their Blender positions; a sphere collider on the head.
+vrm_bones = [head_bone] + [b.name for b in chain_bones]
+vrm_world = np.array(rig.matrix_world)
+vrm_nodes = [{"name": n, "translation": list(chain_format.AXES.T @ (vrm_world[:3, :3] @ np.array(rig.data.bones[n].head_local) + vrm_world[:3, 3]))} for n in vrm_bones]
+vrm_document = {"asset": {"version": "2.0"}, "nodes": vrm_nodes, "extensions": {"VRMC_springBone": {
+    "colliders": [{"node": 0, "shape": {"sphere": {"offset": [0, 0.1, 0], "radius": 0.09}}}], "colliderGroups": [{"colliders": [0]}],
+    "springs": [{"name": "vrm_tail", "colliderGroups": [0], "joints": [{"node": i, "stiffness": 0.5, "dragForce": 0.4, "gravityPower": 0.2, "hitRadius": 0.02}
+                                                                      for i in range(1, len(vrm_bones))]}]}}}
+vrm_json = json.dumps(vrm_document).encode()
+vrm_json += b" " * (-len(vrm_json) % 4)
+vrm_path = output / "test-springs.vrm"
+vrm_path.write_bytes(b"glTF" + (2).to_bytes(4, "little") + (20 + len(vrm_json)).to_bytes(4, "little") + len(vrm_json).to_bytes(4, "little") + b"JSON" + vrm_json)
+vrm_chains, vrm_colliders = chain_tools.import_vrm(scene, str(vrm_path))
+vrm_joints = chain_tools.chain_bones(rig, vrm_chains[0].name) if vrm_chains else []
+vrm_expected = chain_format.vrm_joint(0.5, 0.4, 0.2, [0, -1, 0], chain_tools.joint_vector(vrm_joints[0]).length) if vrm_joints else {}
+vrm_centre = vrm_world[:3, :3] @ np.array(rig.data.bones[head_bone].head_local) + vrm_world[:3, 3] + [0, 0, 0.1]
+check("chains from VRM spring bones", len(vrm_chains) == 1 and len(vrm_joints) == len(chain_bones) - 1 and len(vrm_colliders) == 1
+      and abs(vrm_joints[0].chstage_joint.damping - vrm_expected["damping"]) < 1e-3 and abs(vrm_joints[0].chstage_joint.stiffness - vrm_expected["stiffness"]) < 1e-2
+      and abs(vrm_joints[0].chstage_joint.gravity - vrm_expected["gravity"]) < 1e-4 and abs(vrm_joints[0].chstage_joint.cone - 90) < 1e-4
+      and vrm_chains[0].colliders == vrm_colliders[0].chstage_collider.label
+      and np.linalg.norm(np.array(vrm_colliders[0].matrix_world.translation) - vrm_centre) < 1e-3,
+      {"chains": [c.name for c in vrm_chains], "joints": [(b.name, round(b.chstage_joint.stiffness, 2), round(b.chstage_joint.damping, 2)) for b in vrm_joints],
+       "collider": list(vrm_colliders[0].matrix_world.translation) if vrm_colliders else None, "expected": list(vrm_centre)})
 
 # 7. A character library profile: Midori of gh3-characters-v1, with the GH3 character packages next to it.
 character_library = library.parent / "gh3-characters-v1.chlib"

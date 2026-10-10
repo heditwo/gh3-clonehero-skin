@@ -55,6 +55,57 @@ class ChainRowTests(unittest.TestCase):
         self.assertEqual(chains.mmd_limits([0, 0, -1], np.eye(3), [0] * 6), (0.0, None, None))
         self.assertEqual(chains.mmd_limits([0, 0, -1], np.eye(3), [-0.5, 0.5, -0.45, 0.45, 0, 0])[1:], (None, None))
 
+    def test_spring_settings(self):
+        self.assertAlmostEqual(chains.preset_stiffness("long_hair", 0), chains.PRESETS["long_hair"]["stiffness"])
+        self.assertAlmostEqual(chains.preset_stiffness("long_hair", 1), chains.PRESETS["long_hair"]["stiffness"] * (1 - chains.PRESETS["long_hair"]["falloff"]))
+        row = chains.joint_row("a", dict(chains.PRESETS["long_hair"], stiffness=25.0, gravity=0.5), 0.2, [0, 1, 0])
+        self.assertEqual((row["stiffness"], row["drag"], row["gravity"]), (25.0, chains.PRESETS["long_hair"]["drag"], 0.5))
+        row = chains.joint_row("a", dict(chains.PRESETS["long_hair"], stiffness=0.0, drag=0.0, gravity=1.0), 0.2, [0, 1, 0])
+        self.assertFalse({"stiffness", "drag", "gravity"} & set(row))
+        settings = dict(chains.PRESETS["long_hair"])
+        joints = {"tail_01": {"settings": settings, "chain": "tail", "axis": [0, 0, 0.2], "side": [1, 0, 0]}}
+        _, _, rows = chains.character_rows(chain_glb(), ["bone-00000001", "bone-00000002"], joints, [], [{"name": "tail", "colliders": None, "bend": 60}])
+        self.assertAlmostEqual(rows[0]["bendLimit"], math.radians(60), places=5)
+        _, _, rows = chains.character_rows(chain_glb(), ["bone-00000001", "bone-00000002"], joints, [], [{"name": "tail", "colliders": None, "bend": 0}])
+        self.assertNotIn("bendLimit", rows[0])
+
+    def test_mmd_stiffness(self):
+        # Tda Miku: the first twin tail body (spring 10, 0.5 kg, 0.209 m) and a cable tail body (spring 100, 0.8 kg, 0.1 m).
+        self.assertAlmostEqual(chains.mmd_stiffness(10, 0.5, 0.209), 10 / (0.5 * (0.209 / 0.08) ** 2 / 3), places=6)
+        self.assertGreater(chains.mmd_stiffness(100, 0.8, 0.1), 200)
+        self.assertEqual(chains.mmd_stiffness(1e6, 0.1, 0.01), chains.MAX_STIFFNESS)
+        self.assertEqual(chains.mmd_stiffness(0, 1, 0.2), 0)
+        self.assertAlmostEqual(chains.mmd_drag(400, 15), 28)
+        self.assertEqual(chains.mmd_drag(10, 15), 15)
+
+    def test_vrm_mapping(self):
+        # drag 0.4 at 60 fps: 30.6 per second; the stiffness and gravity of the hair bench check (VERIFICATION.md).
+        values = chains.vrm_joint(0.5, 0.4, 0.2, [0, -1, 0], 0.14)
+        self.assertAlmostEqual(values["damping"], -math.log(0.6) * 60, places=4)
+        self.assertAlmostEqual(values["stiffness"], values["damping"] * 0.5 / (0.14 * 0.4), places=3)
+        self.assertAlmostEqual(values["gravity"], values["damping"] * 0.2 / (0.4 * 9.81), places=4)
+        self.assertEqual(chains.vrm_joint(1, 0, 0, [0, 1, 0], 0.1)["gravity"], 0)
+        self.assertAlmostEqual(chains.vrm_joint(1, 0, 0, None, 0.1)["stiffness"], 600)
+
+    def test_vrm_springs(self):
+        nodes = [{"name": "head", "children": [1, 4]}, {"name": "hair_1", "children": [2]}, {"name": "hair_2", "children": [3]}, {"name": "hair_end"}, {"name": "chest"}]
+        vrm1 = {"nodes": nodes, "extensions": {"VRMC_springBone": {
+            "colliders": [{"node": 4, "shape": {"capsule": {"offset": [0, 0, 0], "tail": [0, 0.2, 0], "radius": 0.1}}}, {"node": 0, "shape": {"sphere": {"radius": 0.09}}}],
+            "colliderGroups": [{"colliders": [0]}, {"colliders": [1]}],
+            "springs": [{"name": "hair", "joints": [{"node": 1, "stiffness": 0.8, "dragForce": 0.5, "gravityPower": 0.1, "hitRadius": 0.02}, {"node": 2}, {"node": 3}], "colliderGroups": [0, 1]}]}}}
+        springs, colliders = chains.vrm_springs(vrm1)
+        self.assertEqual([j["node"] for j in springs[0]["joints"]], [1, 2, 3])
+        self.assertEqual((springs[0]["joints"][0]["stiffness"], springs[0]["joints"][0]["drag"], springs[0]["colliders"]), (0.8, 0.5, [0, 1]))
+        self.assertEqual((colliders[0]["tail"], colliders[1]["tail"], colliders[1]["radius"]), ([0, 0.2, 0], None, 0.09))
+        vrm0 = {"nodes": nodes, "extensions": {"VRM": {"secondaryAnimation": {
+            "colliderGroups": [{"node": 4, "colliders": [{"offset": {"x": 0, "y": 0.1, "z": 0.05}, "radius": 0.1}]}],
+            "boneGroups": [{"comment": "hair", "stiffiness": 1.2, "dragForce": 0.4, "gravityPower": 0, "gravityDir": {"x": 0, "y": -1, "z": 0}, "hitRadius": 0.03,
+                            "bones": [1], "colliderGroups": [0]}]}}}}
+        springs, colliders = chains.vrm_springs(vrm0)
+        self.assertEqual(([j["node"] for j in springs[0]["joints"]], springs[0]["joints"][0]["stiffness"], springs[0]["colliders"]), ([1, 2, 3], 1.2, [0]))
+        self.assertEqual(colliders[0]["offset"], [0, 0.1, -0.05])
+        self.assertEqual(chains.vrm_springs({"nodes": nodes}), ([], []))
+
     def test_names(self):
         self.assertEqual(chains.chain_name("髪 left/1"), "left_1")
         self.assertEqual(chains.chain_name("tail", {"tail", "tail_2"}), "tail_3")

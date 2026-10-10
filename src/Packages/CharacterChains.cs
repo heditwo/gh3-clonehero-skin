@@ -16,7 +16,7 @@ internal static class CharacterChains
     private static readonly string[] JointFields =
     {
         "bone", "parent", "length", "direction", "radius", "mass", "friction", "angularDamping", "maxAngularVelocity", "type", "limits",
-        "twistAxis", "coneAxis", "planeAxis", "axis", "range",
+        "twistAxis", "coneAxis", "planeAxis", "axis", "range", "stiffness", "drag", "gravity",
     };
 
     public sealed record Result(string[] Bones, int[] Parents, float[][] Bind, JsonArray AddedBones, JsonArray Colliders, JsonArray Joints);
@@ -74,8 +74,9 @@ internal static class CharacterChains
         var chainNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var chain in chainRows)
         {
-            Fields(chain, "chain", new[] { "name", "colliders", "joints" }, "name", "joints");
+            Fields(chain, "chain", new[] { "name", "colliders", "bendLimit", "joints" }, "name", "joints");
             var chainName = Name(chain["name"], "chain name");
+            var bendLimit = chain["bendLimit"] == null ? 0 : Number(chain["bendLimit"], 1e-6, Math.PI, $"chain '{chainName}' bendLimit");
             if (!chainNames.Add(chainName)) throw new PackageException($"two chains have the name '{chainName}'");
             long mask = chain["colliders"] == null ? (1L << colliders.Count) - 1 : 0;
             foreach (var name in List(chain["colliders"], "chain colliders", MaxColliders).Select(n => Text(n)))
@@ -102,6 +103,10 @@ internal static class CharacterChains
                     ["maxAngularVelocity"] = joint["maxAngularVelocity"] == null ? 0 : Number(joint["maxAngularVelocity"], 0, 1000, $"{label} maxAngularVelocity"),
                     ["radius"] = joint["radius"] == null ? 0 : Number(joint["radius"], 0, 0.5, $"{label} radius"),
                     ["direction"] = Array(joint["direction"] == null ? new double[] { 0, 1, 0 } : Unit(joint["direction"], $"{label} direction")),
+                    ["stiffness"] = joint["stiffness"] == null ? 0 : Number(joint["stiffness"], 0, StageHair.MaxStiffness, $"{label} stiffness"),
+                    ["drag"] = joint["drag"] == null ? 0 : Number(joint["drag"], 0, 100, $"{label} drag"),
+                    ["gravity"] = joint["gravity"] == null ? 1 : Number(joint["gravity"], 0, 2, $"{label} gravity"),
+                    ["bendLimit"] = bendLimit,
                 };
                 var type = Text(joint["type"]) ?? "ragdoll";
                 if (type == "hinge")

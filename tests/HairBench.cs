@@ -142,6 +142,44 @@ internal static class HairBench
 
     // Body collision experiment: the GH3 ragdoll body capsules (tools/research/hair-motion/body_colliders.py) as colliders
     // of every hair joint, except the body of its constraint parent.
+    // GH3_HAIR_BENCH_MOTION: rows of float32 t, dx, dy, dz, qx, qy, qz, qw, the move and the world turn of the head from
+    // its bind pose (tools/research/hair-motion/naturalness.py writes the test motions).
+    private sealed class HeadMotion
+    {
+        private readonly float[] _rows;
+        private readonly int _count;
+        public HeadMotion(float[] rows) { _rows = rows; _count = rows.Length / 8; }
+        public double Duration => _rows[(_count - 1) * 8] - _rows[0];
+
+        public (Vector3 Offset, Quaternion Turn) At(double time)
+        {
+            var t = (float)(_rows[0] + time);
+            var at = 0;
+            while (at < _count - 2 && _rows[(at + 1) * 8] <= t) at++;
+            int a = at * 8, b = (at + 1) * 8;
+            var f = Math.Clamp((t - _rows[a]) / Math.Max(_rows[b] - _rows[a], 1e-6f), 0, 1);
+            var offset = Vector3.Lerp(new(_rows[a + 1], _rows[a + 2], _rows[a + 3]), new(_rows[b + 1], _rows[b + 2], _rows[b + 3]), f);
+            var turn = Quaternion.Slerp(new(_rows[a + 4], _rows[a + 5], _rows[a + 6], _rows[a + 7]), new(_rows[b + 4], _rows[b + 5], _rows[b + 6], _rows[b + 7]), f);
+            return (offset, Quaternion.Normalize(turn));
+        }
+    }
+
+    private static HeadMotion Motion(string file)
+    {
+        var raw = File.ReadAllBytes(file);
+        var rows = new float[raw.Length / 4];
+        Buffer.BlockCopy(raw, 0, rows, 0, rows.Length * 4);
+        return new HeadMotion(rows);
+    }
+
+    // The custom joint at `bone` or nearest above it in the rig, or -1.
+    private static int Above(HairJoint[] joints, int[] parents, int bone)
+    {
+        for (; bone >= 0; bone = parents[bone])
+            if (Array.FindIndex(joints, j => j.Bone == bone) is var k and >= 0) return k;
+        return -1;
+    }
+
     private static HairDefinition WithBody(HairDefinition definition, string file)
     {
         using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllText(file));
@@ -181,12 +219,42 @@ internal static class HairBench
         var library = Gh3Skin.Packages.CharacterLibrary.Load(folder);
         var bank = CharacterMotionBank.Load(folder);
         var profile = library.Profiles[model.Profile];
-        var (map, bind) = CharacterChainRig.MapJoints(model, profile.Bones.Length,
-            joints => Gh3Skin.Packages.CharacterRig.Map(joints, profile.Bones, profile.Parents, profile.Bones, new HashSet<int>(), ownRole: true))!.Value;
-        var (extraParents, extraBind, joints, colliders) = CharacterChainRig.Plan(model, map, bind);
         var animation = BandAnimation.FromRig(profile.Parents, profile.Bind);
-        var parents = animation.Parents.Concat(extraParents).ToArray();
-        var definition = HairDefinition.Merge(profile.Hair.Length > 0 ? bank.Hair[profile.Hair] : null, joints, colliders)!;
+        var skeleton = model.Skeleton;
+        int[] parents, map;
+        BandPose[] extraBind;
+        HairJoint[] joints;
+        HairCollider[] colliders;
+        HairDefinition definition;
+        CharacterRetarget? retarget = null;
+        if (skeleton != null)
+        {
+            // A character on its own skeleton: the profile clips play on the profile rig and the retarget moves the
+            // skeleton (StageBand.LoadRetargeted); the chains have no profile hair.
+            var identity = Enumerable.Range(0, skeleton.Names.Length).ToArray();
+            (_, extraBind, joints, colliders) = CharacterChainRig.Plan(model, identity, identity);
+            extraBind = Array.Empty<BandPose>();
+            map = identity;
+            retarget = new CharacterRetarget(profile.Bones, animation.Parents, animation.BindPose, new RetargetSkeleton
+            {
+                Bones = skeleton.Names, Parents = skeleton.Parents,
+                Bind = skeleton.Bind.Select(b => new BandPose(new(b[0], b[1], b[2]), Quaternion.Normalize(new(b[3], b[4], b[5], b[6])))).ToArray(),
+                Humanoid = skeleton.Humanoid, Followers = skeleton.Followers, InstrumentBone = skeleton.InstrumentBone,
+                InstrumentOffset = new(skeleton.InstrumentOffset[0], skeleton.InstrumentOffset[1], skeleton.InstrumentOffset[2]), InstrumentScale = skeleton.InstrumentScale,
+            }, "guitarist");
+            parents = skeleton.Parents;
+            definition = HairDefinition.Merge(null, joints, colliders)!;
+        }
+        else
+        {
+            var (mapped, bind) = CharacterChainRig.MapJoints(model, profile.Bones.Length,
+                names => Gh3Skin.Packages.CharacterRig.Map(names, profile.Bones, profile.Parents, profile.Bones, new HashSet<int>(), ownRole: true))!.Value;
+            map = mapped;
+            int[] extraParents;
+            (extraParents, extraBind, joints, colliders) = CharacterChainRig.Plan(model, map, bind);
+            parents = animation.Parents.Concat(extraParents).ToArray();
+            definition = HairDefinition.Merge(profile.Hair.Length > 0 ? bank.Hair[profile.Hair] : null, joints, colliders)!;
+        }
         var performance = StagePerformance.Load(Path.Combine(assets, "libraries/gh3-band-v1/direction/performance.json"))!;
         var timeline = StageChartReader.Load("", "", Path.Combine(assets, "stages/events"), "My Curse", "Killswitch Engage");
         var set = bank.Animations[profile.Animations];
@@ -199,17 +267,52 @@ internal static class HairBench
         };
         var player = new PerformancePlayer("guitarist", "", motion.Member, animation.BindPose, timeline, animation.Parents, performance.Constants, motion);
         player.Prepare();
+        var profileHead = Array.IndexOf(profile.Bones, Gh3Skin.Packages.CharacterRig.Head);
+        var headBone = skeleton != null ? skeleton.Humanoid["head"] : profileHead;
+        var path = Environment.GetEnvironmentVariable("GH3_HAIR_BENCH_MOTION") is { } motionFile ? Motion(motionFile) : null;
+        if (path != null) seconds = Math.Min(seconds, path.Duration);
+        var sourcePose = new BandPose[animation.Parents.Length];
         BandPose Sample(double time, BandPose[] pose)
         {
-            player.Sample(time);
-            Array.Copy(player.Pose, pose, player.Pose.Length);
-            Array.Copy(extraBind, 0, pose, player.Pose.Length, extraBind.Length);
+            if (path != null)
+            {
+                // The head moves and turns about its bind position; the other bones keep the bind pose.
+                Array.Copy(animation.BindPose, sourcePose, sourcePose.Length);
+                var bindHead = World(animation.Parents, sourcePose, profileHead);
+                var parentPose = World(animation.Parents, sourcePose, animation.Parents[profileHead]);
+                var (offset, turn) = path.At(time);
+                var target = new BandPose(bindHead.Position + offset, Quaternion.Normalize(turn * bindHead.Rotation));
+                var inverse = Quaternion.Inverse(parentPose.Rotation);
+                sourcePose[profileHead] = new(Vector3.Transform(target.Position - parentPose.Position, inverse), Quaternion.Normalize(inverse * target.Rotation));
+            }
+            else
+            {
+                player.Sample(time);
+                Array.Copy(player.Pose, sourcePose, sourcePose.Length);
+            }
+            if (retarget != null)
+            {
+                var (right, left) = path != null ? (0f, 0f) : player.ArmGain;
+                retarget.Apply(sourcePose, pose, right, left);
+            }
+            else
+            {
+                Array.Copy(sourcePose, pose, sourcePose.Length);
+                Array.Copy(extraBind, 0, pose, sourcePose.Length, extraBind.Length);
+            }
             return new(Vector3.Zero, Quaternion.Identity);
         }
         var hair = new StageHair(definition, parents, Sample);
-        var custom = definition.Joints.Skip(definition.Joints.Length - joints.Length).ToArray();
         var frame = new BandPose[parents.Length];
         var world = new BandPose[parents.Length];
+        var rest = new BandPose[parents.Length];
+        var custom = definition.Joints.Skip(definition.Joints.Length - joints.Length).ToArray();
+        var names = model.ChainJoints.Select(c => c.Bone).ToArray();
+        File.WriteAllText(output + ".json", System.Text.Json.JsonSerializer.Serialize(new
+        {
+            joints = custom.Select((j, k) => new { name = names[k], parent = Above(custom, parents, j.Parent), length = j.Length }).ToArray(),
+            row = 1 + 7 + 12 * custom.Length,
+        }));
         var deepest = new float[custom.Length];
         var deepestCollider = new int[custom.Length];
         var contacts = new int[custom.Length];
@@ -230,7 +333,17 @@ internal static class HairBench
                 var parent = parents[b] < 0 ? new BandPose(Vector3.Zero, Quaternion.Identity) : world[parents[b]];
                 world[b] = new(parent.Position + Vector3.Transform(frame[b].Position, parent.Rotation), Quaternion.Normalize(parent.Rotation * frame[b].Rotation));
             }
+            // The pose without physics: the chains in their bind shape on the animated rig.
+            Sample(time, frame);
+            for (var b = 0; b < frame.Length; b++)
+            {
+                var parent = parents[b] < 0 ? new BandPose(Vector3.Zero, Quaternion.Identity) : rest[parents[b]];
+                rest[b] = new(parent.Position + Vector3.Transform(frame[b].Position, parent.Rotation), Quaternion.Normalize(parent.Rotation * frame[b].Rotation));
+            }
             writer.Write((float)time);
+            var head = world[headBone];
+            writer.Write(head.Position.X); writer.Write(head.Position.Y); writer.Write(head.Position.Z);
+            writer.Write(head.Rotation.X); writer.Write(head.Rotation.Y); writer.Write(head.Rotation.Z); writer.Write(head.Rotation.W);
             for (var j = 0; j < custom.Length; j++)
             {
                 var joint = custom[j];
@@ -238,8 +351,12 @@ internal static class HairBench
                 finite &= float.IsFinite(pose.Position.X) && float.IsFinite(pose.Rotation.W);
                 var axis = joint.Direction.Length == 3 ? new Vector3(joint.Direction[0], joint.Direction[1], joint.Direction[2]) : Vector3.UnitX;
                 var tail = pose.Position + Vector3.Transform(axis, pose.Rotation) * joint.Length;
+                var restPose = rest[joint.Bone];
+                var restTail = restPose.Position + Vector3.Transform(axis, restPose.Rotation) * joint.Length;
                 writer.Write(pose.Position.X); writer.Write(pose.Position.Y); writer.Write(pose.Position.Z);
                 writer.Write(tail.X); writer.Write(tail.Y); writer.Write(tail.Z);
+                writer.Write(restPose.Position.X); writer.Write(restPose.Position.Y); writer.Write(restPose.Position.Z);
+                writer.Write(restTail.X); writer.Write(restTail.Y); writer.Write(restTail.Z);
                 for (var c = 0; c < colliders.Length; c++)
                 {
                     if ((joint.ColliderMask & (1L << c)) == 0) continue;
@@ -273,7 +390,7 @@ internal static class HairBench
             "deepest joint " + FormattableString.Invariant($"{deepest.Max() * 1000:F1} mm at {model.Joints.ElementAtOrDefault(Array.IndexOf(map, custom[Array.IndexOf(deepest, deepest.Max())].Bone))}"));
         if (Environment.GetEnvironmentVariable("GH3_HAIR_BENCH_DETAIL") == "1")
             for (var j = 0; j < custom.Length; j++)
-                Console.WriteLine(FormattableString.Invariant($"  joint {model.AddedBones[custom[j].Bone - animation.Parents.Length].Name}: deepest {deepest[j] * 1000:F1} mm in collider {deepestCollider[j]}, {contacts[j]} contacts"));
+                Console.WriteLine(FormattableString.Invariant($"  joint {names[j]}: deepest {deepest[j] * 1000:F1} mm in collider {deepestCollider[j]}, {contacts[j]} contacts"));
         Directory.Delete(cache, true);
     }
 

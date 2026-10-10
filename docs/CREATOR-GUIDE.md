@@ -286,7 +286,7 @@ Anime models look flat with the **Lit**, **Ambient**, or **Unlit** shading. Use 
 
 ### 5.3 Make hair, skirt, and tail chains
 
-A chain is a line of bones that you add to the rig. The game moves the chain with gravity and the motion of the body, as GH3 moves its hair. Colliders are capsules on the body: the chain does not go into them.
+A chain is a line of bones that you add to the rig. The game moves the chain with gravity and the motion of the body, as GH3 moves its hair. A stiffness pulls the chain back to the shape of your model, as the spring bones of VRM and MMD do. Colliders are capsules on the body: the chain does not go into them.
 
 1. Open **Chains and Colliders** in the tab **CH Character**.
 2. Select your mesh, go to Edit Mode, and select the vertices of one strand: one twin tail, one skirt panel, or a tail.
@@ -300,21 +300,24 @@ A chain is a line of bones that you add to the rig. The game moves the chain wit
 4. Do steps 2 and 3 again for each strand.
 5. Click **Fit Body Colliders**. The tool adds capsules on the hips, the body, the legs, the arms, a sphere on the head, and a capsule on the guitar. Look at them in the viewport. Move a capsule or change its radius if necessary.
 6. For each chain, clear **All colliders** and type the colliders near it. Example: a twin tail touches `head, chest, waist, stomach, hips, thigh_l, thigh_r, guitar`; a skirt touches `thigh_l, thigh_r, shin_l, shin_r`.
-7. To change the motion, make a joint bone active in Pose Mode and change its values: **Swing limit** (how far it swings), **Damping** (how fast it stops), **Speed limit** (how fast it can turn).
+7. To change the motion, make a joint bone active in Pose Mode and change its values: **Stiffness** (how strongly the joint goes back to the shape of your model), **Drag** (how fast the swings stop after a move), **Gravity** (1: full gravity, 0: none), **Damping** (how much the chain trails behind the head), **Swing limit** (how far each joint swings), **Speed limit** (how fast it can turn). In the chain list, **Bend limit** is the largest angle of the chain end from its rest direction: 60° keeps a hanging twin tail below the head.
 8. Click **Validate**, then **Export .chchar**.
 
 ![A twin tail chain (blue) and the Chains and Colliders panel](images/creator/character-chains.png)
 
-With an MMD model: import the model with MMD Tools with physics and click **Chains from MMD Physics**. On a GH3 rig, first move the MMD model onto the rig (the same fit as the mesh); the tool makes a bone for each moving rigid body. On the model's own skeleton, the tool uses the MMD bones themselves. Both get the MMD mass, damping, and limits. Then remove the MMD model that you imported for the physics.
+With an MMD model: import the model with MMD Tools with physics and click **Chains from MMD Physics**. On a GH3 rig, first move the MMD model onto the rig (the same fit as the mesh); the tool makes a bone for each moving rigid body. On the model's own skeleton, the tool uses the MMD bones themselves. Both get the MMD mass, damping, limits, and springs (the stiffness). Then remove the MMD model that you imported for the physics.
+
+With a VRM model on its own skeleton: click **Chains from VRM Spring Bones** and select the `.vrm` file. The tool makes a chain for each VRM spring with the VRM stiffness, drag, gravity, and hit radius, and the VRM colliders.
 
 On a character with its own skeleton, a chain joint is a bone of your model that has no role, that is not a parent of a bone with a role, and that is not a follower. **Fit Body Colliders** puts the capsules on the bones with the roles (no guitar capsule: the instrument hangs on the GH3 rig).
 
 Hints:
 
-- Make the swing limit small for a long chain: each joint adds its swing.
+- Each joint adds its swing: the bend limit of the chain stops a long chain from folding.
+- Hair that whips: add drag. Hair that is too stiff: less stiffness. Hair that does not trail behind the head: more damping.
 - A chain that touches a collider at rest pushes away from it all the time. Give each chain only the colliders near it.
 - A long tail can hit the floor: add a large sphere under the floor on the root bone (**Add Collider** on the root bone, radius 3 m, 3 m under the floor).
-- At most 64 joints. Each joint costs time in the game; 40 joints of the test character take 0.13–0.36 ms of each frame on the test computer.
+- At most 64 joints. Each joint costs time in the game; 40 joints of the test character take 0.15–0.47 ms of each frame on the test computer.
 
 ### 5.4 Play the character
 

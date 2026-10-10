@@ -40,9 +40,10 @@ internal static class HairLogicTests
         }
         CheckHavokLimits();
         CheckCustomChains();
+        CheckSpringChains();
         if (Environment.GetEnvironmentVariable("GH3_HAIR_ASSETS") is { } assets) CheckAssets(assets);
         if (Environment.GetEnvironmentVariable("GH3_CHARACTER_HAIR_ASSETS") is { } characters) CheckCharacterAssets(characters);
-        Console.WriteLine("Hair inertia, attachment, limits, Havok limit frames, speed limit, chains, custom chain axes and colliders, frame rates, pause, and seek checks passed.");
+        Console.WriteLine("Hair inertia, attachment, limits, Havok limit frames, speed limit, chains, custom chain axes and colliders, stiffness, drag, gravity, bend limit, offset bones, frame rates, pause, and seek checks passed.");
     }
 
     // A still head: the joints hang from their limits under gravity (no spring to the bind pose), the cone is centred on
@@ -211,6 +212,99 @@ internal static class HairLogicTests
             }
             Check(deepest < 0.005f, FormattableString.Invariant($"a moving collider does not pass through the chain at {fps} fps (depth {deepest:F3} m)"));
         }
+    }
+
+    // Custom chain physics: the stiffness holds the bind direction against gravity, the drag stops the swings after a
+    // move, the gravity share, the bend limit of the chain end, a joint that hangs from an offset bone below the joint
+    // above it, and the frame rate independence.
+    private static void CheckSpringChains()
+    {
+        // A level chain of four 0.15 m joints on a head that jerks sideways at 1 s and stops.
+        HairJoint Joint(int bone, int parent, float stiffness, float drag, float gravity, float bend) => new()
+        {
+            Bone = bone, Parent = parent, Position = new[] { parent == 0 ? 0.1f : 0.15f, 0f, 0f }, Rotation = new[] { 0f, 0f, 0f, 1f }, Length = 0.15f, Mass = 1,
+            Friction = 0.02f, AngularDamping = 1, Limits = new() { ["coneLimit"] = new[] { -1f, 0.8f } }, HeadCapsule = false, Custom = true,
+            Stiffness = stiffness, Drag = drag, Gravity = gravity, BendLimit = bend,
+        };
+        BandPose Jerk(double t, BandPose[] pose)
+        {
+            var x = (float)Math.Clamp((t - 1) / 0.15, 0, 1) * 0.3f;
+            pose[0] = new(new(x, 2, 0), Quaternion.Identity);
+            for (var i = 1; i < pose.Length; i++) pose[i] = new(new(i == 1 ? 0.1f : 0.15f, 0, 0), Quaternion.Identity);
+            return new(Vector3.Zero, Quaternion.Identity);
+        }
+        var parents = new[] { -1, 0, 1, 2, 3 };
+        HairDefinition Chain(float stiffness, float drag, float gravity, float bend = 0) =>
+            new() { Head = -1, Joints = Enumerable.Range(1, 4).Select(b => Joint(b, b - 1, stiffness, drag, gravity, bend)).ToArray() };
+        Vector3[] Ends(HairDefinition definition, int[] rig, StageHair.PoseSampler sample, double seconds, int fps = 120)
+        {
+            var hair = new StageHair(definition, rig, sample);
+            var pose = new BandPose[rig.Length];
+            var ends = new List<Vector3>();
+            for (var i = 0; i / (double)fps <= seconds; i++)
+            {
+                hair.Sample(i / (double)fps); sample(i / (double)fps, pose); hair.Apply(pose);
+                var world = new BandPose[rig.Length];
+                for (var b = 0; b < rig.Length; b++)
+                {
+                    var parent = rig[b] < 0 ? new BandPose(Vector3.Zero, Quaternion.Identity) : world[rig[b]];
+                    world[b] = new(parent.Position + Vector3.Transform(pose[b].Position, parent.Rotation), parent.Rotation * pose[b].Rotation);
+                }
+                var last = world[rig.Length - 1];
+                ends.Add(last.Position + Vector3.Transform(Vector3.UnitX, last.Rotation) * 0.15f - world[0].Position);
+            }
+            return ends.ToArray();
+        }
+        float Sag(Vector3 end) => MathF.Atan2(-end.Y, end.X);
+        var loose = Ends(Chain(0, 15, 1), parents, Jerk, 0.9);
+        var stiff = Ends(Chain(400, 15, 1), parents, Jerk, 0.9);
+        var weightless = Ends(Chain(0, 0, 0), parents, Jerk, 0.9);
+        Check(Sag(stiff[^1]) < 0.5f * Sag(loose[^1]) && Sag(stiff[^1]) > 0.02f, FormattableString.Invariant($"the stiffness holds the bind shape against gravity ({Sag(stiff[^1]):F2} rad, loose {Sag(loose[^1]):F2} rad)"));
+        Check(Math.Abs(Sag(weightless[^1])) < 0.001f, "a chain without gravity keeps its bind shape");
+        // After the stop (1.15 s), the end moves less with the drag.
+        float Motion(Vector3[] ends) => Enumerable.Range(1, ends.Length - 1).Where(i => i > 120 * 1.6).Sum(i => Vector3.Distance(ends[i], ends[i - 1]));
+        var swinging = Ends(Chain(150, 0, 1), parents, Jerk, 3);
+        var damped = Ends(Chain(150, 15, 1), parents, Jerk, 3);
+        Check(Motion(damped) < 0.3f * Motion(swinging), FormattableString.Invariant($"the drag stops the swings after a move ({Motion(damped):F3} m, without drag {Motion(swinging):F3} m)"));
+        // The bend limit: the chord from the chain start to the end stays within 0.5 rad of the bind direction (+X).
+        var bent = Ends(Chain(0, 5, 1, 0.5f), parents, Jerk, 3);
+        var chord = bent.Skip(240).Max(e => MathF.Atan2(-(e.Y), e.X - 0.1f));
+        Check(chord < 0.56f && Sag(loose[^1]) > 0.7f, FormattableString.Invariant($"the bend limit holds the chain end ({chord:F2} rad)"));
+        // Offset bones between the joints (a game rig): bones 2 and 4 are helpers at the joint ends; the chain moves as
+        // the chain without them.
+        var offsetParents = new[] { -1, 0, 1, 2, 3, 4 };
+        BandPose Offset(double t, BandPose[] pose)
+        {
+            Jerk(t, pose);
+            pose[2] = new(new(0.15f, 0, 0), Quaternion.Identity);
+            pose[3] = new(Vector3.Zero, Quaternion.Identity);
+            pose[4] = new(new(0.15f, 0, 0), Quaternion.Identity);
+            pose[5] = new(Vector3.Zero, Quaternion.Identity);
+            return new(Vector3.Zero, Quaternion.Identity);
+        }
+        var helpers = new HairDefinition { Head = -1, Joints = new[] { Joint(1, 0, 60, 10, 1, 0), Joint(3, 2, 60, 10, 1, 0), Joint(5, 4, 60, 10, 1, 0) } };
+        helpers.Joints[1].Position = helpers.Joints[2].Position = new[] { 0f, 0f, 0f };
+        var direct = new HairDefinition { Head = -1, Joints = new[] { Joint(1, 0, 60, 10, 1, 0), Joint(2, 1, 60, 10, 1, 0), Joint(3, 2, 60, 10, 1, 0) } };
+        var withHelpers = Ends(helpers, offsetParents, Offset, 2.5);
+        var withoutHelpers = Ends(direct, new[] { -1, 0, 1, 2 }, (t, pose) => { var full = new BandPose[5]; Jerk(t, full); Array.Copy(full, pose, 4); return new(Vector3.Zero, Quaternion.Identity); }, 2.5);
+        Check(withHelpers.Zip(withoutHelpers).All(p => Vector3.Distance(p.First, p.Second) < 2e-3f), "a joint below an offset bone follows the joint above it");
+        Check(withHelpers.Max(e => Vector3.Distance(e, withHelpers[0])) > 0.05f, "the chain with offset bones moves");
+        foreach (var fps in new[] { 30, 60, 144 })
+        {
+            var ends = Ends(Chain(150, 15, 1, 0.5f), parents, Jerk, 2, fps);
+            var reference = Ends(Chain(150, 15, 1, 0.5f), parents, Jerk, 2, 120);
+            Check(Vector3.Distance(ends[^1], reference[^1]) < 1e-5f, $"the custom chain physics is independent of the render frame rate ({fps} fps)");
+        }
+        Check(Throws(() => new StageHair(Chain(6000, 0, 1), parents, Jerk)) && Throws(() => new StageHair(new HairDefinition { Head = -1,
+            Joints = new[] { new HairJoint { Bone = 1, Parent = 0, Position = new[] { 0f, 0, 0 }, Rotation = new[] { 0f, 0, 0, 1 }, Length = 0.1f, Mass = 1,
+                Limits = new() { ["coneLimit"] = new[] { -1f, 0.5f } }, Stiffness = 10 } } }, new[] { -1, 0 }, Jerk)),
+            "the solver refuses a stiffness out of range and the custom fields on GH3 joints");
+    }
+
+    private static bool Throws(Action action)
+    {
+        try { action(); return false; }
+        catch (InvalidDataException) { return true; }
     }
 
     private static void CheckTransparency()

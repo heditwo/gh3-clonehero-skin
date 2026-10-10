@@ -391,7 +391,7 @@ The GH3 highways are in the character packages (13 images in 70 guitarist packag
 
 ### 9.5 Custom chains
 
-A character can have its own hair, skirt, tail, and cable chains. It adds bones to the rig of its profile (`bones`), gives physics to them (`chains`), and gives the chains capsules to collide with (`colliders`). The game simulates the chains with the solver of the GH3 hair ([PARITY-NOTES.md](PARITY-NOTES.md#hair-dynamics)): no spring, gravity, Havok angular damping, constraint friction, the cone, plane, and hinge limits, and the speed limit. The hair chains of the profile stay as they are; a mesh can use both.
+A character can have its own hair, skirt, tail, and cable chains. It adds bones to the rig of its profile (`bones`), gives physics to them (`chains`), and gives the chains capsules to collide with (`colliders`). The game simulates the chains with the solver of the GH3 hair ([PARITY-NOTES.md](PARITY-NOTES.md#hair-dynamics)): gravity, Havok angular damping, constraint friction, the cone, plane, and hinge limits, and the speed limit. Custom chains also have the spring-bone values of VRM and MMD models: a stiffness that pulls each joint to its bind direction, a drag that stops the swing against the parent, a share of gravity, and a bend limit for the whole chain. Without these fields a chain moves as the GH3 hair (no spring). The hair chains of the profile stay as they are (GH3 physics, no stiffness); a mesh can use both.
 
 ```mermaid
 flowchart LR
@@ -426,6 +426,7 @@ The rows name bones, not rig indices: a GH3 bone name, `bone-<8 hex digits>`, th
 |---|---|
 | `name` | Unique chain name |
 | `colliders` | The collider names that the joints touch. Absent: all colliders. Empty: none |
+| `bendLimit` | Optional. The largest angle (radians, more than 0, at most π) of the chord from the chain start to the chain end from its bind chord, in the frame of the parent of the first joint. Absent: no limit. Example: 1.05 (60°) keeps a hanging twin tail below the horizontal |
 | `joints` | 1–16 joints, parents first |
 
 A joint:
@@ -439,6 +440,9 @@ A joint:
 | `radius` | No | The collision radius of the joint segment (metres, 0–0.5) |
 | `mass`, `friction`, `angularDamping` | Yes | kg (more than 0, at most 100), constraint friction torque (N·m), Havok angular damping (per second), as in `band/hair.json` |
 | `maxAngularVelocity` | No | Speed limit of the joint (radians per second). Absent or 0: no limit |
+| `stiffness` | No | The pull of the joint toward its bind direction in the frame of its parent (per second squared, 0–5000). For a small angle, the angular acceleration is `stiffness` times the angle. Absent: 0 (no pull) |
+| `drag` | No | The damping of the swing of the joint against its parent (per second, 0–100). The motion that the parent gives stays. Absent: 0 |
+| `gravity` | No | The share of gravity (0–2). Absent: 1 |
 | `type` | No | `ragdoll` (default) or `hinge` |
 | `limits` | For `ragdoll` | `coneLimit` (the maximum, more than 0 and at most π/2, is the swing from the bind direction) and optional `planesLimit` (−π/2 to π/2) and `twistLimit` (not used) |
 | `twistAxis`, `coneAxis`, `planeAxis` | No | The Havok limit frames of section 10.1, unit vectors in the bone frame; all three or none, with `planesLimit` |
@@ -446,7 +450,7 @@ A joint:
 
 Rules in addition to the schema (the validator and `CharacterImporter` check them): names unique; parents exist and come first; the joint bones are added bones; colliders are not on joint bones and are within 10 m of their bone; unit vectors have unit length (±0.01); the GLB has every added bone with its bind pose.
 
-At run time (`CharacterExtras`, `StageHair`): the added bones come after the rig bones. In another role (a guitarist character that plays the bassist), an added bone and a collider follow the role bone that drives their parent, as the mesh does ([section 20.6](#206-characters)). The joints of a chain collide with the capsules of the chain: in each solver iteration, a joint follows the end of its parent joint, keeps its direction, and leaves the capsules that it enters (a joint that starts in a capsule, for example a skirt joint on the hips, is pushed out at its end). The head capsule of the profile hair does not apply to custom joints; add a head collider. The profile hair does not collide with the colliders: the GH3 hair keeps the head capsule of GH3 (the body collision of GH3 was measured and is not used for the GH3 hair; [PARITY-NOTES.md](PARITY-NOTES.md#hair-dynamics)).
+At run time (`CharacterExtras`, `StageHair`): the added bones come after the rig bones. In another role (a guitarist character that plays the bassist), an added bone and a collider follow the role bone that drives their parent, as the mesh does ([section 20.6](#206-characters)). A joint can hang from a rig bone that is below the joint above it (an offset bone of a game rig): that bone follows the simulated joint, and when the joint starts at the end of the joint above, the two joints pull on each other. Each step (120 a second), a joint moves with its speed (`angularDamping` slows it in the world, `drag` slows it against its parent), gravity (times `gravity`), and the pull of `stiffness`; then the solver applies the lengths, the limits, the bend limit of the chain (the whole chain turns about its start, with its speed), and the colliders. The joints of a chain collide with the capsules of the chain: in each solver iteration, a joint follows the end of its parent joint, keeps its direction, and its middle and its end leave the capsules that they enter (a joint that starts in a capsule, for example a skirt joint on the hips, is pushed out at its end). A contact stops the speed into the capsule, and a push does not become speed. The head capsule of the profile hair does not apply to custom joints; add a head collider. The profile hair does not collide with the colliders: the GH3 hair keeps the head capsule of GH3 (the body collision of GH3 was measured and is not used for the GH3 hair; [PARITY-NOTES.md](PARITY-NOTES.md#hair-dynamics)).
 
 Example (one joint of a twin tail on the head, and one collider):
 
@@ -456,7 +460,7 @@ Example (one joint of a twin tail on the head, and one collider):
   "colliders": [{"name": "chest", "bone": "bone_chest", "radius": 0.07, "a": [0, 0, 0], "b": [0.17, 0, 0]}],
   "chains": [{"name": "twin_tail_l", "colliders": ["chest"], "joints": [
     {"bone": "twin_tail_l_01", "length": 0.17, "direction": [0, 1, 0], "radius": 0.03, "mass": 1, "friction": 0.05,
-     "angularDamping": 3, "maxAngularVelocity": 6, "limits": {"coneLimit": [-0.38, 0.38]}}]}]
+     "angularDamping": 4, "stiffness": 30, "drag": 15, "limits": {"coneLimit": [-0.52, 0.52]}}], "bendLimit": 1.05}]
 }
 ```
 
@@ -1028,7 +1032,7 @@ GH3 characters (2026-10-09): `python -m pipeline.characters` and the `packages` 
 
 **Own skeleton** (section 9.6). `CharacterSkeleton` checks `skeleton` and `face`. The cache `character.json` records `skeleton` (`names` in skin order, `parents`, local `bind` rows in runtime coordinates, `humanoid` as joint indices, `followers` as `[bone, source, weight]`, `instrumentBone`, `instrumentOffset`, `instrumentScale`) and `face` (the six slot names, `""` for none); `joints` are the checksums of the joint names. `morphs.bin` (magic `GH3MRP01`) has, for each mesh part, the count of its shapes and, for each shape, the slot (byte), the vertex count, and the position deltas (float32 x, y, z, runtime coordinates); a split part (more than 65,535 vertices) gets the deltas of its vertices. At load, `StageBand` makes the GH3 rig of the performance without a mesh (with the role's instrument), the character's bones, and a `StageRetarget`; `StageAssets` adds the blend shapes (`Mesh.AddBlendShapeFrame`, weight 100) and `CharacterFace` sets their weights. The log line is `GH3 band <role>: character <id> (...) on its own skeleton (<n> joints, <n> humanoid roles), retargeted from ...; hip scale ..., torso scale ..., instrument scale ...; <instrument>; <n> chain joints, <n> colliders; face shapes ...`. With `GH3_SKIN_TRACE=1`, the `[trace] band` lines end with `retarget handMiss=<cm> move=<cm>` (the largest distance of a hand from its goal, and the instrument move).
 
-**Custom chains** (section 9.5). `CharacterChains` checks `bones`, `colliders`, and `chains` and adds the bones to the rig for the GLB checks. The cache `character.json` records `bones` (name and parent as checksums, `bind`), `colliders` (bone checksum, ends, radius), and `chains` (one row for each joint, with the bitmask of its colliders); a cache that is older than these fields reads as "no chains". At load, `CharacterExtras` makes a Unity bone for each added bone (after the rig bones), the bind poses come from the GLB inverse bind matrices, and `HairDefinition.Merge` puts the custom joints after the profile hair. A chain that cannot load gives a warning; the character plays without hair physics. The log line of the character ends with `N added bones, N chain joints, N colliders`.
+**Custom chains** (section 9.5). `CharacterChains` checks `bones`, `colliders`, and `chains` and adds the bones to the rig for the GLB checks. The cache `character.json` records `bones` (name and parent as checksums, `bind`), `colliders` (bone checksum, ends, radius), and `chains` (one row for each joint, with the bitmask of its colliders and the bend limit of its chain); a cache that is older than these fields reads as "no chains". At load, `CharacterExtras` makes a Unity bone for each added bone (after the rig bones), the bind poses come from the GLB inverse bind matrices, and `HairDefinition.Merge` puts the custom joints after the profile hair. A chain that cannot load gives a warning; the character plays without hair physics. The log line of the character ends with `N added bones, N chain joints, N colliders`.
 
 A character that cannot load gives the venue default, as a character on a fixed profile does. With `GH3_SKIN_TRACE=1`, the log has a `[trace] band` line for the guitarist and the bassist twice per song second: the profile, the set, the stance, the body clip, its clip time, the scale, and the local pose of four bones of the clip without blends, layers, or IK ([VERIFICATION.md](VERIFICATION.md#gh3-characters)).
 
@@ -1042,6 +1046,7 @@ When all imports end (or at a warm start, on a worker thread), `PackageManager.C
 |---|---|---|
 | 1.0 | 2026-10-09 | First version (before the first release: no compatibility rules, PACKAGING-PLAN decision 12) |
 | 1.0 | 2026-10-10 | Added to 1.0: `character.json` `bones`, `colliders`, and `chains` (custom chains, section 9.5) |
+| 1.0 | 2026-10-10 | Added to 1.0: chain joint `stiffness`, `drag`, and `gravity`, and chain `bendLimit` (section 9.5) |
 | 1.0 | 2026-10-10 | Added to 1.0: `gh3Shading` `toon`, `gh3Toon`, and `gh3HairLayer` for characters and instruments (section 6.5.1) |
 | 1.0 | 2026-10-10 | Added to 1.0: `character.json` `skeleton` and `face` (own skeleton, section 9.6); bone names of `bones`, `colliders`, and `chains` can use any script |
 | 1.0 | 2026-10-10 | Added to 1.0: the character library (`.chlib` with the entry `characters`, section 10.1: rig profiles, animation sets, hair with hinge and prismatic joints and the Havok limit fields, IK chains, and `clips/`); `character.json` `library` of a character library and `animations` (section 9.1); the kind instrument (`.chinst`, section 9.4) and the folder `Custom/Instruments/`; `character.json` `highway` (section 9.1). The earlier versions `chchar/1.1`, `chlib/1.1`, and `chlib/1.2` are now 1.0, without `minModVersion` |

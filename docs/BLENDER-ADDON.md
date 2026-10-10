@@ -210,7 +210,7 @@ Rules to know:
 
 ### 1.16 Chains and colliders
 
-A character can have its own hair, skirt, tail, and cable chains: bones that you add to the rig, with physics (PACKAGE-FORMAT section 9.5). The game moves them with the solver of the GH3 hair. Colliders are capsules on body bones: the chains do not go into them (for example a skirt into the legs, or a twin tail into the chest or the guitar). The tools are in the panel **Chains and Colliders** of the tab **CH Character**.
+A character can have its own hair, skirt, tail, and cable chains: bones that you add to the rig, with physics (PACKAGE-FORMAT section 9.5). The game moves them with the solver of the GH3 hair, with a spring-bone stiffness, drag, and bend limit as in VRM and MMD. Colliders are capsules on body bones: the chains do not go into them (for example a skirt into the legs, or a twin tail into the chest or the guitar). The tools are in the panel **Chains and Colliders** of the tab **CH Character**.
 
 ![The Chains and Colliders panel](images/creator/character-chains.png)
 
@@ -218,30 +218,46 @@ A character can have its own hair, skirt, tail, and cable chains: bones that you
 | --- | --- |
 | **Chain along Strand** | Select the vertices of a strand in Edit Mode (a twin tail, a skirt panel, a tail), or select a curve. The tool puts the given number of **Joints** along the centre line of the points, from the end nearest to the **Parent bone** (empty: the nearest body bone), as new rig bones. It makes a chain with the **Preset**, and gives the selected vertices weights on the new bones (blended near the joints) |
 | **Chain from Selected Bones** | Makes a chain of bones that you added to the rig yourself (Edit Mode of the rig, then select them in Pose Mode). The bones of the profile cannot be joints |
-| **Chains from MMD Physics** | For an MMD model that you imported with MMD Tools (with physics) and moved onto the rig: a new bone for each dynamic rigid body, at its MMD bone, with the MMD mass, the damping, and the rotation limits of its joint, and a chain for each root. **MMD bones** selects bodies (empty: all). **Colliders** also makes colliders from the static bodies |
-| Chain list | The chains. **Preset** and **Apply** set the values of a preset on all joints of the chain. **All colliders**, or the names of the colliders that the chain touches. **Assign to Chain** gives the selected vertices weights on the chain. **X** removes the chain (its bones stay and follow their parents) |
-| Joint values | Make a joint bone active (Pose Mode) to edit **Swing limit**, **Side limit**, **Mass**, **Friction**, **Damping**, **Speed limit**, and **Radius** |
+| **Chains from MMD Physics** | For an MMD model that you imported with MMD Tools (with physics) and moved onto the rig: a new bone for each dynamic rigid body, at its MMD bone, with the MMD mass, the damping, the rotation limits, and the spring of its joint (the stiffness), and a chain for each root. **MMD bones** selects bodies (empty: all). **Colliders** also makes colliders from the static bodies |
+| **Chains from VRM Spring Bones** | For a VRM model (VRM 1.0 or 0.x) that is the skeleton of the character: select the `.vrm` file. A chain for each spring (VRM 0.x: for each root of a bone group) on the bones with the node names, with the VRM stiffness, drag, gravity, and hit radius of each joint, and the VRM colliders (spheres and capsules) on their bones. The bend limit comes from the **Preset** |
+| Chain list | The chains. **Preset** and **Apply** set the values of a preset on all joints of the chain and the bend limit. **Bend limit**: the largest angle of the chain end from its bind direction, seen from the chain start (0: none). **All colliders**, or the names of the colliders that the chain touches. **Assign to Chain** gives the selected vertices weights on the chain. **X** removes the chain (its bones stay and follow their parents) |
+| Joint values | Make a joint bone active (Pose Mode) to edit **Stiffness**, **Drag**, **Gravity**, **Swing limit**, **Side limit**, **Mass**, **Friction**, **Damping**, **Speed limit**, and **Radius** |
 | **Fit Body Colliders** | Capsules on the hips, stomach, waist, chest, thighs, shins, upper arms, forearms, a sphere on the head, and a capsule on the guitar body (from the attachment preview). The radius comes from the vertices of your meshes near each part |
 | **Add Collider** | A capsule on the active body bone. Move and turn the capsule in the viewport; set **Name**, **Radius**, and **Length** in the panel |
 
-Presets (values for each joint; the speed limits keep the chain ends near the speeds of the GH3 hair):
+Presets (values for each joint; stiffness from the first joint to the last joint of the chain; the values come from the naturalness bench, [VERIFICATION.md](VERIFICATION.md#custom-chains)):
 
-| Preset | Swing limit | Side limit | Damping (/s) | Speed limit (rad/s) | Radius |
-| --- | --- | --- | --- | --- | --- |
-| Hair | 20° | — | 1 | 10 | 1 cm |
-| Long hair or twin tail | 22° | — | 3 | 6 | 3 cm |
-| Skirt | 35° | 15° | 3 | 10 | 1 cm |
-| Tail or cable | 10° | — | 2 | 8 | 2 cm |
-| Stiff accessory | 5° | — | 3 | 5 | — |
+| Preset | Stiffness (/s²) | Drag (/s) | Damping (/s) | Swing limit | Side limit | Bend limit | Speed limit (rad/s) | Radius |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Hair | 120 → 60 | 15 | 3 | 25° | — | 45° | — | 1 cm |
+| Long hair or twin tail | 30 → 10 | 15 | 4 | 30° | — | 60° | — | 3 cm |
+| Skirt | 120 → 60 | 15 | 4 | 35° | 15° | 45° | — | 1 cm |
+| Tail or cable | 80 → 32 | 12 | 3 | 15° | — | 70° | 8 | 2 cm |
+| Stiff accessory | 400 | 20 | 5 | 5° | — | — | 5 | — |
+
+The values of a joint:
+
+| Value | What it does |
+| --- | --- |
+| **Stiffness** | Pulls the joint back to its bind direction (the shape of your model) against its parent bone. 0: the joint only hangs, as the GH3 hair. More stiffness: the chain keeps its shape against gravity and comes back sooner |
+| **Drag** | Stops the swing of the joint against its parent bone. More drag: fewer swings after a move. The motion of the parent bone stays |
+| **Gravity** | The share of gravity: 1 full, 0 none (the chain keeps its bind shape) |
+| **Damping** | Slows all motion in the world (air drag). More damping: the chain trails behind the head |
+| **Swing limit**, **Side limit** | The largest swing of each joint from its bind direction |
+| **Speed limit** | The largest turn speed of the joint. A curled chain of many short, stiff joints (a cable tail) can whirl without it |
+| **Bend limit** (chain) | The largest angle of the chain end from its bind direction, seen from the chain start: a twin tail cannot fold over the head |
 
 Rules:
 
-- The swing limit is for each joint. A chain of 7 joints with 22° each can swing far; a chain of 2 joints swings less.
+- The swing limit is for each joint. A chain of 7 joints with 30° each can swing far; the bend limit of the chain stops it.
+- A joint points from its head to the head of the next joint of its chain (also through a helper bone between them, as the offset bones of game rigs), else to the head of its only child bone, else to its tail. The bone tails of FBX and glTF imports can point to the side.
 - Give a chain only the colliders near it. A twin tail touches the head, the chest, the waist, the hips, the thighs, and the guitar; a skirt touches the thighs and the shins. A collider that a chain touches at rest pushes the chain away all the time.
 - A long tail can touch the floor: add a large sphere under the floor on the root bone (for example a radius of 3 m, 3 m under the floor).
 - At most 64 joints and 32 colliders. More than 32 joints gives a warning: each joint costs solver time.
-- MMD joints have springs that hold the shape inside wide limits. The chains have no spring, so the import uses the smaller of the MMD limit and the preset swing limit, and the larger damping, when the MMD joint has a spring.
-- Export writes `character.json` `bones`, `colliders`, and `chains`. Open makes the chains and the colliders again. The colliders are helpers: the GLB export does not write them.
+- **Chains from MMD Physics** keeps the MMD values: the rotation limits of the joint (the swing limit), the larger of the linear and the angular damping of the body (Bullet: the speed keeps `1 − d` each second; damping = −ln(1 − d)), and the spring: stiffness = spring / (mass × L² / 3), with the bone length L in MMD units (metres / 0.08, the MMD Tools import scale). MMD drives its springs as damped motors: a stiff joint gets a drag of 1.4 × √stiffness, at least the preset drag. Friction, the speed limit, and the bend limit come from the preset.
+- **Chains from VRM Spring Bones** maps the VRM values for each joint of length L (VRM steps once in each frame; the mapping is for 60 frames a second): damping = −ln(1 − dragForce) × 60; stiffness = damping × stiffness / (L × dragForce); gravity = damping × gravityPower × (down part of gravityDir) / (dragForce × 9.81); drag 0, friction 0, swing limit 90°, no speed limit; radius = hitRadius. On the hair bench, the mapped chain moves as the VRM spring bone on the same motion (tip angles within 2–4°, settle times within 0.1 s; [VERIFICATION.md](VERIFICATION.md#custom-chains)).
+- Export writes `character.json` `bones`, `colliders`, and `chains`. Open makes the chains and the colliders again. The colliders are helpers: the GLB export does not write them. A new collider takes its place on its bone at the rest pose of the rig (the export reads the colliders at the rest pose), also when the rig shows a clip.
+- There is no physics preview in Blender: check the motion with the hair bench ([VERIFICATION.md](VERIFICATION.md#custom-chains)) or in the game.
 
 ### 1.17 Use the model's skeleton
 
@@ -460,7 +476,7 @@ python3 blender/build.py                      # writes blender/dist/chstage_tool
 flock /tmp/opencode/gh3-heavy.lock bash blender/test.sh ~/.cache/chstage-test blender-clean ~/.cache/blender/blender-4.2-clean
 ```
 
-With `assets/packages/gh3-band-v1.chlib` present (or `CHSTAGE_TEST_LIBRARY`), `blender/test.sh` also runs the character test (`blender/tests/character_test.py`, section 2.11) in a second Blender process. Result on 2026-10-10: 60 of 60 venue checks and 63 of 63 character checks (with the toon, chain, own skeleton, and GH3 rig helper checks) pass on Blender 5.2.1 and on Blender 4.2.23.
+With `assets/packages/gh3-band-v1.chlib` present (or `CHSTAGE_TEST_LIBRARY`), `blender/test.sh` also runs the character test (`blender/tests/character_test.py`, section 2.11) in a second Blender process. Result on 2026-10-10: 60 of 60 venue checks and 64 of 64 character checks (with the toon, chain, own skeleton, and GH3 rig helper checks) pass on Blender 5.2.1 and on Blender 4.2.23.
 
 `blender/test.sh` installs the zip into a temporary Blender user folder (`BLENDER_USER_RESOURCES`), so it does not change the Blender setup of the user. It also opens, exports, and compares `assets/packages/gh3.credits.chstage` when it exists (`CHSTAGE_TEST_VENUE` selects another package; an empty value turns it off), and then tests the venue tools (`tools_test.py`; `CHSTAGE_TEST_SKIP=actors,scripts,lighting,cameras,groups` skips parts). Set `CHSTAGE_TEST_RIG` to a GH3 rig GLB (for example a spike file from `tools/research/spike-blender/band_glb.py`) to also test the import fix. Result on 2026-10-09: 60 of 60 checks pass on Blender 5.2.1 and on Blender 4.2.23:
 
@@ -579,13 +595,14 @@ Python tests without Blender (`tests/test_blender_addon_characters.py`): the Bro
 
 ### 2.12 Chains
 
-`chain_tools.py` holds the chain tools; `pipeline/package/chains.py` (bundled) holds the presets, the rows of `character.json` from the exported GLB (`character_rows`: the added bones parents first, the bind poses from the GLB joint nodes in runtime coordinates, the joint direction and the collider ends in the runtime frame of their bone), the strand centre line (`strand_points`), the collider fits (`segment_radius`, `flat_capsule`), and the MMD mapping (`mmd_damping`: Havok damping −ln(1 − d) of an MMD damping fraction d; `mmd_limits`: the cone is the largest of the two swing ranges about the axes across the bone, and the planes come from the narrow range when it is less than 0.8 of the wide range).
+`chain_tools.py` holds the chain tools; `pipeline/package/chains.py` (bundled) holds the presets, the rows of `character.json` from the exported GLB (`character_rows`: the added bones parents first, the bind poses from the GLB joint nodes in runtime coordinates, the joint direction and the collider ends in the runtime frame of their bone), the strand centre line (`strand_points`), the collider fits (`segment_radius`, `flat_capsule`), the MMD mapping (`mmd_damping`: Havok damping −ln(1 − d) of an MMD damping fraction d; `mmd_limits`: the cone is the largest of the two swing ranges about the axes across the bone, and the planes come from the narrow range when it is less than 0.8 of the wide range; `mmd_stiffness`, `mmd_drag`), and the VRM mapping (`vrm_springs` reads `VRMC_springBone` and VRM 0.x `secondaryAnimation` from the glTF JSON; `vrm_joint`).
 
 - The joint settings are `bone.chstage_joint`; the chains are `scene.chstage_chains`; a collider is a mesh with `object.chstage_collider`, the marker `PROXY`, and a bone parent. The export hooks remove `chstage*` properties from the node, joint, and scene extras.
-- Blender bones point along +Y, so the joints have `direction` `[0, 1, 0]`; the solver turns each joint frame so that +X points along the joint (`StageHair` `_align`).
+- The joint vector is `joint_vector`: to the head of the next joint of the chain below the bone (through helper bones), else to the head of the only child bone, else to the bone tail. The `direction` row is this vector in the runtime frame of the joint (`[0, 1, 0]` for a bone that points to its next joint); the solver turns each joint frame so that +X points along the joint (`StageHair` `_align`).
+- `add_collider` sets the collider matrix with the rig at its rest pose (`collider_rows` reads it there). `import_vrm` maps the VRM collider ends from the glTF node frames to Blender with the similarity transform (scale, rotation, translation) of the matching bone heads, so a model that **Set Up Skeleton** turned or scaled keeps its colliders on the right bones.
 - Open sets the bone length of each joint to its `length` (the glTF import gives an end bone another length), and puts each collider at its ends in the GLB joint frame.
 
-The character test (`blender/tests/character_test.py`, section 8) makes a twin tail along a strand (4 joints on the head), fits the colliders (14), exports a valid package (the joints end at the next joint), opens and exports it again (bones, colliders, and chains equal within 2e-4), and makes chains from MMD-like physics data (an armature, three bodies, two joints). `tests/test_chains.py` tests the rows, the strand, the fits, and the MMD mapping without Blender.
+The character test (`blender/tests/character_test.py`, section 8) makes a twin tail along a strand (4 joints on the head; the preset stiffness falls off along the chain), fits the colliders (14), exports a valid package (the joints end at the next joint; stiffness, drag, and the bend limit in `character.json`), opens and exports it again (bones, colliders, and chains equal within 2e-4), makes chains from MMD-like physics data (an armature, three bodies, two joints with springs), and makes a chain and a collider from a VRM 1.0 file. `tests/test_chains.py` tests the rows, the strand, the fits, the MMD and VRM mappings, and the VRM spring parser without Blender.
 
 
 **Creator test with chains (2026-10-10).** The two Miku test characters of section 2.11 (not in the repository) were made again with chains, by scripts that call the add-on as a creator does (`~/.cache/custom-hair/scripts/build_*_chains.py`):
@@ -596,6 +613,23 @@ The character test (`blender/tests/character_test.py`, section 8) makes a twin t
 | Project SEKAI Miku (FBX) | **Chain along Strand** at the source bones: 2 twin tails (8 joints each), 8 skirt panels (2 each) | 32 | 14: **Fit Body Colliders** | Peak 4.3 m/s; solver 0.28 / 0.11 ms; maximum depth 0.1 mm |
 
 The poses at common times at 60 and 144 fps are equal (0.0 difference). The values of the MMD import that hold the shape in MMD (springs) gave twin tails that whipped up to 60–90° from vertical; the preset limits (22°, damping 3, speed limit 6 rad/s) keep 95% of the frames within 30–35° of vertical. Each chain touches only the colliders near it: with the arm colliders, a twin tail rested on the upper arm and flicked over it.
+
+**Stiffness rebuild (2026-10-10).** The owner saw the Project SEKAI twin tails go from hanging to sideways to above the head in the game. Three faults of the add-on and the solver gave this, and the chains had no stiffness:
+
+1. The joint direction came from the Blender bone tail. The FBX import (assimp, glTF) gives the Project SEKAI hair and skirt bones tails that point to the side, so the solver moved sticks that point to the side, and the mesh turned with them. Now a joint points to the head of the next joint (`chain_tools.joint_vector`).
+2. Each Project SEKAI hair joint hangs from an offset bone below the joint above it. The solver took the offset bone from the animation, not from the simulated joint above it, so the swings of all eight joints added up (the chain end stayed 90° from its bind direction at rest). Now `StageHair` moves such bones with the simulated joint, and the two joints pull on each other.
+3. A collider took its place on the posed bone, but the export reads it at the rest pose: on the Project SEKAI rig the head sphere was at the waist and the hip capsule at the thighs (Tda: 4 cm off). Now **Add Collider** places it at the rest pose.
+
+Both Mikus were made again with the add-on (`~/.cache/hair-stiffness/scripts/build_*_new.py`): the Project SEKAI Miku with the presets (the game assets on the mirror have no spring data), the Tda Miku with **Chains from MMD Physics** (MMD springs, limits, and damping). Hair bench, My Curse 240 s at 60 fps, and the test motions of `naturalness.py` (values: twin tails; the angle of the chain end from its bind direction, seen from the chain start, in the head frame):
+
+| Character | Peak joint end (m/s) | Tip angle p50 / p95 / max (°) | End above the start (% of frames) | Settle after a head turn (s), swings | Solver (ms per frame) |
+| --- | --- | --- | --- | --- | --- |
+| Project SEKAI, before | 17.0 | 77 / 90 / 97 | 21–26 | rests 90° from bind | 0.17 |
+| Project SEKAI, after | 3.4 | 26 / 51 / 60 | 0 | 0.9–1.1, 1 | 0.19 |
+| Tda, before | 19.6 | 26 / 51 / 81 | 0 | 1.9–2.8, 2–4 | 0.26 |
+| Tda, after | 9.1 | 28–32 / 52–53 / 61–62 | 0 | 0.9–1.0, 1 | 0.31 |
+
+The joint ends in their colliders: maximum 0.2 mm (Project SEKAI) and 12 mm (Tda, a cable tail joint between the thighs). The poses at common times at 60 and 144 fps are equal (0.0 difference).
 
 ### 2.13 Own skeleton
 

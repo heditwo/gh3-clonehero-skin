@@ -410,6 +410,15 @@ internal static class PickerLogicTests
         Check(Import("chain-cone", bones + ",\"chains\":[{\"name\":\"tail\",\"joints\":[" + joint.Replace("0.7", "2.5") + "]}]").Contains("cone limit"),
             "the cone limit is at most pi/2");
         Check(Import("chain-parent", bones.Replace("bone-0000000b", "bone-0000000c")).Contains("parent is not a bone"), "an added bone hangs from a rig bone");
+        var spring = joint.Replace("\"angularDamping\":0.5", "\"angularDamping\":0.5,\"stiffness\":40,\"drag\":12,\"gravity\":0.5");
+        error = Import("chain-spring", bones + ",\"chains\":[{\"name\":\"tail\",\"bendLimit\":1.25,\"joints\":[" + spring + "]}]");
+        var springJoint = error == "" ? CharacterModel.Load(Path.Combine(root, "chain-spring-cache")).ChainJoints.Single().Joint : null;
+        Check(springJoint is { Stiffness: 40, Drag: 12, Gravity: 0.5f, BendLimit: 1.25f }, "the stiffness, drag, gravity, and bend limit go to the cache: " + error);
+        Check(chain.Joint is { Stiffness: 0, Drag: 0, Gravity: 1, BendLimit: 0 }, "a chain without them has no stiffness, no drag, full gravity, and no bend limit");
+        Check(Import("chain-stiff", bones + ",\"chains\":[{\"name\":\"tail\",\"joints\":[" + spring.Replace(":40", ":6000") + "]}]").Contains("stiffness"),
+            "the stiffness is at most 5000");
+        Check(Import("chain-bend", bones + ",\"chains\":[{\"name\":\"tail\",\"bendLimit\":4,\"joints\":[" + joint + "]}]").Contains("bendLimit"),
+            "the bend limit is at most pi");
     }
 
     private static void CheckSamplerOnlyImage(string root)
