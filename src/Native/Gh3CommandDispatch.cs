@@ -5,9 +5,15 @@ namespace Gh3Skin;
 internal sealed record Gh3CommandResult(string Name, string Status, string[] Gaps, string Type = "", string Value = "",
     string Role = "", bool Immediate = false, bool Loop = false, int Count = 1, int DisableArms = 0);
 
+// Maps the GH3 script calls of song direction (native, converted, or authored) to stage cues, with a support status.
 internal static class Gh3CommandDispatch
 {
+    // GH3: lightshow_defaultblendtime (scripts\fx\lightshow.qb), PARITY-NOTES.md#lighting-and-node-flags.
     public const double DefaultLightBlend = 0.15;
+    // Validation limits of the command parameters; GH3's songs stay far below them.
+    private const uint MaximumStageDiverIndex = 128;
+    private const double MaximumLightBlendSeconds = 30;
+    private const uint MaximumRepeatCount = 100;
     private sealed record Command(string Name, string Type, string Parameter, string Default, string[] Fields, string[] Flags);
     private static readonly string[] AnimFlags = { "no_wait", "cycle", "disable_auto_arms", "disable_auto_strum" };
     private static readonly Command[] Commands =
@@ -53,7 +59,7 @@ internal static class Gh3CommandDispatch
             var jump = command == Gh3Checksum.Value("Crowd_StageDiver_Jump");
             var index = parameters?.Field("index");
             var diverCommand = jump ? "Crowd_StageDiver_Jump" : "Crowd_StageDiver_Hide";
-            if (index != null && (index.Type != 1 || index.Integer is < 1 or > 128))
+            if (index != null && (index.Type != Gh3QbType.Integer || index.Integer is < 1 or > MaximumStageDiverIndex))
                 return new(diverCommand, "invalid", new[] { "Invalid stage-diver index." });
             Parameters(parameters, new[] { "index" }, new[] { "no_wait" }, gaps);
             gaps.Add("Uses source venue actors and clips; original-game timing and visual parity remain unverified.");
@@ -68,7 +74,7 @@ internal static class Gh3CommandDispatch
             string? Choice(string parameter, string fallback, IEnumerable<string> choices)
             {
                 var reference = parameters?.Field(parameter);
-                return reference == null ? fallback : reference.Type == 13 ? choices.FirstOrDefault(name => Gh3Checksum.Value(name) == reference.Integer) : null;
+                return reference == null ? fallback : reference.Type == Gh3QbType.Checksum ? choices.FirstOrDefault(name => Gh3Checksum.Value(name) == reference.Integer) : null;
             }
             var target = all ? "" : Choice("name", "crowd1", Enumerable.Range(1, 8).Select(i => "crowd" + i));
             var selection = hand ? Choice("Type", "clap", new[] { "clap", "lighter", "rock", "fist" }) :
@@ -98,8 +104,8 @@ internal static class Gh3CommandDispatch
             command == Gh3Checksum.Value("LightShow") && parameters?.Flag("SetTime") == true)
         {
             var time = parameters?.Field("time");
-            var blend = time is { Type: 1 or 2 } ? time.Number : time == null && parameters?.Flag("default") == true ? DefaultLightBlend : double.NaN;
-            if (time != null && time.Type is not (1 or 2) || !double.IsFinite(blend) || blend is < 0 or > 30)
+            var blend = time is { Type: Gh3QbType.Integer or Gh3QbType.Float } ? time.Number : time == null && parameters?.Flag("default") == true ? DefaultLightBlend : double.NaN;
+            if (time != null && time.Type is not (Gh3QbType.Integer or Gh3QbType.Float) || !double.IsFinite(blend) || blend is < 0 or > MaximumLightBlendSeconds)
                 return new("LightShow_SetTime", "invalid", new[] { "Missing or invalid light blend time." });
             Parameters(parameters, new[] { "time" }, new[] { "SetTime", "default" }, gaps);
             return new("LightShow_SetTime", gaps.Count == 0 ? "implemented" : "partial", gaps.ToArray(), "blend",
@@ -112,7 +118,7 @@ internal static class Gh3CommandDispatch
             var reference = parameters?.Field(field);
             var choices = mood ? new[] { "intro", "verse", "chorus", "solo", "blackout", "flare", "strobe" } :
                 new[] { "green", "red", "blue", "yellow", "white", "magenta", "orange", "purple" };
-            var selected = reference?.Type == 13 ? choices.FirstOrDefault(choice => Gh3Checksum.Value(choice) == reference.Integer) : null;
+            var selected = reference?.Type == Gh3QbType.Checksum ? choices.FirstOrDefault(choice => Gh3Checksum.Value(choice) == reference.Integer) : null;
             if (!mood && parameters?.Flag("off") == true) selected = "off";
             var lightingCommand = mood ? "LightShow_SetParams" : "LightShow_OverrideColor";
             if (selected == null) return new(lightingCommand, "unimplemented", new[] { $"Unresolved {field} reference or command variant." });
@@ -131,16 +137,16 @@ internal static class Gh3CommandDispatch
                 new(Gh3QbText.Key(command), "unimplemented", new[] { "No direct handler. Playback also checks the loaded stage script library." });
         Parameters(parameters, action.Fields, action.Flags, gaps);
         var roleValue = parameters?.Field("Name");
-        var roleKey = roleValue == null ? Gh3Checksum.Value("guitarist") : roleValue.Type == 13 ? roleValue.Integer : 0;
+        var roleKey = roleValue == null ? Gh3Checksum.Value("guitarist") : roleValue.Type == Gh3QbType.Checksum ? roleValue.Integer : 0;
         if (!Roles.TryGetValue(roleKey, out var role))
             return new(action.Name, "unimplemented", gaps.Append("Unresolved performer reference.").ToArray());
         var value = action.Parameter.Length == 0 ? null : parameters?.Field(action.Parameter);
-        if (value != null && value.Type is not (3 or 4 or 13))
+        if (value != null && value.Type is not (Gh3QbType.String or Gh3QbType.WideString or Gh3QbType.Checksum))
             return new(action.Name, "invalid", gaps.Append("Invalid command value type.").ToArray());
         var name = value == null ? action.Default : value.Data is string text ? text.ToLowerInvariant() :
             action.Type is "face" or "clip" ? value.Integer.ToString("x8") : Names.GetValueOrDefault(value.Integer, value.Integer.ToString("x8"));
         var repeat = parameters?.Field("repeat_count");
-        if (repeat != null && (repeat.Type != 1 || repeat.Integer is < 1 or > 100))
+        if (repeat != null && (repeat.Type != Gh3QbType.Integer || repeat.Integer is < 1 or > MaximumRepeatCount))
             return new(action.Name, "invalid", gaps.Append("Invalid animation repeat count.").ToArray());
         gaps.Add("Animation, asset selection, and game-state parity are not fully verified.");
         return new(action.Name, "partial", gaps.ToArray(), action.Type, name, role,
@@ -158,7 +164,7 @@ internal static class Gh3CommandDispatch
         {
             if (field.Name == 0)
             {
-                if (field.Value.Type != 13 || !allowedFlags.Contains(field.Value.Integer))
+                if (field.Value.Type != Gh3QbType.Checksum || !allowedFlags.Contains(field.Value.Integer))
                     gaps.Add("Unhandled flag " + Gh3QbText.Encode(field.Value) + ".");
             }
             else if (!allowed.Contains(field.Name)) gaps.Add($"Unhandled parameter {Gh3QbText.Key(field.Name)}.");

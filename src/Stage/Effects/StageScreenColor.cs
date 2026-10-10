@@ -12,7 +12,7 @@ internal static class StageScreenColor
     });
 
     private static Gh3QbField Field(string name, Gh3QbValue value) => new(Gh3Checksum.Value(name), value);
-    private static Gh3QbValue Mix(params int[] channels) => new(12, -1, channels.Select(value => Gh3ScriptRuntime.Number(value)).ToArray());
+    private static Gh3QbValue Mix(params int[] channels) => new(Gh3QbType.Array, -1, channels.Select(value => Gh3ScriptRuntime.Number(value)).ToArray());
 
     public static Matrix4x4 Matrix(Gh3QbValue parameters)
     {
@@ -21,7 +21,7 @@ internal static class StageScreenColor
         Vector3 Channels(string name, Vector3 fallback)
         {
             if (parameters.Field(name) is not { } value) return fallback;
-            if (value.Type != 12 || value.Items.Count != 3 || value.Items.Any(channel => channel.Type is not (1 or 2)))
+            if (value.Type != Gh3QbType.Array || value.Items.Count != 3 || value.Items.Any(channel => channel.Type is not (Gh3QbType.Integer or Gh3QbType.Float)))
                 throw new InvalidDataException("A screen color mix needs three numeric channels");
             return new((float)Gh3ScriptRuntime.Numeric(value.Items[0]), (float)Gh3ScriptRuntime.Numeric(value.Items[1]), (float)Gh3ScriptRuntime.Numeric(value.Items[2]));
         }

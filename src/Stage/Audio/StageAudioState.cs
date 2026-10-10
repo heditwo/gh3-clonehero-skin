@@ -58,7 +58,7 @@ internal sealed class StageAudioState
         _runtime.Set(Gh3Checksum.Value("BackgroundSFXDebugPrintToScreen"), Gh3ScriptRuntime.Number(0));
         _runtime.Set(Gh3Checksum.Value("boss_battle"), Gh3ScriptRuntime.Number(0));
         if (_bank.Value("Default_BussSet") is { } settings)
-            foreach (var field in settings.Fields.Where(field => field.Value.Type == 10))
+            foreach (var field in settings.Fields.Where(field => field.Value.Type == Gh3QbType.Structure))
                 _gains[field.Name] = new(double.NegativeInfinity, 0, StageSoundBank.Number(field.Value.Field("vol"), 0), 0);
         foreach (var health in _health)
             Schedule(health.Time, time => { _rock = health.Rock; if (time >= _start) Bed(time); }, 0);
@@ -166,13 +166,13 @@ internal sealed class StageAudioState
         {
             var zone = _venue.StartsWith("gh3.") ? "z_" + _venue.Substring(4) : _venue;
             return new(true, new[] { new Gh3QbField(Gh3Checksum.Value(Is("GetPakManCurrent") ? "pak" : "pakname"),
-                Is("GetPakManCurrent") ? new(13, -1, _runtime.Intern(zone)) : new(3, -1, zone)) });
+                Is("GetPakManCurrent") ? new(Gh3QbType.Checksum, -1, _runtime.Intern(zone)) : new(Gh3QbType.String, -1, zone)) });
         }
         if (Is("get_song_struct")) return new(true, new[] { new Gh3QbField(Gh3Checksum.Value("song_struct"),
-            Gh3ScriptRuntime.Structure(new[] { new Gh3QbField(Gh3Checksum.Value("countoff"), new(3, -1, _countoff)) })) });
+            Gh3ScriptRuntime.Structure(new[] { new Gh3QbField(Gh3Checksum.Value("countoff"), new(Gh3QbType.String, -1, _countoff)) })) });
         if (Is("SoundBussUnlock") || Is("SoundBussLock"))
         {
-            var busses = parameters.Fields.Where(field => field.Name == 0 && field.Value.Type == 13).Select(field => field.Value.Integer).ToArray();
+            var busses = parameters.Fields.Where(field => field.Name == 0 && field.Value.Type == Gh3QbType.Checksum).Select(field => field.Value.Integer).ToArray();
             if (busses.Length == 0) throw new InvalidDataException("A sound bus lock needs a bus reference");
             foreach (var bus in busses)
                 if (Is("SoundBussLock")) _lockedBusses.Add(bus);
@@ -183,7 +183,7 @@ internal sealed class StageAudioState
         {
             var duration = StageSoundBank.Number(parameters.Field("time"), 0);
             if (!double.IsFinite(duration) || duration is < 0 or > 86400) throw new InvalidDataException("Invalid sound bus fade duration");
-            foreach (var field in parameters.Fields.Where(field => field.Value.Type == 10))
+            foreach (var field in parameters.Fields.Where(field => field.Value.Type == Gh3QbType.Structure))
             {
                 if (_lockedBusses.Contains(field.Name)) continue;
                 var previous = _gains.TryGetValue(field.Name, out var value) ? value.At(time) : 0;

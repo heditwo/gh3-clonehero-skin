@@ -35,7 +35,7 @@ internal sealed class StageSoundBank
         void Parents(Gh3QbValue value, uint parent)
         {
             foreach (var field in value.Fields)
-                if (field.Value.Type == 10)
+                if (field.Value.Type == Gh3QbType.Structure)
                 {
                     bank._parents.Add(field.Name, parent);
                     Parents(field.Value, field.Name);
@@ -58,7 +58,7 @@ internal sealed class StageSoundBank
             key = _parents.GetValueOrDefault(key);
         }
     }
-    public static double Number(Gh3QbValue? value, double fallback) => value == null ? fallback : value.Type == 1 ? unchecked((int)value.Integer) : value.Number;
+    public static double Number(Gh3QbValue? value, double fallback) => value == null ? fallback : value.Type == Gh3QbType.Integer ? unchecked((int)value.Integer) : value.Number;
 }
 
 internal sealed class StageSoundVoice
@@ -117,12 +117,12 @@ internal sealed class StageSoundEvents
         }
         if (_bank.Sample(key) != null) { Voice(key, options); return; }
         var container = _bank.Value(Gh3Checksum.Append(key, "_container")) ?? throw new InvalidDataException($"Missing stage sound event {key:x8}");
-        var sounds = container.Field("Sounds")?.Fields.Select(field => field.Value).Where(value => value.Type == 10).ToArray() ?? Array.Empty<Gh3QbValue>();
+        var sounds = container.Field("Sounds")?.Fields.Select(field => field.Value).Where(value => value.Type == Gh3QbType.Structure).ToArray() ?? Array.Empty<Gh3QbValue>();
         if (sounds.Length == 0) return;
         var mode = container.Field("Randomness")?.Integer ?? Gh3Checksum.Value("None");
         var selected = mode == Gh3Checksum.Value("None") ? sounds : new[] { sounds[Choose(key, sounds.Length, mode)] };
         foreach (var sound in selected)
-            foreach (var field in sound.Fields.Where(field => field.Name == 0 && field.Value.Type == 13)) Voice(field.Value.Integer, sound);
+            foreach (var field in sound.Fields.Where(field => field.Name == 0 && field.Value.Type == Gh3QbType.Checksum)) Voice(field.Value.Integer, sound);
     }
 
     private double RandomNumber(Gh3QbValue? value, uint key, double fallback)

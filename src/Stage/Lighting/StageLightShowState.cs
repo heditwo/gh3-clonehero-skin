@@ -31,7 +31,7 @@ internal sealed class StageLightShowState
     public uint Performance { get; private set; } = Gh3Checksum.Value("medium");
     private static uint Key(string name) => Gh3Checksum.Value(name);
     private static Gh3QbValue Params(params (string Name, Gh3QbValue Value)[] fields) => Gh3ScriptRuntime.Structure(fields.Select(field => new Gh3QbField(Key(field.Name), field.Value)));
-    private static bool Enabled(Gh3QbValue? value) => value?.Type == 13 && value.Integer == Key("true");
+    private static bool Enabled(Gh3QbValue? value) => value?.Type == Gh3QbType.Checksum && value.Integer == Key("true");
     private static uint Event(uint key) => Gh3Checksum.Append(Key("gh3_lightshow_event_"), key.ToString("x8"));
 
     public StageLightShowState(StageScriptBank bank, Gh3ScriptRuntime runtime, StageLighting lighting, string zone, Action<string> gap)
@@ -49,7 +49,7 @@ internal sealed class StageLightShowState
 
     private Gh3QbValue? Resolve(Gh3QbValue? value)
     {
-        for (var i = 0; value?.Type == 26; i++)
+        for (var i = 0; value?.Type == Gh3QbType.GlobalReference; i++)
         {
             if (i >= 64) throw new InvalidDataException("Recursive lightshow reference");
             value = _bank.Values.GetValueOrDefault(value.Integer);
@@ -98,7 +98,7 @@ internal sealed class StageLightShowState
     private void ApplyNodeFlags()
     {
         if (NodeFlagChanged == null || !_bank.Values.TryGetValue(NodeFlagTable, out var table)) return;
-        static uint Flag(Gh3QbValue row) => row.Fields.First(field => field.Value.Type == 13).Value.Integer;
+        static uint Flag(Gh3QbValue row) => row.Fields.First(field => field.Value.Type == Gh3QbType.Checksum).Value.Integer;
         var enabled = new Dictionary<uint, bool>();
         foreach (var section in table.Fields)
             foreach (var state in section.Value.Fields)
@@ -106,7 +106,7 @@ internal sealed class StageLightShowState
         void Enable(string section, uint state)
         {
             foreach (var row in table.Field(section)?.Field(state)?.Items ?? Array.Empty<Gh3QbValue>())
-                enabled[Flag(row)] = row.Fields.FirstOrDefault(field => field.Value.Type == 1)?.Value is not { } value || Gh3ScriptRuntime.Truth(value);
+                enabled[Flag(row)] = row.Fields.FirstOrDefault(field => field.Value.Type == Gh3QbType.Integer)?.Value is not { } value || Gh3ScriptRuntime.Truth(value);
         }
         Enable("performance", Performance);
         if (Performance != Key("poor")) Enable("mood", Mood);
@@ -116,15 +116,15 @@ internal sealed class StageLightShowState
     private void Transition(string name, uint value, ref uint previous)
     {
         if (previous == value) return;
-        var parameters = Params((name, new(13, -1, value)), ("previous" + name, new(13, -1, previous)));
+        var parameters = Params((name, new(Gh3QbType.Checksum, -1, value)), ("previous" + name, new(Gh3QbType.Checksum, -1, previous)));
         foreach (var script in _mapping.Field("transitions")?.Field(name)?.Items ?? Array.Empty<Gh3QbValue>())
             _runtime.Start(script.Integer, parameters, optional: true);
         previous = value;
     }
 
     private Gh3QbValue GetParameters() => Gh3ScriptRuntime.Structure(_parameters.Fields.Where(field => !new[] { Key("mood"), Key("performance"), Key("previous_snapshot"), Key("bpm") }.Contains(field.Name)).Concat(
-        Params(("mood", new(13, -1, Mood)), ("performance", new(13, -1, Performance)), ("bpm", Gh3ScriptRuntime.Number(_runtime.Tempo(_runtime.Time)))).Fields).Concat(
-        _previous == 0 ? Array.Empty<Gh3QbField>() : new[] { new Gh3QbField(Key("previous_snapshot"), new(13, -1, _previous)) }));
+        Params(("mood", new(Gh3QbType.Checksum, -1, Mood)), ("performance", new(Gh3QbType.Checksum, -1, Performance)), ("bpm", Gh3ScriptRuntime.Number(_runtime.Tempo(_runtime.Time)))).Fields).Concat(
+        _previous == 0 ? Array.Empty<Gh3QbField>() : new[] { new Gh3QbField(Key("previous_snapshot"), new(Gh3QbType.Checksum, -1, _previous)) }));
 
     private void RunProcessor(uint processor, string phase)
     {
@@ -144,7 +144,7 @@ internal sealed class StageLightShowState
 
     private void PassEvent(uint type, Gh3QbValue parameters)
     {
-        _runtime.Start(Key("LaunchEvent"), Params(("Type", new(13, -1, Event(type))), ("Data", parameters)));
+        _runtime.Start(Key("LaunchEvent"), Params(("Type", new(Gh3QbType.Checksum, -1, Event(type))), ("Data", parameters)));
         _runtime.Advance(_runtime.Time);
     }
 

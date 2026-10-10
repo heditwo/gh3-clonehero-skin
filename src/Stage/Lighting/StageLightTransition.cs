@@ -28,7 +28,7 @@ internal sealed class StageLightTransition
         var target = Value;
         foreach (var field in parameters.Fields)
         {
-            if (field.Value.Type is not (1 or 2)) continue;
+            if (field.Value.Type is not (Gh3QbType.Integer or Gh3QbType.Float)) continue;
             var value = (float)Gh3ScriptRuntime.Numeric(field.Value);
             var color = target.Color;
             switch (field.Name)

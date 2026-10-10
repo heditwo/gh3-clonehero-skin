@@ -30,27 +30,34 @@ internal sealed record Gh3QbValue(uint Type, int Offset, object Data)
     }
 }
 
+// Reader of a GH3 PC QB file: the top-level sections and their typed values.
 internal sealed class Gh3Qb
 {
+    // Reader limits against corrupt data; GH3's files are far below them.
+    private const int MaximumDepth = 64;
+    private const int MaximumValues = 2000000;
+    private const int MaximumArrayItems = 1000000;
+    private const int MaximumFields = 10000;
+
     private readonly ReadOnlyMemory<byte> _data;
-    private readonly int _minimumPointer = 28;
+    private readonly int _minimumPointer = Gh3QbLayout.FileHeaderSize;
     private int _values;
     public IReadOnlyDictionary<uint, Gh3QbValue> Sections { get; }
 
     public Gh3Qb(ReadOnlyMemory<byte> data)
     {
         _data = data;
-        if (data.Length < 28 || Word(4) != data.Length || Word(8) != 0x1c080204)
+        if (data.Length < Gh3QbLayout.FileHeaderSize || Word(4) != data.Length || Word(8) != Gh3QbLayout.FileMagic)
             throw new InvalidDataException("Expected a GH3 PC QB file.");
         var sections = new Dictionary<uint, Gh3QbValue>();
-        var cursor = 28;
+        var cursor = Gh3QbLayout.FileHeaderSize;
         while (cursor < data.Length)
         {
-            Range(cursor, 20);
+            Range(cursor, Gh3QbLayout.SectionHeaderSize);
             var kind = Word(cursor);
-            if ((kind & 0xffff00ff) != 0x00200000)
+            if ((kind & Gh3QbLayout.SectionKindMask) != Gh3QbLayout.SectionKind)
                 throw new InvalidDataException($"Unsupported QB section type {kind:x8} at {cursor}.");
-            var end = cursor + 20;
+            var end = cursor + Gh3QbLayout.SectionHeaderSize;
             var value = Value((kind >> 8) & 255, cursor + 12, ref end, 0);
             if (!sections.TryAdd(Word(cursor + 4), value)) throw new InvalidDataException("Duplicate QB section.");
             cursor = Align(end);
@@ -64,7 +71,7 @@ internal sealed class Gh3Qb
     private Gh3Qb(ReadOnlyMemory<byte> data, bool inline)
     {
         _data = data;
-        _minimumPointer = inline ? 0 : 28;
+        _minimumPointer = inline ? 0 : Gh3QbLayout.FileHeaderSize;
         Sections = new Dictionary<uint, Gh3QbValue>();
     }
 
@@ -72,26 +79,26 @@ internal sealed class Gh3Qb
     {
         var reader = new Gh3Qb(data, true);
         var end = 0;
-        return new(10, -1, reader.Structure(0, ref end, 0));
+        return new(Gh3QbType.Structure, -1, reader.Structure(0, ref end, 0));
     }
 
     private Gh3QbValue Value(uint type, int offset, ref int end, int depth)
     {
-        if (depth > 64 || ++_values > 2000000) throw new InvalidDataException("The QB data exceeds the reader limit.");
+        if (depth > MaximumDepth || ++_values > MaximumValues) throw new InvalidDataException("The QB data exceeds the reader limit.");
         var raw = Word(offset);
         object data;
         switch (type)
         {
-            case 1: case 13: case 26: case 28:
+            case Gh3QbType.Integer: case Gh3QbType.Checksum: case Gh3QbType.GlobalReference: case Gh3QbType.StringChecksum:
                 data = raw;
                 break;
-            case 2:
+            case Gh3QbType.Float:
                 var number = BitConverter.Int32BitsToSingle(unchecked((int)raw));
                 if (!float.IsFinite(number)) throw new InvalidDataException("Non-finite QB number.");
                 data = number;
                 break;
-            case 3: case 4:
-                var width = type == 4 ? 2 : 1;
+            case Gh3QbType.String: case Gh3QbType.WideString:
+                var width = type == Gh3QbType.WideString ? 2 : 1;
                 var start = Position(raw, width);
                 var stop = start;
                 while (true)
@@ -100,28 +107,28 @@ internal sealed class Gh3Qb
                     if (_data.Span[stop] == 0 && (width == 1 || _data.Span[stop + 1] == 0)) break;
                     stop += width;
                 }
-                data = (type == 4 ? Encoding.BigEndianUnicode : Encoding.Latin1).GetString(_data.Span.Slice(start, stop - start));
+                data = (type == Gh3QbType.WideString ? Encoding.BigEndianUnicode : Encoding.Latin1).GetString(_data.Span.Slice(start, stop - start));
                 end = Math.Max(end, Align(stop + width));
                 break;
-            case 5: case 6:
+            case Gh3QbType.Pair: case Gh3QbType.Vector:
                 var vector = Pointer(offset);
-                var length = type == 5 ? 2 : 3;
+                var length = type == Gh3QbType.Pair ? 2 : 3;
                 Range(vector, 4 + length * 4);
                 data = Enumerable.Range(0, length).Select(i => BitConverter.Int32BitsToSingle(unchecked((int)Word(vector + 4 + i * 4)))).ToArray();
                 end = Math.Max(end, vector + 4 + length * 4);
                 break;
-            case 7:
+            case Gh3QbType.Script:
                 var script = Pointer(offset);
-                Range(script, 12);
+                Range(script, Gh3QbLayout.ScriptHeaderSize);
                 var size = Count(script + 8);
-                Range(script + 12, size);
-                data = _data.Slice(script, 12 + size);
-                end = Math.Max(end, Align(script + 12 + size));
+                Range(script + Gh3QbLayout.ScriptHeaderSize, size);
+                data = _data.Slice(script, Gh3QbLayout.ScriptHeaderSize + size);
+                end = Math.Max(end, Align(script + Gh3QbLayout.ScriptHeaderSize + size));
                 break;
-            case 10:
+            case Gh3QbType.Structure:
                 data = Structure(Pointer(offset), ref end, depth + 1);
                 break;
-            case 12:
+            case Gh3QbType.Array:
                 data = Array(Pointer(offset), ref end, depth + 1);
                 break;
             default:
@@ -132,19 +139,19 @@ internal sealed class Gh3Qb
 
     private IReadOnlyList<Gh3QbValue> Array(int offset, ref int end, int depth)
     {
-        Range(offset, 12);
+        Range(offset, Gh3QbLayout.ArrayHeaderSize);
         var kind = Word(offset);
-        if (kind == 0x10000)
+        if (kind == Gh3QbLayout.EmptyArray)
         {
-            end = Math.Max(end, offset + 12);
+            end = Math.Max(end, offset + Gh3QbLayout.ArrayHeaderSize);
             return System.Array.Empty<Gh3QbValue>();
         }
-        if ((kind & 0xffff00ff) != 0x00010000) throw new InvalidDataException("Invalid QB array type.");
+        if ((kind & Gh3QbLayout.ArrayKindMask) != Gh3QbLayout.ArrayKind) throw new InvalidDataException("Invalid QB array type.");
         var count = Count(offset + 4);
-        if (count > 1000000) throw new InvalidDataException("The QB array exceeds the reader limit.");
+        if (count > MaximumArrayItems) throw new InvalidDataException("The QB array exceeds the reader limit.");
         var start = count > 1 ? Pointer(offset + 8) : offset + 8;
         Range(start, count * 4);
-        end = Math.Max(end, Math.Max(offset + 12, start + count * 4));
+        end = Math.Max(end, Math.Max(offset + Gh3QbLayout.ArrayHeaderSize, start + count * 4));
         var rows = new Gh3QbValue[count];
         for (var i = 0; i < count; i++) rows[i] = Value((kind >> 8) & 255, start + i * 4, ref end, depth);
         return System.Array.AsReadOnly(rows);
@@ -152,22 +159,22 @@ internal sealed class Gh3Qb
 
     private IReadOnlyList<Gh3QbField> Structure(int offset, ref int end, int depth)
     {
-        Range(offset, 8);
-        if (Word(offset) != 0x100) throw new InvalidDataException("Invalid QB structure.");
-        end = Math.Max(end, offset + 8);
+        Range(offset, Gh3QbLayout.StructureHeaderSize);
+        if (Word(offset) != Gh3QbLayout.StructureHeader) throw new InvalidDataException("Invalid QB structure.");
+        end = Math.Max(end, offset + Gh3QbLayout.StructureHeaderSize);
         var next = Word(offset + 4);
         var seen = new HashSet<uint>();
         var fields = new List<Gh3QbField>();
         while (next != 0)
         {
-            if (!seen.Add(next) || fields.Count >= 10000) throw new InvalidDataException("Invalid QB structure links.");
+            if (!seen.Add(next) || fields.Count >= MaximumFields) throw new InvalidDataException("Invalid QB structure links.");
             var cursor = Position(next);
-            Range(cursor, 16);
+            Range(cursor, Gh3QbLayout.FieldSize);
             var kind = Word(cursor);
-            if ((kind & 0xff00ffff) != 0x00000000 || (kind & 0x00800000) == 0)
+            if ((kind & Gh3QbLayout.FieldKindMask) != 0 || (kind & Gh3QbLayout.FieldFlag) == 0)
                 throw new InvalidDataException($"Unsupported QB structure field {kind:x8}.");
-            end = Math.Max(end, cursor + 16);
-            fields.Add(new(Word(cursor + 4), Value((kind >> 16) & 0x7f, cursor + 8, ref end, depth)));
+            end = Math.Max(end, cursor + Gh3QbLayout.FieldSize);
+            fields.Add(new(Word(cursor + 4), Value((kind >> 16) & Gh3QbLayout.FieldTypeMask, cursor + 8, ref end, depth)));
             next = Word(cursor + 12);
         }
         return fields.AsReadOnly();

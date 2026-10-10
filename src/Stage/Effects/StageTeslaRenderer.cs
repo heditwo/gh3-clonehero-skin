@@ -50,7 +50,7 @@ internal sealed class StageTeslaRenderer : IDisposable
             slot.Mesh.RecalculateBounds();
             foreach (var (name, value) in new[] { ("_Gh3TeslaAnimation", draw.Animation), ("_Gh3TeslaShape", draw.Shape), ("_Gh3TeslaColor", draw.Color) })
                 slot.Material.SetVector(name, new(value.X, value.Y, value.Z, value.W));
-            var definition = new StageParticleMaterial(Gh3ScriptRuntime.Structure(new[] { new Gh3QbField(Gh3Checksum.Value("BlendMode"), new(13, -1, effect.Blend)) }));
+            var definition = new StageParticleMaterial(Gh3ScriptRuntime.Structure(new[] { new Gh3QbField(Gh3Checksum.Value("BlendMode"), new(Gh3QbType.Checksum, -1, effect.Blend)) }));
             StageParticles.ConfigureBlend(slot.Material, definition.PackedBlend);
             slot.Renderer.enabled = true;
             Effects++;

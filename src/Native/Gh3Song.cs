@@ -4,8 +4,11 @@ namespace Gh3Skin;
 
 internal sealed record Gh3SongNote(uint Time, uint Note, uint Length, uint? Velocity, int NoteOffset);
 
+// A native GH3 song PAK (<song>_song.pak.xen): its chart QB and the direction note tracks (PARITY-NOTES.md#native-song-data).
 internal sealed class Gh3Song
 {
+    private const int LastAscii = 127;
+    private const long MaximumPakBytes = 256 * 1024 * 1024;
     public Gh3Pak Pak { get; }
     public Gh3PakEntry ChartEntry { get; }
     public Gh3Qb Chart { get; }
@@ -13,7 +16,7 @@ internal sealed class Gh3Song
 
     public Gh3Song(byte[] bytes, string id)
     {
-        if (id.Length == 0 || id.Any(c => c > 127 || !char.IsLetterOrDigit(c) && c != '_'))
+        if (id.Length == 0 || id.Any(c => c > LastAscii || !char.IsLetterOrDigit(c) && c != '_'))
             throw new InvalidDataException("Invalid GH3 song ID.");
         Id = id.ToLowerInvariant();
         Pak = new(bytes);
@@ -31,7 +34,7 @@ internal sealed class Gh3Song
         var filename = Path.GetFileName(path);
         if (!filename.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Keep the native filename: <song>_song.pak.xen.");
-        if (new FileInfo(path).Length > 256 * 1024 * 1024) throw new InvalidDataException("The song PAK exceeds 256 MiB.");
+        if (new FileInfo(path).Length > MaximumPakBytes) throw new InvalidDataException("The song PAK exceeds 256 MiB.");
         return new(File.ReadAllBytes(path), filename[..^suffix.Length]);
     }
 
@@ -40,9 +43,9 @@ internal sealed class Gh3Song
     public Gh3SongNote[] Notes(string section) => Array(section + "_notes").Select(row =>
     {
         var values = row.Items;
-        if (values.Count is not (3 or 4) || values.Any(value => value.Type != 1) ||
-            values[0].Integer > 86400000 || values[1].Integer > 127 || values[2].Integer > 86400000 ||
-            values.Count == 4 && values[3].Integer > 127)
+        if (values.Count is not (3 or 4) || values.Any(value => value.Type != Gh3QbType.Integer) ||
+            values[0].Integer > Gh3Limits.MaximumMilliseconds || values[1].Integer > Gh3Limits.MaximumMidiNote || values[2].Integer > Gh3Limits.MaximumMilliseconds ||
+            values.Count == 4 && values[3].Integer > Gh3Limits.MaximumMidiNote)
             throw new InvalidDataException($"Invalid native {section} note.");
         return new Gh3SongNote(values[0].Integer, values[1].Integer, values[2].Integer,
             values.Count == 4 ? values[3].Integer : null, ChartEntry.Offset + values[1].Offset);
@@ -52,7 +55,7 @@ internal sealed class Gh3Song
     {
         var notes = Notes("cameras");
         if (index < 0 || index >= notes.Length) throw new ArgumentOutOfRangeException(nameof(index));
-        if (newNote > 127) throw new ArgumentOutOfRangeException(nameof(newNote));
+        if (newNote > Gh3Limits.MaximumMidiNote) throw new ArgumentOutOfRangeException(nameof(newNote));
         if (notes[index].Note != expectedNote) throw new InvalidDataException("The source camera note differs from the expected value.");
         var output = Pak.Copy();
         BinaryPrimitives.WriteUInt32BigEndian(output.AsSpan(notes[index].NoteOffset, 4), newNote);

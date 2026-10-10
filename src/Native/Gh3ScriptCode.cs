@@ -5,15 +5,21 @@ namespace Gh3Skin;
 
 internal sealed record Gh3ScriptToken(int Offset, byte Op, Gh3QbValue? Value = null, int[]? Targets = null, ushort[]? Weights = null);
 
+// A compiled QB script: the LZSS expansion and the token list with resolved jump targets.
 internal sealed class Gh3ScriptCode
 {
+    // Reader limits against corrupt data; GH3's scripts are far below them.
+    private const int MaximumTokens = 1000000;
+    private const int MaximumRandomBranches = 10000;
+    private const int MaximumScriptLength = 16000000;
+
     public byte[] Bytes { get; }
     public Gh3ScriptToken[] Tokens { get; }
     public IReadOnlyDictionary<int, int> Offsets { get; }
 
     public Gh3ScriptCode(Gh3QbValue value)
     {
-        if (value.Type != 7 || value.Data is not ReadOnlyMemory<byte> data) throw new InvalidDataException("Expected compiled QB script data");
+        if (value.Type != Gh3QbType.Script || value.Data is not ReadOnlyMemory<byte> data) throw new InvalidDataException("Expected compiled QB script data");
         Bytes = Expand(data.Span);
         var tokens = new List<Gh3ScriptToken>();
         var at = 0;
@@ -23,7 +29,7 @@ internal sealed class Gh3ScriptCode
         float Float() { var number = BitConverter.Int32BitsToSingle(unchecked((int)Word())); return float.IsFinite(number) ? number : throw new InvalidDataException("Non-finite QB script number"); }
         while (at < Bytes.Length)
         {
-            if (tokens.Count >= 1000000) throw new InvalidDataException("QB script token count exceeds its limit");
+            if (tokens.Count >= MaximumTokens) throw new InvalidDataException("QB script token count exceeds its limit");
             var offset = at;
             var op = Bytes[at++];
             Gh3QbValue? literal = null;
@@ -31,43 +37,43 @@ internal sealed class Gh3ScriptCode
             ushort[]? weights = null;
             switch (op)
             {
-                case 0x02: Word(); op = 1; break;
-                case 0x16: literal = new(13, offset, Word()); break;
-                case 0x17: case 0x18: literal = new(1, offset, Word()); break;
-                case 0x19: Need(1); literal = new(1, offset, unchecked((uint)(sbyte)Bytes[at++])); break;
-                case 0x1a: literal = new(2, offset, Float()); break;
-                case 0x1b: case 0x1c: case 0x4c:
+                case Gh3ScriptOp.EndOfLineNumber: Word(); op = Gh3ScriptOp.EndOfLine; break;
+                case Gh3ScriptOp.Name: literal = new(Gh3QbType.Checksum, offset, Word()); break;
+                case Gh3ScriptOp.Integer: case Gh3ScriptOp.HexInteger: literal = new(Gh3QbType.Integer, offset, Word()); break;
+                case Gh3ScriptOp.ByteInteger: Need(1); literal = new(Gh3QbType.Integer, offset, unchecked((uint)(sbyte)Bytes[at++])); break;
+                case Gh3ScriptOp.Float: literal = new(Gh3QbType.Float, offset, Float()); break;
+                case Gh3ScriptOp.String: case Gh3ScriptOp.LocalString: case Gh3ScriptOp.WideString:
                     var length = checked((int)Word());
                     Need(length);
-                    var width = op == 0x4c ? 2 : 1;
+                    var width = op == Gh3ScriptOp.WideString ? 2 : 1;
                     if (length < width || length % width != 0 || Bytes[at + length - 1] != 0 || width == 2 && Bytes[at + length - 2] != 0)
                         throw new InvalidDataException("Invalid QB script string");
-                    literal = new(width == 1 ? 3u : 4u, offset, (width == 1 ? Encoding.Latin1 : Encoding.BigEndianUnicode).GetString(Bytes, at, length - width));
+                    literal = new(width == 1 ? Gh3QbType.String : Gh3QbType.WideString, offset, (width == 1 ? Encoding.Latin1 : Encoding.BigEndianUnicode).GetString(Bytes, at, length - width));
                     at += length;
                     break;
-                case 0x1e: literal = new(6, offset, new[] { Float(), Float(), Float() }); break;
-                case 0x1f: literal = new(5, offset, new[] { Float(), Float() }); break;
-                case 0x2e:
+                case Gh3ScriptOp.Vector: literal = new(Gh3QbType.Vector, offset, new[] { Float(), Float(), Float() }); break;
+                case Gh3ScriptOp.Pair: literal = new(Gh3QbType.Pair, offset, new[] { Float(), Float() }); break;
+                case Gh3ScriptOp.Jump:
                     var jump = unchecked((int)Word());
                     targets = new[] { checked(at + jump) };
                     break;
-                case 0x2f: case 0x37: case 0x40: case 0x41:
+                case Gh3ScriptOp.Random: case Gh3ScriptOp.Random2: case Gh3ScriptOp.RandomNoRepeat: case Gh3ScriptOp.RandomPermute:
                     var count = checked((int)Word());
-                    if (count is < 1 or > 10000) throw new InvalidDataException("Invalid QB random branch count");
+                    if (count is < 1 or > MaximumRandomBranches) throw new InvalidDataException("Invalid QB random branch count");
                     weights = Enumerable.Range(0, count).Select(_ => Short()).ToArray();
                     targets = Enumerable.Range(0, count).Select(_ => { var delta = Word(); return checked(at + (int)delta); }).ToArray();
                     break;
-                case 0x47: case 0x48: case 0x49:
+                case Gh3ScriptOp.FastIf: case Gh3ScriptOp.FastElse: case Gh3ScriptOp.ShortBreak:
                     var origin = at;
                     targets = new[] { checked(origin + Short()) };
                     break;
-                case 0x27:
+                case Gh3ScriptOp.ElseIf:
                     var first = at;
                     var falseTarget = checked(first + Short());
                     var second = at;
                     targets = new[] { falseTarget, checked(second + Short()) };
                     break;
-                case 0x4a:
+                case Gh3ScriptOp.InlineStructure:
                     var size = Short();
                     at = (at + 3) & ~3;
                     Need(size);
@@ -75,12 +81,19 @@ internal sealed class Gh3ScriptCode
                     at += size;
                     at = (at + 3) & ~3;
                     break;
-                case 0x4e: literal = new(28, offset, Word()); break;
-                case <= 0x15: case 0x20: case 0x21: case 0x22: case 0x23: case 0x24: case 0x25: case 0x26:
-                case 0x28: case 0x29: case 0x2a: case 0x2b: case 0x2c: case 0x2d: case 0x30: case 0x31: case 0x32: case 0x33: case 0x34: case 0x35:
-                case 0x36: case 0x38: case 0x39: case 0x3a: case 0x3b: case 0x3c: case 0x3d: case 0x3e: case 0x3f:
-                case 0x42: case 0x43: case 0x44: case 0x45: case 0x46: case 0x4b: case 0x4d: case 0x4f: case 0x50:
-                case 0x51: case 0x52: case 0x53: case 0x54: case 0x55: case 0x59: case 0x5a:
+                case Gh3ScriptOp.StringChecksum: literal = new(Gh3QbType.StringChecksum, offset, Word()); break;
+                // Tokens without a payload.
+                case <= Gh3ScriptOp.GreaterThanEqual: case Gh3ScriptOp.Begin: case Gh3ScriptOp.Repeat: case Gh3ScriptOp.Break:
+                case Gh3ScriptOp.Script: case Gh3ScriptOp.EndScript: case Gh3ScriptOp.If: case Gh3ScriptOp.Else: case Gh3ScriptOp.EndIf:
+                case Gh3ScriptOp.Return: case Gh3ScriptOp.Undefined: case Gh3ScriptOp.ChecksumName: case Gh3ScriptOp.AllArguments:
+                case Gh3ScriptOp.Argument: case Gh3ScriptOp.RandomRange: case Gh3ScriptOp.At: case Gh3ScriptOp.Or: case Gh3ScriptOp.And:
+                case Gh3ScriptOp.Xor: case Gh3ScriptOp.ShiftLeft: case Gh3ScriptOp.ShiftRight: case Gh3ScriptOp.RandomRange2:
+                case Gh3ScriptOp.Not: case Gh3ScriptOp.KeywordAnd: case Gh3ScriptOp.KeywordOr: case Gh3ScriptOp.Switch:
+                case Gh3ScriptOp.EndSwitch: case Gh3ScriptOp.Case: case Gh3ScriptOp.Default: case Gh3ScriptOp.Colon:
+                case Gh3ScriptOp.RuntimeFunction: case Gh3ScriptOp.RuntimeMemberFunction: case Gh3ScriptOp.Reserved45:
+                case Gh3ScriptOp.Reserved46: case Gh3ScriptOp.GlobalReference: case Gh3ScriptOp.NotEqual: case Gh3ScriptOp.RandomFloat:
+                case Gh3ScriptOp.RandomInteger: case Gh3ScriptOp.Reserved51: case Gh3ScriptOp.Reserved52: case Gh3ScriptOp.Reserved53:
+                case Gh3ScriptOp.Reserved54: case Gh3ScriptOp.Reserved55: case Gh3ScriptOp.Reserved59: case Gh3ScriptOp.Reserved5A:
                     break;
                 default: throw new InvalidDataException($"Unknown QB script opcode {op:x2} at {offset}");
             }
@@ -97,16 +110,16 @@ internal sealed class Gh3ScriptCode
 
     public static byte[] Expand(ReadOnlySpan<byte> data)
     {
-        if (data.Length < 12) throw new InvalidDataException("Truncated QB script header");
+        if (data.Length < Gh3QbLayout.ScriptHeaderSize) throw new InvalidDataException("Truncated QB script header");
         var length = BinaryPrimitives.ReadUInt32BigEndian(data.Slice(4, 4));
         var compressed = BinaryPrimitives.ReadUInt32BigEndian(data.Slice(8, 4));
-        if (length > 16000000 || compressed != data.Length - 12) throw new InvalidDataException("Invalid QB script length");
-        data = data.Slice(12);
+        if (length > MaximumScriptLength || compressed != data.Length - Gh3QbLayout.ScriptHeaderSize) throw new InvalidDataException("Invalid QB script length");
+        data = data.Slice(Gh3QbLayout.ScriptHeaderSize);
         if (compressed == length) return data.ToArray();
         var output = new byte[length];
-        var ring = new byte[4096];
-        Array.Fill(ring, (byte)' ', 0, 4078);
-        var write = 4078;
+        var ring = new byte[Gh3QbCompression.RingSize];
+        Array.Fill(ring, (byte)' ', 0, Gh3QbCompression.RingStart);
+        var write = Gh3QbCompression.RingStart;
         var at = 0;
         var count = 0;
         void Append(byte value)
@@ -114,7 +127,7 @@ internal sealed class Gh3ScriptCode
             if (count == output.Length) throw new InvalidDataException("QB script expands past its declared length");
             output[count++] = value;
             ring[write] = value;
-            write = (write + 1) & 4095;
+            write = (write + 1) & Gh3QbCompression.RingMask;
         }
         while (at < data.Length)
         {
@@ -125,8 +138,8 @@ internal sealed class Gh3ScriptCode
                 {
                     if (at + 2 > data.Length) throw new InvalidDataException("Truncated QB script compression reference");
                     var lo = data[at++]; var hi = data[at++];
-                    var read = lo | (hi & 0xf0) << 4;
-                    for (var i = 0; i < (hi & 15) + 3; i++) Append(ring[(read + i) & 4095]);
+                    var read = lo | (hi & Gh3QbCompression.MatchOffsetHighMask) << 4;
+                    for (var i = 0; i < (hi & Gh3QbCompression.MatchLengthMask) + Gh3QbCompression.MinimumMatch; i++) Append(ring[(read + i) & Gh3QbCompression.RingMask]);
                 }
         }
         if (count != output.Length) throw new InvalidDataException("QB script expansion length differs");

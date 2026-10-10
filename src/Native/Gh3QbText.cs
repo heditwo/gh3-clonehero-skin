@@ -4,8 +4,12 @@ using System.Text.Json;
 
 namespace Gh3Skin;
 
+// Typed JSON form of QB values ([type, value]), for song direction files and authored GH3 script calls.
 internal static class Gh3QbText
 {
+    private const int MaximumTextLength = 4 * 1024 * 1024;
+    private const int MaximumDepth = 64;
+    private const int MaximumValues = 100000;
     public static string Encode(Gh3QbValue value, Func<uint, string>? name = null)
     {
         using var stream = new MemoryStream();
@@ -15,7 +19,7 @@ internal static class Gh3QbText
 
     public static Gh3QbValue Decode(string text)
     {
-        if (text.Length > 4 * 1024 * 1024) throw new InvalidDataException("The typed GH3 value is too large.");
+        if (text.Length > MaximumTextLength) throw new InvalidDataException("The typed GH3 value is too large.");
         try
         {
             using var document = JsonDocument.Parse(text, new JsonDocumentOptions { MaxDepth = 256 });
@@ -40,7 +44,7 @@ internal static class Gh3QbText
         writer.WriteNumberValue(value.Type);
         switch (value.Data)
         {
-            case uint integer when value.Type != 1: writer.WriteStringValue(name?.Invoke(integer) ?? Key(integer)); break;
+            case uint integer when value.Type != Gh3QbType.Integer: writer.WriteStringValue(name?.Invoke(integer) ?? Key(integer)); break;
             case uint integer: writer.WriteNumberValue(integer); break;
             case float number: writer.WriteNumberValue(number); break;
             case string text: writer.WriteStringValue(text); break;
@@ -73,29 +77,29 @@ internal static class Gh3QbText
 
     private static Gh3QbValue Read(JsonElement node, int depth, ref int count)
     {
-        if (depth > 64 || ++count > 100000 || node.GetArrayLength() != 2)
+        if (depth > MaximumDepth || ++count > MaximumValues || node.GetArrayLength() != 2)
             throw new InvalidDataException("Invalid typed GH3 value size or depth.");
         var type = node[0].GetUInt32();
         var value = node[1];
         object data;
         switch (type)
         {
-            case 1: data = value.GetUInt32(); break;
-            case 13: case 26: case 28: data = Key(value.GetString()!); break;
-            case 2:
+            case Gh3QbType.Integer: data = value.GetUInt32(); break;
+            case Gh3QbType.Checksum: case Gh3QbType.GlobalReference: case Gh3QbType.StringChecksum: data = Key(value.GetString()!); break;
+            case Gh3QbType.Float:
                 var number = value.GetSingle();
                 if (!float.IsFinite(number)) throw new InvalidDataException("Non-finite typed GH3 number.");
                 data = number;
                 break;
-            case 3: case 4: data = value.GetString() ?? throw new InvalidDataException("Missing GH3 string."); break;
-            case 5: case 6:
+            case Gh3QbType.String: case Gh3QbType.WideString: data = value.GetString() ?? throw new InvalidDataException("Missing GH3 string."); break;
+            case Gh3QbType.Pair: case Gh3QbType.Vector:
                 var vector = value.EnumerateArray().Select(item => item.GetSingle()).ToArray();
-                if (vector.Length != (type == 5 ? 2 : 3) || !vector.All(float.IsFinite))
+                if (vector.Length != (type == Gh3QbType.Pair ? 2 : 3) || !vector.All(float.IsFinite))
                     throw new InvalidDataException("Invalid typed GH3 vector.");
                 data = vector;
                 break;
-            case 7: data = new ReadOnlyMemory<byte>(value.GetBytesFromBase64()); break;
-            case 10:
+            case Gh3QbType.Script: data = new ReadOnlyMemory<byte>(value.GetBytesFromBase64()); break;
+            case Gh3QbType.Structure:
                 var fields = new List<Gh3QbField>();
                 foreach (var field in value.EnumerateArray())
                 {
@@ -104,7 +108,7 @@ internal static class Gh3QbText
                 }
                 data = fields.AsReadOnly();
                 break;
-            case 12:
+            case Gh3QbType.Array:
                 var items = new List<Gh3QbValue>();
                 foreach (var item in value.EnumerateArray()) items.Add(Read(item, depth + 1, ref count));
                 data = items.AsReadOnly();

@@ -78,7 +78,7 @@ internal static class StageShowFlow
     {
         var call = new Gh3ScriptEvent("scripts", Gh3ScriptRuntime.Structure(new[]
         {
-            new Gh3QbField(Gh3Checksum.Value("time"), new(1, -1, (uint)Math.Max(0, Math.Round(time * 1000)))),
+            new Gh3QbField(Gh3Checksum.Value("time"), new(Gh3QbType.Integer, -1, (uint)Math.Max(0, Math.Round(time * 1000)))),
             new Gh3QbField(Gh3Checksum.Value("scr"), Gh3ScriptRuntime.Key(script)),
             new Gh3QbField(Gh3Checksum.Value("params"), Gh3ScriptRuntime.Structure(
                 parameters.Select(parameter => new Gh3QbField(Gh3Checksum.Value(parameter.Name), Gh3ScriptRuntime.Key(parameter.Value)))))

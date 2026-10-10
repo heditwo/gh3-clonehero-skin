@@ -55,7 +55,7 @@ internal sealed class StageScriptActorState
         bool Is(string name) => command == Gh3Checksum.Value(name);
         if (Is("GameObj_PlayAnim") || Is("PlayAnim"))
         {
-            var reference = parameters.Field("anim") ?? parameters.Fields.FirstOrDefault(field => field.Name == 0 && field.Value.Type == 13)?.Value;
+            var reference = parameters.Field("anim") ?? parameters.Fields.FirstOrDefault(field => field.Name == 0 && field.Value.Type == Gh3QbType.Checksum)?.Value;
             var key = reference?.Data is string name ? Gh3Checksum.Value(name) : reference?.Integer ?? 0;
             if (!_clips.TryGetValue(key, out var clip)) throw new InvalidDataException("Actor animation is missing: " + Gh3QbText.Key(key));
             double Number(string field, double fallback) => parameters.Field(field) is { Type: 1 or 2 } value ? Gh3ScriptRuntime.Numeric(value) : fallback;

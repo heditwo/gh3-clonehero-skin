@@ -161,16 +161,16 @@ internal sealed class StageTimeline
         else if (cue.Type == "crowd" && note is >= 72 and <= 80)
         {
             command = "GH3_Crowd_Event_Listener";
-            parameters.Add(new(Gh3Checksum.Value("event_type"), new(13, -1, Gh3Checksum.Value(new[] { "applause", "surge_fast", "surge_slow" }[(note - 72) % 3]))));
-            if (note is <= 74 or >= 78) parameters.Add(new(Gh3Checksum.Value("override_state"), new(1, -1, 1u)));
+            parameters.Add(new(Gh3Checksum.Value("event_type"), new(Gh3QbType.Checksum, -1, Gh3Checksum.Value(new[] { "applause", "surge_fast", "surge_slow" }[(note - 72) % 3]))));
+            if (note is <= 74 or >= 78) parameters.Add(new(Gh3Checksum.Value("override_state"), new(Gh3QbType.Integer, -1, 1u)));
         }
         else return null;
-        parameters.Add(new(Gh3Checksum.Value("velocity"), new(1, -1, (uint)(cue.Velocity ?? 100))));
-        parameters.Add(new(Gh3Checksum.Value("length"), new(1, -1, (uint)Math.Round(cue.Duration * 1000))));
-        var call = new Gh3ScriptEvent(cue.Type == "drum" ? "drums" : "crowd", new(10, -1, new[] {
-            new Gh3QbField(Gh3Checksum.Value("time"), new(1, -1, unchecked((uint)(int)Math.Round(cue.Time * 1000)))),
-            new Gh3QbField(Gh3Checksum.Value("scr"), new(13, -1, Gh3Checksum.Value(command))),
-            new Gh3QbField(Gh3Checksum.Value("params"), new(10, -1, parameters)) }));
+        parameters.Add(new(Gh3Checksum.Value("velocity"), new(Gh3QbType.Integer, -1, (uint)(cue.Velocity ?? 100))));
+        parameters.Add(new(Gh3Checksum.Value("length"), new(Gh3QbType.Integer, -1, (uint)Math.Round(cue.Duration * 1000))));
+        var call = new Gh3ScriptEvent(cue.Type == "drum" ? "drums" : "crowd", new(Gh3QbType.Structure, -1, new[] {
+            new Gh3QbField(Gh3Checksum.Value("time"), new(Gh3QbType.Integer, -1, unchecked((uint)(int)Math.Round(cue.Time * 1000)))),
+            new Gh3QbField(Gh3Checksum.Value("scr"), new(Gh3QbType.Checksum, -1, Gh3Checksum.Value(command))),
+            new Gh3QbField(Gh3Checksum.Value("params"), new(Gh3QbType.Structure, -1, parameters)) }));
         return new(cue.Time, "gh3-audio", call.Encode());
     }
 

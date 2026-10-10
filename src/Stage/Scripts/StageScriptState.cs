@@ -156,7 +156,7 @@ internal sealed class StageScriptState : IDisposable
                 var performance = Gh3Checksum.Value(Performance());
                 if (_lightShow != null) _lightShow.SetPerformance(Performance());
                 else if (performance != _performance && _bank.PerformanceChanged.Length > 0)
-                    _runtime.Start(Gh3QbText.Key(_bank.PerformanceChanged), Gh3ScriptRuntime.Structure(new[] { new Gh3QbField(Gh3Checksum.Value("performance"), new(13, -1, performance)) }));
+                    _runtime.Start(Gh3QbText.Key(_bank.PerformanceChanged), Gh3ScriptRuntime.Structure(new[] { new Gh3QbField(Gh3Checksum.Value("performance"), new(Gh3QbType.Checksum, -1, performance)) }));
                 _performance = performance;
                 continue;
             }
@@ -192,8 +192,8 @@ internal sealed class StageScriptState : IDisposable
 
     private void Dispatch(InputEvent input)
     {
-        var fields = new List<Gh3QbField> { new(Gh3Checksum.Value("type"), new(13, -1, input.Type)), new(Gh3Checksum.Value("Data"), input.Parameters) };
-        if (input.Target is { } target) fields.Add(new(Gh3Checksum.Value("target"), new(13, -1, target)));
+        var fields = new List<Gh3QbField> { new(Gh3Checksum.Value("type"), new(Gh3QbType.Checksum, -1, input.Type)), new(Gh3Checksum.Value("Data"), input.Parameters) };
+        if (input.Target is { } target) fields.Add(new(Gh3Checksum.Value("target"), new(Gh3QbType.Checksum, -1, target)));
         _runtime.Start(Gh3Checksum.Value("LaunchEvent"), Gh3ScriptRuntime.Structure(fields));
     }
 
@@ -252,7 +252,7 @@ internal sealed class StageScriptState : IDisposable
         if (parameters.Field("AnimEvents") is not { } enabled || !Gh3ScriptRuntime.Truth(enabled) || enabled.Data is uint key && key == Gh3Checksum.Value("Off")) return;
         var tableName = _actorDefinitions[id].Actor.AnimationEvents;
         if (tableName.Length == 0) return;
-        if (!_bank.Values.TryGetValue(Gh3QbText.Key(tableName), out var table) || table.Type != 10)
+        if (!_bank.Values.TryGetValue(Gh3QbText.Key(tableName), out var table) || table.Type != Gh3QbType.Structure)
             throw new InvalidDataException("Actor animation event table is missing: " + tableName);
         if (table.Field(actor.ClipKey) is not { } track) return;
         var events = track.Items.Select(row => (Time: Gh3ScriptRuntime.Numeric(row.Field("time") ?? throw new InvalidDataException("Animation event time is missing")),
@@ -292,7 +292,7 @@ internal sealed class StageScriptState : IDisposable
             if (!flags.Contains(flag)) continue;
             if (!_objects.ContainsKey(id)) continue;
             var create = flags.All(item => item is not { } other || !_knownNodeFlags.Contains(other) || _nodeFlags.Contains(other));
-            var args = Gh3ScriptRuntime.Structure(new[] { new Gh3QbField(Gh3Checksum.Value("nodeName"), new(13, -1, id)) });
+            var args = Gh3ScriptRuntime.Structure(new[] { new Gh3QbField(Gh3Checksum.Value("nodeName"), new(Gh3QbType.Checksum, -1, id)) });
             _runtime.Start(Gh3Checksum.Value(create ? "SafeCreate" : "SafeKill"), args);
         }
     }
@@ -304,15 +304,15 @@ internal sealed class StageScriptState : IDisposable
         if (Is("IsPC")) return new(true);
         if (RenderControls.Execute(context, command, parameters, _runtime.Time) is { } renderResult) return renderResult;
         if (_lightShow?.Execute(command, parameters) is { } lightResult) return lightResult;
-        if (Is("LightShow_GetPyroScript")) return new(SourcePyro, SourcePyro ? new[] { new Gh3QbField(Gh3Checksum.Value("pyro_script"), new(13, -1, _pyroScript)) } : null);
+        if (Is("LightShow_GetPyroScript")) return new(SourcePyro, SourcePyro ? new[] { new Gh3QbField(Gh3Checksum.Value("pyro_script"), new(Gh3QbType.Checksum, -1, _pyroScript)) } : null);
         if ((Is("SafeCreate") || Is("SafeKill")) && _runtime.HasScript(command)) return null;
-        var target = parameters.Field("Name") ?? parameters.Field("nodeName") ?? parameters.Field("id") ?? parameters.Fields.FirstOrDefault(item => item.Name == 0 && item.Value.Type == 13)?.Value;
+        var target = parameters.Field("Name") ?? parameters.Field("nodeName") ?? parameters.Field("id") ?? parameters.Fields.FirstOrDefault(item => item.Name == 0 && item.Value.Type == Gh3QbType.Checksum)?.Value;
         if (Is("IsInNodeArray")) return new(_bank.NodeValues.ContainsKey(target?.Integer ?? context.Object) || _objects.ContainsKey(target?.Integer ?? context.Object));
         if (Is("GetNodeFlag") || Is("SetNodeFlag") || Is("ClearNodeFlag") || Is("CreateNodeFlag") || Is("ChangeNodeFlag"))
         {
             var flag = target?.Integer ?? parameters.Field("flag")?.Integer ?? throw new InvalidDataException("Node flag is missing");
             if (Is("GetNodeFlag")) return new(_nodeFlags.Contains(flag));
-            var value = parameters.Fields.FirstOrDefault(field => field.Name == 0 && field.Value.Type == 1)?.Value;
+            var value = parameters.Fields.FirstOrDefault(field => field.Name == 0 && field.Value.Type == Gh3QbType.Integer)?.Value;
             var enabled = Is("SetNodeFlag") || !Is("ClearNodeFlag") && value != null && Gh3ScriptRuntime.Truth(value);
             if (Is("CreateNodeFlag") && _knownNodeFlags.Add(flag))
             {
@@ -339,7 +339,7 @@ internal sealed class StageScriptState : IDisposable
             {
                 if (!_bank.NodeValues.TryGetValue(id, out var node)) throw new InvalidDataException("Callback node is missing");
                 var fields = (parameters.Field("params")?.Fields ?? Array.Empty<Gh3QbField>()).Where(field => field.Name != Gh3Checksum.Value("nodeName") && field.Name != Gh3Checksum.Value("node"));
-                _runtime.Start(callback, Gh3ScriptRuntime.Structure(fields.Concat(new[] { new Gh3QbField(Gh3Checksum.Value("nodeName"), new(13, -1, id)), new Gh3QbField(Gh3Checksum.Value("node"), node) })), context.Object);
+                _runtime.Start(callback, Gh3ScriptRuntime.Structure(fields.Concat(new[] { new Gh3QbField(Gh3Checksum.Value("nodeName"), new(Gh3QbType.Checksum, -1, id)), new Gh3QbField(Gh3Checksum.Value("node"), node) })), context.Object);
             }
             return new(true);
         }
@@ -384,7 +384,7 @@ internal sealed class StageScriptState : IDisposable
                 if (!_attachments.TryGetValue(ancestor, out var link)) break;
                 ancestor = link.Parent;
             }
-            var vector = parameters.Field("offset") ?? parameters.Fields.FirstOrDefault(field => field.Name == 0 && field.Value.Type == 6)?.Value;
+            var vector = parameters.Field("offset") ?? parameters.Fields.FirstOrDefault(field => field.Name == 0 && field.Value.Type == Gh3QbType.Vector)?.Value;
             var xyz = vector?.Data as float[] ?? new float[3];
             if (xyz.Length != 3 || xyz.Any(value => !float.IsFinite(value))) throw new InvalidDataException("Invalid attachment offset");
             var pose = _objects[context.Object].Sample(_runtime.Time);
@@ -395,7 +395,7 @@ internal sealed class StageScriptState : IDisposable
         if (Is("Obj_GetPosition") && _objects.ContainsKey(context.Object))
         {
             var p = Sample(context.Object, _runtime.Time).Position;
-            var position = new Gh3QbValue(6, -1, new[] { p.X, p.Y, -p.Z });
+            var position = new Gh3QbValue(Gh3QbType.Vector, -1, new[] { p.X, p.Y, -p.Z });
             return new(true, new[] { new Gh3QbField(Gh3Checksum.Value("position"), position), new Gh3QbField(Gh3Checksum.Value("pos"), position) });
         }
         if (Is("LightVolume_GetParams"))
@@ -407,12 +407,12 @@ internal sealed class StageScriptState : IDisposable
                 new Gh3QbField(Gh3Checksum.Value("Range"), Gh3ScriptRuntime.Number(beam.Range)),
                 new Gh3QbField(Gh3Checksum.Value("StartRadius"), Gh3ScriptRuntime.Number(beam.StartRadius)),
                 new Gh3QbField(Gh3Checksum.Value("EndRadius"), Gh3ScriptRuntime.Number(beam.EndRadius)),
-                new Gh3QbField(Gh3Checksum.Value("VolumeColor"), new(12, -1, new[] { Gh3ScriptRuntime.Number(beam.Color.X * 255), Gh3ScriptRuntime.Number(beam.Color.Y * 255), Gh3ScriptRuntime.Number(beam.Color.Z * 255) })) });
+                new Gh3QbField(Gh3Checksum.Value("VolumeColor"), new(Gh3QbType.Array, -1, new[] { Gh3ScriptRuntime.Number(beam.Color.X * 255), Gh3ScriptRuntime.Number(beam.Color.Y * 255), Gh3ScriptRuntime.Number(beam.Color.Z * 255) })) });
         }
         if (Is("LightVolume_SetParams"))
         {
             var previous = _beamParameters.GetValueOrDefault(context.Object);
-            if (parameters.Field("VolumeColor") is { } color && (color.Type != 12 || color.Items.Count != 3 || color.Items.Any(item => !double.IsFinite(Gh3ScriptRuntime.Numeric(item)))))
+            if (parameters.Field("VolumeColor") is { } color && (color.Type != Gh3QbType.Array || color.Items.Count != 3 || color.Items.Any(item => !double.IsFinite(Gh3ScriptRuntime.Numeric(item)))))
                 throw new InvalidDataException("Invalid light volume color");
             var fields = previous?.Fields.Where(field => parameters.Field(field.Name) == null) ?? Array.Empty<Gh3QbField>();
             var merged = Gh3ScriptRuntime.Structure(fields.Concat(parameters.Fields));
@@ -438,7 +438,7 @@ internal sealed class StageScriptState : IDisposable
         }
         if (Is("SafeCreate") || Is("SafeKill") || Is("Create") || Is("Kill"))
         {
-            target ??= context.Object == 0 ? null : new(13, -1, context.Object);
+            target ??= context.Object == 0 ? null : new(Gh3QbType.Checksum, -1, context.Object);
             if (target == null || !_objects.TryGetValue(target.Integer, out var obj)) throw new InvalidDataException("Missing stage object " + Gh3QbText.Key(target?.Integer ?? 0));
             var create = Is("SafeCreate") || Is("Create");
             if (obj.Exists == create && (Is("SafeCreate") || Is("SafeKill"))) return new(true);
@@ -458,7 +458,7 @@ internal sealed class StageScriptState : IDisposable
         {
             var zone = _venue.StartsWith("gh3.") ? "z_" + _venue.Substring(4) : _venue;
             return new(true, new[] { new Gh3QbField(Gh3Checksum.Value(Is("GetPakManCurrent") ? "pak" : "pakname"),
-                Is("GetPakManCurrent") ? new(13, -1, _runtime.Intern(zone)) : new(3, -1, zone)) });
+                Is("GetPakManCurrent") ? new(Gh3QbType.Checksum, -1, _runtime.Intern(zone)) : new(Gh3QbType.String, -1, zone)) });
         }
         if (_actors.TryGetValue(context.Object, out var actor) && actor.Execute(command, parameters, _runtime.Time) is { } animation)
         {

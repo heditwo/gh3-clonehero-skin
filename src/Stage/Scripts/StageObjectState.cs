@@ -89,7 +89,7 @@ internal sealed class StageObjectState
             if (value?.Data is not float[] { Length: 3 } xyz || xyz.Any(x => !float.IsFinite(x))) throw new InvalidDataException("Object motion needs a finite vector");
             return new(xyz[0], xyz[1], xyz[2]);
         }
-        Gh3QbValue? Unnamed() => parameters.Fields.FirstOrDefault(item => item.Name == 0 && item.Value.Type == 6)?.Value;
+        Gh3QbValue? Unnamed() => parameters.Fields.FirstOrDefault(item => item.Name == 0 && item.Value.Type == Gh3QbType.Vector)?.Value;
         double Duration(Vector3 from, Vector3 to)
         {
             var seconds = StageSoundBank.Number(Field("time"), 0);
@@ -116,7 +116,7 @@ internal sealed class StageObjectState
         if (Is("Obj_GetPosition"))
         {
             var p = _position.At(time);
-            var position = new Gh3QbValue(6, -1, new[] { p.X, p.Y, -p.Z });
+            var position = new Gh3QbValue(Gh3QbType.Vector, -1, new[] { p.X, p.Y, -p.Z });
             return new(true, new[] { new Gh3QbField(Gh3Checksum.Value("position"), position), new Gh3QbField(Gh3Checksum.Value("pos"), position) });
         }
         if (Is("Obj_SetPosition") || Is("Obj_MoveToPos") || Is("Obj_MoveToRelPos"))
@@ -168,7 +168,7 @@ internal sealed class StageObjectState
         if (Is("Obj_GetScaling"))
         {
             var s = _scaling.At(time);
-            return new(true, new[] { new Gh3QbField(Gh3Checksum.Value("scaling"), new(6, -1, new[] { s.X, s.Y, s.Z })) });
+            return new(true, new[] { new Gh3QbField(Gh3Checksum.Value("scaling"), new(Gh3QbType.Vector, -1, new[] { s.X, s.Y, s.Z })) });
         }
         if (Is("Obj_ApplyScaling") || Is("Obj_MorphScaling"))
         {

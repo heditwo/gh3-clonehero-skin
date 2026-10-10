@@ -27,7 +27,7 @@ internal sealed class StageMaterialState
         var parameter = parameters.Field("parameter")?.Integer ?? throw new InvalidDataException("Material parameter is missing");
         var source = parameters.Field("value") ?? throw new InvalidDataException("Material values are missing");
         Vector4 value;
-        if (source.Type == 12)
+        if (source.Type == Gh3QbType.Array)
         {
             var values = source.Items.Select(Gh3ScriptRuntime.Numeric).ToArray();
             if (values.Length is not (1 or 3 or 4) || values.Any(item => !double.IsFinite(item))) throw new InvalidDataException("Invalid material color array");
@@ -35,8 +35,8 @@ internal sealed class StageMaterialState
             value = new((float)values[0] * scale, (float)values[values.Length == 1 ? 0 : 1] * scale,
                 (float)values[values.Length == 1 ? 0 : 2] * scale, values.Length == 4 ? (float)values[3] * scale : 1);
         }
-        else if (source.Type == 6 && source.Data is float[] { Length: 3 } vector && vector.All(float.IsFinite)) value = new(vector[0], vector[1], vector[2], 0);
-        else if (source.Type is 1 or 2 && double.IsFinite(Gh3ScriptRuntime.Numeric(source))) value = new((float)Gh3ScriptRuntime.Numeric(source), 0, 0, 0);
+        else if (source.Type == Gh3QbType.Vector && source.Data is float[] { Length: 3 } vector && vector.All(float.IsFinite)) value = new(vector[0], vector[1], vector[2], 0);
+        else if (source.Type is Gh3QbType.Integer or Gh3QbType.Float && double.IsFinite(Gh3ScriptRuntime.Numeric(source))) value = new((float)Gh3ScriptRuntime.Numeric(source), 0, 0, 0);
         else throw new InvalidDataException("Invalid material value");
         var targets = parameters.Field("object") is { } obj ? new[] { obj.Integer } :
             parameters.Field("prefix") is { } prefix ? _bank.PrefixValues.GetValueOrDefault(prefix.Integer, Array.Empty<uint>()) : throw new InvalidDataException("Material target is missing");

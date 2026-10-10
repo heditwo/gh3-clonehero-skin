@@ -103,7 +103,7 @@ internal sealed class StageParticleDefinition
         foreach (var field in source.Fields)
         {
             if (field.Name == Gh3Checksum.Value("FollowEmitter")) Follow = (float)Gh3ScriptRuntime.Numeric(field.Value);
-            else if (field.Name == Gh3Checksum.Value("EmitterIndependent") || field.Name == 0 && field.Value.Type == 13 && field.Value.Integer == Gh3Checksum.Value("EmitterIndependent"))
+            else if (field.Name == Gh3Checksum.Value("EmitterIndependent") || field.Name == 0 && field.Value.Type == Gh3QbType.Checksum && field.Value.Integer == Gh3Checksum.Value("EmitterIndependent"))
             {
                 var independent = field.Name == 0 ? 1 : Gh3ScriptRuntime.Numeric(field.Value);
                 EmitterIndependent = independent > 0;
@@ -193,7 +193,7 @@ internal sealed class StageParticleDefinition
     }
 
     private static Vector2 Pair(Gh3QbValue value, string field, Vector2 fallback, float min, float max) => Pair(value.Field(field), fallback, min, max);
-    private static Vector2 Size(Gh3QbValue? value) => value?.Type is 1 or 2 ? new((float)Gh3ScriptRuntime.Numeric(value)) : Pair(value, Vector2.Zero, 0, 1000);
+    private static Vector2 Size(Gh3QbValue? value) => value?.Type is Gh3QbType.Integer or Gh3QbType.Float ? new((float)Gh3ScriptRuntime.Numeric(value)) : Pair(value, Vector2.Zero, 0, 1000);
     private static Vector2 Pair(Gh3QbValue? item, Vector2 fallback, float min, float max)
     {
         if (item == null) return fallback;

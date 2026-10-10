@@ -2,8 +2,12 @@ using System.Text.Json;
 
 namespace Gh3Skin;
 
+// One script call of a song direction track (time, scr, params), and its JSON form for charts ("gh3 " text events).
 internal sealed record Gh3ScriptEvent(string Track, Gh3QbValue Row)
 {
+    private const int MaximumTextLength = 131072;
+    private const int MaximumDepth = 64;
+    private const int MaximumTrackName = 128;
     public static readonly string[] Tracks = { "scripts", "anim", "triggers", "cameras", "lightshow", "crowd", "drums", "performance" };
     public uint Command => Required("scr").Integer;
     public uint Time => Required("time").Integer;
@@ -16,17 +20,17 @@ internal sealed record Gh3ScriptEvent(string Track, Gh3QbValue Row)
 
     public static Gh3ScriptEvent Decode(string text)
     {
-        if (text.Length > 131072) throw new InvalidDataException("The GH3 event is too large.");
+        if (text.Length > MaximumTextLength) throw new InvalidDataException("The GH3 event is too large.");
         try
         {
-            using var document = JsonDocument.Parse(text, new JsonDocumentOptions { MaxDepth = 64 });
+            using var document = JsonDocument.Parse(text, new JsonDocumentOptions { MaxDepth = MaximumDepth });
             var root = document.RootElement;
             if (root.GetProperty("version").GetInt32() != 1) throw new InvalidDataException("Unsupported GH3 event version.");
             var track = root.GetProperty("track").GetString();
-            if (track == null || track.Length is < 1 or > 128) throw new InvalidDataException("Invalid GH3 event track.");
+            if (track == null || track.Length is < 1 or > MaximumTrackName) throw new InvalidDataException("Invalid GH3 event track.");
             var result = new Gh3ScriptEvent(track, Gh3QbText.Decode(root.GetProperty("row").GetRawText()));
-            if (result.Required("time").Type != 1 || result.Time > 86400000) throw new InvalidDataException("Invalid GH3 event time.");
-            if (result.Required("scr").Type != 13) throw new InvalidDataException("Invalid GH3 script reference.");
+            if (result.Required("time").Type != Gh3QbType.Integer || result.Time > Gh3Limits.MaximumMilliseconds) throw new InvalidDataException("Invalid GH3 event time.");
+            if (result.Required("scr").Type != Gh3QbType.Checksum) throw new InvalidDataException("Invalid GH3 script reference.");
             _ = result.Command;
             if (result.Parameters is { } parameters) _ = parameters.Fields;
             return result;

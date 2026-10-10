@@ -111,12 +111,12 @@ internal sealed class StageParticleState
     private Gh3QbValue Resolve(Gh3QbValue value, int depth = 0)
     {
         if (depth > 64) throw new InvalidDataException("Particle references contain a cycle");
-        if (value.Type is 13 or 26) return Resolve(_values.GetValueOrDefault(value.Integer) ?? throw new InvalidDataException("Particle definition is missing"), depth + 1);
+        if (value.Type is Gh3QbType.Checksum or Gh3QbType.GlobalReference) return Resolve(_values.GetValueOrDefault(value.Integer) ?? throw new InvalidDataException("Particle definition is missing"), depth + 1);
         var fields = new List<Gh3QbField>();
         if (value.Field("ScriptReference") is { } reference) fields.AddRange(Resolve(reference, depth + 1).Fields);
         foreach (var field in value.Fields)
         {
-            if (field.Name == 0 && field.Value.Type == 26) fields.AddRange(Resolve(field.Value, depth + 1).Fields);
+            if (field.Name == 0 && field.Value.Type == Gh3QbType.GlobalReference) fields.AddRange(Resolve(field.Value, depth + 1).Fields);
             else fields.Add(field);
         }
         var last = fields.Select((field, index) => (field.Name, index)).Where(field => field.Name != 0).GroupBy(field => field.Name).ToDictionary(group => group.Key, group => group.Last().index);
@@ -404,7 +404,7 @@ internal sealed class StageParticleState
             Wind.Advance(_runtime.Time);
             return new(Wind.Execute(parameters));
         }
-        var target = parameters.Field("Name") ?? parameters.Field("nodeName") ?? parameters.Field("id") ?? parameters.Fields.FirstOrDefault(field => field.Name == 0 && field.Value.Type == 13)?.Value;
+        var target = parameters.Field("Name") ?? parameters.Field("nodeName") ?? parameters.Field("id") ?? parameters.Fields.FirstOrDefault(field => field.Name == 0 && field.Value.Type == Gh3QbType.Checksum)?.Value;
         if (Is("GetUniqueCompositeObjectID"))
         {
             var id = parameters.Field("preferredID")?.Integer ?? 0;
@@ -414,7 +414,7 @@ internal sealed class StageParticleState
                 id = Gh3Checksum.Value("unique_composite_object_id_" + _unique.ToString("D3", System.Globalization.CultureInfo.InvariantCulture));
                 _unique = (_unique + 1) % 1000;
             }
-            return new(true, new[] { new Gh3QbField(Gh3Checksum.Value("uniqueID"), new(13, -1, id)) });
+            return new(true, new[] { new Gh3QbField(Gh3Checksum.Value("uniqueID"), new(Gh3QbType.Checksum, -1, id)) });
         }
         if (Is("CreateParticleSystem") || Is("CreateParticleSystem_Fast"))
         {
@@ -462,7 +462,7 @@ internal sealed class StageParticleState
         }
         if (Is("SetEmitterIndependent"))
         {
-            emitter.Independent = parameters.Fields.FirstOrDefault(field => field.Name == 0 && field.Value.Type == 1)?.Value.Integer == 1;
+            emitter.Independent = parameters.Fields.FirstOrDefault(field => field.Name == 0 && field.Value.Type == Gh3QbType.Integer)?.Value.Integer == 1;
             return new(true);
         }
         if (Is("Emit"))

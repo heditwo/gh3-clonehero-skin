@@ -25,8 +25,40 @@ internal sealed class Gh3ScriptContext
     }
 }
 
+// The QB script interpreter: script tasks on the song clock, waits, events, spawned scripts, and the builtin commands
+// that GH3 implements in the engine (PARITY-NOTES.md#script-runtime).
 internal sealed class Gh3ScriptRuntime : IDisposable
 {
+    // Interpreter limits against runaway or corrupt scripts; GH3's venue scripts stay far below them.
+    private const int MaximumTasks = 10000;
+    private const int MaximumCallDepth = 64;
+    private const int MaximumExpressionDepth = 64;
+    private const int MaximumStepsPerAdvance = 1000000;
+    private const int MaximumArguments = 10000;
+    private const int MaximumArrayItems = 100000;
+    private const double MaximumTime = 86400;
+    // GH3 keeps the random-choice history of RandomNoRepeat and RandomPermute in a reusable pool of 100 entries.
+    private const int RandomHistoryPool = 100;
+    private const int RandomNoRepeatAttempts = 100;
+    // Swaps per item when RandomPermute shuffles its order.
+    private const int ShuffleSwapsPerItem = 10;
+    // Default resolution of GetRandomValue without "integer".
+    private const int RandomValueResolution = 1000;
+    // Tolerance of a component task's resume time against the clock, for rounding of the frame times.
+    private const double ResumeTolerance = .000000001;
+    // Seed of the script random generators. Source not documented (commit 44b355a); GH3's boot seed is Gh3Random.BootSeed.
+    private const int ScriptRandomSeed = 0x6e624eb7;
+    // Expression binding strength. Member and Unary bind the operand of '.', '[', ':', '$', '-' and 'not'.
+    private const int OrPrecedence = 10;
+    private const int AndPrecedence = 20;
+    private const int ComparisonPrecedence = 30;
+    private const int AdditivePrecedence = 40;
+    private const int MultiplicativePrecedence = 50;
+    private const int UnaryPrecedence = 80;
+    private const int MemberPrecedence = 100;
+    // Beats per minute for "Wait n beats" before the song sets its tempo.
+    private const double DefaultTempo = 120;
+
     private sealed class Task
     {
         public long Sequence { get; init; }
@@ -64,8 +96,8 @@ internal sealed class Gh3ScriptRuntime : IDisposable
     private Task? _running;
     private long _sequence;
     private long _order;
-    private readonly Gh3Random _random = new(0x6e624eb7);
-    private readonly Gh3Random _random2 = new(0x6e624eb7);
+    private readonly Gh3Random _random = new(ScriptRandomSeed);
+    private readonly Gh3Random _random2 = new(ScriptRandomSeed);
     private readonly Gh3CrtRandom _crtRandom = new();
     private int _work;
     private int _depth;
@@ -73,7 +105,7 @@ internal sealed class Gh3ScriptRuntime : IDisposable
     public double FrameDuration { get; set; } = 1.0 / 60;
     public double? UnscaledFrameDuration { get; set; }
     private double _onePerFrameTime = double.NegativeInfinity;
-    private uint Milliseconds => unchecked((uint)(long)Math.Truncate(Time * 1000));
+    private uint Milliseconds => unchecked((uint)(long)Math.Truncate(Time * Gh3Time.MillisecondsPerSecond));
     private bool AdvanceComponentWait(Gh3ComponentWait wait) => wait.Advance((float)FrameDuration, (float)(UnscaledFrameDuration ?? FrameDuration), Milliseconds, TakeComponentFrame);
     private bool TakeComponentFrame()
     {
@@ -83,7 +115,7 @@ internal sealed class Gh3ScriptRuntime : IDisposable
     }
     public int NextRandom(int limit) => _random.Next(limit);
     public int NextCrtRandom() => _crtRandom.Next();
-    public Func<double, double> Tempo { get; set; } = _ => 120;
+    public Func<double, double> Tempo { get; set; } = _ => DefaultTempo;
     public Action<uint, int, byte>? Trace { get; set; }
     public Action<uint, Exception>? Failed { get; set; }
     public Action<uint, uint?, Gh3QbValue>? EventRaised { get; set; }
@@ -100,34 +132,34 @@ internal sealed class Gh3ScriptRuntime : IDisposable
     }
 
     public void Set(uint key, Gh3QbValue value) => _globals[key] = value;
-    public bool HasScript(uint key) => _globals.TryGetValue(key, out var value) && value.Type == 7;
+    public bool HasScript(uint key) => _globals.TryGetValue(key, out var value) && value.Type == Gh3QbType.Script;
     public string Name(uint key) => _names.GetValueOrDefault(key, "0x" + key.ToString("x8"));
     public uint Intern(string name) { var key = Gh3Checksum.Value(name); _names.TryAdd(key, name); return key; }
     public static Gh3QbValue Number(double number) => double.IsFinite(number) && number >= int.MinValue && number <= int.MaxValue && number == Math.Truncate(number) ?
-        new(1, -1, unchecked((uint)(int)number)) : float.IsFinite((float)number) ? new(2, -1, (float)number) : throw new InvalidDataException("Invalid script arithmetic result");
-    public static Gh3QbValue Key(string text) => new(13, -1, Gh3Checksum.Value(text));
-    private static Gh3QbValue Missing => new(0, -1, 0u);
-    public static Gh3QbValue Structure(IEnumerable<Gh3QbField> fields) => new(10, -1, fields.ToArray());
+        new(Gh3QbType.Integer, -1, unchecked((uint)(int)number)) : float.IsFinite((float)number) ? new(Gh3QbType.Float, -1, (float)number) : throw new InvalidDataException("Invalid script arithmetic result");
+    public static Gh3QbValue Key(string text) => new(Gh3QbType.Checksum, -1, Gh3Checksum.Value(text));
+    private static Gh3QbValue Missing => new(Gh3QbType.None, -1, 0u);
+    public static Gh3QbValue Structure(IEnumerable<Gh3QbField> fields) => new(Gh3QbType.Structure, -1, fields.ToArray());
     private static Gh3QbValue EvaluatedStructure(IEnumerable<Gh3QbField> fields)
     {
         var result = new List<Gh3QbField>();
         foreach (var field in fields)
         {
-            if (field.Value.Type == 0) continue;
+            if (field.Value.Type == Gh3QbType.None) continue;
             if (field.Name != 0) result.RemoveAll(previous => previous.Name == field.Name);
             result.Add(field);
         }
         return Structure(result);
     }
-    public static double Numeric(Gh3QbValue value) => value.Type == 1 ? unchecked((int)value.Integer) : value.Type == 2 ? value.Number : throw new InvalidDataException("Expected script number");
-    public static bool Truth(Gh3QbValue value) => value.Type == 0 ? false : value.Type is 1 or 2 ? Numeric(value) != 0 : value.Type is 13 or 26 ?
+    public static double Numeric(Gh3QbValue value) => value.Type == Gh3QbType.Integer ? unchecked((int)value.Integer) : value.Type == Gh3QbType.Float ? value.Number : throw new InvalidDataException("Expected script number");
+    public static bool Truth(Gh3QbValue value) => value.Type == Gh3QbType.None ? false : value.Type is Gh3QbType.Integer or Gh3QbType.Float ? Numeric(value) != 0 : value.Type is Gh3QbType.Checksum or Gh3QbType.GlobalReference ?
         value.Integer != Gh3Checksum.Value("false") && value.Integer != Gh3Checksum.Value("none") && value.Integer != Gh3Checksum.Value("undefined") : true;
 
     public long Start(uint script, Gh3QbValue? parameters = null, uint target = 0, uint id = 0, bool immediate = true, bool optional = false)
     {
         var context = new Gh3ScriptContext(script, target, parameters?.Fields ?? Array.Empty<Gh3QbField>());
         var task = new Task { Sequence = _sequence++, Script = script, Object = target, Id = id, Steps = Invoke(context, script, Structure(context.Parameters), optional: optional).GetEnumerator() };
-        if (_tasks.Count >= 10000) throw new InvalidDataException("Too many active GH3 scripts");
+        if (_tasks.Count >= MaximumTasks) throw new InvalidDataException("Too many active GH3 scripts");
         _tasks.Add(task.Sequence, task);
         if (immediate) Resume(task);
         else _queue.Enqueue(task, (Time + FrameDuration, _order++));
@@ -137,7 +169,7 @@ internal sealed class Gh3ScriptRuntime : IDisposable
     public void Schedule(double time, Action callback, uint target = 0, uint id = 0)
     {
         if (!double.IsFinite(time) || time < Time) throw new ArgumentOutOfRangeException(nameof(time));
-        if (_tasks.Count >= 10000) throw new InvalidDataException("Too many active GH3 scripts");
+        if (_tasks.Count >= MaximumTasks) throw new InvalidDataException("Too many active GH3 scripts");
         IEnumerable<Gh3ScriptWait> Run() { callback(); yield break; }
         var task = new Task { Sequence = _sequence++, Object = target, Id = id, Callback = true, Steps = Run().GetEnumerator() };
         _tasks.Add(task.Sequence, task);
@@ -146,7 +178,7 @@ internal sealed class Gh3ScriptRuntime : IDisposable
 
     public long CreateComponent(uint script, Gh3QbValue? parameters, uint target)
     {
-        if (_tasks.Count >= 10000) throw new InvalidDataException("Too many active GH3 scripts");
+        if (_tasks.Count >= MaximumTasks) throw new InvalidDataException("Too many active GH3 scripts");
         var context = new Gh3ScriptContext(script, target, parameters?.Fields ?? Array.Empty<Gh3QbField>());
         var task = new Task { Sequence = _sequence++, Script = script, Object = target, Component = true, ResumeAt = Time,
             Steps = Invoke(context, script, Structure(context.Parameters)).GetEnumerator() };
@@ -162,7 +194,7 @@ internal sealed class Gh3ScriptRuntime : IDisposable
             if (!AdvanceComponentWait(wait)) return;
             task.Wait = null;
         }
-        else if (task.ResumeAt > Time + .000000001) return;
+        else if (task.ResumeAt > Time + ResumeTolerance) return;
         Resume(task);
     }
 
@@ -200,7 +232,7 @@ internal sealed class Gh3ScriptRuntime : IDisposable
 
     public void Advance(double time)
     {
-        if (!double.IsFinite(time) || time < Time || time > 86400) throw new ArgumentOutOfRangeException(nameof(time));
+        if (!double.IsFinite(time) || time < Time || time > MaximumTime) throw new ArgumentOutOfRangeException(nameof(time));
         _work = 0;
         while (_queue.TryPeek(out _, out var next) && next.Time <= time)
         {
@@ -213,7 +245,7 @@ internal sealed class Gh3ScriptRuntime : IDisposable
     private void Resume(Task task)
     {
         if (task.Cancelled) { task.Steps.Dispose(); return; }
-        if (++_depth > 64) throw new InvalidDataException("GH3 script call depth exceeds its limit");
+        if (++_depth > MaximumCallDepth) throw new InvalidDataException("GH3 script call depth exceeds its limit");
         var previous = _running;
         _running = task;
         try
@@ -254,7 +286,7 @@ internal sealed class Gh3ScriptRuntime : IDisposable
         if (history == null)
         {
             history = new() { Script = script, Offset = token.Offset, Count = token.Targets!.Length, Op = token.Op };
-            if (_randomHistory.Count == 100) _randomHistory.RemoveAt(99);
+            if (_randomHistory.Count == RandomHistoryPool) _randomHistory.RemoveAt(RandomHistoryPool - 1);
             _randomHistory.Insert(0, history);
         }
         history.Owner = _running;
@@ -270,14 +302,14 @@ internal sealed class Gh3ScriptRuntime : IDisposable
     private Gh3ScriptCode Code(uint key)
     {
         if (_scripts.TryGetValue(key, out var code)) return code;
-        if (!_globals.TryGetValue(key, out var value) || value.Type != 7) throw new InvalidDataException("Missing script " + Name(key));
+        if (!_globals.TryGetValue(key, out var value) || value.Type != Gh3QbType.Script) throw new InvalidDataException("Missing script " + Name(key));
         _scripts.Add(key, code = new(value));
         return code;
     }
 
     private IEnumerable<Gh3ScriptWait> Invoke(Gh3ScriptContext caller, uint key, Gh3QbValue parameters, uint? target = null, int depth = 0, bool optional = false)
     {
-        if (depth > 64) throw new InvalidDataException("GH3 script call depth exceeds its limit");
+        if (depth > MaximumCallDepth) throw new InvalidDataException("GH3 script call depth exceeds its limit");
         var context = new Gh3ScriptContext(key, target ?? caller.Object, parameters.Fields);
         var result = Builtin(context, caller, key, parameters) ?? _native(context, key, parameters) ?? Gh3PcCommands.Execute(key);
         if (result == null && optional && !HasScript(key)) result = new(false);
@@ -302,15 +334,15 @@ internal sealed class Gh3ScriptRuntime : IDisposable
 
     private Gh3QbValue Resolve(Gh3QbValue value, int depth = 0)
     {
-        if (depth > 64) throw new InvalidDataException("Recursive script value reference");
-        if (value.Type == 26) return _globals.TryGetValue(value.Integer, out var global) ? Resolve(global, depth + 1) : Missing;
-        if (value.Type == 10)
+        if (depth > MaximumCallDepth) throw new InvalidDataException("Recursive script value reference");
+        if (value.Type == Gh3QbType.GlobalReference) return _globals.TryGetValue(value.Integer, out var global) ? Resolve(global, depth + 1) : Missing;
+        if (value.Type == Gh3QbType.Structure)
         {
             var fields = new List<Gh3QbField>();
             foreach (var field in value.Fields)
             {
                 var item = Resolve(field.Value, depth + 1);
-                if (field.Name == 0 && item.Type == 10) fields.AddRange(item.Fields);
+                if (field.Name == 0 && item.Type == Gh3QbType.Structure) fields.AddRange(item.Fields);
                 else fields.Add(new(field.Name, item));
             }
             return EvaluatedStructure(fields);
@@ -327,10 +359,10 @@ internal sealed class Gh3ScriptRuntime : IDisposable
         if (Is("Wait"))
         {
             if (_running?.Component == true) return new(true, ComponentWait: new(parameters, Milliseconds));
-            var amount = unnamed.FirstOrDefault(value => value.Type is 1 or 2) ?? Number(1);
+            var amount = unnamed.FirstOrDefault(value => value.Type is Gh3QbType.Integer or Gh3QbType.Float) ?? Number(1);
             var seconds = Numeric(amount);
             if (parameters.Flag("Seconds") || parameters.Flag("Second")) { }
-            else if (parameters.Flag("Milliseconds") || parameters.Flag("Millisecond")) seconds /= 1000;
+            else if (parameters.Flag("Milliseconds") || parameters.Flag("Millisecond")) seconds /= Gh3Time.MillisecondsPerSecond;
             else if (parameters.Flag("Beats") || parameters.Flag("Beat")) seconds *= 60 / Tempo(Time);
             else seconds *= FrameDuration;
             if (!double.IsFinite(seconds) || seconds < 0) throw new InvalidDataException("Invalid script wait duration");
@@ -338,13 +370,13 @@ internal sealed class Gh3ScriptRuntime : IDisposable
         }
         if (Is("Block"))
         {
-            var events = Field("anytypes")?.Items.Select(value => value.Integer).ToArray() ?? unnamed.Where(value => value.Type == 13).Select(value => value.Integer).ToArray();
+            var events = Field("anytypes")?.Items.Select(value => value.Integer).ToArray() ?? unnamed.Where(value => value.Type == Gh3QbType.Checksum).Select(value => value.Integer).ToArray();
             if (events.Length == 0) throw new InvalidDataException("Block requires event types");
             return new(true, Events: events);
         }
         if (Is("SpawnScriptNow") || Is("SpawnScriptLater") || Is("Obj_SpawnScriptNow") || Is("Obj_SpawnScriptLater"))
         {
-            var name = Field("name") ?? unnamed.FirstOrDefault(value => value.Type == 13) ?? throw new InvalidDataException("SpawnScript needs a script reference");
+            var name = Field("name") ?? unnamed.FirstOrDefault(value => value.Type == Gh3QbType.Checksum) ?? throw new InvalidDataException("SpawnScript needs a script reference");
             Start(name.Integer, Field("params"), Is("Obj_SpawnScriptNow") || Is("Obj_SpawnScriptLater") ? context.Object : 0,
                 Field("id")?.Integer ?? 0, Is("SpawnScriptNow") || Is("Obj_SpawnScriptNow"));
             return new(true);
@@ -356,7 +388,7 @@ internal sealed class Gh3ScriptRuntime : IDisposable
         }
         if (Is("Obj_SwitchScript") || Is("SwitchScript"))
         {
-            var name = Field("name") ?? unnamed.FirstOrDefault(value => value.Type == 13) ?? throw new InvalidDataException("SwitchScript needs a script reference");
+            var name = Field("name") ?? unnamed.FirstOrDefault(value => value.Type == Gh3QbType.Checksum) ?? throw new InvalidDataException("SwitchScript needs a script reference");
             if (Is("Obj_SwitchScript")) Cancel(target: context.Object);
             else if (_running != null) Cancel(_running);
             Start(name.Integer, Field("params"), context.Object, immediate: false);
@@ -367,7 +399,7 @@ internal sealed class Gh3ScriptRuntime : IDisposable
             var a = Field("a")?.Integer ?? throw new InvalidDataException("Checksum mangling needs a");
             var b = Field("b")?.Integer ?? throw new InvalidDataException("Checksum mangling needs b");
             var value = Field("subtract") is { } subtract && Truth(subtract) ? unchecked(a - b) : unchecked(a + b);
-            return new(true, new[] { new Gh3QbField(Gh3Checksum.Value("mangled_id"), new(13, -1, value)) });
+            return new(true, new[] { new Gh3QbField(Gh3Checksum.Value("mangled_id"), new(Gh3QbType.Checksum, -1, value)) });
         }
         if (Is("GetDistance"))
         {
@@ -392,11 +424,11 @@ internal sealed class Gh3ScriptRuntime : IDisposable
         if (Is("ResetEventHandlersFromTable"))
         {
             var reference = unnamed.FirstOrDefault() ?? throw new InvalidDataException("Event table reference is missing");
-            var table = reference.Type == 12 ? reference : _globals.GetValueOrDefault(reference.Integer) ?? throw new InvalidDataException("Event table is missing");
+            var table = reference.Type == Gh3QbType.Array ? reference : _globals.GetValueOrDefault(reference.Integer) ?? throw new InvalidDataException("Event table is missing");
             var group = Field("group")?.Integer ?? 0;
             _listeners.RemoveAll(listener => listener.Target == context.Object && listener.Group == group);
             foreach (var row in table.Items)
-                Builtin(context, caller, Gh3Checksum.Value("SetEventHandler"), Structure(row.Fields.Concat(new[] { new Gh3QbField(Gh3Checksum.Value("group"), new(13, -1, group)) })));
+                Builtin(context, caller, Gh3Checksum.Value("SetEventHandler"), Structure(row.Fields.Concat(new[] { new Gh3QbField(Gh3Checksum.Value("group"), new(Gh3QbType.Checksum, -1, group)) })));
             return new(true);
         }
         if (Is("LaunchEvent") || Is("BroadcastEvent"))
@@ -426,16 +458,16 @@ internal sealed class Gh3ScriptRuntime : IDisposable
         if (Is("AddParams"))
         {
             foreach (var field in parameters.Fields.Where(field => field.Name != 0)) caller.Locals[field.Name] = field.Value;
-            foreach (var value in unnamed.Where(value => value.Type == 10))
+            foreach (var value in unnamed.Where(value => value.Type == Gh3QbType.Structure))
                 foreach (var field in value.Fields.Where(field => field.Name != 0)) caller.Locals[field.Name] = field.Value;
             return new(true);
         }
-        if (Is("GotParam")) return new(unnamed.Any(value => value.Type == 13 && (caller.Locals.ContainsKey(value.Integer) || caller.Parameters.Any(field => field.Name == 0 && field.Value.Type == 13 && field.Value.Integer == value.Integer))));
+        if (Is("GotParam")) return new(unnamed.Any(value => value.Type == Gh3QbType.Checksum && (caller.Locals.ContainsKey(value.Integer) || caller.Parameters.Any(field => field.Name == 0 && field.Value.Type == Gh3QbType.Checksum && field.Value.Integer == value.Integer))));
         if (Is("RequireParams"))
         {
-            var required = unnamed.SelectMany(value => value.Type == 12 ? value.Items : value.Type == 13 ? new[] { value } : Array.Empty<Gh3QbValue>())
-                .Where(value => value.Type == 13 && value.Integer != Gh3Checksum.Value("all") && value.Integer != Gh3Checksum.Value("any")).ToArray();
-            var present = required.Select(value => caller.Locals.ContainsKey(value.Integer) || caller.Parameters.Any(item => item.Name == 0 && item.Value.Type == 13 && item.Value.Integer == value.Integer)).ToArray();
+            var required = unnamed.SelectMany(value => value.Type == Gh3QbType.Array ? value.Items : value.Type == Gh3QbType.Checksum ? new[] { value } : Array.Empty<Gh3QbValue>())
+                .Where(value => value.Type == Gh3QbType.Checksum && value.Integer != Gh3Checksum.Value("all") && value.Integer != Gh3Checksum.Value("any")).ToArray();
+            var present = required.Select(value => caller.Locals.ContainsKey(value.Integer) || caller.Parameters.Any(item => item.Name == 0 && item.Value.Type == Gh3QbType.Checksum && item.Value.Integer == value.Integer)).ToArray();
             if (parameters.Flag("any") ? !present.Any(value => value) : present.Any(value => !value))
                 throw new InvalidDataException("A required script parameter is missing");
             return new(true);
@@ -454,10 +486,10 @@ internal sealed class Gh3ScriptRuntime : IDisposable
             Number(Math.Truncate(Numeric(caller.Locals.GetValueOrDefault(value.Integer, Number(0))))))).ToArray());
         if (Is("GlobalExists")) return new(Field("Name") is { } name && _globals.ContainsKey(name.Integer));
         if (Is("ScriptExists")) return new((Field("Name") ?? unnamed.FirstOrDefault()) is { } script && HasScript(script.Integer));
-        if (Is("StructureContains")) return new(Field("structure")?.Type == 10 && (Field("name") ?? unnamed.FirstOrDefault()) is { } name && Field("structure")!.Field(name.Integer) != null);
+        if (Is("StructureContains")) return new(Field("structure")?.Type == Gh3QbType.Structure && (Field("name") ?? unnamed.FirstOrDefault()) is { } name && Field("structure")!.Field(name.Integer) != null);
         if (Is("GetArraySize"))
         {
-            var array = unnamed.FirstOrDefault(value => value.Type == 12) ?? Field("array");
+            var array = unnamed.FirstOrDefault(value => value.Type == Gh3QbType.Array) ?? Field("array");
             return Result("array_size", Number(array?.Items.Count ?? 0));
         }
         if (Is("SetArrayElement"))
@@ -465,16 +497,16 @@ internal sealed class Gh3ScriptRuntime : IDisposable
             var name = Field("arrayname")?.Integer ?? throw new InvalidDataException("Array name is missing");
             var local = caller.Locals.TryGetValue(name, out var array);
             array ??= _globals.GetValueOrDefault(name);
-            if (array?.Type != 12) throw new InvalidDataException("Array value is missing");
+            if (array?.Type != Gh3QbType.Array) throw new InvalidDataException("Array value is missing");
             var index = checked((int)Numeric(Field("index") ?? throw new InvalidDataException("Array index is missing")));
             if (index < 0 || index >= array.Items.Count) throw new InvalidDataException("Array index exceeds its bounds");
             var items = array.Items.ToArray();
             items[index] = Field("newvalue") ?? throw new InvalidDataException("Array replacement value is missing");
-            var updated = new Gh3QbValue(12, -1, items);
+            var updated = new Gh3QbValue(Gh3QbType.Array, -1, items);
             if (!local) _globals[name] = updated;
             return new(true, local ? new[] { new Gh3QbField(name, updated) } : null);
         }
-        if (Is("Obj_GetID")) return Result("objID", new(13, -1, context.Object));
+        if (Is("Obj_GetID")) return Result("objID", new(Gh3QbType.Checksum, -1, context.Object));
         if (Is("ChecksumEquals") || Is("LocalizedStringEquals")) return new(Equal(Field("a"), Field("b")));
         if (Is("Change") || Is("Set"))
         {
@@ -494,9 +526,9 @@ internal sealed class Gh3ScriptRuntime : IDisposable
             if (parameters.Flag("integer")) value = _random.Range((float)low, (float)high, true);
             else
             {
-                var resolution = checked((int)Numeric(Field("resolution") ?? Number(1000)));
+                var resolution = checked((int)Numeric(Field("resolution") ?? Number(RandomValueResolution)));
                 if (resolution < 2) throw new InvalidDataException("Random resolution must be at least two");
-                value = new(2, -1, _random.Next(resolution) * ((float)high - (float)low) / (resolution - 1) + (float)low);
+                value = new(Gh3QbType.Float, -1, _random.Next(resolution) * ((float)high - (float)low) / (resolution - 1) + (float)low);
             }
             return new(true, new[] { new Gh3QbField((Field("name") ?? Key("value")).Integer, value) });
         }
@@ -514,22 +546,22 @@ internal sealed class Gh3ScriptRuntime : IDisposable
         }
         if (Is("ExtendCRC"))
         {
-            var key = unnamed.FirstOrDefault(value => value.Type == 13) ?? throw new InvalidDataException("ExtendCRC needs a checksum");
+            var key = unnamed.FirstOrDefault(value => value.Type == Gh3QbType.Checksum) ?? throw new InvalidDataException("ExtendCRC needs a checksum");
             var text = unnamed.FirstOrDefault(value => value.Data is string)?.Data as string ?? "";
-            return new(true, new[] { new Gh3QbField((Field("out") ?? Key("checksum")).Integer, new(13, -1, Gh3Checksum.Append(key.Integer, text))) });
+            return new(true, new[] { new Gh3QbField((Field("out") ?? Key("checksum")).Integer, new(Gh3QbType.Checksum, -1, Gh3Checksum.Append(key.Integer, text))) });
         }
         if (Is("FormatText"))
         {
             var format = unnamed.FirstOrDefault(value => value.Data is string)?.Data as string ?? throw new InvalidDataException("FormatText needs a format string");
             var text = Regex.Replace(format, "%([a-zA-Z%])", match => match.Groups[1].Value == "%" ? "%" : Text(Field(match.Groups[1].Value) ?? Key("undefined")));
             var name = Field("checksumName") ?? Field("textName") ?? throw new InvalidDataException("FormatText needs an output name");
-            return new(true, new[] { new Gh3QbField(name.Integer, Field("checksumName") != null ? new(13, -1, Intern(text)) : new(3, -1, text)) });
+            return new(true, new[] { new Gh3QbField(name.Integer, Field("checksumName") != null ? new(Gh3QbType.Checksum, -1, Intern(text)) : new(Gh3QbType.String, -1, text)) });
         }
         return null;
     }
 
-    private string Text(Gh3QbValue value) => value.Data is string text ? text : value.Type is 1 or 2 ? Numeric(value).ToString(CultureInfo.InvariantCulture) : Name(value.Integer);
-    private static bool Equal(Gh3QbValue? a, Gh3QbValue? b) => a == null || b == null ? a == b : a.Type is 1 or 2 && b.Type is 1 or 2 ? Numeric(a) == Numeric(b) :
+    private string Text(Gh3QbValue value) => value.Data is string text ? text : value.Type is Gh3QbType.Integer or Gh3QbType.Float ? Numeric(value).ToString(CultureInfo.InvariantCulture) : Name(value.Integer);
+    private static bool Equal(Gh3QbValue? a, Gh3QbValue? b) => a == null || b == null ? a == b : a.Type is Gh3QbType.Integer or Gh3QbType.Float && b.Type is Gh3QbType.Integer or Gh3QbType.Float ? Numeric(a) == Numeric(b) :
         a.Data is string aa && b.Data is string bb ? string.Equals(aa, bb, StringComparison.OrdinalIgnoreCase) : Gh3QbText.Encode(a) == Gh3QbText.Encode(b);
 
     private sealed class Cursor
@@ -542,7 +574,7 @@ internal sealed class Gh3ScriptRuntime : IDisposable
         private readonly Stack<(Gh3QbValue Value, bool Matched, bool Body)> _switches = new();
         private int _at;
         private int _expressionDepth;
-        private byte Op => _at < _code.Tokens.Length ? _code.Tokens[_at].Op : (byte)0x24;
+        private byte Op => _at < _code.Tokens.Length ? _code.Tokens[_at].Op : Gh3ScriptOp.EndScript;
         private Gh3ScriptToken Take() => _code.Tokens[_at++];
         private void Jump(int offset) => _at = _code.Offsets[offset];
 
@@ -550,7 +582,7 @@ internal sealed class Gh3ScriptRuntime : IDisposable
 
         public IEnumerable<Gh3ScriptWait> Run()
         {
-            if (Op == 0x4a)
+            if (Op == Gh3ScriptOp.InlineStructure)
             {
                 foreach (var field in _runtime.Resolve(Take().Value!).Fields)
                     if (field.Name != 0 && !_context.Locals.ContainsKey(field.Name))
@@ -561,63 +593,63 @@ internal sealed class Gh3ScriptRuntime : IDisposable
             {
                 _runtime.Trace?.Invoke(_context.Script, _code.Tokens[_at].Offset, Op);
                 if (_runtime._running?.Cancelled == true) yield break;
-                if (++_runtime._work > 1000000) throw new InvalidDataException("GH3 script execution exceeds its step limit");
+                if (++_runtime._work > MaximumStepsPerAdvance) throw new InvalidDataException("GH3 script execution exceeds its step limit");
                 switch (Op)
                 {
-                    case 0: case 0x24: yield break;
-                    case 1: _at++; continue;
-                    case 0x47: case 0x27:
+                    case Gh3ScriptOp.EndOfFile: case Gh3ScriptOp.EndScript: yield break;
+                    case Gh3ScriptOp.EndOfLine: _at++; continue;
+                    case Gh3ScriptOp.FastIf: case Gh3ScriptOp.ElseIf:
                         var branch = Take();
-                        if (branch.Op == 0x27 && !evaluateElseIf) { Jump(branch.Targets![1]); continue; }
+                        if (branch.Op == Gh3ScriptOp.ElseIf && !evaluateElseIf) { Jump(branch.Targets![1]); continue; }
                         evaluateElseIf = false;
                         if (!Condition())
                         {
                             Jump(branch.Targets![0]);
-                            evaluateElseIf = Op == 0x27;
-                            if (Op == 0x48) _at++;
+                            evaluateElseIf = Op == Gh3ScriptOp.ElseIf;
+                            if (Op == Gh3ScriptOp.FastElse) _at++;
                         }
                         continue;
-                    case 0x49:
+                    case Gh3ScriptOp.ShortBreak:
                         var jump = Take();
                         if (_switches.Count > 0)
                         {
-                            if (!_switches.Peek().Body && Op is 0x3e or 0x3f) continue;
+                            if (!_switches.Peek().Body && Op is Gh3ScriptOp.Case or Gh3ScriptOp.Default) continue;
                             _switches.Pop();
                         }
                         Jump(jump.Targets![0]);
                         continue;
-                    case 0x48: case 0x2e: Jump(Take().Targets![0]); continue;
-                    case 0x28: _at++; continue;
-                    case 0x20: _at++; _loops.Push((_at, 0)); continue;
-                    case 0x21:
+                    case Gh3ScriptOp.FastElse: case Gh3ScriptOp.Jump: Jump(Take().Targets![0]); continue;
+                    case Gh3ScriptOp.EndIf: _at++; continue;
+                    case Gh3ScriptOp.Begin: _at++; _loops.Push((_at, 0)); continue;
+                    case Gh3ScriptOp.Repeat:
                         _at++;
                         var loop = _loops.Pop();
-                        var count = Op is 1 or 0x24 ? double.PositiveInfinity : Numeric(Expression());
+                        var count = Op is Gh3ScriptOp.EndOfLine or Gh3ScriptOp.EndScript ? double.PositiveInfinity : Numeric(Expression());
                         if (loop.Iteration + 1 < count) { _loops.Push((loop.Start, loop.Iteration + 1)); _at = loop.Start; }
                         continue;
-                    case 0x22:
+                    case Gh3ScriptOp.Break:
                         _at++;
                         var depth = 0;
                         while (_at < _code.Tokens.Length)
                         {
-                            if (Op == 0x20) depth++;
-                            if (Op == 0x21 && depth-- == 0) { _at++; if (Op != 1) _ = Expression(); break; }
+                            if (Op == Gh3ScriptOp.Begin) depth++;
+                            if (Op == Gh3ScriptOp.Repeat && depth-- == 0) { _at++; if (Op != Gh3ScriptOp.EndOfLine) _ = Expression(); break; }
                             _at++;
                         }
                         _loops.Pop();
                         continue;
-                    case 0x3c: _at++; _switches.Push((Expression(), false, false)); continue;
-                    case 0x3e: case 0x3f:
-                        var isDefault = Take().Op == 0x3f;
+                    case Gh3ScriptOp.Switch: _at++; _switches.Push((Expression(), false, false)); continue;
+                    case Gh3ScriptOp.Case: case Gh3ScriptOp.Default:
+                        var isDefault = Take().Op == Gh3ScriptOp.Default;
                         var next = Take();
-                        if (next.Op != 0x49) throw new InvalidDataException("Invalid QB switch branch");
+                        if (next.Op != Gh3ScriptOp.ShortBreak) throw new InvalidDataException("Invalid QB switch branch");
                         var item = _switches.Pop();
                         var match = isDefault || Equal(item.Value, Expression());
                         if (!match && !item.Matched) Jump(next.Targets![0]);
                         _switches.Push((item.Value, item.Matched || match, false));
                         continue;
-                    case 0x3d: _at++; _switches.Pop(); continue;
-                    case 0x29:
+                    case Gh3ScriptOp.EndSwitch: _at++; _switches.Pop(); continue;
+                    case Gh3ScriptOp.Return:
                         _at++;
                         var result = Parameters();
                         var first = result.Fields.FirstOrDefault(field => field.Name == 0)?.Value;
@@ -630,16 +662,16 @@ internal sealed class Gh3ScriptRuntime : IDisposable
                             _switches.Push((active.Value, active.Matched, true));
                         }
                         var target = _context.Object;
-                        var name = Expression(100);
-                        if (Op == 0x07)
+                        var name = Expression(MemberPrecedence);
+                        if (Op == Gh3ScriptOp.EqualSign)
                         {
                             _at++;
                             var assigned = Expression();
-                            if (assigned.Type == 0) _context.Locals.Remove(name.Integer);
+                            if (assigned.Type == Gh3QbType.None) _context.Locals.Remove(name.Integer);
                             else _context.Locals[name.Integer] = assigned;
                             continue;
                         }
-                        if (Op == 0x42) { _at++; target = name.Integer; name = Expression(100); }
+                        if (Op == Gh3ScriptOp.Colon) { _at++; target = name.Integer; name = Expression(MemberPrecedence); }
                         var args = Parameters();
                         foreach (var wait in _runtime.Invoke(_context, name.Integer, args, target, _depth + 1)) yield return wait;
                         continue;
@@ -649,8 +681,8 @@ internal sealed class Gh3ScriptRuntime : IDisposable
 
         private bool Condition()
         {
-            if (Op == 0x39) { _at++; return !Condition(); }
-            if (Op == 0x0e && _at + 3 < _code.Tokens.Length && _code.Tokens[_at + 1].Op == 0x16 && _code.Tokens[_at + 2].Op == 0x0f)
+            if (Op == Gh3ScriptOp.Not) { _at++; return !Condition(); }
+            if (Op == Gh3ScriptOp.OpenParenthesis && _at + 3 < _code.Tokens.Length && _code.Tokens[_at + 1].Op == Gh3ScriptOp.Name && _code.Tokens[_at + 2].Op == Gh3ScriptOp.CloseParenthesis)
             {
                 _at++;
                 var name = Take().Value!.Integer;
@@ -659,7 +691,7 @@ internal sealed class Gh3ScriptRuntime : IDisposable
                 if (steps.MoveNext()) throw new InvalidDataException("A script condition cannot wait");
                 return _context.Result.Success;
             }
-            if (Op == 0x16 && (_at + 1 == _code.Tokens.Length || _code.Tokens[_at + 1].Op is not (0x07 or 0x4d or 0x12 or 0x13 or 0x14 or 0x15)))
+            if (Op == Gh3ScriptOp.Name && (_at + 1 == _code.Tokens.Length || _code.Tokens[_at + 1].Op is not (Gh3ScriptOp.EqualSign or Gh3ScriptOp.NotEqual or Gh3ScriptOp.LessThan or Gh3ScriptOp.LessThanEqual or Gh3ScriptOp.GreaterThan or Gh3ScriptOp.GreaterThanEqual)))
             {
                 var name = Take().Value!.Integer;
                 var parameters = Parameters();
@@ -670,87 +702,87 @@ internal sealed class Gh3ScriptRuntime : IDisposable
             return Truth(Expression());
         }
 
-        private Gh3QbValue Parameters(byte end = 1)
+        private Gh3QbValue Parameters(byte end = Gh3ScriptOp.EndOfLine)
         {
             var fields = new List<Gh3QbField>();
-            while (_at < _code.Tokens.Length && Op != end && Op != 0x24 && Op != 0x0f && Op != 0x28 && Op != 0x27 && Op != 0x48)
+            while (_at < _code.Tokens.Length && Op != end && Op != Gh3ScriptOp.EndScript && Op != Gh3ScriptOp.CloseParenthesis && Op != Gh3ScriptOp.EndIf && Op != Gh3ScriptOp.ElseIf && Op != Gh3ScriptOp.FastElse)
             {
-                if (Op == 9 || end != 1 && Op == 1) { _at++; continue; }
-                if (Op == 0x2c) { _at++; fields.AddRange(_context.Arguments.Fields); continue; }
-                if (Op == 0x4a) { fields.AddRange(_runtime.Resolve(Take().Value!).Fields); continue; }
-                var name = Op == 0x16 && _at + 1 < _code.Tokens.Length && _code.Tokens[_at + 1].Op == 7 ? Take().Value!.Integer : 0;
+                if (Op == Gh3ScriptOp.Comma || end != Gh3ScriptOp.EndOfLine && Op == Gh3ScriptOp.EndOfLine) { _at++; continue; }
+                if (Op == Gh3ScriptOp.AllArguments) { _at++; fields.AddRange(_context.Arguments.Fields); continue; }
+                if (Op == Gh3ScriptOp.InlineStructure) { fields.AddRange(_runtime.Resolve(Take().Value!).Fields); continue; }
+                var name = Op == Gh3ScriptOp.Name && _at + 1 < _code.Tokens.Length && _code.Tokens[_at + 1].Op == Gh3ScriptOp.EqualSign ? Take().Value!.Integer : 0;
                 if (name != 0) _at++;
                 var value = Expression();
-                if (name == 0 && value.Type == 10) fields.AddRange(value.Fields);
+                if (name == 0 && value.Type == Gh3QbType.Structure) fields.AddRange(value.Fields);
                 else fields.Add(new(name, value));
-                if (fields.Count > 10000) throw new InvalidDataException("Too many script arguments");
+                if (fields.Count > MaximumArguments) throw new InvalidDataException("Too many script arguments");
             }
             return EvaluatedStructure(fields);
         }
 
         private Gh3QbValue Expression(int minimum = 0)
         {
-            if (++_expressionDepth > 64) throw new InvalidDataException("Script expression exceeds its nesting limit");
+            if (++_expressionDepth > MaximumExpressionDepth) throw new InvalidDataException("Script expression exceeds its nesting limit");
             try
             {
                 // Compiled QB keeps line breaks inside parentheses, for example after "||" (Progression_SetProgressionNodeFlags).
-                while (Op == 1 && _at > 0 && _code.Tokens[_at - 1].Op is 0x0e or 0x32 or 0x33) _at++;
+                while (Op == Gh3ScriptOp.EndOfLine && _at > 0 && _code.Tokens[_at - 1].Op is Gh3ScriptOp.OpenParenthesis or Gh3ScriptOp.Or or Gh3ScriptOp.And) _at++;
                 var token = Take();
                 Gh3QbValue value;
                 switch (token.Op)
                 {
-                    case 0x2d:
+                    case Gh3ScriptOp.Argument:
                         var local = Take().Value!.Integer;
-                        value = minimum == 100 && Op == 7 ? new(13, -1, local) : _context.Locals.GetValueOrDefault(local, Missing);
+                        value = minimum == MemberPrecedence && Op == Gh3ScriptOp.EqualSign ? new(Gh3QbType.Checksum, -1, local) : _context.Locals.GetValueOrDefault(local, Missing);
                         break;
-                    case 0x4b:
-                        var reference = Expression(100);
+                    case Gh3ScriptOp.GlobalReference:
+                        var reference = Expression(MemberPrecedence);
                         value = _runtime._globals.GetValueOrDefault(reference.Integer, Missing);
                         break;
-                    case 0x0e:
+                    case Gh3ScriptOp.OpenParenthesis:
                         value = Expression();
-                        if (value.Type == 13 && (Op != 0x0f || _runtime.HasScript(value.Integer)))
+                        if (value.Type == Gh3QbType.Checksum && (Op != Gh3ScriptOp.CloseParenthesis || _runtime.HasScript(value.Integer)))
                         {
-                            using var call = _runtime.Invoke(_context, value.Integer, Parameters(0x0f), depth: _depth + 1).GetEnumerator();
+                            using var call = _runtime.Invoke(_context, value.Integer, Parameters(Gh3ScriptOp.CloseParenthesis), depth: _depth + 1).GetEnumerator();
                             if (call.MoveNext()) throw new InvalidDataException("A script expression cannot wait");
                             value = Number(_context.Result.Success ? 1 : 0);
                         }
-                        Require(0x0f);
+                        Require(Gh3ScriptOp.CloseParenthesis);
                         break;
-                    case 3:
-                        value = Parameters(4);
-                        Require(4);
+                    case Gh3ScriptOp.StartStructure:
+                        value = Parameters(Gh3ScriptOp.EndStructure);
+                        Require(Gh3ScriptOp.EndStructure);
                         break;
-                    case 5:
+                    case Gh3ScriptOp.StartArray:
                         var items = new List<Gh3QbValue>();
-                        while (Op != 6)
+                        while (Op != Gh3ScriptOp.EndArray)
                         {
-                            if (Op is 1 or 9) _at++;
+                            if (Op is Gh3ScriptOp.EndOfLine or Gh3ScriptOp.Comma) _at++;
                             else items.Add(Expression());
-                            if (items.Count > 100000) throw new InvalidDataException("Script array exceeds its limit");
+                            if (items.Count > MaximumArrayItems) throw new InvalidDataException("Script array exceeds its limit");
                         }
-                        Require(6);
-                        value = new(12, -1, items.ToArray());
+                        Require(Gh3ScriptOp.EndArray);
+                        value = new(Gh3QbType.Array, -1, items.ToArray());
                         break;
-                    case 0x0a: value = Number(-Numeric(Expression(80))); break;
-                    case 0x39: value = Number(Truth(Expression(80)) ? 0 : 1); break;
-                    case 0x30: case 0x38: case 0x4f: case 0x50:
-                        var range = Expression(100).Data as float[] ?? throw new InvalidDataException("RandomRange needs a pair");
+                    case Gh3ScriptOp.Minus: value = Number(-Numeric(Expression(UnaryPrecedence))); break;
+                    case Gh3ScriptOp.Not: value = Number(Truth(Expression(UnaryPrecedence)) ? 0 : 1); break;
+                    case Gh3ScriptOp.RandomRange: case Gh3ScriptOp.RandomRange2: case Gh3ScriptOp.RandomFloat: case Gh3ScriptOp.RandomInteger:
+                        var range = Expression(MemberPrecedence).Data as float[] ?? throw new InvalidDataException("RandomRange needs a pair");
                         if (range.Length != 2) throw new InvalidDataException("RandomRange needs two endpoints");
-                        value = (token.Op == 0x38 ? _runtime._random2 : _runtime._random).Range(range[0], range[1], token.Op is 0x30 or 0x38 ? null : token.Op == 0x50);
+                        value = (token.Op == Gh3ScriptOp.RandomRange2 ? _runtime._random2 : _runtime._random).Range(range[0], range[1], token.Op is Gh3ScriptOp.RandomRange or Gh3ScriptOp.RandomRange2 ? null : token.Op == Gh3ScriptOp.RandomInteger);
                         break;
-                    case 0x2f: case 0x37: case 0x40: case 0x41:
+                    case Gh3ScriptOp.Random: case Gh3ScriptOp.Random2: case Gh3ScriptOp.RandomNoRepeat: case Gh3ScriptOp.RandomPermute:
                         var choices = token.Targets!;
                         int selected;
-                        if (token.Op == 0x40)
+                        if (token.Op == Gh3ScriptOp.RandomNoRepeat)
                         {
                             var history = _runtime.RandomChoiceHistory(_context.Script, token, out var created);
                             if (created) history.Last = _runtime._random.Next(choices.Length);
                             selected = _runtime._random.Next(choices.Length);
-                            for (var attempt = 0; selected == history.Last && attempt < 100; attempt++) selected = _runtime._random.Next(choices.Length);
+                            for (var attempt = 0; selected == history.Last && attempt < RandomNoRepeatAttempts; attempt++) selected = _runtime._random.Next(choices.Length);
                             history.Last = selected;
                         }
-                        else if (token.Op == 0x41)
+                        else if (token.Op == Gh3ScriptOp.RandomPermute)
                         {
                             var history = _runtime.RandomChoiceHistory(_context.Script, token, out var created);
                             if (created)
@@ -764,14 +796,14 @@ internal sealed class Gh3ScriptRuntime : IDisposable
                         else
                         {
                             var total = token.Weights!.Sum(weight => (int)weight);
-                            var selectedWeight = (token.Op == 0x37 ? _runtime._random2 : _runtime._random).Next(total);
+                            var selectedWeight = (token.Op == Gh3ScriptOp.Random2 ? _runtime._random2 : _runtime._random).Next(total);
                             selected = choices.Length - 1;
                             for (var index = 0; index < choices.Length; index++)
                                 if ((selectedWeight -= token.Weights![index]) < 0) { selected = index; break; }
                         }
                         Jump(choices[selected]);
                         value = Expression(minimum);
-                        if (Op == 0x2e) Jump(Take().Targets![0]);
+                        if (Op == Gh3ScriptOp.Jump) Jump(Take().Targets![0]);
                         break;
                     default:
                         value = token.Value == null ? throw new InvalidDataException($"Unsupported expression opcode {token.Op:x2}") : _runtime.Resolve(token.Value);
@@ -779,27 +811,36 @@ internal sealed class Gh3ScriptRuntime : IDisposable
                 }
                 while (_at < _code.Tokens.Length)
                 {
-                    if (Op == 8 && minimum < 100)
+                    if (Op == Gh3ScriptOp.Dot && minimum < MemberPrecedence)
                     {
                         _at++;
-                        var field = Expression(100);
+                        var field = Expression(MemberPrecedence);
                         if (value.Data is float[] vector && field.Data is float[] other)
                         {
                             if (vector.Length != other.Length) throw new InvalidDataException("Script dot-product dimensions differ");
-                            value = new(2, -1, vector.Zip(other, (a, b) => a * b).Sum());
+                            value = new(Gh3QbType.Float, -1, vector.Zip(other, (a, b) => a * b).Sum());
                         }
-                        else value = value.Type == 10 ? value.Field(field.Integer) ?? Missing : Missing;
+                        else value = value.Type == Gh3QbType.Structure ? value.Field(field.Integer) ?? Missing : Missing;
                         continue;
                     }
-                    if (Op == 5 && value.Type == 12 && minimum < 100)
+                    if (Op == Gh3ScriptOp.StartArray && value.Type == Gh3QbType.Array && minimum < MemberPrecedence)
                     {
                         _at++;
                         var index = checked((int)Numeric(Expression()));
-                        Require(6);
+                        Require(Gh3ScriptOp.EndArray);
                         value = index >= 0 && index < value.Items.Count ? value.Items[index] : Missing;
                         continue;
                     }
-                    var priority = Op switch { 0x32 or 0x3b => 10, 0x33 or 0x3a => 20, 7 or 0x4d or 0x12 or 0x13 or 0x14 or 0x15 => 30, 0x0a or 0x0b => 40, 0x0c or 0x0d => 50, _ => -1 };
+                    var priority = Op switch
+                    {
+                        Gh3ScriptOp.Or or Gh3ScriptOp.KeywordOr => OrPrecedence,
+                        Gh3ScriptOp.And or Gh3ScriptOp.KeywordAnd => AndPrecedence,
+                        Gh3ScriptOp.EqualSign or Gh3ScriptOp.NotEqual or Gh3ScriptOp.LessThan or Gh3ScriptOp.LessThanEqual or Gh3ScriptOp.GreaterThan
+                            or Gh3ScriptOp.GreaterThanEqual => ComparisonPrecedence,
+                        Gh3ScriptOp.Minus or Gh3ScriptOp.Add => AdditivePrecedence,
+                        Gh3ScriptOp.Divide or Gh3ScriptOp.Multiply => MultiplicativePrecedence,
+                        _ => -1
+                    };
                     if (priority < minimum) break;
                     var op = Take().Op;
                     var right = Expression(priority + 1);
@@ -814,7 +855,7 @@ internal sealed class Gh3ScriptRuntime : IDisposable
         {
             var order = history.Order;
             var last = order[^1];
-            for (var count = 0; count < order.Length * 10; count++)
+            for (var count = 0; count < order.Length * ShuffleSwapsPerItem; count++)
             {
                 var a = _runtime._random.Next(order.Length);
                 var b = _runtime._random.Next(order.Length);
@@ -829,20 +870,25 @@ internal sealed class Gh3ScriptRuntime : IDisposable
 
         private static Gh3QbValue Binary(Gh3QbValue left, byte op, Gh3QbValue right)
         {
-            if (op is 7 or 0x4d) return Number(Equal(left, right) == (op == 7) ? 1 : 0);
-            if (op is 0x32 or 0x3b) return Number(Truth(left) || Truth(right) ? 1 : 0);
-            if (op is 0x33 or 0x3a) return Number(Truth(left) && Truth(right) ? 1 : 0);
+            if (op is Gh3ScriptOp.EqualSign or Gh3ScriptOp.NotEqual) return Number(Equal(left, right) == (op == Gh3ScriptOp.EqualSign) ? 1 : 0);
+            if (op is Gh3ScriptOp.Or or Gh3ScriptOp.KeywordOr) return Number(Truth(left) || Truth(right) ? 1 : 0);
+            if (op is Gh3ScriptOp.And or Gh3ScriptOp.KeywordAnd) return Number(Truth(left) && Truth(right) ? 1 : 0);
             if (left.Data is float[] || right.Data is float[])
             {
                 var vector = left.Data as float[] ?? (float[])right.Data;
                 var a = left.Data as float[] ?? Enumerable.Repeat((float)Numeric(left), vector.Length).ToArray();
                 var b = right.Data as float[] ?? Enumerable.Repeat((float)Numeric(right), vector.Length).ToArray();
                 if (a.Length != b.Length) throw new InvalidDataException("Script vector sizes differ");
-                return new(vector.Length == 2 ? 5u : 6u, -1, a.Zip(b, (x, y) => (float)Numeric(Binary(Number(x), op, Number(y)))).ToArray());
+                return new(vector.Length == 2 ? Gh3QbType.Pair : Gh3QbType.Vector, -1, a.Zip(b, (x, y) => (float)Numeric(Binary(Number(x), op, Number(y)))).ToArray());
             }
             var x = Numeric(left); var y = Numeric(right);
-            return Number(op switch { 0x0b => x + y, 0x0a => x - y, 0x0c => x / y, 0x0d => x * y, 0x12 => x < y ? 1 : 0,
-                0x13 => x <= y ? 1 : 0, 0x14 => x > y ? 1 : 0, 0x15 => x >= y ? 1 : 0, _ => throw new InvalidDataException("Unsupported script operator") });
+            return Number(op switch
+            {
+                Gh3ScriptOp.Add => x + y, Gh3ScriptOp.Minus => x - y, Gh3ScriptOp.Divide => x / y, Gh3ScriptOp.Multiply => x * y,
+                Gh3ScriptOp.LessThan => x < y ? 1 : 0, Gh3ScriptOp.LessThanEqual => x <= y ? 1 : 0,
+                Gh3ScriptOp.GreaterThan => x > y ? 1 : 0, Gh3ScriptOp.GreaterThanEqual => x >= y ? 1 : 0,
+                _ => throw new InvalidDataException("Unsupported script operator")
+            });
         }
 
         private void Require(byte op) { if (Op != op) throw new InvalidDataException($"Expected script token {op:x2}"); _at++; }

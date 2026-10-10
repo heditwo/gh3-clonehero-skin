@@ -12,9 +12,9 @@ internal sealed record StageScreenEffect(double Start, double Duration, Gh3QbVal
         var amount = Duration <= 0 ? 1 : Math.Clamp((time - Start) / Duration, 0, 1);
         Gh3QbValue Blend(Gh3QbValue previous, Gh3QbValue next, bool hue = false)
         {
-            if (previous.Type == 12 && next.Type == 12 && previous.Items.Count == next.Items.Count)
-                return new(12, -1, previous.Items.Zip(next.Items, (a, b) => Blend(a, b)).ToArray());
-            if (previous.Type is not (1 or 2) || next.Type is not (1 or 2)) return next;
+            if (previous.Type == Gh3QbType.Array && next.Type == Gh3QbType.Array && previous.Items.Count == next.Items.Count)
+                return new(Gh3QbType.Array, -1, previous.Items.Zip(next.Items, (a, b) => Blend(a, b)).ToArray());
+            if (previous.Type is not (Gh3QbType.Integer or Gh3QbType.Float) || next.Type is not (Gh3QbType.Integer or Gh3QbType.Float)) return next;
             var from = Gh3ScriptRuntime.Numeric(previous);
             var to = Gh3ScriptRuntime.Numeric(next);
             if (hue) { if (from - to > .5) from--; else if (from - to < -.5) from++; }

@@ -51,7 +51,7 @@ internal sealed class StageScriptBank
         foreach (var pair in bank.Definitions) values[Convert.ToUInt32(pair.Key, 16)] = Gh3QbText.Decode(pair.Value.GetRawText());
         bank.Values = values;
         foreach (var name in bank.Nodes)
-            if (!values.TryGetValue(Gh3QbText.Key(name), out var nodes) || nodes.Type != 12 || nodes.Items.Count > 10000)
+            if (!values.TryGetValue(Gh3QbText.Key(name), out var nodes) || nodes.Type != Gh3QbType.Array || nodes.Items.Count > 10000)
                 throw new InvalidDataException("Stage node array is missing or invalid: " + name);
         bank.NodeValues = bank.Nodes.SelectMany(name => values[Gh3QbText.Key(name)].Items).ToDictionary(row => row.Field("Name")?.Integer ?? throw new InvalidDataException("Stage node name is missing"));
         if (bank.Prefixes.Count > 100000 || bank.Prefixes.Values.Sum(members => (long)members.Length) > 1000000) throw new InvalidDataException("Too many node prefix entries");
@@ -59,11 +59,11 @@ internal sealed class StageScriptBank
         if (bank.PrefixValues.Values.SelectMany(members => members).Any(id => !bank.NodeValues.ContainsKey(id))) throw new InvalidDataException("Node prefix member is missing");
         if (bank.LightVolumes.Count > 1024 || bank.LightVolumes.Keys.Any(id => !bank.NodeValues.ContainsKey(Gh3QbText.Key(id))))
             throw new InvalidDataException("Invalid script light volume bindings");
-        foreach (var value in bank.Values.Values.Where(value => value.Type == 7)) _ = new Gh3ScriptCode(value);
+        foreach (var value in bank.Values.Values.Where(value => value.Type == Gh3QbType.Script)) _ = new Gh3ScriptCode(value);
         foreach (var script in bank.Startup)
-            if (!bank.Values.TryGetValue(Gh3QbText.Key(script), out var value) || value.Type != 7)
+            if (!bank.Values.TryGetValue(Gh3QbText.Key(script), out var value) || value.Type != Gh3QbType.Script)
                 throw new InvalidDataException("Stage startup script is missing: " + script);
-        if (bank.PerformanceChanged.Length > 0 && (!bank.Values.TryGetValue(Gh3QbText.Key(bank.PerformanceChanged), out var performance) || performance.Type != 7))
+        if (bank.PerformanceChanged.Length > 0 && (!bank.Values.TryGetValue(Gh3QbText.Key(bank.PerformanceChanged), out var performance) || performance.Type != Gh3QbType.Script))
             throw new InvalidDataException("Stage performance script is missing");
         return bank;
     }

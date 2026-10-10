@@ -169,7 +169,7 @@ internal sealed class StageLightScene
             if (!_indices.TryGetValue(id, out var index)) return new(false);
             var transform = _transforms[index];
             if (Is("GetLightDirection")) return new(true, new[] { new Gh3QbField(0xc1b52e4c,
-                new Gh3QbValue(6, -1, new[] { transform.Direction.X, transform.Direction.Y, transform.Direction.Z })) });
+                new Gh3QbValue(Gh3QbType.Vector, -1, new[] { transform.Direction.X, transform.Direction.Y, transform.Direction.Z })) });
             if (Is("MoveLight"))
             {
                 if (parameters.Field("pos")?.Data is not float[] { Length: 3 } position) throw new InvalidDataException("MoveLight requires a pos vector");
