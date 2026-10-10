@@ -14,8 +14,6 @@ if (Environment.GetEnvironmentVariable("GH3_HAIR_BENCH") is { } hairProfile)
     return;
 }
 
-if (Environment.GetEnvironmentVariable("GH3_LITERAL_REPORT") == "1") LiteralGuardTests.Run();
-
 if (Environment.GetEnvironmentVariable("GH3_RETARGET_ONLY") == "1")
 {
     RetargetLogicTests.Run();
@@ -29,6 +27,7 @@ if (Environment.GetEnvironmentVariable("GH3_BENCH") is { } benchVenue)
 }
 
 var animation = new ReadyAnimationTrigger();
+LiteralGuardTests.Run();
 ComboReelLogicTests.Run();
 HookPageGuardTests.Run();
 StageLogicTests.Run();
