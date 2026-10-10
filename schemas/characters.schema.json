@@ -149,7 +149,11 @@
         "length": { "type": "number", "exclusiveMinimum": 0.005, "exclusiveMaximum": 1 },
         "type": { "enum": ["ragdoll", "hinge", "prismatic"] },
         "axis": { "$ref": "common.schema.json#/$defs/vec3" },
-        "range": { "$ref": "common.schema.json#/$defs/vec2" }
+        "range": { "$ref": "common.schema.json#/$defs/vec2" },
+        "twistAxis": { "$ref": "common.schema.json#/$defs/vec3" },
+        "coneAxis": { "$ref": "common.schema.json#/$defs/vec3" },
+        "planeAxis": { "$ref": "common.schema.json#/$defs/vec3" },
+        "maxAngularVelocity": { "type": "number", "minimum": 0 }
       },
       "if": { "properties": { "type": { "enum": ["hinge", "prismatic"] } }, "required": ["type"] },
       "then": { "required": ["axis", "range"] },

@@ -31,6 +31,7 @@ internal sealed class HairDefinition
         {
             Bone = bone(j.Bone), Parent = bone(j.Parent), Position = j.Position, Rotation = j.Rotation, Length = j.Length, Mass = j.Mass,
             Friction = j.Friction, AngularDamping = j.AngularDamping, LinearDamping = j.LinearDamping, Limits = j.Limits, Type = j.Type, Axis = j.Axis, Range = j.Range,
+            TwistAxis = j.TwistAxis, ConeAxis = j.ConeAxis, PlaneAxis = j.PlaneAxis, MaxAngularVelocity = j.MaxAngularVelocity,
         }).ToArray();
         return head < 0 || joints.Any(j => j.Bone < 0 || j.Parent < 0) ? null : new HairDefinition { Head = head, Joints = joints, Capsule = Capsule };
     }
@@ -61,14 +62,29 @@ internal sealed class HairJoint
     public string Type { get; set; } = "ragdoll";
     public float[] Axis { get; set; } = Array.Empty<float>();
     public float[] Range { get; set; } = Array.Empty<float>();
+    // Format 1.2 (optional): the Havok ragdoll limit frames in the joint's bind frame. The cone limits the angle from
+    // TwistAxis (on the joint) to ConeAxis (on the parent); the planes limit the angle from TwistAxis to the plane normal
+    // to PlaneAxis. Without them the cone is centred on the bind direction and the planes do not apply.
+    public float[] TwistAxis { get; set; } = Array.Empty<float>();
+    public float[] ConeAxis { get; set; } = Array.Empty<float>();
+    public float[] PlaneAxis { get; set; } = Array.Empty<float>();
+    // Format 1.2 (optional): the Havok speed limit of the body in radians per second; 0 is no limit.
+    public float MaxAngularVelocity { get; set; }
 }
 
 internal sealed class StageHair
 {
     public delegate BandPose PoseSampler(double time, BandPose[] pose);
-    private sealed record Checkpoint(Vector3[] Tails, Vector3[] OldTails, BandPose[] Pose, BandPose[] Previous);
+    private sealed record Checkpoint(Vector3[] Tails, Vector3[] OldTails, Vector3[] Origins, Quaternion[] Frames, BandPose[] Pose, BandPose[] Previous);
     private const int Rate = 120;
     private const float Step = 1f / Rate;
+    private static readonly Vector3 Gravity = new(0, -9.81f, 0);
+    // GH3 creates its Havok world with the 4-iteration solver (SOLVER_TYPE_4ITERS_MEDIUM: tau 0.6, damping 1), and its
+    // ragdoll limits have angularLimitsTauFactor 0.8: each step corrects about 0.48 of a limit violation.
+    private const int Iterations = 4;
+    private const float LimitTau = 0.6f * 0.8f;
+    private const int Passes = 3;
+    private static readonly float LimitShare = 1 - MathF.Pow(1 - LimitTau, 1f / (Passes * Iterations));
     private readonly HairDefinition _definition;
     private readonly int[] _parents;
     private readonly PoseSampler _sample;
@@ -80,12 +96,25 @@ internal sealed class StageHair
     private readonly BandPose[] _previous;
     private readonly Vector3[] _tails;
     private readonly Vector3[] _oldTails;
+    private readonly Vector3[] _origins;
+    private readonly Quaternion[] _frames;
     private readonly float[] _retention;
-    private readonly float[] _limits;
+    private readonly float[] _brake;
+    private readonly float[] _maxTurn;
+    private readonly float[] _inverseInertia;
+    private readonly int[] _chain;
     private readonly int[] _types;
     private readonly Vector3[] _axes;
     private readonly float[] _low;
     private readonly float[] _high;
+    private readonly Vector3[] _twist;
+    private readonly Vector3[] _cone;
+    private readonly Vector3[] _plane;
+    private readonly float[] _coneCos;
+    private readonly float[] _coneSin;
+    private readonly bool[] _planes;
+    private readonly float[] _planeLow;
+    private readonly float[] _planeHigh;
     private const int Ragdoll = 0, Hinge = 1, Prismatic = 2;
     private readonly SortedDictionary<int, Checkpoint> _checkpoints = new();
     private int _tick = -1;
@@ -116,27 +145,47 @@ internal sealed class StageHair
         var seen = Enumerable.Range(0, parents.Length).Except(definition.Joints.Select(j => j.Bone)).ToHashSet();
         if (!seen.Contains(definition.Head)) throw new InvalidDataException("Invalid hair skeleton");
         _local = new BandPose[count]; _pose = new BandPose[count]; _previous = new BandPose[count];
-        _tails = new Vector3[count]; _oldTails = new Vector3[count]; _retention = new float[count]; _limits = new float[count];
+        _tails = new Vector3[count]; _oldTails = new Vector3[count]; _origins = new Vector3[count]; _frames = new Quaternion[count];
+        _retention = new float[count]; _brake = new float[count]; _maxTurn = new float[count]; _inverseInertia = new float[count]; _chain = new int[count];
         _types = new int[count]; _axes = new Vector3[count]; _low = new float[count]; _high = new float[count];
+        _twist = new Vector3[count]; _cone = new Vector3[count]; _plane = new Vector3[count]; _coneCos = new float[count]; _coneSin = new float[count];
+        _planes = new bool[count]; _planeLow = new float[count]; _planeHigh = new float[count];
         for (var i = 0; i < count; i++)
         {
             var joint = definition.Joints[i];
             if (joint.Bone < 0 || joint.Bone >= parents.Length || !seen.Contains(joint.Parent) || !seen.Add(joint.Bone) ||
                 !float.IsFinite(joint.Length) || joint.Length is < 0.005f or > 1 || !float.IsFinite(joint.Mass) || joint.Mass is <= 0 or > 100 ||
                 !float.IsFinite(joint.Friction) || joint.Friction is < 0 or > 100 || !float.IsFinite(joint.AngularDamping) || joint.AngularDamping is < 0 or > 100 ||
-                !float.IsFinite(joint.LinearDamping) || joint.LinearDamping is < 0 or > 100 ||
+                !float.IsFinite(joint.LinearDamping) || joint.LinearDamping is < 0 or > 100 || !float.IsFinite(joint.MaxAngularVelocity) || joint.MaxAngularVelocity < 0 ||
                 joint.Rotation.Length != 4 || !joint.Rotation.All(float.IsFinite))
                 throw new InvalidDataException("Invalid hair joint");
             var q = new Quaternion(joint.Rotation[0], joint.Rotation[1], joint.Rotation[2], joint.Rotation[3]);
             if (Math.Abs(q.LengthSquared() - 1) > 0.01) throw new InvalidDataException("Invalid hair bind rotation");
             _local[i] = new(Vector(joint.Position), Quaternion.Normalize(q));
             _types[i] = joint.Type switch { "ragdoll" or "" => Ragdoll, "hinge" => Hinge, "prismatic" => Prismatic, _ => throw new InvalidDataException("Invalid hair joint type") };
+            // Havok angular damping, the constraint friction torque over the inertia of a point mass at the joint end (a
+            // distance per step), and the speed limit of the body.
+            _retention[i] = MathF.Exp(-Step * joint.AngularDamping);
+            _brake[i] = joint.Friction / (joint.Mass * joint.Length) * Step * Step;
+            _maxTurn[i] = joint.MaxAngularVelocity * Step;
+            _inverseInertia[i] = 1 / (joint.Mass * joint.Length * joint.Length);
             if (_types[i] == Ragdoll)
             {
                 if (!joint.Limits.TryGetValue("coneLimit", out var cone) || cone.Length != 2 || !cone.All(float.IsFinite) || cone[1] is <= 0 or > 1.6f)
                     throw new InvalidDataException("Invalid hair joint");
-                _limits[i] = cone[1];
-                _retention[i] = MathF.Exp(-Step * (joint.AngularDamping + joint.Friction / (joint.Mass * joint.Length * joint.Length)));
+                _coneCos[i] = MathF.Cos(cone[1]);
+                _coneSin[i] = MathF.Sin(cone[1]);
+                _twist[i] = _cone[i] = Vector3.UnitX;
+                if (joint.TwistAxis.Length == 0 && joint.ConeAxis.Length == 0 && joint.PlaneAxis.Length == 0) continue;
+                if (!joint.Limits.TryGetValue("planesLimit", out var planes) || planes.Length != 2 || !planes.All(float.IsFinite) || planes[0] > planes[1] ||
+                    planes[0] < -MathF.PI / 2 || planes[1] > MathF.PI / 2)
+                    throw new InvalidDataException("Invalid hair joint");
+                _twist[i] = Unit(joint.TwistAxis);
+                _cone[i] = Unit(joint.ConeAxis);
+                _plane[i] = Unit(joint.PlaneAxis);
+                _planes[i] = true;
+                _planeLow[i] = MathF.Sin(planes[0]);
+                _planeHigh[i] = MathF.Sin(planes[1]);
                 continue;
             }
             var axis = Vector(joint.Axis);
@@ -147,9 +196,15 @@ internal sealed class StageHair
             _axes[i] = Vector3.Normalize(axis);
             _low[i] = joint.Range[0];
             _high[i] = joint.Range[1];
-            _retention[i] = _types[i] == Hinge
-                ? MathF.Exp(-Step * (joint.AngularDamping + joint.Friction / (joint.Mass * joint.Length * joint.Length)))
-                : MathF.Exp(-Step * (joint.LinearDamping + joint.Friction / joint.Mass));
+            if (_types[i] == Prismatic) _retention[i] = MathF.Exp(-Step * (joint.LinearDamping + joint.Friction / joint.Mass));
+        }
+        // A joint that starts at the end of its parent joint shares the chain with it: the two bodies pull on each other.
+        for (var i = 0; i < count; i++)
+        {
+            var bone = definition.Joints[i].Parent;
+            var j = Array.FindIndex(definition.Joints, 0, i, p => p.Bone == bone);
+            _chain[i] = j >= 0 && _types[j] != Prismatic && _types[i] != Prismatic &&
+                Vector3.Distance(_local[i].Position, new Vector3(definition.Joints[j].Length, 0, 0)) < 0.002f ? j : -1;
         }
         _animated = new BandPose[parents.Length]; _world = new BandPose[parents.Length]; _visited = new bool[parents.Length];
     }
@@ -166,6 +221,8 @@ internal sealed class StageHair
             _tick = saved.Key;
             Array.Copy(saved.Value.Tails, _tails, _tails.Length);
             Array.Copy(saved.Value.OldTails, _oldTails, _tails.Length);
+            Array.Copy(saved.Value.Origins, _origins, _tails.Length);
+            Array.Copy(saved.Value.Frames, _frames, _tails.Length);
             Array.Copy(saved.Value.Pose, _pose, _pose.Length);
             Array.Copy(saved.Value.Previous, _previous, _pose.Length);
         }
@@ -178,6 +235,8 @@ internal sealed class StageHair
         for (var i = 0; i < _pose.Length; i++) pose[_definition.Joints[i].Bone] = BandPose.Mix(_previous[i], _pose[i], _blend);
     }
 
+    // GH3 keyframes the body bodies of the ragdoll to the animation and simulates only the accessory bodies. They hang
+    // from their constraints under gravity: no motor or spring pulls them to the bind pose (the ragdoll motors are off).
     private void Advance(int tick)
     {
         _root = _sample((double)tick / Rate, _animated);
@@ -200,55 +259,85 @@ internal sealed class StageHair
                 var point = origin;
                 if (tick > 0)
                 {
-                    var moved = _tails[i] + (_tails[i] - _oldTails[i]) * _retention[i] + new Vector3(0, -9.81f, 0) * (Step * Step);
+                    var moved = _tails[i] + (_tails[i] - _oldTails[i]) * _retention[i] + Gravity * (Step * Step);
                     point = origin + axis * Math.Clamp(Vector3.Dot(moved - origin, axis), _low[i], _high[i]);
                 }
                 _oldTails[i] = tick == 0 ? point : _tails[i];
                 _tails[i] = point;
-                Measure(i, tick);
                 _world[joint.Bone] = new(point, rotation);
                 continue;
             }
             var direction = Vector3.Transform(Vector3.UnitX, rotation);
-            var goal = origin + direction * joint.Length;
-            var tail = goal;
+            var tail = origin + direction * joint.Length;
             if (tick > 0)
             {
-                var velocity = (_tails[i] - _oldTails[i]) * _retention[i];
-                var acceleration = new Vector3(0, -9.81f, 0) + (goal - _tails[i]) * (9.81f / joint.Length);
-                tail = _tails[i] + velocity + acceleration * (Step * Step);
-                var hingeAxis = Vector3.Transform(_axes[i], rotation);
-                for (var pass = 0; pass < 3; pass++)
+                tail = _tails[i] + (_tails[i] - _oldTails[i]) * _retention[i] + Gravity * (Step * Step);
+                // Constraint friction slows the turn against the parent (where the parent alone would carry the end).
+                var carried = origin + Vector3.Transform(_tails[i] - _origins[i], rotation * Quaternion.Inverse(_frames[i]));
+                var relative = tail - carried;
+                tail = relative.LengthSquared() <= _brake[i] * _brake[i] ? carried : tail - Vector3.Normalize(relative) * _brake[i];
+                if (_maxTurn[i] > 0)
                 {
-                    var axis = cb - ca;
-                    var closest = ca + axis * Math.Clamp(Vector3.Dot(tail - ca, axis) / Math.Max(axis.LengthSquared(), 1e-8f), 0, 1);
-                    var outward = tail - closest;
-                    if (outward.LengthSquared() < _definition.Capsule.Radius * _definition.Capsule.Radius && outward.LengthSquared() > 1e-10f)
-                        tail = closest + Vector3.Normalize(outward) * _definition.Capsule.Radius;
-                    var proposed = tail - origin;
-                    proposed = proposed.LengthSquared() < 1e-10f ? direction : Vector3.Normalize(proposed);
-                    Quaternion swing;
-                    if (_types[i] == Hinge)
-                    {
-                        // Only the turn about the hinge axis, within the limits from the bind pose.
-                        var angle = MathF.Atan2(Vector3.Dot(Vector3.Cross(direction, proposed), hingeAxis), Vector3.Dot(direction, proposed));
-                        swing = Quaternion.CreateFromAxisAngle(hingeAxis, Math.Clamp(angle, _low[i], _high[i]));
-                    }
-                    else
-                    {
-                        swing = FromTo(direction, proposed);
-                        var angle = 2 * MathF.Acos(Math.Clamp(Math.Abs(swing.W), 0, 1));
-                        if (angle > _limits[i]) swing = Quaternion.Slerp(Quaternion.Identity, swing, _limits[i] / angle);
-                    }
-                    tail = origin + Vector3.Transform(direction, swing) * joint.Length;
+                    var before = Vector3.Normalize(_tails[i] - _origins[i]);
+                    var now = tail - origin;
+                    now = now.LengthSquared() < 1e-10f ? before : Vector3.Normalize(now);
+                    var turn = MathF.Acos(Math.Clamp(Vector3.Dot(before, now), -1, 1));
+                    if (turn > _maxTurn[i]) tail = origin + Vector3.Transform(before, Quaternion.Slerp(Quaternion.Identity, FromTo(before, now), _maxTurn[i] / turn)) * joint.Length;
                 }
-                rotation = Quaternion.Normalize(FromTo(direction, Vector3.Normalize(tail - origin)) * rotation);
             }
             _oldTails[i] = tick == 0 ? tail : _tails[i];
             _tails[i] = tail;
-            Measure(i, tick);
-            _world[joint.Bone] = new(origin, rotation);
+            _origins[i] = origin;
+            _frames[i] = rotation;
+            var toward = tail - origin;
+            _world[joint.Bone] = new(origin, toward.LengthSquared() < 1e-10f ? rotation : Quaternion.Normalize(FromTo(direction, Vector3.Normalize(toward)) * rotation));
         }
+        // The constraints, as the Havok solver iterates them: the length and the limits of each joint act on the joint
+        // and, in a chain, on its parent joint by their masses and inertias, so a heavy chain end slows the joints above
+        // it instead of whipping on a parent that only the head moves. The last pass gives the limits to the joint only.
+        for (var pass = 0; pass < (tick == 0 ? 1 : Iterations); pass++)
+            for (var i = 0; i < _pose.Length; i++)
+            {
+                if (_types[i] == Prismatic) continue;
+                var joint = _definition.Joints[i];
+                var j = _chain[i];
+                var raw = _tails[i];
+                if (j >= 0 && tick > 0)
+                {
+                    var upper = _definition.Joints[j];
+                    var anchor = _world[upper.Bone];
+                    var offset = raw - (anchor.Position + Vector3.Transform(_local[i].Position, anchor.Rotation));
+                    var length = offset.Length();
+                    if (length > 1e-6f)
+                    {
+                        var stretch = offset / length * (length - joint.Length);
+                        var share = upper.Mass / (joint.Mass + upper.Mass);
+                        raw -= stretch * share;
+                        Turn(j, anchor.Position, FromTo(Vector3.Normalize(_tails[j] - anchor.Position), Vector3.Normalize(_tails[j] + stretch * (1 - share) - anchor.Position)));
+                    }
+                }
+                var parent = _world[joint.Parent];
+                var origin = parent.Position + Vector3.Transform(_local[i].Position, parent.Rotation);
+                var rotation = Quaternion.Normalize(parent.Rotation * _local[i].Rotation);
+                var tail = Constrain(i, origin, rotation, raw, ca, cb);
+                if (j >= 0 && tick > 0 && pass < Iterations - 1)
+                {
+                    var from = raw - origin;
+                    from = from.LengthSquared() < 1e-10f ? Vector3.Transform(Vector3.UnitX, rotation) : Vector3.Normalize(from);
+                    var correction = FromTo(from, Vector3.Normalize(tail - origin));
+                    var share = _inverseInertia[j] / (_inverseInertia[i] + _inverseInertia[j]);
+                    Turn(j, _world[_definition.Joints[j].Bone].Position, Quaternion.Slerp(Quaternion.Identity, Quaternion.Inverse(correction), share));
+                    parent = _world[joint.Parent];
+                    origin = parent.Position + Vector3.Transform(_local[i].Position, parent.Rotation);
+                    rotation = Quaternion.Normalize(parent.Rotation * _local[i].Rotation);
+                    tail = origin + Vector3.Transform(from, Quaternion.Slerp(Quaternion.Identity, correction, 1 - share)) * joint.Length;
+                }
+                _tails[i] = tail;
+                _origins[i] = origin;
+                _frames[i] = rotation;
+                _world[joint.Bone] = new(origin, Quaternion.Normalize(FromTo(Vector3.Transform(Vector3.UnitX, rotation), Vector3.Normalize(tail - origin)) * rotation));
+            }
+        for (var i = 0; i < _pose.Length; i++) Measure(i, tick);
         // The rig parent of a joint can be a later joint of the chains (the profile hair of a character on another
         // role's rig), so the local poses use the final world poses of this step.
         for (var i = 0; i < _pose.Length; i++)
@@ -261,7 +350,71 @@ internal sealed class StageHair
         _tick = tick;
         if (tick == 0) Array.Copy(_pose, _previous, _pose.Length);
         if (tick % Rate == 0 && !_checkpoints.ContainsKey(tick))
-            _checkpoints.Add(tick, new(_tails.ToArray(), _oldTails.ToArray(), _pose.ToArray(), _previous.ToArray()));
+            _checkpoints.Add(tick, new(_tails.ToArray(), _oldTails.ToArray(), _origins.ToArray(), _frames.ToArray(), _pose.ToArray(), _previous.ToArray()));
+    }
+
+    // Turns joint `i` about its origin by `turn` (world).
+    private void Turn(int i, Vector3 origin, Quaternion turn)
+    {
+        var bone = _definition.Joints[i].Bone;
+        _tails[i] = origin + Vector3.Transform(_tails[i] - origin, turn);
+        _world[bone] = new(origin, Quaternion.Normalize(turn * _world[bone].Rotation));
+    }
+
+    // The head capsule and the joint limits, a few times; the joint keeps its length. The limits act softly, as in Havok.
+    private Vector3 Constrain(int i, Vector3 origin, Quaternion rotation, Vector3 tail, Vector3 ca, Vector3 cb)
+    {
+        var joint = _definition.Joints[i];
+        var direction = Vector3.Transform(Vector3.UnitX, rotation);
+        var hingeAxis = Vector3.Transform(_axes[i], rotation);
+        var twist = Vector3.Transform(_twist[i], rotation);
+        var cone = Vector3.Transform(_cone[i], rotation);
+        var plane = Vector3.Transform(_plane[i], rotation);
+        for (var pass = 0; pass < Passes; pass++)
+        {
+            var axis = cb - ca;
+            var closest = ca + axis * Math.Clamp(Vector3.Dot(tail - ca, axis) / Math.Max(axis.LengthSquared(), 1e-8f), 0, 1);
+            var outward = tail - closest;
+            if (outward.LengthSquared() < _definition.Capsule.Radius * _definition.Capsule.Radius && outward.LengthSquared() > 1e-10f)
+                tail = closest + Vector3.Normalize(outward) * _definition.Capsule.Radius;
+            var proposed = tail - origin;
+            proposed = proposed.LengthSquared() < 1e-10f ? direction : Vector3.Normalize(proposed);
+            if (_types[i] == Hinge)
+            {
+                // Only the turn about the hinge axis, within the limits from the bind pose.
+                var angle = MathF.Atan2(Vector3.Dot(Vector3.Cross(direction, proposed), hingeAxis), Vector3.Dot(direction, proposed));
+                proposed = Vector3.Transform(direction, Quaternion.CreateFromAxisAngle(hingeAxis, Math.Clamp(angle, _low[i], _high[i])));
+            }
+            else
+            {
+                var moved = Vector3.Transform(twist, FromTo(direction, proposed));
+                proposed = Vector3.Transform(proposed, Quaternion.Slerp(Quaternion.Identity, FromTo(moved, Limit(i, moved, cone, plane)), LimitShare));
+            }
+            tail = origin + proposed * joint.Length;
+        }
+        return tail;
+    }
+
+    // The Havok ragdoll limits on the twist axis of the joint: the cone around the parent's cone axis, and the angle to
+    // the plane normal to the parent's plane axis.
+    private Vector3 Limit(int i, Vector3 twist, Vector3 cone, Vector3 plane)
+    {
+        for (var pass = 0; pass < 2; pass++)
+        {
+            var cos = Vector3.Dot(twist, cone);
+            if (cos < _coneCos[i])
+            {
+                var side = twist - cone * cos;
+                if (side.LengthSquared() > 1e-12f) twist = cone * _coneCos[i] + Vector3.Normalize(side) * _coneSin[i];
+            }
+            if (!_planes[i]) break;
+            var sin = Math.Clamp(Vector3.Dot(twist, plane), -1, 1);
+            var clamped = Math.Clamp(sin, _planeLow[i], _planeHigh[i]);
+            var flat = twist - plane * sin;
+            if (clamped == sin || flat.LengthSquared() < 1e-12f) break;
+            twist = Vector3.Normalize(flat) * MathF.Sqrt(1 - clamped * clamped) + plane * clamped;
+        }
+        return twist;
     }
 
     private void Measure(int joint, int tick)
@@ -289,6 +442,13 @@ internal sealed class StageHair
             return Quaternion.CreateFromAxisAngle(Vector3.Normalize(Vector3.Cross(a, Math.Abs(a.Y) < 0.9f ? Vector3.UnitY : Vector3.UnitX)), MathF.PI);
         var cross = Vector3.Cross(a, b);
         return Quaternion.Normalize(new Quaternion(cross, 1 + dot));
+    }
+
+    private static Vector3 Unit(float[] v)
+    {
+        var vector = Vector(v);
+        if (Math.Abs(vector.LengthSquared() - 1) > 0.01f) throw new InvalidDataException("Invalid hair joint axis");
+        return Vector3.Normalize(vector);
     }
 
     private static Vector3 Vector(float[] v)

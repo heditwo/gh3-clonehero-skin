@@ -8,6 +8,12 @@ static void Equal<T>(T expected, T actual, string name)
         throw new Exception($"{name}: expected {expected}, got {actual}");
 }
 
+if (Environment.GetEnvironmentVariable("GH3_HAIR_BENCH") is { } hairProfile)
+{
+    HairBench.Run(hairProfile);
+    return;
+}
+
 if (Environment.GetEnvironmentVariable("GH3_BENCH") is { } benchVenue)
 {
     ScriptBench.Run(benchVenue);

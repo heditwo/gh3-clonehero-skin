@@ -20,6 +20,7 @@ These optional variables add checks against real data to the C# tests:
 | `GH3_NATIVE_DATA=<GH3 DATA>` | Reads all native song PAKs; exact My Curse camera-edit round trip |
 | `GH3_EXPORTED_EVENTS=<events folder>` | Compares exported song direction with native playback |
 | `GH3_DIRECTION_ASSETS`, `GH3_CROWD_ASSETS`, `GH3_HAIR_ASSETS`, `GH3_LIGHTING_ASSETS`, `GH3_AUDIO_ASSETS` | Library parts |
+| `GH3_HAIR_BENCH=<profile>` | Hair motion bench (no checks), see [Hair motion](#hair-motion) |
 | `GH3_CHARACTER_HAIR_ASSETS=<assets>` | Plays My Curse (240 s) with each profile of `<assets>/libraries/gh3-characters-v1` (with `<assets>/libraries/gh3-band-v1` and `<assets>/stages/events`). It prints the fastest hair joint and the largest mean turn from the rest pose for each profile, and fails at 30 m/s (`StageHair.WarningSpeed`). 2026-10-09: 3.0–11.7 m/s, 14–36° |
 | `GH3_SCRIPT_SOURCE`, `GH3_STAGE_SCRIPT_REPORT` | Decoded GH3 scripts and a report path |
 | `GH3_NATIVE_*_ORACLE` | Reference JSON from the native emulation tools in the local `assets/event-audit/behavior-work/` folder (not in Git) |
@@ -170,6 +171,14 @@ The tool aligns the two videos and writes full side-by-side frames, amplified di
 3. Align the videos on the music, or on camera cuts against the exported `gh3-camera` event times.
 4. GH3 selects shots at random. Set `GH3_SKIN_CAMERA_SHOT=<shot name>` to force the matching shot in the mod.
 5. To play a store character (for example the God of Rock), set `character_id` in the two `player*_status` defaults and unlock the character in `setup_character_tags` (the script runs only for a new save; it is LZSS-compressed in `qb.pab.xen`). Keep a copy of the save folder (`~/Documents/Aspyr/Guitar Hero III/Save`) and put it back after the run. The 2026-10-09 tools are in `~/.cache/rockgod-gh3/tools/`.
+
+### Hair motion
+
+Compare the hair motion with the original GH3 for the same head motion ([PARITY-NOTES.md](PARITY-NOTES.md#hair-dynamics)):
+
+1. Record the original GH3 with a sampler of the live Havok bodies: `tools/research/hair-motion/gh3_session.py <character> <out> <seconds>` under `flock /tmp/opencode/gh3-original.lock flock /tmp/opencode/gh3-record.lock` (environment: `SONG=mycurse` puts My Curse first in the quickplay setlist, `SAVE_IN` a save made with the same patch, `ZONES=z_party:x,y,z` and `FOV` the head camera, `UNLOCK=1` the God of Rock). It writes `gh3.mp4`, `bodies.json`, and `bodies.npz`, and restores the patched files and the save byte-equal.
+2. `replay.py <out> <profile> <x> <z> head` writes the head path (`head.bin`). Run the mod solver on it: `GH3_HAIR_BENCH=<profile> GH3_HAIR_BENCH_HEAD=<out>/head.bin GH3_HAIR_BENCH_OUT=<file> dotnet run --project tests/SkinLogic.Tests.csproj -c Release`. Without `GH3_HAIR_BENCH_HEAD` the profile plays My Curse as in the game; `GH3_HAIR_BENCH=band:<role>` runs a band library member; `GH3_HAIR_BENCH_FPS` sets the render rate.
+3. `replay.py`, `ring.py`, and `evidence.py` compare the tips of the hair joints in the head frame: movement, speed by frequency band, ringing, and the distance from the GH3 tips. `fam.py` compares two solver builds on all profiles.
 
 ### GH3 characters
 

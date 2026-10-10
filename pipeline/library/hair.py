@@ -88,6 +88,7 @@ def ragdoll_member(rag, rig, accessories, all_chains=False):
         motion, mc = rag.field(a, "hkRigidBody", "motion")
         state, sc = rag.field(motion, mc, "motionState")
         joint = {"bone": names.index(child), "parent": names.index(parent)}
+        axes = {}
         if kind == "ragdoll":
             limits = {}
             for field in ["twistLimit", "coneLimit", "planesLimit"]:
@@ -96,6 +97,12 @@ def ragdoll_member(rag, rig, accessories, all_chains=False):
             joint["limits"] = limits
             atom, atom_class = rag.field(atoms, ac, "angFriction")
             friction = rag.field(atom, atom_class, "maxFrictionTorque")
+            # Havok measures the cone from the twist axis of the child frame to the twist axis of the parent frame, and
+            # the planes from the twist axis of the child to the plane axis of the parent: in the bind frame of the joint.
+            atom, atom_class = rag.field(atoms, ac, "transforms")
+            frame_a = body_matrix(rag, a) @ havok_matrix(rag.field(atom, atom_class, "transformA"))
+            frame_b = body_matrix(rag, b) @ havok_matrix(rag.field(atom, atom_class, "transformB"))
+            axes = {"twistAxis": frame_a[:3, 0], "coneAxis": frame_b[:3, 0], "planeAxis": frame_b[:3, 1]}
         else:
             atom, atom_class = rag.field(atoms, ac, "transforms")
             frame_a = body_matrix(rag, a) @ havok_matrix(rag.field(atom, atom_class, "transformA"))
@@ -124,6 +131,8 @@ def ragdoll_member(rag, rig, accessories, all_chains=False):
             joint["range"] = [float(low - rest), float(high - rest)]
         joint.update({"mass": 1 / rag.field(motion, mc, "inertiaAndMassInv")[3], "friction": friction,
                       "angularDamping": rag.field(state, sc, "angularDamping")})
+        joint["_axes"] = axes
+        joint["maxAngularVelocity"] = rag.field(state, sc, "maxAngularVelocity")
         joints[child] = joint
     head = names.index(key("bone_head"))
     selected = []
@@ -158,11 +167,16 @@ def ragdoll_member(rag, rig, accessories, all_chains=False):
                 raise ValueError("Unsupported hair collision shape")
         if not 0.005 < length < 1: raise ValueError("Invalid hair segment length")
         joint["length"] = float(length)
-        if all_chains:
-            # The fields in the order of the library rows, then the joint type fields.
-            order = ["bone", "parent", "limits", "mass", "friction", "angularDamping", "linearDamping", "position", "rotation", "length", "type", "axis", "range"]
-            joint_copy = {field: joint[field] for field in order if field in joint}
-            joint.clear(); joint.update(joint_copy)
+        to_bind = REFLECT[:3, :3] @ np.linalg.inv(matrix(i))[:3, :3]
+        for field, vector in joint.pop("_axes").items():
+            vector = to_bind @ vector
+            joint[field] = (vector / np.linalg.norm(vector)).tolist()
+        # The fields in the order of the library rows, then the joint type fields, then (format 1.2) the Havok limit
+        # axes and the angular speed limit of the body.
+        order = ["bone", "parent", "limits", "mass", "friction", "angularDamping", "linearDamping", "position", "rotation", "length", "type", "axis", "range",
+                 "twistAxis", "coneAxis", "planeAxis", "maxAngularVelocity"]
+        joint_copy = {field: joint[field] for field in order if field in joint}
+        joint.clear(); joint.update(joint_copy)
     head_body = bodies[names[head]]
     shape, cls = rag.field(head_body, "hkRigidBody", "collidable")
     shape = rag.field(shape, cls, "shape")

@@ -32,14 +32,85 @@ internal static class HairLogicTests
             {
                 hair.Sample(i / (double)fps); hair.Apply(pose);
                 var angle = 2 * MathF.Acos(Math.Clamp(Math.Abs(Quaternion.Dot(pose[1].Rotation, down)), 0, 1));
-                Check(float.IsFinite(angle) && angle <= 0.5001f, "hair respects the source cone limit");
+                // The limits are soft, as in Havok (each step corrects about half of a violation).
+                Check(float.IsFinite(angle) && angle <= 0.6f, "hair respects the source cone limit");
             }
             hair.Sample(2.321); hair.Apply(pose);
             Check(pose[1] == expected, "hair is independent of render frame rate");
         }
+        CheckHavokLimits();
         if (Environment.GetEnvironmentVariable("GH3_HAIR_ASSETS") is { } assets) CheckAssets(assets);
         if (Environment.GetEnvironmentVariable("GH3_CHARACTER_HAIR_ASSETS") is { } characters) CheckCharacterAssets(characters);
-        Console.WriteLine("Hair inertia, attachment, limits, frame rates, pause, and seek checks passed.");
+        Console.WriteLine("Hair inertia, attachment, limits, Havok limit frames, speed limit, chains, frame rates, pause, and seek checks passed.");
+    }
+
+    // A still head: the joints hang from their limits under gravity (no spring to the bind pose), the cone is centred on
+    // the parent's cone axis, the planes hold, the speed limit holds, and a chain stays connected.
+    private static void CheckHavokLimits()
+    {
+        HairJoint Joint(int bone, int parent, float x, float cone, float mass = 5) => new()
+        {
+            Bone = bone, Parent = parent, Position = new[] { x, 0f, 0f }, Rotation = new[] { 0f, 0f, 0f, 1f }, Length = 0.2f, Mass = mass,
+            Friction = 0.3f, AngularDamping = 0.05f, Limits = new() { ["coneLimit"] = new[] { -100f, cone }, ["planesLimit"] = new[] { -1.5f, 1.5f } },
+        };
+        BandPose Still(double t, BandPose[] pose)
+        {
+            pose[0] = new(new(0, 2, 0), Quaternion.Identity);
+            for (var i = 1; i < pose.Length; i++) pose[i] = new(new(i == 1 ? 0.1f : 0.2f, 0, 0), Quaternion.Identity);
+            return new(Vector3.Zero, Quaternion.Identity);
+        }
+        float Angle(Vector3 a, Vector3 b) => MathF.Acos(Math.Clamp(Vector3.Dot(Vector3.Normalize(a), Vector3.Normalize(b)), -1, 1));
+        Vector3 Direction(HairDefinition definition, int[] parents, int bone, double time)
+        {
+            var hair = new StageHair(definition, parents, Still);
+            var pose = new BandPose[parents.Length];
+            hair.Sample(time); Still(time, pose); hair.Apply(pose);
+            var rotation = Quaternion.Identity;
+            for (var b = bone; b >= 0; b = parents[b]) rotation = pose[b].Rotation * rotation;
+            return Vector3.Transform(Vector3.UnitX, rotation);
+        }
+        var capsule = new HairCapsule { A = new float[] { 0, 0, 0 }, B = new float[] { 0, 0.01f, 0 }, Radius = 0.01f };
+        var level = new HairDefinition { Head = 0, Capsule = capsule, Joints = new[] { Joint(1, 0, 0.1f, 1.2f) } };
+        var hanging = Direction(level, new[] { -1, 0 }, 1, 4);
+        Check(Math.Abs(Angle(hanging, Vector3.UnitX) - 1.2f) < 0.03f && hanging.Y < 0, "a level joint hangs at its cone limit, not near the bind pose");
+        level.Joints[0].TwistAxis = new[] { 1f, 0, 0 };
+        level.Joints[0].ConeAxis = new[] { MathF.Cos(0.3f), -MathF.Sin(0.3f), 0 };
+        level.Joints[0].PlaneAxis = new[] { 0f, 0, 1 };
+        level.Joints[0].Limits["coneLimit"] = new[] { -100f, 0.2f };
+        hanging = Direction(level, new[] { -1, 0 }, 1, 4);
+        Check(Math.Abs(Angle(hanging, new Vector3(MathF.Cos(0.3f), -MathF.Sin(0.3f), 0)) - 0.2f) < 0.02f && Angle(hanging, Vector3.UnitX) > 0.45f,
+            "the cone is centred on the cone axis of the parent");
+        level.Joints[0].ConeAxis = new[] { 1f, 0, 0 };
+        level.Joints[0].PlaneAxis = new[] { 0f, 1, 0 };
+        level.Joints[0].Limits["coneLimit"] = new[] { -100f, 1f };
+        level.Joints[0].Limits["planesLimit"] = new[] { -0.1f, 0.3f };
+        hanging = Direction(level, new[] { -1, 0 }, 1, 4);
+        Check(Math.Abs(MathF.Asin(hanging.Y) + 0.1f) < 0.02f, "the planes limit the joint");
+        level.Joints[0].Limits["planesLimit"] = new[] { -1.5f, 1.5f };
+        level.Joints[0].MaxAngularVelocity = 2;
+        level.Joints[0].Friction = 0;
+        var parents = new[] { -1, 0 };
+        var free = new StageHair(level, parents, Still);
+        var frame = new BandPose[2];
+        var last = Vector3.UnitX;
+        var fastest = 0f;
+        for (var tick = 1; tick <= 60; tick++)
+        {
+            free.Sample(tick / 120.0); Still(tick / 120.0, frame); free.Apply(frame);
+            var now = Vector3.Transform(Vector3.UnitX, frame[1].Rotation);
+            fastest = Math.Max(fastest, Angle(last, now) * 120);
+            last = now;
+        }
+        Check(fastest <= 2.01f && fastest > 1.9f, "the body speed limit holds");
+        var chain = new HairDefinition { Head = 0, Capsule = capsule, Joints = new[] { Joint(1, 0, 0.1f, 0.5f), Joint(2, 1, 0.2f, 0.5f, 20) } };
+        var chainParents = new[] { -1, 0, 1 };
+        var chained = new StageHair(chain, chainParents, Still);
+        var chainPose = new BandPose[3];
+        for (var tick = 1; tick <= 240; tick++)
+        {
+            chained.Sample(tick / 120.0); Still(tick / 120.0, chainPose); chained.Apply(chainPose);
+            Check(Vector3.Distance(chainPose[2].Position, new(0.2f, 0, 0)) < 1e-5f, "a chain stays connected");
+        }
     }
 
     private static void CheckTransparency()

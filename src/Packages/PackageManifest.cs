@@ -13,8 +13,9 @@ internal readonly record struct PackageRequirement(string Id, SemanticVersion Ve
 internal sealed class PackageManifest
 {
     public const int FormatMajor = 1;
-    // The highest minor of each kind that this mod reads: format 1.1 adds the character library and its profiles.
-    public static int FormatMinor(PackageKind kind) => kind is PackageKind.Stage or PackageKind.Instrument ? 0 : 1;
+    // The highest minor of each kind that this mod reads: format 1.1 adds the character library and its profiles, and
+    // format 1.2 (libraries only) the Havok limit axes and speed limits of the hair joints.
+    public static int FormatMinor(PackageKind kind) => kind switch { PackageKind.Stage or PackageKind.Instrument => 0, PackageKind.Library => 2, _ => 1 };
     public PackageKind Kind { get; private init; }
     public string Format { get; private init; } = "";
     public string Id { get; private init; } = "";

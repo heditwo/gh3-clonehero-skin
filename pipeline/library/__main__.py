@@ -32,6 +32,12 @@ def prepare_models(data, output):
     manifest(output)
 
 
+def prepare_hair(data, output):
+    """Rebuild only the hair physics (band/hair.json), keeping every other library part."""
+    hair.convert(data, output/"band/hair.json")
+    manifest(output)
+
+
 def prepare(data, output):
     output.mkdir(parents=True, exist_ok=True)
     band.convert(data, output/"band", shared=True)
@@ -55,6 +61,8 @@ if __name__ == "__main__":
     parser.add_argument("--data", type=Path, default=GH3_DATA)
     parser.add_argument("--output", type=Path, default=LIBRARY)
     parser.add_argument("--models-only", action="store_true", help="Rebuild only the band and crowd models")
+    parser.add_argument("--hair-only", action="store_true", help="Rebuild only the hair physics")
     args = parser.parse_args()
     if args.models_only: prepare_models(args.data, args.output)
+    elif args.hair_only: prepare_hair(args.data, args.output)
     else: prepare(args.data, args.output)

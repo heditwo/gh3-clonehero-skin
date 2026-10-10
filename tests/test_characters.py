@@ -113,7 +113,7 @@ class CharacterLibraryPackageTests(unittest.TestCase):
             report = Validator(chlib).run()
             self.assertEqual((report.errors, report.warnings), ([], []))
             manifest = json.loads((root/"out/unpacked/gh3-characters-v1.chlib/manifest.json").read_text())
-            self.assertEqual((manifest["format"], manifest["entry"], manifest["minModVersion"]), ("chlib/1.1", {"characters": "characters.json"}, "0.9.9"))
+            self.assertEqual((manifest["format"], manifest["entry"], manifest["minModVersion"]), ("chlib/1.2", {"characters": "characters.json"}, "0.9.10"))
             character = root/"characters/gh3.test"
             skinned_model(character, "0000abcd", "gh3.test")
             write(character/"character.json", {"id": "gh3.test", "name": "Test guitarist", "profile": "gh3-guitarist-test-v1", "model": "Test.pak.xen",

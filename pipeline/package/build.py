@@ -181,10 +181,10 @@ def encode_clip(job):
 
 
 def library_manifest(entry):
-    return {"format": "chlib/1.0", "id": "gh3-band-v1", "version": decisions.LIBRARY_VERSION, "name": "GH3 band library",
+    return {"format": "chlib/1.2", "id": "gh3-band-v1", "version": decisions.LIBRARY_VERSION, "name": "GH3 band library",
             "description": "The GH3 band, crowd, animation clips, stage sounds, Video Shoot movies, particle textures, and original song direction.",
             "authors": decisions.GH3_LIBRARY_AUTHORS, "license": decisions.GH3_LICENSE, "permissions": decisions.GH3_PERMISSIONS,
-            "credits": [decisions.CONVERTER_CREDIT], "entry": entry}
+            "credits": [decisions.CONVERTER_CREDIT], "entry": entry, "minModVersion": decisions.FORMAT_1_2_MOD_VERSION}
 
 
 def build_library(library, events, output, jobs=2):
@@ -251,11 +251,11 @@ CHARACTER_LIBRARY_ID = "gh3-characters-v1"
 
 
 def character_library_manifest():
-    return {"format": "chlib/1.1", "id": CHARACTER_LIBRARY_ID, "version": decisions.LIBRARY_VERSION, "name": "GH3 character library",
+    return {"format": "chlib/1.2", "id": CHARACTER_LIBRARY_ID, "version": decisions.LIBRARY_VERSION, "name": "GH3 character library",
             "description": "The rig profiles, animation sets, hair physics, and IK of the playable GH3 guitarists.",
             "authors": decisions.GH3_CHARACTER_LIBRARY_AUTHORS, "license": decisions.GH3_LICENSE, "permissions": decisions.GH3_PERMISSIONS,
             "credits": [decisions.CONVERTER_CREDIT], "requires": [{"id": "gh3-band-v1", "version": decisions.LIBRARY_VERSION}],
-            "entry": {"characters": "characters.json"}, "minModVersion": decisions.FORMAT_1_1_MOD_VERSION}
+            "entry": {"characters": "characters.json"}, "minModVersion": decisions.FORMAT_1_2_MOD_VERSION}
 
 
 def build_character_library(folder, output, jobs=2):

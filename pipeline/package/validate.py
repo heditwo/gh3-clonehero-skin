@@ -24,7 +24,8 @@ from . import q48
 from .glb import Glb, GlbError, decompose, quaternion_angle
 from .schema import Schemas
 
-FORMAT_MINOR = {"chstage": 0, "chchar": 1, "chinst": 0, "chlib": 1}
+FORMAT_MINOR = {"chstage": 0, "chchar": 1, "chinst": 0, "chlib": 2}
+HAIR_FRAME_FIELDS = ("twistAxis", "coneAxis", "planeAxis")
 EXTENSIONS = {".chstage": "chstage", ".chchar": "chchar", ".chinst": "chinst", ".chlib": "chlib"}
 STORED = {".glb", ".png", ".br", ".ogg", ".mp3", ".opus"}
 DEFLATED = {".json", ".wav"}
@@ -664,6 +665,7 @@ class Validator:
         elif self.manifest["id"] != LIBRARY_ID: self.report.warn("manifest.json", f"the mod v1 uses the library {LIBRARY_ID}")
         data = {key: self.json_entry(key, schema) for key, schema in LIBRARY_SCHEMAS.items() if key in entry}
         if data.get("scripts"): self.check_script_files(entry["scripts"], data["scripts"])
+        for role, member in (data.get("hair") or {}).get("members", {}).items(): self.check_hair_joints(f"{entry['hair']}: {role}", member["joints"])
         self.check_library_files(entry, data)
         try:
             import brotli
@@ -706,6 +708,7 @@ class Validator:
             if any(abs(math.sqrt(sum(v * v for v in row[3:])) - 1) > 0.001 for row in profile["bind"]): self.report.error(where, "bind rotations must have unit length")
             hair = library["hair"].get(profile["hair"]) if profile["hair"] else None
             if hair:
+                self.check_hair_joints(where, hair["joints"])
                 joints = {j["bone"] for j in hair["joints"]}
                 for joint in hair["joints"]:
                     if max(joint["bone"], joint["parent"]) >= len(profile["bones"]): self.report.error(where, f"hair joint {joint['bone']} is outside the rig")
@@ -713,6 +716,17 @@ class Validator:
             bones = set(profile["bones"])
             for chain in library["ik"].get(profile["ik"], []):
                 if not set(chain["bones"]) <= bones or chain["target"] not in bones: self.report.error(where, "an IK chain names a bone that is not in the rig")
+
+    def check_hair_joints(self, where, joints):
+        """Format 1.2 hair fields (PACKAGE-FORMAT.md section 10.1): the Havok limit axes come together, on ragdoll joints."""
+        for joint in joints:
+            frames = [field for field in HAIR_FRAME_FIELDS if field in joint]
+            if (frames or "maxAngularVelocity" in joint) and self.minor < 2:
+                self.report.error(where, f"hair joint {joint['bone']}: the Havok limit axes and speed limit need format chlib/1.2")
+            if frames and (len(frames) != len(HAIR_FRAME_FIELDS) or joint.get("type", "ragdoll") != "ragdoll"):
+                self.report.error(where, f"hair joint {joint['bone']}: twistAxis, coneAxis, and planeAxis come together, on a ragdoll joint")
+            if any(abs(math.sqrt(sum(v * v for v in joint[field])) - 1) > 0.01 for field in frames):
+                self.report.error(where, f"hair joint {joint['bone']}: a limit axis must have unit length")
 
     def check_library_files(self, entry, data):
         """The fixed-path files of a library (PACKAGE-FORMAT.md section 10) that its JSON files refer to."""

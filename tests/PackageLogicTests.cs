@@ -66,6 +66,8 @@ internal static class PackageLogicTests
         Check(Rejection(Encoding.UTF8.GetBytes(library), PackageKind.Library) == "", "a v1.1 character library manifest is read");
         Check(Rejection(Encoding.UTF8.GetBytes(library.Replace("chlib/1.1", "chlib/1.0")), PackageKind.Library).Contains("needs 'catalog'"),
             "a v1.0 library needs the band library entries");
+        Check(Rejection(Encoding.UTF8.GetBytes(library.Replace("chlib/1.1", "chlib/1.2")), PackageKind.Library) == "", "a v1.2 library manifest is read");
+        Check(Rejection(Encoding.UTF8.GetBytes(library.Replace("chlib/1.1", "chlib/1.3")), PackageKind.Library).Contains("needs a newer mod"), "chlib/1.3 asks for a newer mod");
     }
 
     private static void CheckPythonRepr()

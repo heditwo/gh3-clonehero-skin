@@ -101,6 +101,19 @@
                   "length": {
                     "type": "number",
                     "minimum": 0
+                  },
+                  "twistAxis": {
+                    "$ref": "common.schema.json#/$defs/vec3"
+                  },
+                  "coneAxis": {
+                    "$ref": "common.schema.json#/$defs/vec3"
+                  },
+                  "planeAxis": {
+                    "$ref": "common.schema.json#/$defs/vec3"
+                  },
+                  "maxAngularVelocity": {
+                    "type": "number",
+                    "minimum": 0
                   }
                 }
               }
@@ -213,6 +226,19 @@
                     "$ref": "common.schema.json#/$defs/quaternion"
                   },
                   "length": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "twistAxis": {
+                    "$ref": "common.schema.json#/$defs/vec3"
+                  },
+                  "coneAxis": {
+                    "$ref": "common.schema.json#/$defs/vec3"
+                  },
+                  "planeAxis": {
+                    "$ref": "common.schema.json#/$defs/vec3"
+                  },
+                  "maxAngularVelocity": {
                     "type": "number",
                     "minimum": 0
                   }
@@ -329,6 +355,19 @@
                   "length": {
                     "type": "number",
                     "minimum": 0
+                  },
+                  "twistAxis": {
+                    "$ref": "common.schema.json#/$defs/vec3"
+                  },
+                  "coneAxis": {
+                    "$ref": "common.schema.json#/$defs/vec3"
+                  },
+                  "planeAxis": {
+                    "$ref": "common.schema.json#/$defs/vec3"
+                  },
+                  "maxAngularVelocity": {
+                    "type": "number",
+                    "minimum": 0
                   }
                 }
               }
@@ -441,6 +480,19 @@
                     "$ref": "common.schema.json#/$defs/quaternion"
                   },
                   "length": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "twistAxis": {
+                    "$ref": "common.schema.json#/$defs/vec3"
+                  },
+                  "coneAxis": {
+                    "$ref": "common.schema.json#/$defs/vec3"
+                  },
+                  "planeAxis": {
+                    "$ref": "common.schema.json#/$defs/vec3"
+                  },
+                  "maxAngularVelocity": {
                     "type": "number",
                     "minimum": 0
                   }
