@@ -402,7 +402,7 @@ def mmd_followers(rows, names, humanoid):
 
 
 FACE_NAMES = {
-    "blink": ("まばたき", "blink", "Blink", "Fcl_EYE_Close", "eyeBlink", "Blink_L"),
+    "blink": ("まばたき", "blink", "Blink", "Fcl_EYE_Close", "eyeBlink"),
     "a": ("あ", "A", "a", "aa", "Fcl_MTH_A", "vrc.v_aa", "mouth_a"),
     "i": ("い", "I", "i", "ih", "Fcl_MTH_I", "vrc.v_ih", "mouth_i"),
     "u": ("う", "U", "u", "ou", "Fcl_MTH_U", "vrc.v_ou", "mouth_u"),
@@ -411,8 +411,24 @@ FACE_NAMES = {
 }
 
 
+def _face_key(name):
+    """A shape key name without the mesh prefix (glTF 'Face_Blendshape.Fcl_MTH_A'), in lower case."""
+    return unicodedata.normalize("NFKC", name).split(".")[-1].lower() if "." in name and not name.lower().startswith("vrc.") else unicodedata.normalize("NFKC", name).lower()
+
+
+_FACE_FUZZY = {
+    "blink": ("fcl_eye_close", "eye_close", "eyeclose", "eyes_closed", "eyesclosed", "eye_closed", "blink", "eyeblink", "close_eyes", "mabataki", "blink_l", "eyeblinkleft"),
+    "a": ("fcl_mth_a", "mth_a", "mouth_a", "lip_a", "v_aa", "vrc.v_aa", "aa", "mouthopen", "mouth_open", "jawopen", "jaw_open", "mouse_open"),
+    "i": ("fcl_mth_i", "mth_i", "mouth_i", "lip_i", "v_ih", "vrc.v_ih", "ih"),
+    "u": ("fcl_mth_u", "mth_u", "mouth_u", "lip_u", "v_ou", "vrc.v_ou", "ou"),
+    "e": ("fcl_mth_e", "mth_e", "mouth_e", "lip_e", "v_e", "vrc.v_e", "ee"),
+    "o": ("fcl_mth_o", "mth_o", "mouth_o", "lip_o", "v_oh", "vrc.v_oh", "oh"),
+}
+
+
 def auto_face(shape_keys):
-    """character.json face from shape key names (MMD, VRM and VRoid, VRChat visemes)."""
+    """character.json face from shape key names (MMD, VRM and VRoid, VRChat visemes, ARKit and Ready Player Me, and
+    names with a mesh prefix)."""
     keys = list(shape_keys)
     result = {}
     for slot, candidates in FACE_NAMES.items():
@@ -420,6 +436,10 @@ def auto_face(shape_keys):
         if hit is None:
             lower = {k.lower(): k for k in keys}
             hit = next((lower[c.lower()] for c in candidates if c.lower() in lower), None)
+        if hit is None:
+            short = {}
+            for k in keys: short.setdefault(_face_key(k), k)
+            hit = next((short[c] for c in _FACE_FUZZY[slot] if c in short), None)
         if hit: result[slot] = hit
     return result
 
