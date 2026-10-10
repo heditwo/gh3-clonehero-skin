@@ -1,6 +1,7 @@
-"""Characters on the fixed GH3 rigs (docs/PACKAGE-FORMAT.md section 9).
+"""Characters on the fixed GH3 rigs and on the profiles of a character library (docs/PACKAGE-FORMAT.md sections 9, 10.1).
 
-The profile rigs come from the library (band/<role>/model.glb). This module splits a library band model into the body
+The fixed profile rigs come from the library (band/<role>/model.glb); a character library profile has its rig in
+characters.json, and its GH3 character package (gh3.<name>...chchar, next to the library) has its body. This module splits a library band model into the body
 and the attachment (instrument, microphone, drum kit), finds the hair chains of a profile, turns q48 clips into local
 joint poses, limits vertex weights, builds and reads character.json, and converts a library band member into a
 .chchar package (the round-trip reference of the Blender add-on).
@@ -20,9 +21,10 @@ import numpy as np
 
 from . import container, decisions
 from .glb import Glb
-from .validate import LIBRARY_ID, PROFILES, Report, Source, gh3_key
+from .validate import CHARACTER_LIBRARY_ID, LIBRARY_ID, PROFILES, Report, Source, gh3_key
 
 FORMAT = "chchar/1.0"
+FORMAT_1_1 = "chchar/1.1"
 MODEL_FILE = "character.glb"
 CHARACTER_FILE = "character.json"
 ROLE_PROFILES = {role: profile for profile, role in PROFILES.items()}
@@ -169,7 +171,8 @@ def compact(gltf, binary):
 class Rig:
     """The joints of a skinned GLB: names ('bone-<checksum>'), parent joint indices, and glTF local matrices."""
 
-    def __init__(self, glb):
+    def __init__(self, glb=None):
+        if glb is None: return
         nodes = glb.list("nodes")
         skin = glb.list("skins")[0]
         self.nodes = list(skin["joints"])
@@ -177,6 +180,25 @@ class Rig:
         self.names = [nodes[j].get("name", "") for j in self.nodes]
         self.parents = [self.nodes.index(parents[j]) if parents.get(j) in self.nodes else -1 for j in self.nodes]
         self.local = np.array([glb.node_matrix(nodes[j]) for j in self.nodes])
+        self._world()
+
+    @classmethod
+    def from_bind(cls, bones, parents, bind):
+        """The rig of a character library profile: bone checksums, parent indices, and the local bind transforms
+        [x, y, z, qx, qy, qz, qw] in runtime coordinates (glTF negates z of positions and x, y of rotations)."""
+        rig = cls()
+        rig.nodes = list(range(len(bones)))
+        rig.names = [joint_name(bone.lower()) for bone in bones]
+        rig.parents = list(parents)
+        bind = np.asarray(bind, dtype=np.float64)
+        local = np.tile(np.eye(4), (len(bones), 1, 1))
+        local[:, :3, :3] = quaternion_matrices(bind[:, 3:] * [-1, -1, 1, 1])
+        local[:, :3, 3] = bind[:, :3] * [1, 1, -1]
+        rig.local = local
+        rig._world()
+        return rig
+
+    def _world(self):
         world = []
         for index, parent in enumerate(self.parents):
             world.append(self.local[index] if parent < 0 else world[parent] @ self.local[index])
@@ -210,8 +232,13 @@ def hair_joints(hair, role):
 def hair_chains(hair, role, rig):
     """The hair chains of a role: lists of joint names from the chain root (a child of the head) to the tip."""
     member = (hair or {}).get("members", {}).get(role)
-    if not member: return []
-    joints = {joint["bone"]: joint["parent"] for joint in member["joints"]}
+    return joint_chains(member["joints"], rig) if member else []
+
+
+def joint_chains(hair_joints, rig):
+    """Chains of hair joints ({'bone', 'parent'} rows of band/hair.json or characters.json): lists of joint names
+    from the chain root to the tip."""
+    joints = {joint["bone"]: joint["parent"] for joint in hair_joints}
     chains = []
     for root in sorted(j for j, p in joints.items() if p not in joints):
         chain, stack = [], [root]
@@ -296,6 +323,100 @@ class Library:
         return f"direction/{role}/{clip}.q48.br" in self.source.set
 
 
+class CharacterLibrary:
+    """Read a character library package (format chlib/1.1, PACKAGE-FORMAT 10.1) for the character tools."""
+
+    def __init__(self, path):
+        report = Report()
+        self.source = Source(Path(path), report)
+        if report.errors or "manifest.json" not in self.source.set:
+            raise ValueError(f"{path}: not a library package ({'; '.join(report.errors) or 'no manifest.json'})")
+        self.path = Path(path)
+        self.manifest = json.loads(self.source.read("manifest.json"))
+        entry = self.manifest.get("entry", {}).get("characters")
+        if entry not in self.source.set: raise ValueError(f"{path}: not a character library (no 'characters' entry)")
+        self.data = json.loads(self.source.read(entry))
+        self.id = self.data.get("library") or self.manifest.get("id", "")
+        self._rigs = {}
+
+    @property
+    def profiles(self):
+        return self.data.get("profiles", {})
+
+    def role(self, profile):
+        return self.profiles[profile]["role"]
+
+    def label(self, profile):
+        row = self.profiles[profile]
+        return f"{row.get('name', profile)} (outfit {row['outfit']})" if row.get("outfit") else row.get("name", profile)
+
+    def rig(self, profile):
+        if profile not in self._rigs:
+            row = self.profiles[profile]
+            self._rigs[profile] = Rig.from_bind(row["bones"], row["parents"], row["bind"])
+        return self._rigs[profile]
+
+    def hair(self, profile):
+        hair = self.profiles[profile].get("hair")
+        return (self.data.get("hair") or {}).get(hair, {}).get("joints", []) if hair else []
+
+    def hair_joints(self, profile):
+        return [joint["bone"] for joint in self.hair(profile)]
+
+    def hair_chains(self, profile):
+        return joint_chains(self.hair(profile), self.rig(profile))
+
+    def animation_set(self, profile, animations=""):
+        return self.data["animations"][animations or self.profiles[profile]["animations"]]
+
+    def clip_items(self, profile, animations=""):
+        """(clip ID, label, duration, frame count) of the clips of the animation set of a profile (see clip_items)."""
+        role = self.role(profile)
+        return clip_items({"members": {role: self.animation_set(profile, animations)}}, None, role)
+
+    def clip(self, clip):
+        return self.source.read(f"clips/{clip}.q48.br")
+
+    def has_clip(self, clip):
+        return f"clips/{clip}.q48.br" in self.source.set
+
+    def clip_offsets(self, profile):
+        """The position offset of each bone for the clips (PACKAGE-FORMAT 10.1): the profile rest position minus the
+        clipRig rest position of the bone with the same name (zero without one), runtime coordinates (CharacterMotion.RestOffsets)."""
+        row, clip_rig = self.profiles[profile], self.data["clipRig"]
+        index = {}
+        for i, bone in enumerate(clip_rig["bones"]): index.setdefault(bone, i)
+        bind, other = np.asarray(row["bind"], dtype=np.float64), np.asarray(clip_rig["bind"], dtype=np.float64)
+        offsets = np.zeros((len(row["bones"]), 3))
+        for i, bone in enumerate(row["bones"]):
+            if bone in index: offsets[i] = bind[i, :3] - other[index[bone], :3]
+        return offsets
+
+
+def profile_packages(folder, profile):
+    """The character packages (.chchar) in a folder whose character.json names the profile: the GH3 character packages
+    (ID gh3.<name>.outfit<n>.style<m>) first, then the others, each sorted by file name. The first gives the body of a
+    character library profile; a custom character on the same profile in the folder must not replace it."""
+    found = []
+    for path in sorted(Path(folder).glob("*.chchar")) if folder and Path(folder).is_dir() else []:
+        report = Report()
+        try:
+            source = Source(path, report)
+            manifest = json.loads(source.read("manifest.json"))
+            row = json.loads(source.read(manifest["entry"]["character"]))
+        except (OSError, ValueError, KeyError):
+            continue
+        if not report.errors and row.get("profile") == profile and manifest.get("entry", {}).get("model") in source.set:
+            found.append((not str(manifest.get("id", "")).startswith("gh3."), path.name, path))
+    return [path for _, _, path in sorted(found)]
+
+
+def profile_model(path):
+    """The model GLB bytes of a character package."""
+    source = Source(Path(path), Report())
+    return source.read(json.loads(source.read("manifest.json"))["entry"]["model"])
+
+
 def split_model(data, hair):
     """The parts of a library band model: {'body': GLB bytes (body and hair), 'attachment': GLB bytes or None,
     'hairMaterials': material names of the hair primitives, 'kinds': primitive kinds}."""
@@ -332,10 +453,12 @@ def clip_items(catalog, band, role):
     return sorted(items, key=lambda item: (item[0] not in names, item[1]))
 
 
-def clip_local_poses(decoded, rig, role=None):
+def clip_local_poses(decoded, rig, role=None, offsets=None):
     """Local joint translations (frames, joints, 3) and rotations (frames, joints, 4, [x, y, z, w]) in glTF coordinates
     of a decoded q48 clip (q48.decode). A channel that the clip does not animate keeps the rig bind pose. With the role
-    of a guitarist, bassist, or drummer, the arm and leg IK and the twist bones of the game follow (GuitarRig)."""
+    of a guitarist, bassist, or drummer, the arm and leg IK and the twist bones of the game follow (GuitarRig).
+    offsets: the position offsets of a character library profile (CharacterLibrary.clip_offsets), added to the
+    position tracks."""
     header, positions, rotations = decoded
     if header["bones"] != len(rig.names): raise ValueError(f"the clip has {header['bones']} bones, the rig {len(rig.names)}")
     frames = header["frames"]
@@ -346,7 +469,7 @@ def clip_local_poses(decoded, rig, role=None):
     translations = np.repeat(bind_t[None], frames, 0)
     quaternions = np.repeat(bind_q[None], frames, 0)
     for track, (bone, mask) in enumerate(header["tracks"]):
-        if mask & 1: translations[:, bone] = positions[:, track]
+        if mask & 1: translations[:, bone] = positions[:, track] + (offsets[bone] if offsets is not None else 0)
         if mask & 2: quaternions[:, bone] = rotations[:, track]
     target = IK_TARGETS.get(role)
     if target: GuitarRig(rig, target).apply(translations, quaternions)
@@ -584,16 +707,41 @@ def limit_weights(weights, limit=MAX_INFLUENCES):
 
 
 # character.json.
-def character_json(profile, hair_materials=(), instrument=""):
-    value = {"version": 1, "library": LIBRARY_ID, "profile": profile}
+def character_json(profile, hair_materials=(), instrument="", library=LIBRARY_ID, animations=""):
+    value = {"version": 1, "library": library or LIBRARY_ID, "profile": profile}
+    if animations: value["animations"] = animations
     if hair_materials: value["hairMaterials"] = list(hair_materials)
     if instrument: value["attachments"] = {"instrument": instrument}
     return value
 
 
 def open_character_json(value):
-    return {"profile": value.get("profile", ""), "library": value.get("library", LIBRARY_ID),
+    return {"profile": value.get("profile", ""), "library": value.get("library", LIBRARY_ID), "animations": value.get("animations", ""),
             "hairMaterials": list(value.get("hairMaterials", [])), "instrument": value.get("attachments", {}).get("instrument", "")}
+
+
+def package_format(library=LIBRARY_ID):
+    """The manifest format of a character: chchar/1.0 on a fixed profile, chchar/1.1 on a character library profile."""
+    return FORMAT if (library or LIBRARY_ID) == LIBRARY_ID else FORMAT_1_1
+
+
+def version_tuple(text):
+    try:
+        return tuple(int(part) for part in str(text).split("."))
+    except ValueError:
+        return ()
+
+
+def complete_requirements(description, library=LIBRARY_ID):
+    """Add the libraries that a character needs to the 'requires' of a package description, and raise its
+    'minModVersion' to the first mod that reads format 1.1 (character library profiles). Returns the description."""
+    requires = description.setdefault("requires", [])
+    needed = [LIBRARY_ID] + ([library] if library and library != LIBRARY_ID else [])
+    for package in needed:
+        if not any(row.get("id") == package for row in requires): requires.append({"id": package, "version": decisions.LIBRARY_VERSION})
+    if package_format(library) == FORMAT_1_1 and version_tuple(description.get("minModVersion") or "0") < version_tuple(decisions.FORMAT_1_1_MOD_VERSION):
+        description["minModVersion"] = decisions.FORMAT_1_1_MOD_VERSION
+    return description
 
 
 # Library band member as a .chchar package.

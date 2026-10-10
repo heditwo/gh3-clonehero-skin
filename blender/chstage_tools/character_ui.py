@@ -18,14 +18,35 @@ def character_scene(context):
     return context.scene is not None and context.scene.chstage.character.enabled
 
 
+_PROFILE_ITEMS = []
+
+
+def profile_items(self, context):
+    """The fixed profiles, then the profiles of the GH3 character library (when the add-on finds it)."""
+    items = list(properties.PROFILE_ITEMS)
+    path = bpy.path.abspath(self.character_library) if getattr(self, "character_library", "") else camera_tools.find_character_library()
+    try:
+        clib = character_tools.character_library(path) if path else None
+    except (OSError, ValueError):
+        clib = None
+    if clib is not None:
+        items += [(profile, f"{clib.label(profile)}", f"{clib.id} profile {profile}, band role {clib.role(profile)}")
+                  for profile in sorted(clib.profiles)]
+    _PROFILE_ITEMS[:] = [(identifier, name, description, index) for index, (identifier, name, description) in enumerate(items)]
+    return _PROFILE_ITEMS
+
+
 class CHSTAGE_OT_new_character(Operator):
-    """Make a new character scene on a fixed GH3 rig: the rig of the profile from the library, the GH3 body as a reference, and the attachment preview"""
+    """Make a new character scene on a GH3 rig: the rig of the profile (a fixed profile from the library, or a GH3 guitarist of the character library), the GH3 body as a reference, and the attachment preview"""
     bl_idname = "chstage.new_character"
     bl_label = "New Character from GH3 Rig"
     bl_options = {"REGISTER", "UNDO"}
 
-    profile: EnumProperty(name="Profile", items=properties.PROFILE_ITEMS)
+    profile: EnumProperty(name="Profile", items=profile_items)
     library: StringProperty(name="GH3 library", subtype="FILE_PATH", description="gh3-band-v1.chlib. Empty: the add-on preference")
+    character_library: StringProperty(name="GH3 character library", subtype="FILE_PATH",
+                                      description="gh3-characters-v1.chlib, for the profiles of the GH3 guitarists. Empty: the add-on preference, "
+                                                  "or the file next to the GH3 library")
     use_gh3_body: BoolProperty(name="Start from the GH3 body", description="The GH3 body becomes the character mesh (else it is only a reference)")
 
     def invoke(self, context, event):
@@ -37,8 +58,9 @@ class CHSTAGE_OT_new_character(Operator):
         if not library or not Path(library).exists():
             self.report({"WARNING"}, "No GH3 library: select gh3-band-v1.chlib, or set it in the add-on preferences")
             return {"CANCELLED"}
+        characters = bpy.path.abspath(self.character_library) if self.character_library else None
         try:
-            scene = character_tools.new_character(self.profile, library, self.use_gh3_body)
+            scene = character_tools.new_character(self.profile, library, self.use_gh3_body, character_library_file=characters)
         except Exception as error:
             traceback.print_exc()
             self.report({"ERROR"}, f"New character stopped: {error}")
@@ -308,8 +330,12 @@ class CHSTAGE_OT_character_helpers(Operator):
             collection = next((c for c in scene.collection.children if c.name.startswith("Character Helpers")), scene.collection)
             lib = character_tools.library(library)
             role = character_tools.role_of(p.profile)
-            character_tools.load_helpers(scene, collection, lib, role)
-            character_tools.load_profile_data(scene, lib, role)
+            try:
+                character_tools.load_helpers(scene, collection, lib, role)
+                character_tools.load_profile_data(scene, lib, role)
+            except (OSError, ValueError, KeyError) as error:
+                self.report({"WARNING"}, str(error))
+                return {"CANCELLED"}
             p.library = str(Path(library).resolve())
             return {"FINISHED"}
         obj = p.reference if self.action == "REFERENCE" else p.attachment
@@ -375,11 +401,13 @@ class CHSTAGE_PT_character(Panel):
             return
         p = context.scene.chstage.character
         box = layout.box()
-        box.label(text=f"Profile: {p.profile}", icon="ARMATURE_DATA")
+        box.label(text=f"Profile: {character_tools.profile_id(context.scene)}", icon="ARMATURE_DATA")
         row = box.row(align=True)
         row.label(text=f"Rig: {p.rig.name if p.rig else 'none'}")
         if p.rig is not None: row.operator("chstage.select_rig", text="", icon="RESTRICT_SELECT_OFF")
         box.label(text=f"Library: {bpy.path.basename(p.library) or 'none'}", icon="PACKAGE" if p.library else "ERROR")
+        if p.library_profile:
+            box.label(text=f"Character library: {bpy.path.basename(p.character_library) or 'none'}", icon="PACKAGE" if p.character_library else "ERROR")
         meshes = character_tools.character_meshes(context.scene)
         box.label(text=f"Character meshes: {', '.join(o.name for o in meshes) or 'none'}", icon="MESH_DATA")
         row = layout.row(align=True)

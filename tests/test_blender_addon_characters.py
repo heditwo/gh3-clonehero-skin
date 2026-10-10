@@ -258,6 +258,96 @@ class CharacterCompareTests(unittest.TestCase):
             self.assertEqual(result["stage"]["max"]["inverseBind"], 0)
 
 
+CHARACTER_LIBRARY = ROOT / "assets" / "packages" / "gh3-characters-v1.chlib"
+MIDORI = "gh3-guitarist-midori-v1"
+
+
+class CharacterJsonTests(unittest.TestCase):
+    def test_fixed_profile_stays_format_1_0(self):
+        value = character.character_json("gh3-guitarist-axel-v1", ["hair"])
+        self.assertEqual(value, {"version": 1, "library": "gh3-band-v1", "profile": "gh3-guitarist-axel-v1", "hairMaterials": ["hair"]})
+        self.assertEqual(character.package_format(value["library"]), "chchar/1.0")
+        description = character.complete_requirements({"requires": [{"id": "gh3-band-v1", "version": "1.0.0"}], "minModVersion": ""})
+        self.assertEqual(description, {"requires": [{"id": "gh3-band-v1", "version": "1.0.0"}], "minModVersion": ""})
+
+    def test_character_library_profile_is_format_1_1(self):
+        value = character.character_json(MIDORI, [], "", "gh3-characters-v1", "midori")
+        self.assertEqual(value, {"version": 1, "library": "gh3-characters-v1", "profile": MIDORI, "animations": "midori"})
+        self.assertEqual(character.open_character_json(value)["animations"], "midori")
+        self.assertEqual(character.package_format("gh3-characters-v1"), "chchar/1.1")
+        description = character.complete_requirements({"requires": [], "minModVersion": "0.9.8"}, "gh3-characters-v1")
+        self.assertEqual([r["id"] for r in description["requires"]], ["gh3-band-v1", "gh3-characters-v1"])
+        self.assertEqual(description["minModVersion"], "0.9.9")
+        self.assertEqual(character.complete_requirements({"requires": [], "minModVersion": "1.2.0"}, "gh3-characters-v1")["minModVersion"], "1.2.0")
+
+
+@unittest.skipUnless(CHARACTER_LIBRARY.exists(), "no character library package")
+class CharacterLibraryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.library = character.CharacterLibrary(CHARACTER_LIBRARY)
+
+    def test_profiles_and_roles(self):
+        self.assertEqual(self.library.id, "gh3-characters-v1")
+        self.assertIn(MIDORI, self.library.profiles)
+        self.assertEqual(self.library.role(MIDORI), "guitarist")
+        self.assertEqual(self.library.label(MIDORI), "Midori (outfit 1)")
+
+    def test_rig_from_bind_equals_the_gh3_character_package(self):
+        packages = character.profile_packages(CHARACTER_LIBRARY.parent, MIDORI)
+        self.assertEqual(packages[0].name, "gh3.midori.outfit1.style1.chchar")
+        self.assertTrue(all(character.open_character_json(json.loads(zipfile.ZipFile(p).read("character.json")))["profile"] == MIDORI for p in packages))
+        glb_rig = character.Rig(Glb(character.profile_model(packages[0])))
+        rig = self.library.rig(MIDORI)
+        self.assertEqual(rig.names, glb_rig.names)
+        self.assertEqual(rig.parents, glb_rig.parents)
+        np.testing.assert_allclose(rig.world, glb_rig.world, atol=1e-5)
+
+    def test_gh3_package_comes_before_a_custom_character_on_the_profile(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            source = character.profile_packages(CHARACTER_LIBRARY.parent, MIDORI)[0]
+            for name, package_id in (("a-custom.chchar", "custom.idol"), (source.name, source.stem)):
+                with zipfile.ZipFile(source) as original, zipfile.ZipFile(folder / name, "w") as copy:
+                    for item in original.infolist():
+                        data = original.read(item)
+                        if item.filename == "manifest.json":
+                            manifest = json.loads(data)
+                            manifest["id"] = package_id
+                            data = json.dumps(manifest).encode()
+                        copy.writestr(item, data)
+            self.assertEqual([p.name for p in character.profile_packages(folder, MIDORI)], [source.name, "a-custom.chchar"])
+
+    def test_hair_chains_follow_the_profile_hair(self):
+        chains = self.library.hair_chains(MIDORI)
+        joints = [j["bone"] for j in self.library.hair(MIDORI)]
+        self.assertEqual(sorted(n for chain in chains for n in chain), sorted(self.library.rig(MIDORI).names[j] for j in joints))
+        self.assertEqual(len(chains[0]), 3)
+        self.assertEqual(self.library.hair_chains("gh3-guitarist-grim-ripper-v1"), [])
+
+    def test_split_of_a_gh3_character_finds_its_instrument(self):
+        package = character.profile_packages(CHARACTER_LIBRARY.parent, MIDORI)[0]
+        parts = character.split_model(character.profile_model(package), self.library.hair_joints(MIDORI))
+        self.assertIsNotNone(parts["attachment"])
+        self.assertTrue(parts["hairMaterials"])
+        self.assertIn("attachment", parts["kinds"].values())
+
+    def test_clips_play_with_the_rest_offsets_of_the_profile(self):
+        items = self.library.clip_items(MIDORI)
+        self.assertGreater(len(items), 100)
+        clip = next(clip for clip, label, _, _ in items if label.startswith("stance_a/idle") and self.library.has_clip(clip))
+        decoded = q48.decode(brotli_decode.decompress(self.library.clip(clip)))
+        rig = self.library.rig(MIDORI)
+        offsets = self.library.clip_offsets(MIDORI)
+        moved, _ = character.clip_local_poses(decoded, rig, None, offsets)
+        plain, _ = character.clip_local_poses(decoded, rig)
+        knee = rig.index(bone("bone_knee_l"))
+        rest = rig.local[knee, :3, 3]
+        # The knee keeps the thigh length of the profile with the offsets, and gets the clip rig length without them.
+        self.assertLess(np.abs(np.linalg.norm(moved[:, knee], axis=-1) - np.linalg.norm(rest)).max(), 1e-3)
+        self.assertGreater(np.abs(np.linalg.norm(plain[:, knee], axis=-1) - np.linalg.norm(rest)).max(), 0.02)
+
+
 class BuildTests(unittest.TestCase):
     def test_add_on_bundles_the_character_module_and_the_decoder(self):
         spec = importlib.util.spec_from_file_location("chstage_build_characters", ROOT / "blender" / "build.py")

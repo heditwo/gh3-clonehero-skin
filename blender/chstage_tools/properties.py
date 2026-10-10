@@ -437,6 +437,11 @@ class CHSTAGE_PG_character(PropertyGroup):
     """character.json of a character package and the state of the character tools."""
     enabled: BoolProperty(description="This scene is a character (.chchar), not a stage")
     profile: EnumProperty(name="Profile", items=PROFILE_ITEMS, description="Fixed GH3 rig profile. It also selects the band role")
+    library_profile: StringProperty(name="Character library profile", description="A profile of a character library (format 1.1), for example "
+                                    "gh3-guitarist-midori-v1. Empty: the fixed profile. With a value, 'profile' is the fixed profile of the same role")
+    library_id: StringProperty(name="Character library", description="ID of the character library of the profile (character.json library). Empty: gh3-band-v1")
+    character_library: StringProperty(name="Character library file", subtype="FILE_PATH", description="The character library package (gh3-characters-v1.chlib)")
+    animations: StringProperty(name="Animation set", description="character.json animations (format 1.1). Empty: the set of the profile")
     rig: PointerProperty(name="Rig", type=bpy.types.Object, description="The armature of the profile rig. Export writes it and its skinned meshes")
     reference: PointerProperty(name="Reference body", type=bpy.types.Object, description="The GH3 body of the profile (helper, never exported)")
     attachment: PointerProperty(name="Attachment", type=bpy.types.Object, description="The instrument, microphone, or drum kit of the profile (helper, never exported)")
@@ -507,11 +512,16 @@ class CHSTAGE_AP_preferences(AddonPreferences):
                                    description="Off: Open imports the clips that actors.json uses; the actor panel loads the others")
     custom_characters: StringProperty(name="Custom/Characters folder", subtype="DIR_PATH",
                                       description="The Custom/Characters folder of Clone Hero. Export .chchar can copy the package into it")
+    character_library: StringProperty(name="GH3 character library (.chlib)", subtype="FILE_PATH",
+                                      description="gh3-characters-v1.chlib: the rigs of the playable GH3 guitarists (format 1.1). The character "
+                                                  "tools take their bodies from the GH3 character packages in the same folder. Empty: look next "
+                                                  "to the GH3 library")
 
     def draw(self, context):
         self.layout.prop(self, "custom_stages")
         self.layout.prop(self, "custom_characters")
         self.layout.prop(self, "library")
+        self.layout.prop(self, "character_library")
         self.layout.prop(self, "import_all_clips")
 
 

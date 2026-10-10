@@ -12,6 +12,7 @@ You need:
 - The add-on file `chstage_tools-<version>.zip`. To make it from the repository: `python3 blender/build.py` (the file goes to `blender/dist/`).
 - Clone Hero with the mod installed ([PLAYER-GUIDE.md](PLAYER-GUIDE.md)), to test your package.
 - For characters and for camera bone anchors: the GH3 band library `gh3-band-v1.chlib`. The mod installs it in `<game>/Mods/GH3Skin/Packages/`.
+- For characters on the rig of a GH3 guitarist (for example Midori or Judy Nails): the GH3 character library `gh3-characters-v1.chlib` and the GH3 character packages (`gh3.<name>...chchar`). The mod installs them in the same folder.
 
 ## 2. Install the add-on
 
@@ -21,6 +22,7 @@ You need:
 4. Open **Edit > Preferences > Add-ons > CH Stage Tools**, and set these fields:
    - **Custom/Stages folder** and **Custom/Characters folder**: the folders of Clone Hero (see [PLAYER-GUIDE.md section 6](PLAYER-GUIDE.md#6-add-stages-and-characters)). Export can then copy your package into the game.
    - **GH3 library (.chlib)**: `gh3-band-v1.chlib`.
+   - **GH3 character library (.chlib)**: `gh3-characters-v1.chlib`. You can keep it empty when the file is in the folder of the GH3 library.
 
 ![The add-on preferences](images/creator/addon-preferences.png)
 
@@ -153,10 +155,14 @@ The GH3 venues have the license `LicenseRef-GH3-Derived` with the permissions `r
 
 ## 5. Make a character on a GH3 rig
 
-A character is a mesh on one fixed GH3 rig. The game plays the GH3 animations of the band member on your mesh and adds the instrument. You do not make a skeleton or animations. The example is `examples/example-guitarist.blend`.
+A character is a mesh on one GH3 rig. The game plays the GH3 animations of the band member on your mesh and adds the instrument. You do not make a skeleton or animations. The example is `examples/example-guitarist.blend`.
 
 1. Set **GH3 library (.chlib)** in the add-on preferences (section 2).
-2. Click **File > New > New Character from GH3 Rig**. Select a profile: guitarist, bassist, singer, or drummer. The add-on makes a scene with the rig, the GH3 body as a wireframe reference, the instrument as a preview, and a preview camera. Export never writes the reference body and the instrument.
+2. Click **File > New > New Character from GH3 Rig**. Select a profile:
+   - A fixed profile: guitarist (Axel), bassist, singer, or drummer.
+   - A GH3 guitarist, for example **Midori (outfit 1)** or **Judy Nails (outfit 1)**. Your character then gets the skeleton, the animations, and the hair physics of that guitarist. It plays the guitarist and the bassist. Select the guitarist with the body that is nearest to your character (height, length of the legs and the arms, width of the shoulders).
+
+   The add-on makes a scene with the rig, the GH3 body as a wireframe reference, the instrument as a preview, and a preview camera. Export never writes the reference body and the instrument.
 3. Do not move, turn, scale, or edit the rig.
 4. Model your character over the reference body, or import a mesh and move it onto the reference body. Use PNG images.
 5. Select your meshes, and click **Transfer Weights from the GH3 Body** in **Weights and Hair**. Each vertex gets the weights of the nearest point on the GH3 body (4 bones at most).
@@ -171,6 +177,26 @@ A character is a mesh on one fixed GH3 rig. The game plays the GH3 animations of
 11. Click **Export .chchar**. Put the file into `Custom/Characters` of Clone Hero.
 
 ![The character package panel after Validate](images/creator/character-package.png)
+
+### 5.1 Use a rigged model (MMD, VRM, FBX)
+
+You can use a model that has its own skeleton, for example an MMD model (`.pmx`). Read the terms of the model first: many models do not permit changes or distribution. The steps below are the steps of a test with an MMD model of a small anime character on the profile **Midori (outfit 1)**.
+
+1. Import the model. Blender cannot read `.pmx`: install the extension **MMD Tools** (Blender extensions platform). Import at the scale 0.08 (1 MMD unit is 8 cm).
+2. **Move the model onto the GH3 bind pose.** The add-on has no tool for this step. In Pose Mode of the model's armature, turn and scale the bones so that each joint is on the joint of the GH3 rig: hips, knees, ankles, toes, spine, neck, head, shoulders, elbows, wrists, and each finger joint. Then apply the Armature modifier of the mesh (**Object > Apply**), and delete the model's armature. Small differences in the proportions are normal: the GH3 rig sets the length of each bone, so the mesh stretches a little.
+3. Remove the shape keys (**Object Data > Shape Keys**). The mod does not play shape keys; the GH3 clips move the face with bones.
+4. **Materials.** Importers of MMD and VRM models make toon shader node groups. The glTF export does not read them, and the package then has no texture (the character is white in the game). Validate gives a warning for each such material. Give each material a **Principled BSDF** with the image on **Base Color**, and save the images as PNG. Images of 1024 × 1024 pixels are sufficient (the GH3 characters use 1024 pixels or less).
+5. Set the material panel: for example **Ambient** for the face (the face does not get dark), **Unlit** for parts that glow, **Blend** for hair cards and other parts with transparency.
+6. **Weights.** Click **Transfer Weights from the GH3 Body**. Then correct these parts with Weight Paint:
+   - The face and the hair on the head: full weight on `bone_head`. The face bones of the GH3 body are at other places than the eyes and the mouth of your character; with their weights, the face changes shape when the GH3 face moves.
+   - The hands: Transfer Weights can give a finger the weight of the next finger. When the model has good finger weights, keep them: rename the finger vertex groups to the GH3 finger bones (the add-on shows the bone names), then remove the other vertex groups.
+   - Parts far from the body (a long tail, cables): they get the weights of the nearest body part (for example the heels). Paint them to `bone_pelvis`.
+7. **Long hair.** Select the vertices of each pigtail and assign them to a hair chain (**Assign to Hair Bones**). Midori has two pigtail chains (chain 1 and chain 2). The vertices below the end of the chain go to the last bone: the hair physics then moves them as one part. Add the hair materials to **Hair materials**.
+8. Click **Limit and Normalize**, look at some clips in **Clip Preview**, then Validate and export.
+
+Known limits: the character does not blink and does not move its mouth (the face is on the head bone). Long hair can go into the body or the guitar for a short time, because the hair physics knows only the bodies of the GH3 profile.
+
+### 5.2 Play the character
 
 To use the character:
 
@@ -219,6 +245,8 @@ On a custom stage, the GH3 camera notes select these groups: 84 and 86 close-up 
 | `mesh '...' has its own transform` | Click **Transfer Weights**, or **Object > Apply > All Transforms** |
 | `the rig must stay at the origin ...` or `the rig has no bone ...` | Clear the rig transform, or start again from **New** |
 | `material '...': image '...' is ...; packages use PNG only` | Save the image as PNG |
+| `material '...': the glTF export does not read its surface node ...` (warning) | Connect a Principled BSDF with the image on Base Color to the material output (section 5.1) |
+| `... needs the GH3 character library ...` (Open) | Set **GH3 character library (.chlib)** in the add-on preferences |
 | `no GH3 library: ...` (warning) | Set **GH3 library (.chlib)** in the add-on preferences |
 
 ### In the game

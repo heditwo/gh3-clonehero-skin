@@ -16,6 +16,7 @@ from . import actor_tools, collect, glb_tools, gltf_io, rig, sidecars
 from .vendor.package_format.validate import Report, Source
 
 LIBRARY_NAME = "gh3-band-v1.chlib"
+CHARACTER_LIBRARY_NAME = "gh3-characters-v1.chlib"
 RIG_COLLECTION = "GH3 Rig Proxies"
 
 
@@ -35,6 +36,25 @@ def find_library(package_path=None):
         folder = Path(package_path).resolve().parent
         for candidate in (folder/LIBRARY_NAME, folder.parent/LIBRARY_NAME, folder/"unpacked"/LIBRARY_NAME):
             if candidate.exists(): return str(candidate)
+    return ""
+
+
+def find_character_library(package_path=None):
+    """The GH3 character library: the add-on preference, else gh3-characters-v1.chlib next to the GH3 library or next
+    to the package (or its folder). '' if none."""
+    prefs = preferences()
+    if prefs is not None and prefs.character_library:
+        path = Path(bpy.path.abspath(prefs.character_library))
+        if path.name == "manifest.json": path = path.parent
+        return str(path) if path.exists() else ""
+    folders = []
+    library = find_library(package_path)
+    if library: folders.append(Path(library).resolve().parent)
+    if package_path:
+        folder = Path(package_path).resolve().parent
+        folders += [folder, folder.parent, folder/"unpacked"]
+    for folder in folders:
+        if (folder/CHARACTER_LIBRARY_NAME).exists(): return str(folder/CHARACTER_LIBRARY_NAME)
     return ""
 
 

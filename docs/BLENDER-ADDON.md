@@ -2,7 +2,7 @@
 
 This is the reference of the add-on. For a first stage or character, start with [CREATOR-GUIDE.md](CREATOR-GUIDE.md).
 
-Status: **venue tool set and character tools** (PACKAGING-PLAN step 5, parts 1 to 4). The add-on makes a venue from a template or opens a venue package, edits all venue data that [package format v1](PACKAGE-FORMAT.md) defines, validates it, and exports a `.chstage` package. Actors (animated scenery) are Blender armatures with their clips. The add-on has a script bank browser, a shot browser with GH3 proxy rigs for camera bone anchors, a live lighting preview with beams, and lists of visibility groups, light groups, and node flags. The ten GH3 venues open and export again without a loss (section 2.6). The character tools (section 1.15) make characters on the fixed GH3 rigs and export `.chchar` packages; the four GH3 band members open and export again within the tolerances (section 2.11).
+Status: **venue tool set and character tools** (PACKAGING-PLAN step 5, parts 1 to 4). The add-on makes a venue from a template or opens a venue package, edits all venue data that [package format v1](PACKAGE-FORMAT.md) defines, validates it, and exports a `.chstage` package. Actors (animated scenery) are Blender armatures with their clips. The add-on has a script bank browser, a shot browser with GH3 proxy rigs for camera bone anchors, a live lighting preview with beams, and lists of visibility groups, light groups, and node flags. The ten GH3 venues open and export again without a loss (section 2.6). The character tools (section 1.15) make characters on the fixed GH3 rigs and on the GH3 guitarist profiles of the character library (format 1.1), and export `.chchar` packages; the four GH3 band members and a GH3 guitarist package open and export again within the tolerances (section 2.11).
 
 ## 1. For creators
 
@@ -147,13 +147,13 @@ Export gives the same bytes for the same scene and Blender version (fixed zip ti
 
 - Material preview node trees (GH3 shading in the viewport).
 - GH3 script code: the script bank browser shows and sets values only.
-- Characters on other rigs (retargeting, VRM). A character must use a fixed GH3 rig (PACKAGING-PLAN decision 2).
+- Characters on other rigs (retargeting, VRM). A character must use a GH3 rig: a fixed profile or a profile of the character library (PACKAGING-PLAN decision 2). The add-on has no tool that moves a rigged model (for example an MMD or VRM model) onto the GH3 bind pose; see [CREATOR-GUIDE.md section 5.1](CREATOR-GUIDE.md#51-use-a-rigged-model-mmd-vrm-fbx).
 
 ### 1.15 Make a character (.chchar)
 
-A character is a skinned mesh on one fixed GH3 rig. The rig, its bind pose, and the clips come from the GH3 library (`gh3-band-v1.chlib`). The game plays the library clips on your mesh. You do not make a skeleton or animations.
+A character is a skinned mesh on one GH3 rig. The rig, its bind pose, and the clips come from the GH3 library (`gh3-band-v1.chlib`) for a fixed profile, or from the GH3 character library (`gh3-characters-v1.chlib`, format 1.1) for a GH3 guitarist profile. The game plays the library clips on your mesh. You do not make a skeleton or animations.
 
-Before you start: set **Edit > Preferences > Add-ons > CH Stage Tools > GH3 library (.chlib)** to `gh3-band-v1.chlib`. Optional: set **Custom/Characters folder**.
+Before you start: set **Edit > Preferences > Add-ons > CH Stage Tools > GH3 library (.chlib)** to `gh3-band-v1.chlib`. Optional: set **Custom/Characters folder**, and **GH3 character library (.chlib)** (empty: the add-on uses `gh3-characters-v1.chlib` in the folder of the GH3 library).
 
 The character tools are in the 3D view sidebar, tab **CH Character**.
 
@@ -164,9 +164,16 @@ The character tools are in the 3D view sidebar, tab **CH Character**.
 | `gh3-singer-male-v1` | singer | microphone and stand | 7 (15 bones) |
 | `gh3-drummer-v1` | drummer | drum kit and sticks | 9 (15 bones) |
 
+**GH3 guitarist profiles (format 1.1).** When the add-on finds the character library, the profile list also has its 20 profiles, for example `gh3-guitarist-midori-v1` (Midori, outfit 1) or `gh3-guitarist-judy-v1` (Judy Nails). Each profile has the GH3 skeleton, the animation set, the hair physics, and the IK of that GH3 guitarist. The proportions are different: Midori has a short torso and short arms, Lars has wide shoulders. Select the profile with the body that is nearest to your character. A character on such a profile plays the guitarist (with its own animations) and the bassist (PACKAGE-FORMAT 10.1).
+
+- The rig comes from `characters.json`. The GH3 body and the guitar (helpers) come from the first GH3 character package of the profile (for example `gh3.midori.outfit1.style1.chchar`) in the folder of the character library. The mod installs these files together in `<game>/Mods/GH3Skin/Packages/`.
+- **Hair bones of the profile** shows the hair chains of the profile (Midori: 9 chains, 15 bones; chains 1 and 2 are the pigtails).
+- **Clip Preview** lists the clips of the animation set of the profile. The preview adds the position offsets of the profile to the clips (PACKAGE-FORMAT 10.1) and uses the game IK.
+- Export writes `chchar/1.1` with `library` `gh3-characters-v1` in `character.json`, `requires` `gh3-band-v1` and `gh3-characters-v1`, and `minModVersion` 0.9.9. Validate checks the rig against the profile of `characters.json`.
+
 Steps:
 
-1. Click **File > New > New Character from GH3 Rig** (or **New** in the tab). Select the profile. **Start from the GH3 body** makes the GH3 body the character mesh (use it to edit a GH3 member). The add-on makes a new scene with:
+1. Click **File > New > New Character from GH3 Rig** (or **New** in the tab). Select the profile (a fixed profile or a GH3 guitarist profile). **Start from the GH3 body** makes the GH3 body the character mesh (use it to edit a GH3 member). The add-on makes a new scene with:
    - The rig (an armature, for example `guitarist-rig`). Do not move, rotate, scale, or edit the rig: Validate compares each bone with the profile (position 0.1 mm, rotation 0.01°, scale 1e-4).
    - **Helpers** that export never writes: the GH3 body as a wireframe reference, and the attachment preview (guitar, bass, microphone, or drum kit). The game adds the attachment from the library; do not model it. The eye buttons in **Weights and Hair** show and hide the helpers.
    - A preview camera that looks at the face (the performer looks toward Blender −Y).
@@ -179,7 +186,7 @@ Steps:
 8. Click **Validate**. The list shows the errors and warnings of the add-on checks and of the package validator of the mod (with the library: the bind pose check). Click the arrow of an issue to select its object.
 9. Click **Export .chchar**. Options: **Development folder**, **Copy to Custom/Characters**, **Preview** (Render: a 512 × 288 image from the scene camera). The add-on writes the package only when there is no error. Put the file into `Custom/Characters`, and select the character in the F6 picker ([PLAYER-GUIDE.md section 4](PLAYER-GUIDE.md#4-select-the-band-members)).
 
-**Open .chchar** (**File > Import > CH Character Package (.chchar)**) makes a new scene from a package: the rig and the meshes of `character.glb`, the material settings, the hair materials, the package information, and (with the library) the helpers and the clip list.
+**Open .chchar** (**File > Import > CH Character Package (.chchar)**) makes a new scene from a package: the rig and the meshes of `character.glb`, the material settings, the hair materials, the package information, and (with the library) the helpers and the clip list. A package of format 1.1 (for example a GH3 guitarist of the mod) needs the character library. Before 2026-10-09, Open stopped with "unknown profile" on these packages.
 
 Rules to know:
 
@@ -191,6 +198,7 @@ Rules to know:
 | A mesh has no Armature modifier for the rig | Click **Transfer Weights** |
 | Vertices without weight, more than 4 influences, weight sum not 1 | **Transfer Weights**, Weight Paint, then **Limit and Normalize** |
 | An image is not PNG | Save the image as PNG |
+| The glTF export does not read the surface node of a material (warning) | The material uses a node group or another shader (for example the toon shader of an MMD or VRM importer). Connect a **Principled BSDF** with the image on **Base Color** to the material output. Else the package has the material without its texture |
 | A hair material is not on a character mesh | Remove it from **Hair materials** |
 | Joint positions or rotations differ from the profile (validator) | The rig changed: start again from **New** |
 
@@ -219,11 +227,11 @@ Rules to know:
 | `blender/chstage_tools/gltf_io.py` | Safe glTF import and export settings, and the Blender 4.2 import fix |
 | `blender/chstage_tools/template.py` | The template scene, snapshot capture and apply |
 | `blender/chstage_tools/operators.py`, `panels.py` | Operators and panels |
-| `blender/chstage_tools/character_tools.py` | Characters: new character scene, helpers from the library, weight transfer, limit and normalize, hair bones, clip preview (q48 to actions) |
-| `blender/chstage_tools/character_package.py` | Export .chchar, Validate, Open .chchar: add-on checks, GLB export of the rig and its meshes, character.json, manifest, zip, validator with the library |
+| `blender/chstage_tools/character_tools.py` | Characters: new character scene (fixed profiles and character library profiles), helpers from the library or the GH3 character package of the profile, weight transfer, limit and normalize, hair bones, clip preview (q48 to actions) |
+| `blender/chstage_tools/character_package.py` | Export .chchar, Validate, Open .chchar: add-on checks (also the material surface nodes that the glTF export does not read), GLB export of the rig and its meshes, character.json, manifest (format 1.0 or 1.1), zip, validator with the library and the character library |
 | `blender/chstage_tools/character_ui.py` | Operators and panels of the tab CH Character |
 | `blender/chstage_tools/brotli_decode.py`, `brotli_dictionary.bin` | Brotli decoder in pure Python (RFC 7932) for the library clips; the official Blender builds have no `brotli` module. The add-on uses the module when Blender has it |
-| `pipeline/package/character.py` | Shared with the add-on (bundled): profile rigs, split of a library band model into body and attachment, hair chains, clip poses with the game IK (`GuitarRig`, a port of `src/Stage/Band/StageGuitarArms.cs`), weight limits, character.json, and `python -m pipeline.package.character` (library band members as `.chchar`) |
+| `pipeline/package/character.py` | Shared with the add-on (bundled): profile rigs, the character library (`CharacterLibrary`: profiles, rigs from `characters.json`, hair chains, clips with the rest offsets, the GH3 character package of a profile), split of a library band model into body and attachment, hair chains, clip poses with the game IK (`GuitarRig`, a port of `src/Stage/Band/StageGuitarArms.cs`), weight limits, character.json, and `python -m pipeline.package.character` (library band members as `.chchar`) |
 | `blender/build.py` | Copies `pipeline/package` (validator, container, decisions, character) and `schemas/` into `chstage_tools/vendor/package_format/` and writes the zip |
 | `blender/test.sh`, `blender/tests/blender_test.py`, `tools_test.py` | Headless test in Blender: template, validate, export, open, round trip of the template and of one GH3 venue, and the venue tools (packed files, actors, script bank, lighting preview, shot browser, proxy rigs, groups) |
 | `blender/tests/actor_export.py`, `actor_compare.py` | Export every actor model of venue packages from Blender, and compare the actor GLBs with the source and compile them (section 2.6) |
@@ -387,7 +395,7 @@ python3 blender/build.py                      # writes blender/dist/chstage_tool
 flock /tmp/opencode/gh3-heavy.lock bash blender/test.sh ~/.cache/chstage-test blender-clean ~/.cache/blender/blender-4.2-clean
 ```
 
-With `assets/packages/gh3-band-v1.chlib` present (or `CHSTAGE_TEST_LIBRARY`), `blender/test.sh` also runs the character test (`blender/tests/character_test.py`, section 2.11) in a second Blender process. Result on 2026-10-09: 60 of 60 venue checks and 33 of 33 character checks pass on Blender 5.2.1 and on Blender 4.2.23.
+With `assets/packages/gh3-band-v1.chlib` present (or `CHSTAGE_TEST_LIBRARY`), `blender/test.sh` also runs the character test (`blender/tests/character_test.py`, section 2.11) in a second Blender process. Result on 2026-10-09: 60 of 60 venue checks and 39 of 39 character checks pass on Blender 5.2.1 and on Blender 4.2.23.
 
 `blender/test.sh` installs the zip into a temporary Blender user folder (`BLENDER_USER_RESOURCES`), so it does not change the Blender setup of the user. It also opens, exports, and compares `assets/packages/gh3.credits.chstage` when it exists (`CHSTAGE_TEST_VENUE` selects another package; an empty value turns it off), and then tests the venue tools (`tools_test.py`; `CHSTAGE_TEST_SKIP=actors,scripts,lighting,cameras,groups` skips parts). Set `CHSTAGE_TEST_RIG` to a GH3 rig GLB (for example a spike file from `tools/research/spike-blender/band_glb.py`) to also test the import fix. Result on 2026-10-09: 60 of 60 checks pass on Blender 5.2.1 and on Blender 4.2.23:
 
@@ -496,4 +504,10 @@ Evidence: `~/.cache/gh3-evidence/addon-chars/evidence/` (`<blender>/character-su
 TMPDIR=~/.cache/addon-chars/tmp flock /tmp/opencode/gh3-heavy.lock bash blender/test.sh ~/.cache/addon-chars/full blender-clean ~/.cache/blender/blender-4.2-clean
 ```
 
-Python tests without Blender (`tests/test_blender_addon_characters.py`): the Brotli decoder against the `brotli` module (texts at 4 qualities, 2 modes, 3 windows; every 60th library clip; a damaged stream), weight limits, quaternions, character.json, the model split of the four roles, the four members as valid and reproducible packages, the hair chains, the clip list, bind pose of channels that a clip does not animate, the game IK (the strum hand on its target in all frames), the comparison with another joint order, and the bundle.
+**Character library profiles (format 1.1).** When the scene profile is a profile of `gh3-characters-v1` (`scene.chstage.character.library_profile`; `profile` is then the fixed profile of the same role, so that earlier `.blend` files keep their enum value), the rig comes from `characters.json` (`character.Rig.from_bind`: runtime to glTF, then the import of the rig GLB), and the helpers come from the GH3 character package of the profile: the first `gh3.*.chchar` with that profile in the folder of the character library (a custom character on the same profile in the folder comes after the GH3 packages). `split_model` uses the hair joints of the profile. The clip list is the animation set of the profile; the preview adds `CharacterLibrary.clip_offsets` (the profile rest position minus the `clipRig` rest position of the bone with the same name, as `CharacterMotion.RestOffsets`) to the position tracks and uses the game IK. Export writes `character.json` with `library` (and `animations` when set), manifest format `chchar/1.1`, the two libraries in `requires`, and `minModVersion` 0.9.9 (`character.complete_requirements`). Validate and export run the validator with `character_library`.
+
+The character test checks (Blender 5.2.1 and 4.2.23): New Character on `gh3-guitarist-midori-v1` (125 bones at the profile bind pose within 0.0007 mm, the helpers, 9 hair chains, 325 clips, the requirements); Transfer Weights and export of a valid 1.1 package (0 errors, 0 warnings with both libraries); the clip preview against `clip_local_poses` with the offsets (0.0009 mm); Open of `gh3.midori.outfit1.style1.chchar` and export without edits (all triangles of each material within 0.0006 mm, joints within 0.0008 mm and 0.0003°, valid). That GH3 package has two materials that no mesh uses (Blender drops them) and coincident cards that the attribute pairing of `pipeline.package.compare` matches wrongly, so the test compares triangle corners.
+
+**Creator test with a third-party model (2026-10-09).** An MMD model (Tda式初音ミク・アペンド Ver1.10, 25,164 vertices, 17 materials) went onto `gh3-guitarist-midori-v1` with the add-on: fit to the bind pose with a script (the add-on has no retarget tool), Transfer Weights, head, finger, and tail weights from the MMD weights, Assign to Hair Bones for the twin tails, Validate, and Export (7.2 MB, valid with both libraries). The mod imported it in 0.42 s and played it as guitarist and bassist on gh3.dive and gh3.prison. Problems that this test found and that are now fixed: the add-on had no character library profiles; Open stopped on format 1.1 packages ("unknown profile"); MMD toon materials exported without a texture and without a message (now a warning). The model and the package are not in the repository (third-party terms). Steps: [CREATOR-GUIDE.md section 5.1](CREATOR-GUIDE.md#51-use-a-rigged-model-mmd-vrm-fbx).
+
+Python tests without Blender (`tests/test_blender_addon_characters.py`): the Brotli decoder against the `brotli` module (texts at 4 qualities, 2 modes, 3 windows; every 60th library clip; a damaged stream), weight limits, quaternions, character.json, the model split of the four roles, the four members as valid and reproducible packages, the hair chains, the clip list, bind pose of channels that a clip does not animate, the game IK (the strum hand on its target in all frames), the comparison with another joint order, the bundle, character.json and the manifest requirements of formats 1.0 and 1.1, and the character library (the rig from `characters.json` against the GH3 package GLB, the hair chains, the split of a GH3 character, the GH3 package before a custom character, the clip offsets).

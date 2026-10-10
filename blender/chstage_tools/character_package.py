@@ -45,6 +45,29 @@ def image_nodes(material):
     return [node for node in material.node_tree.nodes if node.type == "TEX_IMAGE" and node.image is not None]
 
 
+# Surface nodes that the glTF exporter converts (Principled BSDF, and the unlit and emission forms that it detects).
+GLTF_SURFACES = {"BSDF_PRINCIPLED", "EMISSION", "BACKGROUND", "MIX_SHADER", "ADD_SHADER", "BSDF_DIFFUSE"}
+
+
+def unsupported_surface(material):
+    """The surface node of a material that the glTF exporter does not read (for example the node group of an imported
+    MMD or VRM toon shader), or None."""
+    if material is None or not material.use_nodes or material.node_tree is None: return None
+    outputs = [n for n in material.node_tree.nodes if n.type == "OUTPUT_MATERIAL" and n.target in ("ALL", "EEVEE")]
+    output = next((n for n in outputs if n.is_active_output), outputs[0] if outputs else None)
+    if output is None or not output.inputs["Surface"].is_linked: return None
+    link = output.inputs["Surface"].links[0]
+    node, socket = link.from_node, link.from_socket
+    # The exporter follows node groups to the node at their group output.
+    for _ in range(16):
+        if node.type != "GROUP" or node.node_tree is None: break
+        inner = next((n for n in node.node_tree.nodes if n.type == "GROUP_OUTPUT" and n.is_active_output), None)
+        target = inner.inputs.get(socket.name) if inner is not None else None
+        if target is None or not target.is_linked: return node
+        node, socket = target.links[0].from_node, target.links[0].from_socket
+    return None if node.type in GLTF_SURFACES else node
+
+
 def check_scene(scene, issues):
     """The add-on checks of a character scene. Returns (rig, meshes); rig is None after a blocking error."""
     p = scene.chstage.character
@@ -56,16 +79,17 @@ def check_scene(scene, issues):
     if np.abs(np.array(rig.matrix_world) - np.eye(4)).max() > IDENTITY:
         issues.error("the rig must stay at the origin without rotation or scale (the profile fixes the rig): clear its transform", rig.name)
     library = character_tools.library_path(scene)
-    if library:
+    profile = character_tools.profile_id(scene)
+    if library or p.library_profile:
         try:
-            rig_data = character_tools.profile_rig(character_tools.library(library), character_tools.role_of(p.profile))
+            rig_data = character_tools.scene_rig_data(scene)
             bones = set(rig.data.bones.keys())
             missing = [n for n in rig_data.names if n not in bones]
             extra = sorted(bones - set(rig_data.names))
-            if missing: issues.error(f"the rig has no bone {missing[0]} ({character.bone_label(missing[0])}) of the profile {p.profile} ({len(missing)} missing)", rig.name)
+            if missing: issues.error(f"the rig has no bone {missing[0]} ({character.bone_label(missing[0])}) of the profile {profile} ({len(missing)} missing)", rig.name)
             if extra: issues.error(f"the rig has bones that are not in the profile, for example {extra[0]}: remove them", rig.name)
         except (OSError, ValueError, KeyError) as error:
-            issues.warn(f"the library {library} has no rig for {p.profile} ({error})")
+            issues.warn(f"no rig of the profile {profile} to check: {error}")
     meshes = character_tools.character_meshes(scene)
     if not meshes: issues.error("the character has no mesh: add a mesh and click Transfer Weights (or parent it to the rig with an Armature modifier)", rig.name)
     names = character_tools.profile_groups(rig)
@@ -85,6 +109,10 @@ def check_scene(scene, issues):
         others = [g.name for g in obj.vertex_groups if g.name not in names]
         if others: issues.warn(f"mesh '{obj.name}': export ignores the vertex groups that are not rig bones, for example '{others[0]}'", obj.name)
         for slot in obj.material_slots:
+            surface = unsupported_surface(slot.material)
+            if surface is not None:
+                issues.warn(f"material '{slot.material.name}': the glTF export does not read its surface node '{surface.name}' ({surface.bl_idname}), "
+                            "so the package gets no texture for it: connect a Principled BSDF with the image on Base Color", obj.name, slot.material.name)
             for node in image_nodes(slot.material):
                 if node.image.source == "FILE" and node.image.file_format not in ("PNG",):
                     issues.error(f"material '{slot.material.name}': image '{node.image.name}' is {node.image.file_format}; packages use PNG only "
@@ -142,7 +170,7 @@ def character_row(scene, blender_materials):
     p = scene.chstage.character
     by_material = {material: name for name, material in blender_materials.items()}
     names = [by_material.get(material, collect.package_name(material)) for material in hair_materials(scene)]
-    return character.character_json(p.profile, names, p.instrument.strip())
+    return character.character_json(character_tools.profile_id(scene), names, p.instrument.strip(), p.library_id or character.LIBRARY_ID, p.animations.strip())
 
 
 def build_files(scene, folder, issues, keeper=None, render_preview_image=True):
@@ -176,7 +204,9 @@ def build_files(scene, folder, issues, keeper=None, render_preview_image=True):
     if preview is not None:
         (folder/"preview.png").write_bytes(preview)
         paths.add("preview.png")
-    manifest = sidecars.build_manifest(collect.package_description(scene), entry, "preview.png" if preview is not None else None, format=character.FORMAT)
+    library_id = scene.chstage.character.library_id or character.LIBRARY_ID
+    description = character.complete_requirements(collect.package_description(scene), library_id)
+    manifest = sidecars.build_manifest(description, entry, "preview.png" if preview is not None else None, format=character.package_format(library_id))
     manifest["files"] = container.file_list(folder, paths)
     (folder/"manifest.json").write_bytes(container.json_bytes(manifest))
     names["materials"] = {name: material.name for name, material in blender_materials.items()}
@@ -209,7 +239,8 @@ def add_report(issues, report, names, scene):
 
 def validator(scene, path):
     library = character_tools.library_path(scene)
-    return Validator(path, library=library or None)
+    characters = character_tools.character_library_path(scene) if scene.chstage.character.library_profile else ""
+    return Validator(path, library=library or None, character_library=characters or None)
 
 
 def validate_scene(scene):
@@ -282,16 +313,27 @@ def open_package(path, library=None):
     for key in ("model", "character"):
         if entry.get(key) not in source.set: raise ValueError(f"{path}: the package has no {key} file")
     library = character_tools.library_path(None, path) if library is None else library
-    for message in Validator(path, library=library or None).run().errors: issues.error(f"package: {message}")
     description = character.open_character_json(json.loads(source.read(entry["character"])))
-    if description["profile"] not in character.PROFILES: raise ValueError(f"{path}: unknown profile '{description['profile']}'")
-    role = character_tools.role_of(description["profile"])
+    characters = ""
+    if description["profile"] in character.PROFILES:
+        role = character_tools.role_of(description["profile"])
+    else:
+        characters = character_tools.character_library_path(None, path)
+        if not characters: raise ValueError(f"{path}: the profile '{description['profile']}' needs the GH3 character library "
+                                            f"({description['library']}): set 'GH3 character library (.chlib)' in the add-on preferences")
+        clib = character_tools.character_library(characters)
+        if description["profile"] not in clib.profiles: raise ValueError(f"{path}: the character library {clib.id} has no profile '{description['profile']}'")
+        role = clib.role(description["profile"])
+    for message in Validator(path, library=library or None, character_library=characters or None).run().errors: issues.error(f"package: {message}")
 
     scene = bpy.data.scenes.new(manifest.get("name") or manifest.get("id") or "CH Character")
     scene.render.fps, scene.render.fps_base = character_tools.CLIP_FPS, 1.0
     scene.chstage.source_package = str(path.resolve())
     p = scene.chstage.character
-    p.enabled, p.profile, p.instrument = True, description["profile"], description["instrument"]
+    p.enabled, p.profile, p.instrument = True, character.ROLE_PROFILES[role], description["instrument"]
+    if characters:
+        p.library_profile, p.library_id, p.animations = description["profile"], description["library"], description["animations"]
+        p.character_library = str(Path(characters).resolve())
     if library: p.library = str(Path(library).resolve())
     skip = {entry["model"], entry["character"]}
     package_open.open_package_info(scene, manifest, source, skip)

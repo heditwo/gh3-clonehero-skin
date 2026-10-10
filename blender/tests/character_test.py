@@ -334,7 +334,29 @@ broken.location = (0.5, 0, 1)
 group = broken.vertex_groups.new(name=names[2])
 group.add([0, 1, 2], 1.0, "REPLACE")
 for index, name in enumerate(names[3:8]): broken.vertex_groups.new(name=name).add([3], 0.2, "REPLACE")
+# A toon shader node group, as MMD and VRM importers make: the glTF exporter writes the material without its texture.
+toon = bpy.data.materials.new("toon_shader")
+toon.use_nodes = True
+toon_group = bpy.data.node_groups.new("ToonShader", "ShaderNodeTree")
+toon_group.interface.new_socket("Shader", in_out="OUTPUT", socket_type="NodeSocketShader")
+group_output = toon_group.nodes.new("NodeGroupOutput")
+toon_bsdf = toon_group.nodes.new("ShaderNodeBsdfToon")
+toon_group.links.new(toon_bsdf.outputs[0], group_output.inputs[0])
+group_node = toon.node_tree.nodes.new("ShaderNodeGroup")
+group_node.node_tree = toon_group
+toon.node_tree.links.new(group_node.outputs[0], next(n for n in toon.node_tree.nodes if n.type == "OUTPUT_MATERIAL").inputs["Surface"])
+broken.data.materials.append(toon)
+# A node group around a Principled BSDF: the exporter follows the group, so no warning.
+wrapped = toon.copy()
+wrapped.name = "wrapped_principled"
+wrapped_group = toon_group.copy()
+wrapped_group.links.new(wrapped_group.nodes.new("ShaderNodeBsdfPrincipled").outputs[0], next(n for n in wrapped_group.nodes if n.type == "GROUP_OUTPUT").inputs[0])
+next(n for n in wrapped.node_tree.nodes if n.type == "GROUP").node_tree = wrapped_group
+broken.data.materials.append(wrapped)
 issues = character_package.validate_scene(scene)
+surface_warnings = [(o, m) for s, m, o, _ in issues if s == "WARNING" and "does not read its surface node" in m]
+check("unsupported surface node gives a warning", len(surface_warnings) == 1 and surface_warnings[0][0] == "BrokenMesh" and "toon_shader" in surface_warnings[0][1],
+      surface_warnings)
 errors = errors_of(issues)
 check("errors name the object", any("no weight" in m and o == "BrokenMesh" for _, m, o in errors) and any("more than 4" in m and o == "BrokenMesh" for _, m, o in errors)
       and any("own transform" in m and o == "BrokenMesh" for _, m, o in errors), errors)
@@ -399,6 +421,110 @@ for obj in character_tools.character_meshes(scene): obj.hide_render = False
 props.reference.hide_render = True
 character_tools.clear_pose(scene)
 check("bind pose after clear", rig.animation_data is None or rig.animation_data.action is None)
+
+# 7. A character library profile (format 1.1): Midori of gh3-characters-v1, with the GH3 character packages next to it.
+character_library = library.parent / "gh3-characters-v1.chlib"
+midori_package = library.parent / "gh3.midori.outfit1.style1.chchar"
+if character_library.exists() and midori_package.exists():
+    midori = "gh3-guitarist-midori-v1"
+    clib = character_format.CharacterLibrary(character_library)
+    with bpy.context.temp_override(scene=bpy.context.scene):
+        status = bpy.ops.chstage.new_character(profile=midori)
+    scene11 = next(s for s in bpy.data.scenes if s.chstage.character.library_profile == midori)
+    p11 = scene11.chstage.character
+    rig11 = p11.rig
+    expected_rig = clib.rig(midori)
+    check("1.1: new character on a character library profile", status == {"FINISHED"} and rig11 is not None and set(rig11.data.bones.keys()) == set(expected_rig.names)
+          and p11.reference is not None and p11.attachment is not None and len(json.loads(p11.hair_chains)) == len(clib.hair_chains(midori))
+          and len(p11.clips) > 100 and [r.package_id for r in scene11.chstage.package.requires] == ["gh3-band-v1", "gh3-characters-v1"]
+          and scene11.chstage.package.min_mod_version == "0.9.9",
+          (p11.library_id, len(p11.clips), [r.package_id for r in scene11.chstage.package.requires]))
+    # Rig joints in Blender against the profile bind of characters.json.
+    axes = character_tools.AXES
+    worst = max(float(np.linalg.norm(np.array(rig11.data.bones[name].head_local) - (axes @ expected_rig.world[i])[:3, 3]))
+                for i, name in enumerate(expected_rig.names))
+    check("1.1: rig joints at the profile bind pose", worst < 1e-5, worst)
+    # A creator mesh: a copy of the GH3 body without its weights.
+    body11 = p11.reference.copy()
+    body11.data = p11.reference.data.copy()
+    for key in list(body11.keys()): del body11[key]
+    body11.chstage.marker = "NONE"
+    body11.vertex_groups.clear()
+    body11.modifiers.clear()
+    body11.parent = None
+    body11.name = "MidoriEdit"
+    body11.display_type = "TEXTURED"
+    scene11.collection.objects.link(body11)
+    body11.hide_select = False
+    view11 = scene11.view_layers[0]
+    for obj in scene11.objects: obj.select_set(False, view_layer=view11)
+    body11.select_set(True, view_layer=view11)
+    view11.objects.active = body11
+    with bpy.context.temp_override(scene=scene11, view_layer=view11, selected_objects=[body11], active_object=body11, object=body11):
+        status = bpy.ops.chstage.transfer_weights(exclude_hair=False)
+    scene11.chstage.package.package_id, scene11.chstage.package.name = "tester.midori-edit", "Midori edit"
+    target11 = output / "test-character-1.1" / "tester.midori-edit.chchar"
+    status_export = operator_scene(scene11, bpy.ops.chstage.export_character, filepath=str(target11))
+    report11 = validator.Validator(target11, library, character_library=character_library).run() if target11.is_file() else None
+    with zipfile.ZipFile(target11) if target11.is_file() else zipfile.ZipFile(midori_package) as package_zip:
+        manifest11 = json.loads(package_zip.read("manifest.json"))
+        character11 = json.loads(package_zip.read("character.json"))
+    summary["characterLibrary"] = {"export": [(i.severity, i.message) for i in scene11.chstage.issues], "validator": (report11.errors + report11.warnings) if report11 else None,
+                                   "manifest": {k: manifest11.get(k) for k in ("format", "requires", "minModVersion")}, "character": character11}
+    check("1.1: transfer weights and export a valid format 1.1 package", status == {"FINISHED"} and status_export == {"FINISHED"} and report11 is not None
+          and report11.ok and not report11.warnings and manifest11["format"] == "chchar/1.1" and manifest11.get("minModVersion") == "0.9.9"
+          and character11["library"] == "gh3-characters-v1" and character11["profile"] == midori, summary["characterLibrary"])
+    # The clip preview of a character library clip (the clip rig offsets and the game IK).
+    clip11 = next(item.clip for item in p11.clips if item.label.startswith("stance_a/idle"))
+    with bpy.context.temp_override(scene=scene11, view_layer=view11):
+        status = bpy.ops.chstage.preview_clip(clip=clip11)
+    decoded = character_tools.q48.decode(character_tools.decompress(clib.clip(clip11)))
+    translations, quaternions = character_format.clip_local_poses(decoded, expected_rig, "guitarist", clib.clip_offsets(midori))
+    expected = axes @ character_format.world_poses(expected_rig, translations, quaternions) @ np.linalg.inv(axes)
+    worst = 0.0
+    for frame in range(0, decoded[0]["frames"], 9):
+        scene11.frame_set(frame)
+        for joint, name in enumerate(expected_rig.names):
+            worst = max(worst, float(np.linalg.norm(np.array(rig11.pose.bones[name].matrix)[:3, 3] - expected[frame, joint, :3, 3])))
+    check("1.1: clip preview gives the profile clip poses", status == {"FINISHED"} and worst < 1e-5, worst)
+    character_tools.clear_pose(scene11)
+    # Open a GH3 character package of format 1.1 and export it without edits.
+    with bpy.context.temp_override(scene=bpy.context.scene):
+        status = bpy.ops.chstage.open_character(filepath=str(midori_package))
+    opened11 = next((s for s in bpy.data.scenes if s.chstage.source_package == str(midori_package.resolve())), None)
+    copy11 = output / "roundtrip-1.1" / midori_package.name
+    status_export = operator_scene(opened11, bpy.ops.chstage.export_character, filepath=str(copy11)) if opened11 else None
+    report11 = validator.Validator(copy11, library, character_library=character_library).run() if copy11.is_file() else None
+    # The GH3 character GLBs keep materials that no mesh uses (Blender drops them), and have coincident cards that the
+    # attribute pairing of the compare tool matches wrongly. Compare the triangles of each material by their corners.
+    def corner_triangles(path):
+        with zipfile.ZipFile(path) as package_zip:
+            glb = character_format.Glb(package_zip.read("character.glb"))
+        materials, result = glb.list("materials"), {}
+        for node in glb.list("nodes"):
+            for primitive in glb.list("meshes")[node["mesh"]]["primitives"] if "mesh" in node else []:
+                corners = glb.accessor(primitive["attributes"]["POSITION"])[glb.accessor(primitive["indices"]).reshape(-1, 3)]
+                result.setdefault(materials[primitive["material"]].get("name"), []).append(corners)
+        return {name: np.concatenate(parts) for name, parts in result.items()}
+
+    worst, counts_equal = 0.0, False
+    if copy11.is_file():
+        source_triangles, copy_triangles = corner_triangles(midori_package), corner_triangles(copy11)
+        counts_equal = {k: len(v) for k, v in source_triangles.items()} == {k: len(v) for k, v in copy_triangles.items()}
+        for name, corners in source_triangles.items() if counts_equal else ():
+            other = copy_triangles[name]
+            centers = other.mean(1)
+            for triangle in corners:
+                near = np.argsort(np.linalg.norm(centers - triangle.mean(0), axis=1))[:8]
+                worst = max(worst, min(np.abs(np.roll(other[k], r, 0) - triangle).max() for k in near for r in range(3)))
+    differences = compare.compare_packages(midori_package, copy11) if copy11.is_file() else {"stage": {}}
+    joints = differences["stage"].get("nodeTransform", {})
+    check("1.1: open a GH3 character package and export it without edits", status == {"FINISHED"} and opened11 is not None
+          and opened11.chstage.character.library_profile == midori and status_export == {"FINISHED"} and counts_equal and worst < 1e-5
+          and joints.get("position", 1) < 1e-4 and joints.get("rotation", 1) < 0.01 and report11 is not None and report11.ok,
+          {"triangleCorners": worst, "joints": joints, "validator": report11.errors if report11 else None})
+else:
+    print(f"CHSTAGE-TEST SKIP character library: no {character_library.name} or {midori_package.name} next to the library")
 
 bpy.ops.preferences.addon_disable(module=module)
 check("disable", module not in bpy.context.preferences.addons and not hasattr(bpy.types.Scene, "chstage"))

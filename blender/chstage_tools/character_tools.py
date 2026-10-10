@@ -1,9 +1,12 @@
-"""Character tools on the fixed GH3 rigs (docs/PACKAGE-FORMAT.md section 9, docs/BLENDER-ADDON.md section 1.15).
+"""Character tools on the fixed GH3 rigs and on character library profiles (docs/PACKAGE-FORMAT.md sections 9 and
+10.1, docs/BLENDER-ADDON.md section 1.15).
 
 A character scene has the profile rig (an armature, scene.chstage.character.rig), the skinned meshes of the creator
 (children of the rig with an Armature modifier), and helpers that are never exported: the GH3 reference body and the
-attachment preview (instrument, microphone, or drum kit) of the profile, both from the library band model. The clip
-preview converts library clips (q48) to actions of the rig at the clip rate (30 fps).
+attachment preview (instrument, microphone, or drum kit) of the profile, both from the library band model. A character
+library profile (format 1.1, for example gh3-guitarist-midori-v1) takes its rig from characters.json and its helpers
+from the GH3 character package of the profile (gh3.<name>...chchar next to the character library). The clip preview
+converts library clips (q48) to actions of the rig at the clip rate (30 fps); it has the fixed profiles only.
 """
 
 import json
@@ -25,6 +28,7 @@ CLIP_FPS = q48.FPS
 # glTF (Y up) to Blender (Z up), as the glTF importer converts node transforms.
 AXES = np.array([[1., 0, 0, 0], [0, 0, -1, 0], [0, 1, 0, 0], [0, 0, 0, 1]])
 _libraries = {}
+_character_libraries = {}
 
 
 def props(scene):
@@ -48,6 +52,63 @@ def library(path):
     path = str(Path(path).resolve())
     if path not in _libraries: _libraries[path] = character.Library(path)
     return _libraries[path]
+
+
+def character_library_path(scene=None, package_path=None):
+    """The character library of a scene: its stored file, the add-on preference, or gh3-characters-v1.chlib next to the
+    GH3 library or the package."""
+    if scene is not None and props(scene).character_library:
+        path = Path(bpy.path.abspath(props(scene).character_library))
+        if path.exists(): return str(path)
+    return camera_tools.find_character_library(package_path)
+
+
+def character_library(path):
+    """A cached character.CharacterLibrary for a character library path."""
+    path = str(Path(path).resolve())
+    if path not in _character_libraries: _character_libraries[path] = character.CharacterLibrary(path)
+    return _character_libraries[path]
+
+
+def profile_id(scene):
+    """The profile of character.json: the character library profile, else the fixed profile."""
+    p = props(scene)
+    return p.library_profile or p.profile
+
+
+def library_profile(scene):
+    """(CharacterLibrary, profile) of a scene on a character library profile, else (None, None)."""
+    p = props(scene)
+    if not p.library_profile: return None, None
+    path = character_library_path(scene)
+    if not path: raise ValueError(f"no GH3 character library for the profile {p.library_profile}: set 'GH3 character library (.chlib)' "
+                                  "in the add-on preferences")
+    clib = character_library(path)
+    if p.library_profile not in clib.profiles: raise ValueError(f"the character library {clib.id} has no profile {p.library_profile}")
+    return clib, p.library_profile
+
+
+def profile_package(clib, profile):
+    """The GH3 character package of a character library profile (the first gh3.<name>...chchar next to the library)."""
+    found = character.profile_packages(clib.path.resolve().parent, profile)
+    if not found: raise ValueError(f"no character package for the profile {profile} next to {clib.path.name} (for example gh3.<name>.outfit1.style1.chchar)")
+    return found[0]
+
+
+def scene_rig_data(scene, lib=None):
+    """The profile rig (character.Rig) of a character scene."""
+    clib, profile = library_profile(scene)
+    if clib is not None: return clib.rig(profile)
+    return profile_rig(lib or library(library_path(scene)), role_of(props(scene).profile))
+
+
+def helper_parts(scene, lib, role):
+    """The parts of the GH3 model of the scene profile (character.split_model): the library band model for a fixed
+    profile, the GH3 character package for a character library profile."""
+    clib, profile = library_profile(scene)
+    if clib is None:
+        return character.split_model(lib.model(role), character.hair_joints(lib.json("band/hair.json"), role))
+    return character.split_model(character.profile_model(profile_package(clib, profile)), clib.hair_joints(profile))
 
 
 def profile_rig(lib, role):
@@ -129,8 +190,7 @@ def load_helpers(scene, collection, lib, role, show_reference=True):
     """Import the GH3 reference body and the attachment of a profile from the library as helpers of the rig."""
     rig = props(scene).rig
     remove_helpers(scene)
-    hair = character.hair_joints(lib.json("band/hair.json"), role)
-    parts = character.split_model(lib.model(role), hair)
+    parts = helper_parts(scene, lib, role)
     props(scene).hair_reference = json.dumps(parts["hairMaterials"])
     for kind, data in (("reference", parts["body"]), ("attachment", parts["attachment"])):
         if data is None: continue
@@ -149,11 +209,20 @@ def load_helpers(scene, collection, lib, role, show_reference=True):
 
 
 def load_profile_data(scene, lib, role):
-    """Hair chains and the clip list of a profile into the scene."""
-    rig_data = profile_rig(lib, role)
-    props(scene).hair_chains = json.dumps(character.hair_chains(lib.json("band/hair.json"), role, rig_data))
+    """Hair chains and the clip list of a profile into the scene (a character library profile has no clip list)."""
     clips = props(scene).clips
     clips.clear()
+    props(scene)["clips_index"] = -1
+    clib, profile = library_profile(scene)
+    if clib is not None:
+        props(scene).hair_chains = json.dumps(clib.hair_chains(profile))
+        for clip, label, duration, frames in clib.clip_items(profile, props(scene).animations):
+            if not clib.has_clip(clip): continue
+            item = clips.add()
+            item.clip, item.label, item.duration, item.frames = clip, label, duration, frames
+        return
+    rig_data = profile_rig(lib, role)
+    props(scene).hair_chains = json.dumps(character.hair_chains(lib.json("band/hair.json"), role, rig_data))
     for clip, label, duration, frames in character.clip_items(lib.json("catalog.json"), lib.json("band/band.json"), role):
         if not lib.has_clip(role, clip): continue
         item = clips.add()
@@ -174,28 +243,42 @@ def add_preview_camera(scene, collection):
     return camera
 
 
-def new_character(profile, library_file, use_gh3_body=False, name=None):
+def new_character(profile, library_file, use_gh3_body=False, name=None, character_library_file=None):
     """Make a character scene for a profile: the rig from the library, the helpers, and the clip list. With
-    use_gh3_body, the GH3 body of the library becomes the character mesh (a start for an edit)."""
-    role = role_of(profile)
+    use_gh3_body, the GH3 body of the library becomes the character mesh (a start for an edit). A profile that is not
+    a fixed profile is a profile of the character library (character_library_file, else the preference or the file
+    next to the GH3 library)."""
+    clib = None
+    if profile in character.PROFILES:
+        role = role_of(profile)
+    else:
+        path = character_library_file or camera_tools.find_character_library()
+        if not path: raise ValueError(f"{profile} is not a fixed profile, and there is no GH3 character library (gh3-characters-v1.chlib)")
+        clib = character_library(path)
+        if profile not in clib.profiles: raise ValueError(f"the character library {clib.id} has no profile {profile}")
+        role = clib.role(profile)
     lib = library(library_file)
     scene = bpy.data.scenes.new(name or f"CH Character ({role})")
     scene.render.fps, scene.render.fps_base = CLIP_FPS, 1.0
     p = props(scene)
-    p.enabled, p.profile, p.library = True, profile, str(Path(library_file).resolve())
+    p.enabled, p.profile, p.library = True, character.ROLE_PROFILES[role], str(Path(library_file).resolve())
     package = scene.chstage.package
     package.package_id, package.name = f"author.my-{role}", f"My {role.title()}"
     package.preview_mode = "RENDER"
     author = package.authors.add()
     author.name = "Me"
-    requirement = package.requires.add()
-    requirement.package_id, requirement.version = character.LIBRARY_ID, "1.0.0"
+    if clib is not None:
+        p.library_profile, p.library_id, p.character_library = profile, clib.id, str(clib.path.resolve())
+    description = character.complete_requirements({"requires": [], "minModVersion": ""}, p.library_id or character.LIBRARY_ID)
+    for row in description["requires"]:
+        requirement = package.requires.add()
+        requirement.package_id, requirement.version = row["id"], row["version"]
+    package.min_mod_version = description["minModVersion"]
     collection = bpy.data.collections.new("Character")
     scene.collection.children.link(collection)
     helpers = bpy.data.collections.new("Character Helpers")
     scene.collection.children.link(helpers)
-    hair = character.hair_joints(lib.json("band/hair.json"), role)
-    parts = character.split_model(lib.model(role), hair)
+    parts = helper_parts(scene, lib, role)
     new, gltf, binary, nodes, mats, images = import_glb(scene, parts["body"], collection, mapped=use_gh3_body)
     rig = next(o for o in new if o.type == "ARMATURE")
     rig.name = f"{role}-rig"
@@ -455,19 +538,22 @@ def clip_action(scene, clip):
     p = props(scene)
     rig = p.rig
     role = role_of(p.profile)
-    lib = library(library_path(scene))
-    name = f"{role} clip {clip}"
+    clib, profile = library_profile(scene)
+    name = f"{profile or role} clip {clip}"
     for action in clip_actions():
         if action.get(PREVIEW) != name: bpy.data.actions.remove(action)
     action = next((a for a in clip_actions() if a.get(PREVIEW) == name), None)
     rig.animation_data_create()
-    decoded = q48.decode(decompress(lib.clip(role, clip)))
+    if clib is not None:
+        decoded, rig_data, offsets = q48.decode(decompress(clib.clip(clip))), clib.rig(profile), clib.clip_offsets(profile)
+    else:
+        lib = library(library_path(scene))
+        decoded, rig_data, offsets = q48.decode(decompress(lib.clip(role, clip))), profile_rig(lib, role), None
     frames = decoded[0]["frames"]
     if action is None:
-        rig_data = profile_rig(lib, role)
         missing = [n for n in rig_data.names if n not in rig.data.bones]
         if missing: raise ValueError(f"the rig has no bone {missing[0]} of the profile")
-        translations, quaternions = character.clip_local_poses(decoded, rig_data, role)
+        translations, quaternions = character.clip_local_poses(decoded, rig_data, role, offsets)
         locations, rotations = clip_basis(rig, rig_data, translations, quaternions)
         action = bpy.data.actions.new(name)
         action[PREVIEW] = name
