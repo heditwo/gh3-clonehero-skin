@@ -1,0 +1,2 @@
+# Literals that the literal guard (tests/LiteralGuardTests.cs) accepts without a name or a source marker.
+# Format: <path> | <literal> | <trimmed source line>
