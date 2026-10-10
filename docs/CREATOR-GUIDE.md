@@ -155,7 +155,7 @@ The GH3 venues have the license `LicenseRef-GH3-Derived` with the permissions `r
 
 ## 5. Make a character on a GH3 rig
 
-A character is a mesh on one GH3 rig, or a model with its own skeleton ([section 5.1](#51-use-your-models-skeleton-mmd-vrm-mixamo-fbx)). The game plays the GH3 animations of the band member on your character and adds the instrument. You do not make animations. The example is `examples/example-guitarist.blend`.
+A character is a mesh on one GH3 rig, or a model with its own skeleton ([section 5.1](#51-use-any-humanoid-model-with-its-own-skeleton)). The game plays the GH3 animations of the band member on your character and adds the instrument. You do not make animations. The example is `examples/example-guitarist.blend`.
 
 1. Set **GH3 library (.chlib)** in the add-on preferences (section 2).
 2. Click **File > New > New Character from GH3 Rig**. Select a profile:
@@ -178,55 +178,77 @@ A character is a mesh on one GH3 rig, or a model with its own skeleton ([section
 
 ![The character package panel after Validate](images/creator/character-package.png)
 
-### 5.1 Use your model's skeleton (MMD, VRM, Mixamo, FBX)
+### 5.1 Use any humanoid model with its own skeleton
 
-A model with its own skeleton (MMD `.pmx`, VRM, a Mixamo or Unreal FBX) can keep that skeleton. The game then moves your model with the GH3 animations of the profile: it retargets the GH3 clips to your bones. The proportions of your model do not change. Read the terms of the model first: many models do not permit changes or distribution.
+Any humanoid model with an armature can keep its skeleton: MMD (`.pmx`), VRM and VRoid, Mixamo, Unity, Unreal, Daz, Rigify, 3ds Max Biped, Ready Player Me, or a model with bone names that say nothing (`joint1`, `Bone.023`, Chinese or Japanese names). The game moves your model with the GH3 animations of the profile: it retargets the GH3 clips to your bones. The proportions of your model do not change. Read the terms of the model first: many models do not permit changes or distribution.
+
+The add-on finds the humanoid in your skeleton from the hierarchy and the bone positions, not from a list of names. It finds the left and right sides of the body, the legs (the pair of limbs that reaches the floor), the arms (the pair that hangs from the spine below the head), the elbow and the knee (where a limb divides into two parts of almost the same length), twist bones (bones on the straight line of a limb part), the fingers (in their order across the palm), the head, and the front of the model (the toes and the feet). The bone names help only when the bone positions do not decide.
 
 ```mermaid
 flowchart LR
-    Clip[GH3 clip on the GH3 rig] --> Turn[Bone turns from the GH3 rest pose]
-    Turn --> Bones[Your bones, rest pose corrected]
-    Bones --> IK[Arm and leg IK with your lengths]
-    IK --> Mesh[Your mesh and shape keys]
+    Import[Import the model] --> Setup[Set Up Skeleton]
+    Setup --> Check[Check the map]
+    Check --> Clips[Check Clips and preview]
+    Clips --> Export[Validate and export]
 ```
 
 1. Click **File > New > New Character from GH3 Rig**. Select the profile whose animations you want, for example **Midori (outfit 1)** for a guitarist. Set **Use my model's skeleton**. The add-on makes a scene with the GH3 rig as a helper (the source of the clip preview) and the instrument preview.
-2. Import your model into the scene:
+2. Import your model into the scene with the importer of its format:
+   - glTF, GLB, VRM: **File > Import > glTF**. With the **VRM Add-on for Blender**, the add-on uses the humanoid map of the VRM file.
+   - FBX (Mixamo, Unity, Unreal, a game): **File > Import > FBX**.
    - MMD: install the extension **MMD Tools** and import at the scale 0.08 (1 MMD unit is 8 cm). Import the morphs (shape keys) too.
-   - VRM: use the **VRM Add-on for Blender**. The add-on reads its humanoid map.
-   - FBX (Mixamo, Unreal mannequin, a game): **File > Import > FBX**.
-3. Put the model in the rest position that the game expects:
-   - It stands on the floor at the origin, with +Z up. It looks toward −Y, and its left side is at +X.
-   - It has its real size (for example 1.58 m). The game does not scale your character.
-   - The armature has no transform: unparent it from an import root, then **Object > Apply > All Transforms** on the armature and on the meshes. The meshes keep an Armature modifier for the armature.
-   - A T-pose or an A-pose is correct. The game corrects the rest pose: each bone points along its GH3 bone.
-   - A model from a Unity game can come in mirrored (object scale −1, face toward +Y). Mirror it, and check that the normals point out.
-4. Select the armature and click **Use Selected Armature** in the **Skeleton** panel. The add-on maps the roles (hips, spine, chest, neck, head, shoulders, arms, hands, all finger bones, legs, feet, toes) from the bone names: MMD in Japanese and English, VRM and VRoid, Mixamo, and the Unreal mannequin. A required role without a bone has a red mark. Correct a wrong bone in the list.
-   - MMD: the legs map to the deform bones `足D`, `ひざD`, `足首D` (they have the weights; the IK bones `足`, `ひざ`, `足首` have none). `腕捩` and `手捩` become the twist bones. The add-on also reads the MMD append rotations (付与) as **followers**, for example `手捩1` turns with 25 % of `手捩`.
-   - Fingers: map all of them for a good fret hand. A finger without a bone keeps its rest pose.
-5. **Face.** The add-on finds the shape keys for blink and the mouth shapes a, i, u, e, o (MMD `まばたき`, `あ`, `い`, `う`, `え`, `お`; VRM `Blink`, `A`, `I`, `U`, `E`, `O`; VRoid `Fcl_EYE_Close`, `Fcl_MTH_A`...). Correct them in the face fields. The game blinks with the GH3 blink timing, and the singer moves the mouth with the sung notes of the chart. The export writes only these shape keys.
-6. **Materials.** Importers of MMD and VRM models make toon shader node groups. The glTF export does not read them, and the package then has no texture (the character is white in the game). Validate gives a warning for each such material. For an MMD model, click **Toon from MMD** first ([section 5.2](#52-toon-look-and-eyebrows-over-the-hair)). Then give each material a **Principled BSDF** with the image on **Base Color**, and save the images as PNG (1024 × 1024 pixels are sufficient).
-7. **Weights.** Keep the weights of your model. Click **Limit and Normalize** (four influences at most). The export writes only the deform bones: turn **Deform** off on helper bones (IK targets, controls). At most 255 deform bones.
-8. **Long hair, skirt, tail.** Make chains on the bones of your model ([section 5.3](#53-make-hair-skirt-and-tail-chains)). With MMD Tools, **Chains from MMD Physics** uses the MMD bones of your model; it adds no bones.
-9. **Clip Preview.** Click a clip. The clip plays on the GH3 rig helper, and the add-on moves your armature with the same retarget as the game. During the preview, the add-on mutes the bone constraints of your armature (the game does not use them; **Bind Pose** turns them on again).
+   - A model in two parts with two armatures (a body and a head): select both armatures, the body last, and click **Join Armatures** in the **Skeleton** panel. Bones with the same name become one bone, and the head moves onto the body at these bones.
+3. Select the armature of your model and click **Set Up Skeleton** in the **Skeleton** panel. The add-on:
+   - applies the object transforms of the armature and of its meshes (an import root, a 0.01 scale, a Z-up node);
+   - turns the model so that it stands on +Z and looks toward −Y, with its left side at +X;
+   - mirrors a mirrored export back (a Unity model that comes in with its left bones on its right side);
+   - puts the feet on the floor and the hips above the origin;
+   - gives the model a height in metres: a model of 0.5–3 m keeps its height; else the add-on finds the unit (centimetres, millimetres) or uses 1.7 m. To set a height, type it in **Height** before you click (for example 1.58 m);
+   - makes meshes that follow one bone (no weights) skinned to that bone;
+   - gives deform bones under control bones (Rigify `DEF-` bones) the deform bone at the place of their control bone as parent, so that the exported skeleton is one tree;
+   - finds the roles, the followers, and the face shape keys.
+
+   The panel lists each change in words. Undo (**Ctrl Z**) restores the model.
+4. **Check the map.** Click **Show Map**: the add-on draws the roles on your armature. Green is sure, yellow is a role to check, red is not sure. The role list has the same marks; a required role without a bone is red.
+   - To correct a role: select the role in the list, click the bone in the viewport (Pose Mode or Edit Mode), and click **Assign Active Bone**. The next role in the list is then selected.
+   - **Left to Right** gives each right role the bone on the other side of its left role (by the name, else by the place). **Right to Left** does the opposite.
+   - The X button clears a role. A finger, a toe, a shoulder, a neck, a twist bone, the eyes, and the jaw are optional.
+   - **Save Preset** writes the map to a JSON file. **Load Preset** applies it to another model of the same rig family (the roles whose bones the armature has).
+5. **Check the clips.** Click a clip button (idle, stance change, solo, ...) to preview it, or click **Check Clips**. The add-on plays GH3 clips with the retarget of the game and lists problems with what to do: a hand far from its place on the instrument, a bone that flips, a knee or an elbow that bends the other way, a foot that slides, a forearm that twists too far, mesh edges that stretch. Validate shows the errors of the last check.
+6. **Face.** The add-on finds the shape keys for blink and the mouth shapes a, i, u, e, o (MMD `まばたき`, `あ`; VRM `Blink`, `A`; VRoid `Fcl_EYE_Close`, `Fcl_MTH_A`; `eye_close`, `lip_a`, `mouth_a`; VRChat visemes; Ready Player Me `mouthOpen`). Correct them in the face fields. The game blinks with the GH3 blink timing, and the singer moves the mouth with the sung notes of the chart. The export writes only these shape keys.
+7. **Materials.** Importers of MMD and VRM models make toon shader node groups. The glTF export does not read them, and the package then has no texture (the character is white in the game). Validate gives a warning for each such material. For an MMD model, click **Toon from MMD** first ([section 5.2](#52-toon-look-and-eyebrows-over-the-hair)). Then give each material a **Principled BSDF** with the image on **Base Color**, and save the images as PNG (1024 × 1024 pixels are sufficient).
+8. **Weights.** Keep the weights of your model. Click **Limit and Normalize** (four influences at most). The export writes only the deform bones. At most 255 deform bones.
+9. **Long hair, skirt, tail.** Make chains on the bones of your model ([section 5.3](#53-make-hair-skirt-and-tail-chains)). With MMD Tools, **Chains from MMD Physics** uses the MMD bones of your model; it adds no bones.
 10. Optional, **Instrument**: the instrument hangs in front of the top spine bone, at the GH3 distance scaled by your torso. Its size is your arm length divided by the GH3 arm length. **Instrument bone**, **Instrument offset**, and **Instrument scale** change this.
 11. Click **Validate**, then **Export .chchar**.
+
+When Set Up Skeleton does not find the humanoid, the notes in the panel say what is missing:
+
+| Note | What to do |
+| --- | --- |
+| no left and right body parts | The model is not symmetric enough, or it has no limbs as bones. Map the roles by hand (step 4) |
+| the arm chain has no elbow / the leg chain has no knee | The limb has fewer than three joints. A humanoid needs an upper arm, a forearm, and a hand (an upper leg, a lower leg, and a foot). Add the missing bone in Edit Mode, with weights |
+| hips must be a parent of the upper leg (a Validate error) | A foot or a leg is not a child of the leg above it (IK rigs). In Edit Mode, make the foot a child of the lower leg (**Keep Offset**) |
+| the bone names say left where the body is right | The model is mirrored. Set Up Skeleton mirrors it back (the **Mirror** option of the operator turns this off) |
+| the front of the model is not clear | The model has no toes and no feet in the mesh. Check that it looks toward −Y after the set-up; if not, turn it 180° about Z, apply the rotation, and click **Auto Map** |
+| a role with a yellow or red mark | Select the bone of the role (the arrow button), and correct it if it is wrong |
 
 What the game does with your skeleton:
 
 | Part | Rule |
 | --- | --- |
-| Bones with a role | The turn of the GH3 bone from the GH3 rest pose, on your rest pose. At rest, each bone points along its GH3 bone |
-| Spine | Two spine bones take the lowest and the highest GH3 spine bone; three take all three |
+| Bones with a role | The turn of the GH3 bone from the GH3 rest pose, on your rest pose. At rest, each bone points along its GH3 bone, so a T-pose, an A-pose, and a relaxed pose (arms down) are all correct |
+| Spine and neck | One to three spine roles take the GH3 spine bones (bottom, top, and the middle one). Spine and neck bones between two roles turn part of the way, so a long spine or a two-bone neck bends along its length |
 | Hips | They move as the GH3 pelvis moves, scaled by your hip height |
-| Legs | IK with your leg lengths: the feet go where the GH3 feet go from the GH3 hips, scaled by the hip height |
-| Arms | IK with your arm lengths: the hands go to the GH3 hand places on the instrument. When your arms are too short, the instrument moves nearer |
+| Legs | IK with your leg lengths: the feet go where the GH3 feet go from the GH3 hips, scaled by the hip height. The knees bend in the plane of the GH3 knees |
+| Arms | IK with your arm lengths: the hands go to the GH3 hand places on the instrument. The elbows bend in the plane of the GH3 elbows. When your arms are too short, the instrument moves nearer |
+| Hands and fingers | The hand points to the middle finger (else the ring, index, or little finger). Fingers without a bone, and a missing thumb, keep their rest pose. A hand with three fingers maps them to the index, middle, and ring roles |
 | Wrists and upper arms | The twist goes to the twist bones and the followers (MMD `手捩`, `腕捩`); without a twist bone, the forearm takes half of the hand twist |
-| Bones without a role | They keep their rest pose relative to their parent (or follow their follower source) |
+| Helper bones | A weighted helper bone that starts where a mapped sibling bone starts (VRM aim and roll bones, clothing helpers) follows that bone. Other bones without a role keep their rest pose relative to their parent |
 | Face | Blink and lip sync with the shape keys. In songs with GH3 facial clips, the jaw opening gives `a` and the eyelids give blink |
 | Roles | A character on its own skeleton plays every role. In the role of its profile it has the animations of the profile; in another role, the animations of that role |
 
-Measured with two Miku models (2026-10-10): the own skeleton keeps the proportions of the source model (torso/leg 0.469 against 0.469, arm/leg 0.485 against 0.486); the fit to the Midori rig gave 0.648 and 0.593. The hands miss their places on the guitar by at most 0.3 mm.
+Measured (2026-10-10): the automatic map gave the hand-made map with no change for 27 of the 28 humanoid test models of the rig corpus (Mixamo, Ready Player Me, VRM 0 and 1, VRoid, Unity-chan, 3ds Max Biped, Rigify, Unreal-like, KayKit, Khronos samples, MMD, Project SEKAI, and synthetic variants with other names, turns, units, rest poses, and missing bones; [STATUS.md](STATUS.md#characters-on-their-own-skeleton)). The own skeleton keeps the proportions of the source model. In the game, the hands miss their places on the guitar by at most 0.2 mm.
 
 **Alternative: fit the mesh to a GH3 rig.** You can also move your model onto the GH3 bind pose and use the GH3 skeleton (the character then has the GH3 proportions):
 

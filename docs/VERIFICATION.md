@@ -229,6 +229,7 @@ On 2026-10-09 (38 runs on gh3.dive, two guitarist characters and one singer in e
 5. Face: a singer on a chart with vocals (`GH3_SKIN_CHARACTER_SINGER`), with `GH3_SKIN_DEBUG_VIEW_HEAD=local` and `GH3_SKIN_DEBUG_VIEW_ROLE=singer` (for example the view `0.03,3,0,0.03,0,0,9`). The log has `GH3 band singer: face blend shapes with lip sync from the sung notes`.
 6. GH3 characters must not change: `tools/check-character-trace.py` on a GH3 guitarist run, and screenshots of the default band against `main`.
 7. `GH3_SKIN_PROFILE=1` logs `band.retarget`.
+8. The rig corpus (the automatic map on many rigs): `tools/rig-corpus/fetch.sh`, then `RIG_CORPUS_DIR=<models> MMD_TOOLS_DIR=<MMD Tools extension folder, optional> flock /tmp/opencode/gh3-heavy.lock bash tools/rig-corpus/run.sh <out> --check` (add `--export --render` for packages and Workbench renders). `<out>/results.json` has, for each model, the score against its hand-made map, the notes, Check Clips, and Validate. Every model without `expect` in `corpus.json` must map with 0 fixes and no Check Clips error. Put some exported packages in `Mods/GH3Skin/Packages/` and capture them as guitarist (`GH3_SKIN_CHARACTER_GUITARIST=corpus.<id>`, view `-0.58,1.3,-1.6,-0.58,1.0,1.31,45` on gh3.dive), as singer, and as drummer (`GH3_SKIN_DEBUG_VIEW_HEAD=1`, `GH3_SKIN_DEBUG_VIEW_ROLE=drummer`, view `0.2,1.8,1.9,0,1.5,3,16`).
 
 ### Instruments and highways
 
