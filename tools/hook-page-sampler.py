@@ -15,11 +15,12 @@ import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 out, pid_file = sys.argv[1], sys.argv[2]
 process = subprocess.Popen(sys.argv[3:])
 pid = process.pid
-open(pid_file, "w").write(str(pid))
+Path(pid_file).write_text(str(pid))
 RESERVATION = 0x7FFF0000 - 100 * 1024 * 1024
 SITES = [0x28C0B40, 0x290F940, 0x2843400, 0x2847140, 0x5D67C80, 0x5D67D40]
 start = time.monotonic()

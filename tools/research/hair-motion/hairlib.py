@@ -1,12 +1,14 @@
 """Shared helpers: GH3 memory recordings and mod bench output, in one frame (GH3 model coordinates, bones)."""
 
-import json, sys, pickle
+import json
+import sys
+
 import numpy as np
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[3]))
+from pipeline.gh3.formats import key
 from pipeline.gh3.havok import Ragdoll
 from pipeline.library.hair import body_matrix, havok_matrix
-from pipeline.gh3.formats import key
 
 REPO = __import__("pathlib").Path(__file__).resolve().parents[3]
 WORK = __import__("os").environ.get("HAIR_MOTION_WORK", str(__import__("pathlib").Path.home() / ".cache/hair-motion"))

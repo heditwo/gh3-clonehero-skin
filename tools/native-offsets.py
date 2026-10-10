@@ -8,6 +8,7 @@ Run with: uv run --with capstone --with pefile python tools/native-offsets.py ..
 
 import re
 import sys
+from pathlib import Path
 
 import capstone
 import pefile
@@ -25,9 +26,9 @@ def summary(code, address):
     return " ".join(hex(offset) for offset in sorted(offsets)), calls
 
 
-linux = open(sys.argv[1], "rb").read()
+linux = Path(sys.argv[1]).read_bytes()
 windows_pe = pefile.PE(sys.argv[2], fast_load=True)
-windows = open(sys.argv[2], "rb").read()
+windows = Path(sys.argv[2]).read_bytes()
 for spec in sys.argv[3:]:
     name, linux_rva, linux_length, windows_rva, windows_length = spec.split(":")
     start, length = int(linux_rva, 16), int(linux_length, 16)

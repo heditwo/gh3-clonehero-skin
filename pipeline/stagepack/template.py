@@ -80,7 +80,10 @@ def create(output):
         [("turn", 4, np.zeros((241, 1, 3)), q)],
     )
     actor.save(output / "sign.glb")
-    pose = lambda p: {"position": p, "rotation": [0, 0, 0, 1]}
+
+    def pose(p):
+        return {"position": p, "rotation": [0, 0, 0, 1]}
+
     band = {
         r: pose(p)
         for r, p in {

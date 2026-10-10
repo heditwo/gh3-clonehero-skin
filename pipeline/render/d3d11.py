@@ -195,7 +195,7 @@ def program(template, dxbc, counts, vertex):
     blob = template[:8] + bytes(20) + struct.pack("<I", len(code)) + code + bytes((-len(code)) % 4)
     channels = []
     if vertex:
-        for name, index, system_value, register in signature(chunks(dxbc)["ISGN"]):
+        for name, index, system_value, _register in signature(chunks(dxbc)["ISGN"]):
             if system_value:
                 continue
             semantic = name if name != "TEXCOORD" else f"TEXCOORD{index}"

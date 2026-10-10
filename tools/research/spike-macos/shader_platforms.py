@@ -12,7 +12,7 @@ data = Path(sys.argv[1])
 files = [
     p
     for p in data.rglob("*")
-    if p.is_file() and not p.suffix in (".resS", ".resource", ".json", ".dat", ".opus", ".yml", ".info", ".config")
+    if p.is_file() and p.suffix not in (".resS", ".resource", ".json", ".dat", ".opus", ".yml", ".info", ".config")
 ]
 for path in files:
     try:

@@ -1,4 +1,5 @@
-import struct, sys
+import struct
+import sys
 
 
 def names(p):

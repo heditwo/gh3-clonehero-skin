@@ -2,7 +2,6 @@
 Usage: python3 summary.py OUT [--check]. Exit 1 with --check when a model without 'expect' does not map as expected."""
 
 import json
-import re
 import shutil
 import sys
 from pathlib import Path

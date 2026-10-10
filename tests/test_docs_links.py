@@ -2,6 +2,7 @@
 
 The full Mermaid syntax check needs Node and the mermaid package; this test checks the diagram type and the size only."""
 
+import functools
 import re
 import subprocess
 import unicodedata
@@ -69,20 +70,19 @@ def slug(heading):
     return text.replace(" ", "-")
 
 
-def anchors(path, cache={}):
-    if path not in cache:
-        prose, _ = split_blocks(path.read_text(encoding="utf-8"))
-        seen, result = {}, set()
-        for _, line in prose:
-            match = HEADING.match(line)
-            if not match:
-                continue
-            base = slug(match.group(2))
-            count = seen.get(base, 0)
-            seen[base] = count + 1
-            result.add(base if count == 0 else f"{base}-{count}")
-        cache[path] = result
-    return cache[path]
+@functools.cache
+def anchors(path):
+    prose, _ = split_blocks(path.read_text(encoding="utf-8"))
+    seen, result = {}, set()
+    for _, line in prose:
+        match = HEADING.match(line)
+        if not match:
+            continue
+        base = slug(match.group(2))
+        count = seen.get(base, 0)
+        seen[base] = count + 1
+        result.add(base if count == 0 else f"{base}-{count}")
+    return result
 
 
 class MarkdownLinkTests(unittest.TestCase):

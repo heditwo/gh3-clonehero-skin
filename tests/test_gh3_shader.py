@@ -93,13 +93,13 @@ class TranslatorTests(unittest.TestCase):
             (31, [0x80000000, token(6, 0, destination=True)]),
             (1, [token(6, 0, destination=True), token(1, 1)]),
         )
-        with self.assertRaises(gh3_shader.Unsupported):
+        with self.assertRaises(gh3_shader.UnsupportedShaderError):
             gh3_shader._input_expression("blendweight", 0)
         self.assertEqual(gh3_shader.Program(code, "vs").inputs[0], ("blendweight", 0))
 
     def test_unsupported_instructions_are_reported(self):
         code = program("ps", (41 | (1 << 16), [token(2, 0), token(2, 1)]))
-        with self.assertRaises(gh3_shader.Unsupported):
+        with self.assertRaises(gh3_shader.UnsupportedShaderError):
             gh3_shader.Program(code, "ps")
 
 

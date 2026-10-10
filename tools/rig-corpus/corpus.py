@@ -440,7 +440,7 @@ def run(model):
     started = time.time()
     bpy.ops.wm.read_homefile(use_empty=True)
     profile = model.get("profile", "gh3-guitarist-midori-v1")
-    result = bpy.ops.chstage.new_character(
+    bpy.ops.chstage.new_character(
         profile=profile, library=options.library, character_library=options.characters, own_skeleton=True
     )
     scene = next(s for s in bpy.data.scenes if s.chstage.character.enabled)
@@ -536,7 +536,7 @@ def run(model):
             if helper is not None:
                 helper.hide_render = helper == p.source_rig
         clips = skeleton_tools.check_clip_ids(scene, 2)
-        for k, (clip, label) in enumerate(clips[:2]):
+        for k, (clip, _label) in enumerate(clips[:2]):
             skeleton_tools.clip_action(scene, clip)
             render(scene, OUT / "renders" / f"{model['id']}-{k}.png", scene.frame_end // 2)
     if options.export and not row["errors"]:
@@ -567,7 +567,7 @@ for model in corpus["models"]:
         continue
     if any(name != "RIGIFY" and not (MODELS / name).exists() for name in model["files"]) or (
         model.get("needs") == "mmd_tools"
-        and not any(m.endswith("mmd_tools") for m in bpy.context.preferences.addons.keys())
+        and not any(m.endswith("mmd_tools") for m in bpy.context.preferences.addons.keys())  # noqa: SIM118
     ):
         log(model["id"], "SKIP (no model file)")
         rows.append({"id": model["id"], "skipped": True})

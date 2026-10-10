@@ -372,7 +372,10 @@ def build_character():
     )
 
     bm = bmesh.new()
-    head_of = lambda name: bone_head(rig, name)
+
+    def head_of(name):
+        return bone_head(rig, name)
+
     pelvis, neck, head = (head_of(n) for n in ("bone_pelvis", "bone_neck", "bone_head"))
     limb(bm, pelvis + Vector((0, 0, -0.05)), neck, 0.17, 0.2, 16)
     ball(bm, head + Vector((0, -0.02, 0.1)), 0.13, (0.9, 1.0, 1.15))

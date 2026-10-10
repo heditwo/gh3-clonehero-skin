@@ -1047,7 +1047,7 @@ class Retarget:
         shift = np.zeros_like(move)
         for _ in range(2):
             step = np.zeros_like(move)
-            for upper, lower, end, source_end, base, offset, side, reach in self.arms:
+            for upper, _lower, end, source_end, base, offset, side, reach in self.arms:
                 gain = left if side < 0 else right
                 goal = self._goal(sp, base if base >= 0 else source_end, instrument, move + shift)
                 if base >= 0:

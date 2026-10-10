@@ -37,7 +37,7 @@ def performance_data(data):
             for skill in ("bad", "normal", "good"):
                 for speed in ("slow", "med", "fast"):
                     refs = profile[key(action)][key(skill)][key(speed)]
-                    if not refs or any(type(ref) != int for ref in refs):
+                    if not refs or any(type(ref) is not int for ref in refs):
                         raise ValueError("Invalid crowd animation references")
                     groups[f"{action}/{skill}/{speed}"] = [f"{ref:08x}" for ref in refs]
         members[f"crowd{index}"] = {"model": model, "groups": groups}

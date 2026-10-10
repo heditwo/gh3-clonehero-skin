@@ -66,7 +66,7 @@ def check_clip(retarget, label, source_t, source_q, names, roles, mesh=None):
         )
 
     # Hands: the wrist against its goal (the GH3 hand place on the moved and scaled instrument) while the arm is on it.
-    for end, goal, gain, knuckle, offset in retarget.goals:
+    for end, goal, gain, _knuckle, _offset in retarget.goals:
         active = np.asarray(gain) * np.ones(frames) > 0.9
         if not active.any():
             continue
@@ -130,7 +130,7 @@ def check_clip(retarget, label, source_t, source_q, names, roles, mesh=None):
                 f"{role} role is on the {what} bone",
             )
     # Feet: the target foot moves while the GH3 foot stays.
-    for upper, lower, foot, source_foot, *_ in retarget.legs:
+    for _upper, _lower, foot, source_foot, *_ in retarget.legs:
         if frames < 3:
             break
         theirs = np.linalg.norm(np.diff(sp[:, source_foot], axis=0), axis=-1)
@@ -150,7 +150,7 @@ def check_clip(retarget, label, source_t, source_q, names, roles, mesh=None):
                 "The leg cannot reach the GH3 foot place: make sure that the UpperLeg, LowerLeg, and Foot roles are on the hip, knee, and ankle bones",
             )
     # Twist: the hand against the forearm about the forearm axis (from the rest pose).
-    for upper, lower, hand, *_ in retarget.arms:
+    for _upper, lower, hand, *_ in retarget.arms:
         rest = qnorm(qmul(qinv(retarget.rest_q[lower]), retarget.rest_q[hand]))
         axis = retarget.rest_p[hand] - retarget.rest_p[lower]
         axis = qrotate(qinv(retarget.rest_q[lower]), axis / max(np.linalg.norm(axis), 1e-9))

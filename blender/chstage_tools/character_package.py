@@ -16,7 +16,6 @@ import bpy
 import numpy as np
 
 from . import (
-    skeleton_tools,
     chain_tools,
     character_tools,
     collect,
@@ -26,6 +25,7 @@ from . import (
     package_export,
     package_open,
     sidecars,
+    skeleton_tools,
     textures,
     toon,
 )

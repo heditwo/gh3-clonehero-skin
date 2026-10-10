@@ -66,7 +66,8 @@ def rotation_vector(q):
 
 
 def read_clip(path):
-    data = gzip.open(path).read()
+    with gzip.open(path) as file:
+        data = file.read()
     if data[:8] != b"GH3CLP01":
         raise ValueError(path)
     frames, count = struct.unpack_from("<ii", data, 12)

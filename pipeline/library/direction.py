@@ -161,7 +161,7 @@ def convert(data_directory, output, shared=False):
             factor = find_struct(common, table).get(key(f"track_{pitch}"))
             if factor is not None:
                 definition["constants"][f"{table}/{pitch}"] = factor
-    for kind, _, data in [] if shared else source.load("ZONES/z_budokan.pak.xen"):
+    for _kind, _, data in [] if shared else source.load("ZONES/z_budokan.pak.xen"):
         if len(data) < 28 or data[8:12] != bytes.fromhex("1c080204"):
             continue
         nodes = find_array(data, "z_budokan_NodeArray")
@@ -202,8 +202,8 @@ def convert(data_directory, output, shared=False):
             # Difference clip of applydifference in drummer_static_tree; its translations are deltas, not poses.
             layers["bodytwist"] = [f"{key('Test_Drum_BodyTwist_D'):08x}"]
         bank = {n: b for k, n, b in source.load(f"PAK/{pak}.pak.xen") if k == key(".ska")}
-        for name in extra:
-            bank.update({n: b for k, n, b in source.load(f"PAK/{name}.pak.xen") if k == key(".ska")})
+        for extra_pak in extra:
+            bank.update({n: b for k, n, b in source.load(f"PAK/{extra_pak}.pak.xen") if k == key(".ska")})
         bank.update({n: b for n, b in hands.items() if values(b, 44, "H")[0] == len(rig[0])})
         missing = []
         needed = {ref for refs in [*groups.values(), *layers.values()] for ref in refs}

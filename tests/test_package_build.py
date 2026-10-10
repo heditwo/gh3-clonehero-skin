@@ -6,11 +6,11 @@ from pathlib import Path
 
 import numpy as np
 
+from pipeline.gh3.formats import key
 from pipeline.package import build, roundtrip, runtime
 from pipeline.package.validate import Validator
 from pipeline.stagepack import template
 from pipeline.stagepack.gltf import SKINNED_GH3_VERTEX, STATIC_VERTEX, GlbReader, GlbWriter
-from pipeline.gh3.formats import key
 from pipeline.stagepack.pack import compile_stage, load_json
 from tests.test_package_format import png
 

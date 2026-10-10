@@ -9,8 +9,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from pipeline.gh3 import scene
-from pipeline.gh3 import shader as gh3_shader
+from pipeline.gh3 import scene, shader as gh3_shader
 from pipeline.gh3.band_formats import (
     animation,
     remap_animation,
@@ -162,7 +161,7 @@ def report_templates(zone, materials):
         template = material.get("gh3", {}).get("template", material["template"])
         try:
             gh3_shader.translate(template)
-        except (gh3_shader.Unsupported, KeyError) as error:
+        except (gh3_shader.UnsupportedShaderError, KeyError) as error:
             print(
                 f"WARNING: {zone} material {name} (template {template}) falls back to the approximate surface model: {error}"
             )
@@ -382,7 +381,7 @@ def export_actors(source, scripts, global_entries, entries, nodes, directory, zo
         geometry = next(b for k, n, b in entries if k == key(".skin") and n == key("models\\" + model))
         materials, meshes = scene.scene(geometry, skinned=True)
         textures = {}
-        for k, n, b in entries:
+        for k, _n, b in entries:
             if k == key(".tex"):
                 textures.update(texture_dictionary(b))
         images = decode_textures(materials, textures)
@@ -542,7 +541,7 @@ def export(source, scripts, global_entries, zone, directory, global_references=N
         if k == key(".tex")
         for name, blob in texture_dictionary(b).items()
     }
-    for k, n, b in entries:
+    for k, _n, b in entries:
         if k == key(".tex"):
             textures.update(texture_dictionary(b))
     used = {m[0] for m in meshes}

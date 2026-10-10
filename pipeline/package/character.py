@@ -21,7 +21,7 @@ import numpy as np
 
 from . import container, decisions
 from .glb import Glb
-from .validate import CHARACTER_LIBRARY_ID, LIBRARY_ID, PROFILES, Report, Source, gh3_key
+from .validate import LIBRARY_ID, PROFILES, Report, Source, gh3_key
 
 FORMAT = "chchar/1.0"
 MODEL_FILE = "character.glb"

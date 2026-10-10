@@ -1,4 +1,8 @@
-import sys, UnityPy, lz4.block, struct
+import struct
+import sys
+
+import lz4.block
+import UnityPy
 from UnityPy.enums import ShaderCompilerPlatform, ShaderGpuProgramType
 
 env = UnityPy.load(sys.argv[1])

@@ -1,7 +1,10 @@
 """Patch the GH3 test copy: bot plays, player 1 plays CHAR, only CHAR stays a guitarist, and (if CAM=1) every
 <zone> camera with LookAtBone looks from POS at BONE. Originals: ~/.cache/rockgod-gh3/orig/."""
 
-import os, re, struct, sys
+import os
+import re
+import struct
+import sys
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[3]))
 from pipeline.gh3.formats import key, qb_text, values, word

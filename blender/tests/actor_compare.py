@@ -228,12 +228,15 @@ def compare_actor(data_a, source_a, data_b, source_b):
         ),
         "rotation": max((float(angle(rest_a[n][1], rest_b[n][1])) for n in rest_a if n in rest_b), default=0),
     }
-    ibm = lambda glb: dict(
-        zip(
-            [glb.list("nodes")[j].get("name") for j in glb.json["skins"][0]["joints"]],
-            accessor(glb, glb.json["skins"][0]["inverseBindMatrices"]).reshape(-1, 4, 4),
+
+    def ibm(glb):
+        return dict(
+            zip(
+                [glb.list("nodes")[j].get("name") for j in glb.json["skins"][0]["joints"]],
+                accessor(glb, glb.json["skins"][0]["inverseBindMatrices"]).reshape(-1, 4, 4),
+            )
         )
-    )
+
     ibm_a, ibm_b = ibm(a), ibm(b)
     report["inverseBind"] = max((float(np.abs(ibm_a[n] - ibm_b[n]).max()) for n in ibm_a if n in ibm_b), default=0)
     clips_a, clips_b = channels(a), channels(b)

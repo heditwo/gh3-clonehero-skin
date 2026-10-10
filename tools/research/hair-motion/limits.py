@@ -1,6 +1,9 @@
 """Havok ragdoll constraint angles (cone, plane, twist) of a live GH3 ragdoll against its limits."""
 
-import json, sys, pickle, numpy as np
+import json
+import sys
+
+import numpy as np
 from hairlib import ragdolls
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[3]))

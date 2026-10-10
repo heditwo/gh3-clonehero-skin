@@ -194,10 +194,13 @@ def beam_matrix(beam):
 def cone_lines(matrix, start_radius, end_radius, length, segments=16):
     """Line segments of a beam cone along local -Z."""
     points = []
-    ring = lambda radius, z: [
-        matrix @ Vector((math.cos(a) * radius, math.sin(a) * radius, z))
-        for a in (2 * math.pi * i / segments for i in range(segments))
-    ]
+
+    def ring(radius, z):
+        return [
+            matrix @ Vector((math.cos(a) * radius, math.sin(a) * radius, z))
+            for a in (2 * math.pi * i / segments for i in range(segments))
+        ]
+
     start, end = ring(max(start_radius, 0.01), 0.0), ring(max(end_radius, 0.01), -length)
     for i in range(segments):
         points += [start[i], start[(i + 1) % segments], end[i], end[(i + 1) % segments]]

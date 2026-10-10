@@ -232,9 +232,7 @@ def shot_visible(obj, scene):
         return False
     if props.shot_type != "ALL" and shot.type != props.shot_type:
         return False
-    if props.shot_group and not any(g.name == props.shot_group for g in shot.groups):
-        return False
-    return True
+    return not props.shot_group or any(g.name == props.shot_group for g in shot.groups)
 
 
 def view_through(context, scene, obj):

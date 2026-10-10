@@ -125,7 +125,7 @@ def camera_array(group):
 
 def compile_cameras(data, band, waypoints):
     fields(data, {"version", "shots", "groups", "notes"}, {"version", "shots", "groups"})
-    if type(data["version"]) != int or data["version"] != 1 or not data["groups"].get("wide"):
+    if type(data["version"]) is not int or data["version"] != 1 or not data["groups"].get("wide"):
         raise ValueError("A stage needs a wide camera group")
     shots = {}
     for name, shot in data["shots"].items():
@@ -168,7 +168,7 @@ def compile_cameras(data, band, waypoints):
         if shot.get("interpolation", "smooth") not in ("linear", "smooth"):
             raise ValueError("Invalid camera interpolation")
         for prop in ("handCam", "disableOrbit1", "disableOrbit2"):
-            if prop in shot and type(shot[prop]) != bool:
+            if prop in shot and type(shot[prop]) is not bool:
                 raise ValueError(f"Invalid camera flag: {prop}")
         number(shot.get("orbitAngle", 0), -36000, 36000)
         number(shot.get("stepTime", 6), 0.001, 86400)
@@ -177,9 +177,8 @@ def compile_cameras(data, band, waypoints):
         number(shot.get("angularSpeed", 0), -3600, 3600)
         ease = vector(shot.get("heightEase", [0, 0, 0]))
         number(ease[2], 0, 100)
-        if shot["control"] == "OrbitContinuous":
-            if len(shot["points"]) != 1 or "lookAt" not in shot["points"][0]:
-                raise ValueError("Continuous orbit needs one point and a target")
+        if shot["control"] == "OrbitContinuous" and (len(shot["points"]) != 1 or "lookAt" not in shot["points"][0]):
+            raise ValueError("Continuous orbit needs one point and a target")
         if any(n not in waypoints for n in shot.get("waypoints", [])):
             raise ValueError(f"Unknown camera waypoint: {name}")
         row = {
@@ -265,7 +264,7 @@ def compile_lighting(data):
         {"version", "lights", "snapshots", "moods", "colors"},
         {"version", "lights", "snapshots", "moods", "colors"},
     )
-    if type(data["version"]) != int or data["version"] != 1 or not data["snapshots"] or not data["lights"]:
+    if type(data["version"]) is not int or data["version"] != 1 or not data["snapshots"] or not data["lights"]:
         raise ValueError("Invalid lighting bank")
     for light in data["lights"]:
         fields(
@@ -279,7 +278,7 @@ def compile_lighting(data):
             raise ValueError("Unsupported light type")
         vector(light["position"])
         rotation(light["rotation"])
-        if type(light.get("overrideColor", False)) != bool:
+        if type(light.get("overrideColor", False)) is not bool:
             raise ValueError("Invalid light color override flag")
         number(light.get("hotspot", 0), 0, 180)
         number(light.get("field", 0), 0, 180)
@@ -305,7 +304,7 @@ def compile_lighting(data):
             number(light["intensity"], -100, 100)
             number(light["near"], 0, 100000)
             number(light["far"], light["near"], 100001)
-            if type(light.get("inherit", False)) != bool:
+            if type(light.get("inherit", False)) is not bool:
                 raise ValueError("Invalid light inheritance flag")
         for beam in snapshot["beams"].values():
             fields(
@@ -318,7 +317,7 @@ def compile_lighting(data):
             vector(beam["color"])
             for prop in ("density", "startRadius", "endRadius", "range"):
                 number(beam[prop], 0, 100000)
-            if type(beam.get("inherit", False)) != bool:
+            if type(beam.get("inherit", False)) is not bool:
                 raise ValueError("Invalid beam inheritance flag")
         snapshot["beams"] = {f"{key(k):08x}": v for k, v in snapshot["beams"].items()}
     for mood in ("intro", "blackout"):
@@ -384,7 +383,7 @@ def texture_reference(glb, reference, texture_dir, images):
     if reference in ("", -1):
         return ""
     textures = glb.data.get("textures", [])
-    if type(reference) == int:
+    if type(reference) is int:
         if not 0 <= reference < len(textures):
             raise ValueError("Invalid material texture index")
         index = reference
@@ -464,10 +463,10 @@ def gh3_shader_material(glb, data, texture_dir, images):
     ):
         raise ValueError("Invalid GH3 sampler list")
     names = [texture_reference(glb, reference, texture_dir, images) for reference in textures]
-    if any(type(v) != int or not 0 <= v <= 255 for v in addressing):
+    if any(type(v) is not int or not 0 <= v <= 255 for v in addressing):
         raise ValueError("Invalid GH3 sampler addressing")
     for field, maximum in (("flags", 0xFFFFFFFF), ("blend", 12), ("alphaRef", 255)):
-        if type(data[field]) != int or not 0 <= data[field] <= maximum:
+        if type(data[field]) is not int or not 0 <= data[field] <= maximum:
             raise ValueError(f"Invalid GH3 render state: {field}")
     return {
         "template": data["template"],
@@ -538,13 +537,15 @@ def import_materials(glb, folder):
             raise ValueError("Invalid material identity")
         materials[name]["source"] = source_material
         movie_slot = extras.get("gh3MovieSlot", -1)
-        if type(movie_slot) != int or movie_slot < -1 or movie_slot > 31:
+        if type(movie_slot) is not int or movie_slot < -1 or movie_slot > 31:
             raise ValueError("Invalid movie texture slot")
         materials[name]["movieSlot"] = movie_slot
         if "gh3TextureAnimation" in extras:
             animation = extras["gh3TextureAnimation"]
             fields(animation, {"columns", "rows", "fps", "offset"}, {"columns", "rows", "fps", "offset"})
-            if any(type(animation[field]) != int or not 1 <= animation[field] <= 256 for field in ("columns", "rows")):
+            if any(
+                type(animation[field]) is not int or not 1 <= animation[field] <= 256 for field in ("columns", "rows")
+            ):
                 raise ValueError("Invalid texture atlas dimensions")
             if any(
                 type(animation[field]) not in (int, float)
@@ -611,7 +612,7 @@ def compile_stage(source, destination):
         {"version", "kind", "id", "name", "library", "model", "band", "cameras"},
     )
     if (
-        type(manifest["version"]) != int
+        type(manifest["version"]) is not int
         or manifest["version"] != 1
         or manifest["kind"] != "stage"
         or manifest["library"] != "gh3-band-v1"
@@ -689,7 +690,7 @@ def compile_stage(source, destination):
         masks = {}
         object_ids = []
         objects = {}
-        for node_index, node, world in glb.nodes():
+        for _node_index, node, world in glb.nodes():
             if "skin" in node:
                 raise ValueError("Skinned stage objects require an actor definition")
             extras = node.get("extras", {})
@@ -710,7 +711,7 @@ def compile_stage(source, destination):
                 orientation = rotation(extras.get("gh3ObjectRotation", [0, 0, 0, 1]))
                 created = extras.get("gh3ObjectCreated", True)
                 script = extras.get("gh3ObjectScript", "")
-                if type(created) != bool or not isinstance(script, str) or len(script) > 256:
+                if type(created) is not bool or not isinstance(script, str) or len(script) > 256:
                     raise ValueError("Invalid scenery object startup")
                 placement = {"position": pivot, "rotation": orientation, "created": created, "script": script}
                 if objects.setdefault(object_id, placement) != placement:
@@ -719,7 +720,11 @@ def compile_stage(source, destination):
                 continue
             visibility_group = extras.get("gh3VisibilityGroup", "")
             initially_visible = extras.get("gh3InitiallyVisible", True)
-            if not isinstance(visibility_group, str) or len(visibility_group) > 128 or type(initially_visible) != bool:
+            if (
+                not isinstance(visibility_group, str)
+                or len(visibility_group) > 128
+                or type(initially_visible) is not bool
+            ):
                 raise ValueError("Invalid scenery visibility group")
             if not initially_visible and not visibility_group:
                 raise ValueError("Hidden scenery needs a visibility group")
@@ -954,7 +959,7 @@ def compile_stage(source, destination):
             created = actor.get("created", True)
             if (
                 not all(isinstance(value, str) and len(value) <= 256 for value in (source_object, script))
-                or type(created) != bool
+                or type(created) is not bool
             ):
                 raise ValueError("Invalid actor script binding")
             if script and not source_object:
@@ -965,7 +970,7 @@ def compile_stage(source, destination):
             scale = vector(actor.get("scale", [1, 1, 1]))
             if any(value <= 0 for value in scale):
                 raise ValueError("Actor scale must be positive")
-            if not isinstance(role, str) or len(role) > 128 or type(visible) != bool:
+            if not isinstance(role, str) or len(role) > 128 or type(visible) is not bool:
                 raise ValueError("Invalid actor role or visibility")
             if not isinstance(actions, dict) or len(actions) > 256:
                 raise ValueError("Invalid actor actions")

@@ -118,7 +118,7 @@ PIXEL_ENGINE = {
 LIGHT_REGISTERS = {176, 177, 178, 179, 188, 189, 190, 191}
 
 
-class Unsupported(ValueError):
+class UnsupportedShaderError(ValueError):
     pass
 
 
@@ -154,7 +154,7 @@ def _float(token):
 
 def _literal(value):
     if value != value or value in (float("inf"), float("-inf")):
-        raise Unsupported("Non-finite shader literal")
+        raise UnsupportedShaderError("Non-finite shader literal")
     text = repr(float(value))
     return text if "e" in text or "." in text else text + ".0"
 
@@ -162,10 +162,10 @@ def _literal(value):
 class Program:
     def __init__(self, code, stage):
         if len(code) < 8 or code[-4:] != b"\xff\xff\0\0":
-            raise Unsupported("Missing shader program")
+            raise UnsupportedShaderError("Missing shader program")
         version = struct.unpack_from("<I", code)[0]
         if version != (0xFFFE0300 if stage == "vs" else 0xFFFF0300):
-            raise Unsupported(f"Unsupported {stage} version {version:08x}")
+            raise UnsupportedShaderError(f"Unsupported {stage} version {version:08x}")
         self.stage = stage
         self.inputs = {}  # v index -> (usage, usage index)
         self.outputs = {}  # o index -> (usage, usage index)
@@ -186,7 +186,7 @@ class Program:
                 continue
             name = OPCODES.get(opcode)
             if name is None:
-                raise Unsupported(f"Unsupported {stage} opcode {opcode}")
+                raise UnsupportedShaderError(f"Unsupported {stage} opcode {opcode}")
             self.body.append("    " + self._instruction(name, arguments))
 
     def _declare(self, arguments):
@@ -196,26 +196,26 @@ class Program:
         if kind == 10:
             sampler = SAMPLER_TYPES.get((arguments[0] >> 27) & 15)
             if sampler is None:
-                raise Unsupported("Unknown sampler type")
+                raise UnsupportedShaderError("Unknown sampler type")
             self.samplers[index] = sampler
         elif kind == 1:
             self.inputs[index] = (USAGES.get(usage, f"usage{usage}"), usage_index)
         elif kind == 6:
             self.outputs[index] = (USAGES.get(usage, f"usage{usage}"), usage_index)
         elif kind != 17:
-            raise Unsupported(f"Unsupported declaration register type {kind}")
+            raise UnsupportedShaderError(f"Unsupported declaration register type {kind}")
 
     def register(self, token):
         kind, index = gh3_materials._register(token)
         if token & (1 << 13):
-            raise Unsupported("Relative addressing is not supported")
+            raise UnsupportedShaderError("Relative addressing is not supported")
         if kind == 0:
             self.temps = max(self.temps, index + 1)
             return f"r{index}"
         if kind == 1:
             usage = self.inputs.get(index)
             if usage is None:
-                raise Unsupported(f"Undeclared input v{index}")
+                raise UnsupportedShaderError(f"Undeclared input v{index}")
             return f"v{index}"
         if kind == 2:
             if index in self.defs:
@@ -226,11 +226,11 @@ class Program:
             return f"o{index}"
         if kind == 8:
             if index != 0:
-                raise Unsupported("Multiple render targets are not supported")
+                raise UnsupportedShaderError("Multiple render targets are not supported")
             return "oC0"
         if kind == 17:
             return "vPos" if index == 0 else "vFace"
-        raise Unsupported(f"Unsupported register type {kind}")
+        raise UnsupportedShaderError(f"Unsupported register type {kind}")
 
     def source(self, token):
         name = self.register(token)
@@ -245,18 +245,18 @@ class Program:
             return f"abs({value})"
         if modifier == 12:
             return f"(-abs({value}))"
-        raise Unsupported(f"Unsupported source modifier {modifier}")
+        raise UnsupportedShaderError(f"Unsupported source modifier {modifier}")
 
     def destination(self, token):
         name = self.register(token)
         mask = "".join("xyzw"[i] for i in range(4) if token >> (16 + i) & 1)
         if (token >> 24) & 15:
-            raise Unsupported("Result shift is not supported")
+            raise UnsupportedShaderError("Result shift is not supported")
         return name, mask, bool(token >> 20 & 1)
 
     def _instruction(self, name, arguments):
         if name in ("ifc", "else", "endif"):
-            raise Unsupported("Dynamic branches are not supported")
+            raise UnsupportedShaderError("Dynamic branches are not supported")
         if name == "texkill":
             return f"if (any(lessThan({self.register(arguments[0])}.xyz, vec3(0.0)))) discard;"
         target, mask, saturate = self.destination(arguments[0])
@@ -265,7 +265,7 @@ class Program:
             sampler = gh3_materials._register(arguments[2])[1]
             kind = self.samplers.get(sampler)
             if kind == "volume":
-                raise Unsupported("Volume textures are not supported")
+                raise UnsupportedShaderError("Volume textures are not supported")
             if sampler >= len(SAMPLER_NAMES):
                 # s10–s15 are engine render targets (projected prop shadow, framebuffer); they sample as unshadowed white.
                 value = "vec4(1.0)"
@@ -323,13 +323,13 @@ class Program:
         elif name == "sincos":
             value = f"vec4(cos({s[0]}.x), sin({s[0]}.x), 0.0, 0.0)"
         else:
-            raise Unsupported(f"Unsupported instruction {name}")
+            raise UnsupportedShaderError(f"Unsupported instruction {name}")
         if saturate:
             value = f"clamp({value}, 0.0, 1.0)"
         if target.startswith("o") and target != "oC0" and target[1:].isdigit():
             usage = self.outputs.get(int(target[1:]))
             if usage is None:
-                raise Unsupported(f"Undeclared output {target}")
+                raise UnsupportedShaderError(f"Undeclared output {target}")
         if len(mask) == 4:
             return f"{target} = {value};"
         return f"{target}.{mask} = ({value}).{mask};"
@@ -351,7 +351,7 @@ def _input_expression(usage, index):
     # GH3 PC skins characters on the CPU: its vertex shaders read already-skinned streams and have no bone palette.
     # A palette (blend weights or indices) would need its own mapping, so it is reported instead of translated.
     if usage in ("blendweight", "blendindices"):
-        raise Unsupported(f"GPU skinning input {usage}{index} is not supported")
+        raise UnsupportedShaderError(f"GPU skinning input {usage}{index} is not supported")
     if usage == "color" and index == 0:
         return "in_COLOR0"
     if usage == "texcoord" and 0 <= index <= 5:
@@ -359,7 +359,7 @@ def _input_expression(usage, index):
     if usage in ("binormal", "tangent", "color", "texcoord"):
         # GH3 meshes for these templates carry no such stream; D3D supplies (0, 0, 0, 1).
         return "vec4(0.0, 0.0, 0.0, 1.0)"
-    raise Unsupported(f"Unsupported vertex input {usage}{index}")
+    raise UnsupportedShaderError(f"Unsupported vertex input {usage}{index}")
 
 
 def _varying(usage, index):
@@ -384,7 +384,7 @@ def translate(checksum):
         elif index < VERTEX_CONSTANTS:
             lines.append(f"    vec4 c{index} = _Gh3V{index};")
         else:
-            raise Unsupported(f"Unmapped vertex engine constant c{index}")
+            raise UnsupportedShaderError(f"Unmapped vertex engine constant c{index}")
     for index, (usage, usage_index) in sorted(vs.inputs.items()):
         lines.append(f"    vec4 v{index} = {_input_expression(usage, usage_index)};")
     if vs.temps:
@@ -395,7 +395,7 @@ def translate(checksum):
         if usage == "position" and usage_index == 0:
             position = index
     if position is None:
-        raise Unsupported("The vertex shader writes no position")
+        raise UnsupportedShaderError("The vertex shader writes no position")
     lines += vs.body
     lines.append(f"    gl_Position = o{position};")
     for index, (usage, usage_index) in sorted(vs.outputs.items()):
@@ -403,7 +403,7 @@ def translate(checksum):
         if varying:
             lines.append(f"    {varying} = o{index};")
         elif usage not in ("position", "fog", "psize"):
-            raise Unsupported(f"Unsupported vertex output {usage}{usage_index}")
+            raise UnsupportedShaderError(f"Unsupported vertex output {usage}{usage_index}")
     lines.append("}")
     vertex = "\n".join(lines)
 
@@ -418,11 +418,11 @@ def translate(checksum):
             # Scripts set the Pass0 material colour (m_psPass0MaterialColor) on the constant that tints sampler 0.
             lines.append(f"    vec4 c{index} = _Gh3P{index}" + (" * _Color;" if index == color else ";"))
         else:
-            raise Unsupported(f"Unmapped pixel engine constant c{index}")
+            raise UnsupportedShaderError(f"Unmapped pixel engine constant c{index}")
     for index, (usage, usage_index) in sorted(ps.inputs.items()):
         varying = _varying(usage, usage_index)
         if varying is None:
-            raise Unsupported(f"Unsupported pixel input {usage}{usage_index}")
+            raise UnsupportedShaderError(f"Unsupported pixel input {usage}{usage_index}")
         lines.append(f"    vec4 v{index} = {varying};")
     if ps.temps:
         lines.append("    vec4 " + ", ".join(f"r{i} = vec4(0.0)" for i in range(ps.temps)) + ";")
@@ -433,7 +433,7 @@ def translate(checksum):
     vertex_written = {_varying(*usage) for usage in vs.outputs.values()}
     missing = [_varying(*usage) for usage in ps.inputs.values() if _varying(*usage) not in vertex_written]
     if missing:
-        raise Unsupported(f"Pixel inputs not written by the vertex shader: {missing}")
+        raise UnsupportedShaderError(f"Pixel inputs not written by the vertex shader: {missing}")
     approximations = []
     if 119 in vs.constants:
         approximations.append("c119 wibble direction is GH3's default (zero)")
@@ -577,7 +577,7 @@ def uber(checksums):
             continue
         try:
             result = translate(checksum)
-        except Unsupported as error:
+        except UnsupportedShaderError as error:
             failures[checksum] = f"{library()[checksum][0]}: {error}"
             continue
         index = len(table) + 1
@@ -594,7 +594,7 @@ def uber(checksums):
         table[checksum]["_function"] = result["function"]
     vertex_switch = ["void gh3_vs_template(int index)", "{", "    switch (index)", "    {"]
     fragment_switch = ["vec4 gh3_ps_template(int index)", "{", "    switch (index)", "    {"]
-    for checksum, row in table.items():
+    for row in table.values():
         vertex_switch.append(f"        case {row['index']}: gh3_vs_{row['_function']}(); break;")
         fragment_switch.append(f"        case {row['index']}: return gh3_ps_{row['_function']}();")
     vertex_switch += ["        default: gl_Position = vec4(0.0); break;", "    }", "}"]

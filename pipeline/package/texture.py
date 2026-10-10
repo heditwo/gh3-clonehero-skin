@@ -658,6 +658,7 @@ def encode_png_image(png, rgba, linear=False):
 def png_rgba(png):
     """RGBA (H, W, 4) uint8 of a PNG file, top row first. Needs Pillow (the Blender add-on decodes with Blender)."""
     from io import BytesIO
+
     from PIL import Image
 
     return np.asarray(Image.open(BytesIO(png)).convert("RGBA"))

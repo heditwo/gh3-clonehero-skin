@@ -20,7 +20,6 @@ from io import BytesIO
 from pathlib import Path
 
 import numpy as np
-
 from PIL import Image
 
 from pipeline.package import q48, runtime, texture

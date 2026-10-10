@@ -1,7 +1,9 @@
 """All profiles, My Curse 240 s as in the game: head-relative hair motion before and after, and head capsule clearance."""
 
-import json, sys, numpy as np
-from hairlib import qmat, REPO, WORK
+import json
+
+import numpy as np
+from hairlib import REPO, WORK, qmat
 
 lib = json.load(open(str(REPO) + "/assets/libraries/gh3-characters-v1/characters.json"))
 B = WORK + "/bench/"
@@ -23,7 +25,7 @@ def analyse(path, hair):
             onhead.add(j["bone"])
     cap = hair["capsule"]
     a, b, r = np.array(cap["a"]), np.array(cap["b"]), cap["radius"]
-    devs, bands, clear, swing = [], [], [], []
+    devs, bands, clear, _swing = [], [], [], []
     for k, j in enumerate(hair["joints"]):
         R = qmat(P[:, 1 + k, 3:])
         o = P[:, 1 + k, :3]

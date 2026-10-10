@@ -279,7 +279,7 @@ def png_problem(data):
         return "PNG files must use 8 bits for each channel (or an 8-bit palette)"
     if interlace:
         return "PNG files must not be interlaced"
-    if not 1 <= min(size) or max(size) > MAX_TEXTURE:
+    if min(size) < 1 or max(size) > MAX_TEXTURE:
         return f"PNG size must be 1 to {MAX_TEXTURE} pixels"
     return None
 
@@ -778,9 +778,9 @@ class Validator:
                 )
 
     def check_script_files(self, name, scripts):
-        for texture, file in scripts.get("textures", {}).items():
+        for texture_name, file in scripts.get("textures", {}).items():
             if file not in self.source.set:
-                self.report.error(name, f"script texture '{texture}' file is missing: {file}")
+                self.report.error(name, f"script texture '{texture_name}' file is missing: {file}")
         for movie, file in scripts.get("movies", {}).items():
             if file not in self.source.set:
                 self.report.error(name, f"movie '{movie}' file is missing: {file}")

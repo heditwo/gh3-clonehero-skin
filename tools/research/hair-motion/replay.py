@@ -1,7 +1,9 @@
 """Compare GH3 hair (memory run) with the mod solver driven by the same head path.
 usage: replay.py <run> <profile> <gx> <gz> <bench out...>   (first call with 'head' as bench out to write head.bin)"""
 
-import sys, numpy as np
+import sys
+
+import numpy as np
 from hairlib import *
 
 run, pid, gx, gz = sys.argv[1], sys.argv[2], float(sys.argv[3]), float(sys.argv[4])

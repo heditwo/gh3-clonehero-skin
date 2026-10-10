@@ -1,4 +1,6 @@
-import dnfile, sys
+import sys
+
+import dnfile
 
 L, W = sys.argv[1:3]
 used = {

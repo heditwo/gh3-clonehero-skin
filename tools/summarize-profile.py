@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Summarize GH3_SKIN_PROFILE=1 log lines. Usage: summarize-profile.py <log>..."""
 
+import contextlib
 import re
 import statistics
 import sys
+from pathlib import Path
 
 LINE = re.compile(r"GH3 profile song (-?[\d.]+)s: (\d+) fps; gen0 (\d+); ms/frame (.*?); KB/frame (.*)$")
 
@@ -12,16 +14,14 @@ def pairs(text):
     result = {}
     for item in text.split(", "):
         name, _, value = item.rpartition(" ")
-        try:
+        with contextlib.suppress(ValueError):
             result[name] = float(value)
-        except ValueError:
-            pass
     return result
 
 
 def summarize(path):
     rows = []
-    for line in open(path, errors="ignore"):
+    for line in Path(path).read_text(errors="ignore").splitlines():
         match = LINE.search(line)
         if match and float(match[1]) > 2:
             rows.append((float(match[1]), int(match[2]), int(match[3]), pairs(match[4]), pairs(match[5])))

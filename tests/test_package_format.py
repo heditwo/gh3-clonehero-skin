@@ -135,7 +135,7 @@ def stage_glb(texture="#lightmap", fixture="beam-1"):
 
 def skinned_glb(offset=0.0, ibm_offset=0.0, scale_key=1.0, material=None):
     glb = GlbBuilder()
-    root = glb.node({"name": "bone-00000001", "translation": [0, 1, 0], "children": [1]})
+    glb.node({"name": "bone-00000001", "translation": [0, 1, 0], "children": [1]})
     glb.node({"name": "bone-00000002", "translation": [0, 0.5 + offset, 0]}, root=False)
     ibm = [
         np.linalg.inv(m).T.reshape(-1)

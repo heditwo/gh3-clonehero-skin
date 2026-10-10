@@ -2,7 +2,17 @@
 flock /tmp/opencode/gh3-original.lock flock /tmp/opencode/gh3-record.lock uv run --with numpy --with pefile python gh3_session.py <char> <out> <secs>
 Env: POS, FOV, BONE, ZONE (camera zone), CAM (1), LEVEL, SONG, DOWNS."""
 
-import ctypes, os, subprocess, sys, time, struct, json, threading, shutil, filecmp
+import ctypes
+import filecmp
+import json
+import os
+import shutil
+import struct
+import subprocess
+import sys
+import threading
+import time
+
 import numpy as np
 
 char, out, secs = sys.argv[1], sys.argv[2], float(sys.argv[3])

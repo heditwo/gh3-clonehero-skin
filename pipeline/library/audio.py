@@ -94,9 +94,11 @@ def convert(data, output):
             if not pcm or channels not in (1, 2):
                 raise ValueError("Invalid decoded stage sound")
             frames = len(pcm) // (2 * channels)
-            with (output / (name + ".pcm.gz")).open("wb") as file:
-                with gzip.GzipFile(fileobj=file, mode="wb", mtime=0) as compressed:
-                    compressed.write(pcm)
+            with (
+                (output / (name + ".pcm.gz")).open("wb") as file,
+                gzip.GzipFile(fileobj=file, mode="wb", mtime=0) as compressed,
+            ):
+                compressed.write(pcm)
             samples[name] = {
                 "rate": rate,
                 "channels": channels,

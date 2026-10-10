@@ -1,6 +1,8 @@
-import dnfile, sys
-from pathlib import Path
+import sys
 from collections import defaultdict
+from pathlib import Path
+
+import dnfile
 
 mod, d = sys.argv[1], Path(sys.argv[2])
 md = dnfile.dnPE(mod).net.mdtables

@@ -5,10 +5,8 @@ import pickle
 import sys
 from pathlib import Path
 
-import numpy as np
-
 sys.path.insert(0, str(Path(__file__).parent))
-from analyze import BINS, COMPRESSORS, ENCODINGS, percentile  # noqa: E402
+from analyze import COMPRESSORS, ENCODINGS, percentile  # noqa: E402
 
 out = Path(sys.argv[1])
 infos = json.loads((out / "clips.json").read_text())

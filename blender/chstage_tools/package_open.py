@@ -55,7 +55,8 @@ def packed_image(name, data):
 
 
 def remove_gh3_properties(data):
-    for key in [k for k in data.keys() if k.startswith("gh3")]:
+    # Blender ID data has keys() but cannot be iterated.
+    for key in [k for k in data.keys() if k.startswith("gh3")]:  # noqa: SIM118
         del data[key]
 
 

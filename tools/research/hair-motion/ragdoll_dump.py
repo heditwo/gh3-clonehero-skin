@@ -1,9 +1,11 @@
-import sys, pickle, struct, math
+import math
+import sys
+
 from hairlib import ragdolls
 
 sys.path.insert(0, ".")
-from pipeline.gh3.havok import Ragdoll
 from pipeline.gh3.formats import key
+from pipeline.gh3.havok import Ragdoll
 
 rags = ragdolls()
 names = {}

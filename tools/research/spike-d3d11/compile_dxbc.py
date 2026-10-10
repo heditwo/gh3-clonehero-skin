@@ -1,5 +1,7 @@
-import ctypes, re, sys, time
-from ctypes import wintypes
+import ctypes
+import re
+import sys
+import time
 
 d3d = ctypes.WinDLL(sys.argv[1] if len(sys.argv) > 1 and sys.argv[1].endswith(".dll") else "d3dcompiler_47.dll")
 

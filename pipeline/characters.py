@@ -28,7 +28,6 @@ import json
 import re
 import shutil
 import struct
-from hashlib import sha256
 from pathlib import Path
 
 import numpy as np
@@ -36,7 +35,7 @@ import numpy as np
 from pipeline.gh3 import scene
 from pipeline.gh3.band_formats import rotation, skeleton
 from pipeline.gh3.direction import Source, script
-from pipeline.gh3.formats import find_array, key, pak_entries
+from pipeline.gh3.formats import find_array, key
 from pipeline.gh3.hair_mesh import combine_hair
 from pipeline.gh3.mesh_cutout import trim_prop_cutouts
 from pipeline.paths import CHARACTERS, GH3_DATA, LIBRARY

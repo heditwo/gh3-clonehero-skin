@@ -57,7 +57,8 @@ print(
 lo, hi = 0x2457000, 0x6116760
 dump = tempfile.mktemp(suffix=".bin", dir=os.path.dirname(os.path.abspath(core)))
 gdb(f"dump binary memory {dump} {ga + lo:#x} {ga + hi:#x}")
-mem = open(dump, "rb").read()
+with open(dump, "rb") as f:
+    mem = f.read()
 os.remove(dump)
 with open(ga_path, "rb") as f:
     f.seek(lo)

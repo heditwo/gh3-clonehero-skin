@@ -1,5 +1,5 @@
-import sys
 from pathlib import Path
+
 import pipeline.render.shaders as s
 
 s.write_json = lambda *a, **k: None

@@ -1,7 +1,10 @@
 """Ringing of the hair (same head input): autocorrelation of the tip velocity in the head frame, chain end joints pooled.
 A springy hair rings: its autocorrelation has a strong second peak. Also the impulse response of a synthetic head turn."""
 
-import sys, json, numpy as np
+import json
+import sys
+
+import numpy as np
 from hairlib import *
 
 run, pid = sys.argv[1], sys.argv[2]

@@ -4,9 +4,12 @@ Writes {"colliders": [{"bone", "a", "b", "radius"}], "radius": {joint bone: radi
 capsules of the keyframed bodies (not the head: the bench keeps the head capsule) in the runtime frame of their bones,
 and for each hair joint the half thickness of its box."""
 
-import json, sys
+import json
+import sys
+
 import numpy as np
 from hairlib import Profile, S, key
+
 from pipeline.library.hair import body_shape
 
 pid, out = sys.argv[1], sys.argv[2]

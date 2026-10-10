@@ -415,9 +415,10 @@ def compare_glb(glb_a, source_a, glb_b, source_b):
             continue
         if "mesh" not in node_a:
             continue
-        material_names = lambda glb, prim: (
-            glb.list("materials")[prim["material"]].get("name") if "material" in prim else None
-        )
+
+        def material_names(glb, prim):
+            return glb.list("materials")[prim["material"]].get("name") if "material" in prim else None
+
         prims_a, prims_b = {}, {}
         for p in glb_a.list("meshes")[node_a["mesh"]]["primitives"]:
             prims_a.setdefault(material_names(glb_a, p), []).append(p)
@@ -514,7 +515,10 @@ def compare_packages(path_a, path_b):
         "json": {},
         "binary": {},
     }
-    strip = lambda manifest: {k: v for k, v in manifest.items() if k not in ("files", "preview")}
+
+    def strip(manifest):
+        return {k: v for k, v in manifest.items() if k not in ("files", "preview")}
+
     result["manifest"] = compare_json(strip(manifest_a), strip(manifest_b))
     model_a, model_b = manifest_a["entry"]["model"], manifest_b["entry"]["model"]
     for name in sorted(a.set & b.set):

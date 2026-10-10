@@ -12,7 +12,6 @@ import sys
 from pathlib import Path
 
 import dnfile
-
 from interop_compare import mod_references
 
 

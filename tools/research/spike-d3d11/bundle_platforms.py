@@ -1,4 +1,6 @@
-import sys, UnityPy, struct
+import sys
+
+import UnityPy
 from UnityPy.enums import ShaderCompilerPlatform, ShaderGpuProgramType
 
 for path in sys.argv[1:]:

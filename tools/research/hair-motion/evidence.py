@@ -1,7 +1,9 @@
 """Table and plot: GH3 vs mod before vs mod after, same head path from the GH3 memory recordings."""
 
-import sys, json, numpy as np
+import json
+
 import matplotlib
+import numpy as np
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt

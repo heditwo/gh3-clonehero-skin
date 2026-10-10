@@ -523,7 +523,7 @@ broken.modifiers.new("Armature", "ARMATURE").object = rig
 broken.location = (0.5, 0, 1)
 group = broken.vertex_groups.new(name=names[2])
 group.add([0, 1, 2], 1.0, "REPLACE")
-for index, name in enumerate(names[3:8]):
+for name in names[3:8]:
     broken.vertex_groups.new(name=name).add([3], 0.2, "REPLACE")
 # A toon shader node group, as MMD and VRM importers make: the glTF exporter writes the material without its texture.
 toon = bpy.data.materials.new("toon_shader")
@@ -1184,7 +1184,7 @@ with bpy.context.temp_override(
 ):
     bpy.ops.object.mode_set(mode="EDIT")
     random = np.random.default_rng(7)
-    for name, (gh3, parent) in joints.items():
+    for name in joints:
         bone = armature.edit_bones.new(name)
         bone.head = heads[name]
         children = [heads[n] for n, (_, p) in joints.items() if p == name]

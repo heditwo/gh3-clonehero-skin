@@ -14,12 +14,12 @@ bytes, open file count of the game process), and run.json. Run it under the reco
 """
 
 import argparse
+import contextlib
 import json
 import os
 import re
 import signal
 import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -61,10 +61,8 @@ def stop_all():
     # MelonLoader leaves a second clonehero process; stop every process of this game folder on this display.
     for sig in (signal.SIGTERM, signal.SIGKILL):
         for pid in list(game_processes()):
-            try:
+            with contextlib.suppress(OSError):
                 os.kill(pid, sig)
-            except OSError:
-                pass
         time.sleep(0.5)
 
 
@@ -100,8 +98,7 @@ try:
             f"hl.dsp.window.move({{ x = 3840, y = 90, window = 'address:{address}' }})",
         ):
             subprocess.run(["hyprctl", "-i", instance, "dispatch", command], capture_output=True)
-    from Xlib import X, XK, display as xdisplay
-    from Xlib import protocol
+    from Xlib import XK, X, display as xdisplay, protocol
 
     log_path.write_text("")
     env = {
@@ -125,7 +122,7 @@ try:
     started = time.time()
     game_process = subprocess.Popen(command, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     x = xdisplay.Display(display)
-    samples = open(out / "samples.csv", "w")
+    samples = open(out / "samples.csv", "w")  # noqa: SIM115 - written during the whole run, closed after it
     samples.write("seconds,rss_mb,peak_mb,read_calls,read_mb,open_files\n")
     seen = 0
     events = []
@@ -246,10 +243,8 @@ try:
 finally:
     stop_all()
     if game_process:
-        try:
+        with contextlib.suppress(subprocess.TimeoutExpired):
             game_process.wait(5)
-        except subprocess.TimeoutExpired:
-            pass
     xwayland.terminate()
     xwayland.wait()
     if log_path.exists():

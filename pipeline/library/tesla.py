@@ -14,7 +14,7 @@ from pipeline.stagepack.pack import load_json, write_json
 def convert(data, output):
     entries = Source(data).load("ZONES/global.pak.xen")
     materials = []
-    for kind, name, blob in entries:
+    for kind, _name, blob in entries:
         if kind != key(".scn"):
             continue
         material = scene.scene(blob)[0].get("01488227")
@@ -23,7 +23,7 @@ def convert(data, output):
     if len(materials) != 1 or materials[0]["template"] != "d7287426" or materials[0]["textures"] != ["e936482c"]:
         raise ValueError("The source Tesla material is unknown")
     images = []
-    for kind, name, blob in entries:
+    for kind, _name, blob in entries:
         if kind != key(".tex"):
             continue
         for index in range(values(blob, 6, "H")[0]):

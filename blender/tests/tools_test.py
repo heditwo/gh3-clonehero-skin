@@ -322,7 +322,10 @@ def cameras(check, tools, scene, output):
     rigged = output / "rigs" / "rig.chstage"
     _, issues_rig = export_function(scene, rigged)
     offsets = [json.loads(read(p, "cameras.json"))["shots"]["guitar"]["points"][0] for p in (first, rigged)]
-    warnings = lambda issues: [m for s, m, o in issues if s == "WARNING" and o == "guitar"]
+
+    def warnings(issues):
+        return [m for s, m, o in issues if s == "WARNING" and o == "guitar"]
+
     moved = (guitar.matrix_world.translation - before.translation).length
     check(
         "proxy rig: bone anchor follows the rig bone and keeps its offset",
@@ -377,7 +380,10 @@ def groups(check, tools, scene, output):
     ]
     check("groups: hidden objects are still exported", "right" in names, names)
     scene.chstage.light_group_overlay = True
-    same = lambda obj, group: max(abs(a - b) for a, b in zip(obj.color, gt.group_color(group))) < 1e-6
+
+    def same(obj, group):
+        return max(abs(a - b) for a, b in zip(obj.color, gt.group_color(group))) < 1e-6
+
     check(
         "light group overlay: object colors by group",
         same(scene.objects["backdrop"], "Band")

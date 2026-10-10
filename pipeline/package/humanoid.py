@@ -164,7 +164,7 @@ def _mirror_plane(sk):
                 candidates.append((normal, point, min(na, nb) * extent))
     if not candidates:
         return None, None
-    best, best_mass, best_group = None, -1.0, []
+    best_mass, best_group = -1.0, []
     for normal, point, _ in candidates:
         group = [
             (n2 * np.sign(np.dot(n2, normal)), p2, m2)
@@ -595,9 +595,11 @@ def find(names, parents, heads, tails=None, weights=None, points=None):
         after = chain[k + 1 :]
         if not after and sk.kids[chain[k]]:
             # The foot ends where two children start (heel and toes): the toes are the child farthest out.
-            flat = lambda x: np.linalg.norm(
-                (sk.heads[x] - sk.heads[chain[k]]) - up * np.dot(sk.heads[x] - sk.heads[chain[k]], up)
-            )
+            def flat(x):
+                return np.linalg.norm(
+                    (sk.heads[x] - sk.heads[chain[k]]) - up * np.dot(sk.heads[x] - sk.heads[chain[k]], up)
+                )
+
             best = max(sk.kids[chain[k]], key=flat)
             if flat(best) > 0.01 * sk.size:
                 after = [best]
@@ -675,7 +677,10 @@ def find(names, parents, heads, tails=None, weights=None, points=None):
         )
     forward = _snap(forward)
     left = _unit(np.cross(up, forward))
-    side_of = lambda bone: "left" if np.dot(sk.heads[bone] - point, left) > 0 else "right"
+
+    def side_of(bone):
+        return "left" if np.dot(sk.heads[bone] - point, left) > 0 else "right"
+
     mismatch, match = 0, 0
     for row in leg_rows:
         if row is None:
@@ -830,9 +835,10 @@ def find(names, parents, heads, tails=None, weights=None, points=None):
                 continue
             hinted = hint_roles.get(a, "").endswith("Eye")
             front = np.dot(sk.heads[a] - sk.heads[head], forward) + (1 if hinted else 0)
-            if hinted or "eye" in _normalized(names[a]) or "目" in names[a]:
-                if best_eyes is None or front > best_eyes[0]:
-                    best_eyes = (front, a, b)
+            if (hinted or "eye" in _normalized(names[a]) or "目" in names[a]) and (
+                best_eyes is None or front > best_eyes[0]
+            ):
+                best_eyes = (front, a, b)
         if best_eyes is not None:
             for bone in best_eyes[1:]:
                 put(side_of(bone) + "Eye", bone, 0.7)

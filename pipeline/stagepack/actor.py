@@ -46,7 +46,7 @@ def compile_actor(path, folder, material_import, mesh_write, mesh_split, root=No
         raise ValueError("Actor inverse bind count differs")
     materials, material_ids, images = material_import(glb, folder)
     meshes = []
-    for index, node, matrix in nodes:
+    for _index, node, matrix in nodes:
         if "mesh" not in node:
             continue
         if node.get("skin") != 0:

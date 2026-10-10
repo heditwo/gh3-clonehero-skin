@@ -516,7 +516,7 @@ class CHSTAGE_PT_scripts(SidebarPanel, Panel):
             if item.objects:
                 box.label(text=f"Blender: {item.objects}", icon="OBJECT_DATA")
                 box.operator("chstage.script_jump", icon="RESTRICT_SELECT_OFF").index = props.script_rows_index
-            for path, label, kind, value, editable in scripts_ui.node_rows(scene, item.node_id):
+            for path, label, _kind, value, editable in scripts_ui.node_rows(scene, item.node_id):
                 row = box.row(align=True)
                 row.label(text=label)
                 row.label(text=value)

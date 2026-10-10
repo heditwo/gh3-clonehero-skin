@@ -11,7 +11,6 @@ import math
 import pickle
 import struct
 import sys
-import zlib
 from multiprocessing import Pool
 from pathlib import Path
 

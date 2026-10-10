@@ -98,7 +98,6 @@ def package_panel():
 
 
 def issues():
-    rig = scene().chstage.character.rig
     body = next(o for o in scene().objects if o.name.startswith("TestBody"))
     body.location.x += 0.3
     group = body.vertex_groups[0]

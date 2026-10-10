@@ -1,7 +1,10 @@
 """Drive GH3 from boot to the quickplay setlist by screen matching, then press Down N times.
 Usage: DISPLAY=:9310 nav.py <out-dir> <downs>"""
 
-import os, subprocess, sys, time
+import os
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 import numpy as np

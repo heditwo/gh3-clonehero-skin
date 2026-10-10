@@ -1065,7 +1065,9 @@ COLORS = {"sure": (0.2, 0.9, 0.3, 1.0), "check": (1.0, 0.8, 0.1, 1.0), "low": (1
 
 
 def _links(mapping):
-    has = lambda r: r in mapping
+    def has(r):
+        return r in mapping
+
     for role in mapping:
         following = skeleton.next_role(role, has)
         if following is not None and following in mapping:
@@ -1112,7 +1114,7 @@ def _draw_map():
             tuple(world @ rig.pose.bones[mapping[a]].head),
             tuple(world @ rig.pose.bones[mapping[b]].head),
         ]
-    for role, row in rows.items():
+    for row in rows.values():
         points[key(row.confidence)].append(tuple(world @ rig.pose.bones[row.bone].head))
     shader = gpu.shader.from_builtin("UNIFORM_COLOR")
     gpu.state.depth_test_set("NONE")

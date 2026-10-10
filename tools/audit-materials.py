@@ -97,7 +97,7 @@ def main():
     print("total      " + ", ".join(f"{n} {path}" for path, n in sorted(total.items())))
     used = Counter(row["template"] for row in rows if row["path"] == "template")
     print("templates  " + ", ".join(f"{name} {n}" for name, n in used.most_common()))
-    for checksum, row in templates["templates"].items():
+    for _checksum, row in templates["templates"].items():
         for note in row.get("approximations", []):
             print(f"approximation: {row['name']}: {note}")
     fallbacks = [row for row in rows if row["path"].startswith("fallback")]

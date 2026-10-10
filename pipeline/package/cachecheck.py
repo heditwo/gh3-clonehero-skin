@@ -18,7 +18,6 @@ import argparse
 import gzip
 import json
 import math
-import struct
 import zipfile
 from io import BytesIO
 from pathlib import Path

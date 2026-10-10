@@ -4,6 +4,7 @@ Run in /tmp/opencode/spike-skinned: uv run --with pillow --with numpy python <re
 """
 
 import sys
+
 import numpy as np
 from PIL import Image
 

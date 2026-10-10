@@ -3,7 +3,9 @@ usage: body_path.py <run> <profile> <gx> <gz> <out.bin>
 Writes int32 bone count B, B int32 rig indices, then rows of float32 t and, for each bone, x, y, z, qx, qy, qz, qw in runtime
 coordinates (the order of the rig indices)."""
 
-import json, sys
+import json
+import sys
+
 import numpy as np
 from hairlib import Profile, S, key, matq
 

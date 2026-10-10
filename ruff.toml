@@ -23,18 +23,23 @@ ignore = [
     "N806",   # matrix and vector names (M, R, T) follow the math
     "N803",
     "SIM108", # a ternary is not always clearer than an if/else block
+    "B023",   # closures in loops run inside the same iteration
+    "SIM905", # a split() word list reads better than a long list of strings
 ]
 
 [lint.per-file-ignores]
 # Blender requires the CATEGORY_OT_name class names of operators, panels, and menus.
 "blender/chstage_tools/*.py" = ["N801"]
 "blender/tests/*.py" = ["N801"]
+# Finished investigations, kept as evidence (tools/research/README.md): only the error rules apply.
+"tools/research/**" = ["C901", "N", "SIM", "UP031", "F403", "F405", "B007", "E731"]
 
 [lint.mccabe]
 max-complexity = 20
 
 [lint.isort]
 known-first-party = ["pipeline"]
+combine-as-imports = true
 
 [format]
 line-ending = "lf"

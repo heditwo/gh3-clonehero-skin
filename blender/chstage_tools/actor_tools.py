@@ -481,9 +481,8 @@ def export_model(scene, root, issues):
             path = Path(folder) / "actor.glb"
             # NLA_TRACKS: one animation for each NLA track (Open puts each clip on a track with its name). The ACTIONS
             # mode also exports the actions of other actors with the same bone names.
-            with clips_on_tracks(objects):
-                with bpy.context.temp_override(scene=scene, view_layer=view_layer):
-                    gltf_io.export_glb(path, fps=props.fps, export_animation_mode="NLA_TRACKS", **ACTOR_EXPORT)
+            with clips_on_tracks(objects), bpy.context.temp_override(scene=scene, view_layer=view_layer):
+                gltf_io.export_glb(path, fps=props.fps, export_animation_mode="NLA_TRACKS", **ACTOR_EXPORT)
             data = path.read_bytes()
     finally:
         root.matrix_world = saved_matrix
