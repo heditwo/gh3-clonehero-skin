@@ -9,7 +9,7 @@
     "format": {
       "description": "Package kind and format version: <kind>/<major>.<minor>.",
       "type": "string",
-      "pattern": "^(chstage|chchar|chlib)/1\\.(0|[1-9][0-9]{0,3})$"
+      "pattern": "^(chstage|chchar|chinst|chlib)/1\\.(0|[1-9][0-9]{0,3})$"
     },
     "id": { "$ref": "common.schema.json#/$defs/packageId" },
     "version": { "$ref": "common.schema.json#/$defs/semver" },
@@ -118,6 +118,21 @@
             "properties": {
               "model": { "$ref": "common.schema.json#/$defs/glbPath" },
               "character": { "$ref": "common.schema.json#/$defs/jsonPath" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "format": { "pattern": "^chinst/" } } },
+      "then": {
+        "properties": {
+          "entry": {
+            "additionalProperties": false,
+            "required": ["model", "instrument"],
+            "properties": {
+              "model": { "$ref": "common.schema.json#/$defs/glbPath" },
+              "instrument": { "$ref": "common.schema.json#/$defs/jsonPath" }
             }
           }
         }

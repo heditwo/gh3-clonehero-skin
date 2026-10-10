@@ -1,6 +1,8 @@
 """Validate a package (zip or unpacked folder) against package format v1 (docs/PACKAGE-FORMAT.md).
 
 Usage: python -m pipeline.package.validate PACKAGE [--library FOLDER] [--character-library PACKAGE] [--json]
+
+The kinds: venue (.chstage), character (.chchar), instrument (.chinst), and library (.chlib).
 """
 
 import argparse
@@ -22,14 +24,16 @@ from . import q48
 from .glb import Glb, GlbError, decompose, quaternion_angle
 from .schema import Schemas
 
-FORMAT_MINOR = {"chstage": 0, "chchar": 1, "chlib": 1}
-EXTENSIONS = {".chstage": "chstage", ".chchar": "chchar", ".chlib": "chlib"}
+FORMAT_MINOR = {"chstage": 0, "chchar": 1, "chinst": 0, "chlib": 1}
+EXTENSIONS = {".chstage": "chstage", ".chchar": "chchar", ".chinst": "chinst", ".chlib": "chlib"}
 STORED = {".glb", ".png", ".br", ".ogg", ".mp3", ".opus"}
 DEFLATED = {".json", ".wav"}
 WINDOWS_RESERVED = re.compile(r"^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$", re.IGNORECASE)
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 PROFILE_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 PROFILES = {"gh3-guitarist-axel-v1": "guitarist", "gh3-bassist-v1": "bassist", "gh3-singer-male-v1": "singer", "gh3-drummer-v1": "drummer"}
+# GH3 draws the highway texture 512 x 1024 (one repeat is 1024 rows); other sizes stretch.
+HIGHWAY_SIZE = (512, 1024)
 LIBRARY_ID = "gh3-band-v1"
 CHARACTER_LIBRARY_ID = "gh3-characters-v1"
 LIBRARY_SCHEMAS = {"catalog": "catalog.schema.json", "band": "band.schema.json", "performance": "performance.schema.json",
@@ -220,7 +224,7 @@ class Validator:
         if suffix in EXTENSIONS and EXTENSIONS[suffix] != self.kind:
             self.report.error("manifest.json", f"format {self.kind} does not match the file extension {suffix}")
         elif suffix not in EXTENSIONS and self.source.zip is not None:
-            self.report.error(self.source.path.name, "a package file must use the extension .chstage, .chchar, or .chlib")
+            self.report.error(self.source.path.name, "a package file must use the extension .chstage, .chchar, .chinst, or .chlib")
         self.check_files()
         for key, name in manifest["entry"].items():
             if name not in self.source.set: self.report.error("manifest.json", f"entry '{key}' refers to a missing file: {name}")
@@ -229,10 +233,10 @@ class Validator:
             if name.lower().endswith(".png") and name != manifest.get("preview"):
                 problem = png_problem(self.source.read(name))
                 if problem: self.report.error(name, problem)
-        if self.kind in ("chstage", "chchar") and not any(r["id"] == LIBRARY_ID for r in manifest.get("requires", [])):
+        if self.kind in ("chstage", "chchar", "chinst") and not any(r["id"] == LIBRARY_ID for r in manifest.get("requires", [])):
             self.report.warn("manifest.json", f"'requires' does not list the band library {LIBRARY_ID}")
         if any(name not in self.source.set for name in manifest["entry"].values()): return self.report
-        {"chstage": self.check_stage, "chchar": self.check_character, "chlib": self.check_library}[self.kind]()
+        {"chstage": self.check_stage, "chchar": self.check_character, "chinst": self.check_instrument, "chlib": self.check_library}[self.kind]()
         return self.report
 
     def check_files(self):
@@ -533,6 +537,7 @@ class Validator:
                     own = character_profile(library, character["profile"])
                     if "animations" in character and character["animations"] not in library["animations"]:
                         self.report.error(entry["character"], f"library {character['library']} has no animation set '{character['animations']}'")
+        if "highway" in character: self.check_highway(entry["character"], character["highway"])
         materials = {m.get("name") for m in glb.list("materials")}
         for material in character.get("hairMaterials", []):
             if material not in materials: self.report.error(entry["character"], f"hair material '{material}' is not in the GLB")
@@ -569,6 +574,60 @@ class Validator:
         if instrument and known and instrument not in known:
             self.report.warn(entry["character"], f"attachments.instrument '{instrument}' is not a library instrument ({', '.join(sorted(known))}); "
                              "the game uses the instrument of the band role")
+
+    def check_highway(self, where, name):
+        if name not in self.source.set: self.report.error(where, f"highway file is missing: {name}"); return
+        size = png_size(self.source.read(name))
+        if size is not None and size != HIGHWAY_SIZE:
+            self.report.warn(name, f"the highway is {size[0]} x {size[1]} pixels; GH3 highways are {HIGHWAY_SIZE[0]} x {HIGHWAY_SIZE[1]} (other sizes stretch)")
+
+    # Instrument.
+    def check_instrument(self):
+        entry = self.manifest["entry"]
+        instrument = self.json_entry("instrument", "instrument.schema.json")
+        glb = self.check_glb(entry["model"], skinned=True)
+        if instrument is None or glb is None: return
+        if "highway" in instrument: self.check_highway(entry["instrument"], instrument["highway"])
+        if glb.list("animations"): self.report.warn(entry["model"], "instrument animations are ignored")
+        skin = self.check_skin(entry["model"], glb)
+        if skin is None: return
+        joints, worlds, joint_parents, parents, cache = skin
+        names = self.joint_names(entry["model"], glb, joints)
+        if names is None: return
+        # As BandAttachments: the body is the subtree of the parent of bone_pelvis; an instrument follows the other joints.
+        pelvis = names.index(f"{gh3_key('bone_pelvis'):08x}") if f"{gh3_key('bone_pelvis'):08x}" in names else -1
+        root = joint_parents[pelvis] if pelvis >= 0 and joint_parents[pelvis] >= 0 else -1
+        body, stack = set(), [root] if root >= 0 else []
+        while stack:
+            joint = stack.pop()
+            if joint in body: continue
+            body.add(joint)
+            stack.extend(i for i, p in enumerate(joint_parents) if p == joint)
+        for mesh_index, mesh in enumerate(glb.list("meshes")):
+            for index, primitive in enumerate(mesh.get("primitives", [])):
+                attributes = primitive.get("attributes", {})
+                if "JOINTS_0" not in attributes or "WEIGHTS_0" not in attributes: continue
+                dominant = glb.accessor(attributes["JOINTS_0"]).astype(int)
+                dominant = dominant[np.arange(len(dominant)), glb.accessor(attributes["WEIGHTS_0"]).argmax(1)]
+                if np.mean([j in body for j in dominant]) >= 0.5:
+                    self.report.error(entry["model"], f"mesh {mesh_index} primitive {index} follows the body joints; weight the instrument to bone_guitar_body")
+        if self.library is None:
+            self.report.warn(entry["model"], "joints are not checked against the profile (no --library)"); return
+        try:
+            profile = load_profile(self.library, PROFILES[instrument["profile"]])
+        except (OSError, ValueError) as error:
+            self.report.error("--library", f"cannot read the profile rig: {error}"); return
+        self.check_profile(entry["model"], glb, joints, names, joint_parents, profile)
+
+    def joint_names(self, name, glb, joints):
+        """GH3 checksums of the joints ('bone-<checksum>' or a GH3 bone name), or None after an error."""
+        names = []
+        for joint in joints:
+            label = glb.list("nodes")[joint].get("name", "")
+            match = re.fullmatch(r"bone-([0-9a-f]{8})", label)
+            names.append(match.group(1) if match else f"{gh3_key(label):08x}" if label else "")
+        if "" in names or len(set(names)) != len(names): self.report.error(name, "joint names must be unique GH3 bone names"); return None
+        return names
 
     def check_profile(self, name, glb, joints, names, joint_parents, profile):
         profile_names, profile_parents, translations, rotations = profile

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.gh3skin.invalid/v1/instrument.schema.json",
+  "title": "Instrument description (instrument.json)",
+  "description": "A guitar or a bass that the guitarist or the bassist can hold. The GLB is skinned to a fixed GH3 rig profile of the band library; the game binds it to the rest pose of the band member that holds it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "library", "profile", "kind"],
+  "properties": {
+    "version": { "const": 1 },
+    "library": { "const": "gh3-band-v1" },
+    "profile": {
+      "description": "The rig profile of the GLB joints.",
+      "enum": ["gh3-guitarist-axel-v1", "gh3-bassist-v1"]
+    },
+    "kind": {
+      "description": "guitar: the guitarist can select it. bass: the bassist can select it.",
+      "enum": ["guitar", "bass"]
+    },
+    "highway": {
+      "description": "Package path of a highway image (PNG; GH3 uses 512 x 1024). When the player selects the instrument for the player's role, the highway uses this image. Absent: the highway of the character (GH3).",
+      "$ref": "common.schema.json#/$defs/pngPath"
+    },
+    "brand": { "$ref": "#/$defs/label" },
+    "model": { "$ref": "#/$defs/label" },
+    "series": { "$ref": "#/$defs/label" },
+    "finish": { "$ref": "#/$defs/label" }
+  },
+  "$defs": {
+    "label": { "type": "string", "minLength": 1, "maxLength": 64 }
+  }
+}

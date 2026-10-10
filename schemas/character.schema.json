@@ -26,6 +26,10 @@
       "uniqueItems": true,
       "items": { "$ref": "common.schema.json#/$defs/name" }
     },
+    "highway": {
+      "description": "Package path of the highway image of the character (PNG; GH3 uses 512 x 1024). The player's highway uses it when the character plays the player's role, as GH3 create_guitarist does. Absent: the default highway.",
+      "$ref": "common.schema.json#/$defs/pngPath"
+    },
     "attachments": {
       "description": "Attachment slot to a library instrument ID (band/band.json member instrument). An absent slot uses the default. The instrument follows the band role that the character plays.",
       "type": "object",

@@ -23,7 +23,7 @@ epoch="$(git -C "$project_dir" show -s --format=%ct "$commit")"
 
 # Generated inputs (not in Git): the packages and the shader bundles of the render step (docs/PIPELINE.md).
 shopt -s nullglob
-packages=("$project_dir/assets/packages/"*.chstage "$project_dir/assets/packages/"*.chlib "$project_dir/assets/packages/"gh3.*.chchar)
+packages=("$project_dir/assets/packages/"*.chstage "$project_dir/assets/packages/"*.chlib "$project_dir/assets/packages/"gh3.*.chchar "$project_dir/assets/packages/"gh3.*.chinst)
 render="$project_dir/assets/libraries/gh3-band-v1/render"
 render_files=("$render/"*.bundle "$render/stage-templates.json")
 shopt -u nullglob
@@ -81,7 +81,7 @@ with zipfile.ZipFile(target, "w") as archive:
         info.create_system = 3
         info.external_attr = (0o100755 if path.suffix == ".sh" else 0o100644) << 16
         # Packages are zip files already; a second compression saves almost nothing.
-        info.compress_type = zipfile.ZIP_STORED if path.suffix in (".chstage", ".chlib", ".chchar") else zipfile.ZIP_DEFLATED
+        info.compress_type = zipfile.ZIP_STORED if path.suffix in (".chstage", ".chlib", ".chchar", ".chinst") else zipfile.ZIP_DEFLATED
         info.file_size = path.stat().st_size
         with path.open("rb") as source, archive.open(info, "w", force_zip64=info.file_size > 0x7fffffff) as sink:
             shutil.copyfileobj(source, sink, 1 << 20)

@@ -4,8 +4,8 @@ Each package is written two times: as an unpacked development folder (`<output>/
 (`<output>/<name>`). The output is reproducible: sorted zip entries, fixed times and attributes, and stable JSON.
 
 Usage: python -m pipeline.package.build [--packs DIR] [--library DIR] [--character-library DIR] [--events DIR]
-                                        [--characters DIR] [--output DIR] [--venue ID ...] [--no-venues] [--no-library]
-                                        [--no-character-library] [--no-characters] [--jobs N]
+                                        [--characters DIR] [--instruments DIR] [--output DIR] [--venue ID ...] [--no-venues]
+                                        [--no-library] [--no-character-library] [--no-characters] [--no-instruments] [--jobs N]
 """
 
 import argparse
@@ -22,7 +22,7 @@ import numpy as np
 from pipeline.package import decisions, q48, runtime
 from pipeline.package.container import file_list, json_bytes, write_zip
 from pipeline.package.glb import Glb
-from pipeline.paths import CHARACTER_LIBRARY, CHARACTERS, LIBRARY, PACKAGES, STAGE_PACKS, STAGES
+from pipeline.paths import CHARACTER_LIBRARY, CHARACTERS, INSTRUMENTS, LIBRARY, PACKAGES, STAGE_PACKS, STAGES
 from pipeline.stagepack.gltf import GlbWriter
 
 OUTPUT = PACKAGES
@@ -300,14 +300,28 @@ def character_glb(folder, library, profile, character_library=CHARACTER_LIBRARY,
     return skinned_model(folder, bones, names, (parents, bind, start), name="character")
 
 
-def build_character(folder, library, output, character_library=CHARACTER_LIBRARY):
+def character_highway(info, instruments):
+    """The GH3 highway of a guitarist character (pipeline.instruments: one image for each GH3 profile name), or None."""
+    path = Path(instruments)/"inventory.json"
+    if info.get("role") != "guitarist" or not path.is_file(): return None
+    row = json.loads(path.read_text())["highways"].get(info.get("profileName"))
+    return Path(instruments)/row["file"] if row else None
+
+
+def build_character(folder, library, output, character_library=CHARACTER_LIBRARY, instruments=INSTRUMENTS):
     folder, library, character_library = Path(folder), Path(library), Path(character_library)
     info = json.loads((folder/"character.json").read_text())
     library_id = profile_rig(info["profile"], library, character_library)[0]
     name = info["id"] + ".chchar"
     writer = PackageWriter(output/"unpacked"/("." + name + ".tmp"))
     writer.add_bytes("character.glb", character_glb(folder, library, info["profile"], character_library))
-    writer.add_json("character.json", {"version": 1, "library": library_id, "profile": info["profile"]})
+    character = {"version": 1, "library": library_id, "profile": info["profile"]}
+    highway = character_highway(info, instruments)
+    if highway is not None:
+        # GH3 create_guitarist: the player's highway is the highway of the character (sys_<profile name>_1_highway).
+        writer.add_file("highway.png", highway)
+        character["highway"] = "highway.png"
+    writer.add_json("character.json", character)
     credits = [decisions.CONVERTER_CREDIT, f"GH3 model {info['model']}" + (f", instrument {info['instrumentModel']}" if info["instrumentInModel"] else "") + "."]
     description = f"{info['name']}, as GH3 offers it ({info['unlock']})." + (f" Instrument: {info['instrumentName']}." if info["instrumentInModel"] else "")
     requires = [{"id": "gh3-band-v1", "version": decisions.LIBRARY_VERSION}]
@@ -317,6 +331,42 @@ def build_character(folder, library, output, character_library=CHARACTER_LIBRARY
                 "permissions": decisions.GH3_PERMISSIONS, "credits": credits, "requires": requires,
                 "entry": {"model": "character.glb", "character": "character.json"}}
     if library_id != "gh3-band-v1": manifest["minModVersion"] = decisions.FORMAT_1_1_MOD_VERSION
+    writer.finish(manifest)
+    return publish(writer, output, name)
+
+
+# GH3 instruments (pipeline.instruments).
+INSTRUMENT_PROFILES = {"gh3-guitarist-axel-v1": "guitarist", "gh3-bassist-v1": "bassist"}
+STORE_LABELS = {"Free_Guitars": "a start guitar", "Bonus_Guitars": "a store guitar", "Bonus_Guitar_Finishes": "a store guitar finish",
+                "Secret_Guitars": "a secret store guitar", "Free_Basses": "the start bass", "Bonus_Basses": "a store bass",
+                "Bonus_Bass_Finishes": "a store bass finish", "Secret_Basses": "a secret store bass", "none": "not in the store"}
+
+
+def instrument_glb(folder, library, profile):
+    """The instrument GLB of an exported GH3 instrument, bound to the rig of a fixed band library profile."""
+    role = INSTRUMENT_PROFILES[profile]
+    parents, bind, _ = runtime.read_animation((library/"band"/role/"animation.bin").read_bytes())
+    bones = json.loads((library/"direction/performance.json").read_text())["members"][role]["bones"]
+    return skinned_model(folder, bones, (), (parents, bind, []), name="instrument")
+
+
+def build_instrument(folder, library, output):
+    folder, library = Path(folder), Path(library)
+    info = json.loads((folder/"instrument.json").read_text())
+    name = info["id"] + ".chinst"
+    writer = PackageWriter(output/"unpacked"/("." + name + ".tmp"))
+    writer.add_bytes("instrument.glb", instrument_glb(folder, library, info["profile"]))
+    instrument = {"version": 1, "library": "gh3-band-v1", "profile": info["profile"], "kind": info["kind"]}
+    for field in ("brand", "model", "series", "finish"):
+        if info[field]: instrument[field] = info[field]
+    writer.add_json("instrument.json", instrument)
+    offer = STORE_LABELS[info["store"]] + (f" for ${info['price']:,}" if info["price"] else "")
+    description = (info["description"] + "\n\n" if info["description"] else "") + f"GH3 offers it as {offer}."
+    manifest = {"format": "chinst/1.0", "id": info["id"], "version": decisions.PACKAGE_VERSION, "name": info["name"],
+                "description": description[:4000], "authors": decisions.GH3_INSTRUMENT_AUTHORS, "license": decisions.GH3_LICENSE,
+                "permissions": decisions.GH3_PERMISSIONS, "credits": [decisions.CONVERTER_CREDIT, f"GH3 instrument {info['descName']} ({info['pak']})."],
+                "requires": [{"id": "gh3-band-v1", "version": decisions.LIBRARY_VERSION}],
+                "entry": {"model": "instrument.glb", "instrument": "instrument.json"}}
     writer.finish(manifest)
     return publish(writer, output, name)
 
@@ -343,16 +393,18 @@ def main(argv=None):
     parser.add_argument("--character-library", type=Path, default=CHARACTER_LIBRARY)
     parser.add_argument("--events", type=Path, default=EVENTS)
     parser.add_argument("--characters", type=Path, default=CHARACTERS)
+    parser.add_argument("--instruments", type=Path, default=INSTRUMENTS)
     parser.add_argument("--output", type=Path, default=OUTPUT)
     parser.add_argument("--venue", action="append", help="Convert only this source pack ID (repeatable)")
     parser.add_argument("--no-venues", action="store_true")
     parser.add_argument("--no-library", action="store_true")
     parser.add_argument("--no-character-library", action="store_true")
     parser.add_argument("--no-characters", action="store_true")
+    parser.add_argument("--no-instruments", action="store_true")
     parser.add_argument("--jobs", type=int, default=2, help="Clip encoder processes (each uses about 0.1 GB)")
     args = parser.parse_args(argv)
     (args.output/"unpacked").mkdir(parents=True, exist_ok=True)
-    report = {"venues": {}, "library": None, "characterLibrary": None, "characters": {}}
+    report = {"venues": {}, "library": None, "characterLibrary": None, "characters": {}, "instruments": {}}
     if not args.no_venues:
         for source in sorted(p.parent for p in args.packs.glob("*/stage-pack.json")):
             if args.venue and source.name not in args.venue: continue
@@ -371,10 +423,16 @@ def main(argv=None):
         print(f"{archive}: folder {tree_size(folder):,} bytes, zip {archive.stat().st_size:,} bytes")
     if not args.no_characters:
         for source in sorted(p.parent for p in args.characters.glob("*/character.json")):
-            folder, archive = build_character(source, args.library, args.output, args.character_library)
+            folder, archive = build_character(source, args.library, args.output, args.character_library, args.instruments)
             report["characters"][source.name] = {"folder": tree_size(folder), "zip": archive.stat().st_size}
         total = sum(row["zip"] for row in report["characters"].values())
         print(f"{len(report['characters'])} characters: zip {total:,} bytes")
+    if not args.no_instruments:
+        for source in sorted(p.parent for p in args.instruments.glob("*/instrument.json")):
+            folder, archive = build_instrument(source, args.library, args.output)
+            report["instruments"][source.name] = {"folder": tree_size(folder), "zip": archive.stat().st_size}
+        total = sum(row["zip"] for row in report["instruments"].values())
+        print(f"{len(report['instruments'])} instruments: zip {total:,} bytes")
     (args.output/"build-report.json").write_bytes(json_bytes(report))
 
 

@@ -24,13 +24,15 @@ def aligned(text):
 
 
 def stage_templates(code, output):
-    """Insert the GH3 material templates used by the compiled stages and the GH3 characters into the stage surface shader."""
+    """Insert the GH3 material templates used by the compiled stages, the GH3 characters, and the GH3 instruments into the
+    stage surface shader."""
     stages = output.parent.parent.parent.parent/'stages'
     characters = output.parent.parent.parent.parent/'characters'
+    instruments = output.parent.parent.parent.parent/'instruments'
     used = set()
-    # Venue scenery and actors, the shared band and crowd library next to the output bundle, and the GH3 characters.
+    # Venue scenery and actors, the shared band and crowd library next to the output bundle, the GH3 characters and instruments.
     for path in [*stages.glob('*/**/stage.json'), *output.parent.parent.glob('band/*/stage.json'), *output.parent.parent.glob('crowd/**/stage.json'),
-                 *characters.glob('*/stage.json')]:
+                 *characters.glob('*/stage.json'), *instruments.glob('*/stage.json')]:
         used.update(m['gh3']['template'] for m in load_json(path)['materials'].values() if 'gh3' in m and m['gh3']['template'] != '00000000')
     if not used:
         used = set(gh3_shader.library())

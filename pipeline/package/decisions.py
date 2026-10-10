@@ -23,6 +23,7 @@ GH3_PERMISSIONS = {"redistribute": True, "modify": True, "commercial": False}
 GH3_VENUE_AUTHORS = [{"name": "Neversoft", "role": "original venue"}]
 GH3_LIBRARY_AUTHORS = [{"name": "Neversoft", "role": "original band, crowd, animations, and audio"}]
 GH3_CHARACTER_AUTHORS = [{"name": "Neversoft", "role": "original band member"}]
+GH3_INSTRUMENT_AUTHORS = [{"name": "Neversoft", "role": "original instrument"}]
 GH3_CHARACTER_LIBRARY_AUTHORS = [{"name": "Neversoft", "role": "original skeletons, animations, and ragdolls"}]
 CONVERTER_CREDIT = "Converted from the GH3 PC data by the GH3 Gameplay Skin pipeline."
 
