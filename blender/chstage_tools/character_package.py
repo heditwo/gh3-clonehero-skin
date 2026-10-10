@@ -15,7 +15,7 @@ from pathlib import Path
 import bpy
 import numpy as np
 
-from . import skeleton_tools, chain_tools, character_tools, collect, glb_tools, gltf_io, materials, package_export, package_open, sidecars, toon
+from . import skeleton_tools, chain_tools, character_tools, collect, glb_tools, gltf_io, materials, package_export, package_open, sidecars, textures, toon
 from .vendor.package_format import character, container
 from .vendor.package_format.validate import Report, Source, Validator
 
@@ -181,7 +181,7 @@ def finish_glb(data, blender_materials, issues, morphs=None):
             if image is not None and image.name in needed: images[image.name] = materials.image_png_bytes(image)
     data = glb_tools.add_images(data, images)
     for name in sorted(needed - set(images)): issues.error(f"no image for the texture reference #{name}")
-    return data
+    return textures.encode_glb(data)
 
 
 def character_row(scene, blender_materials, glb_data=None):

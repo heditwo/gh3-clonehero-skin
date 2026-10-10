@@ -9,7 +9,7 @@ from pathlib import Path
 
 import bpy
 
-from . import actor_tools, blobs, collect, glb_tools, materials, sidecars
+from . import actor_tools, blobs, collect, glb_tools, materials, sidecars, textures
 from .vendor.package_format import container
 from .vendor.package_format.validate import Report, Source, Validator
 
@@ -26,8 +26,8 @@ def finish_glb(path, folder, issues, blender_materials):
     """Give the texture references of the material extras their final form (PACKAGE-FORMAT 6.6).
 
     A reference to an image that Blender exported stays '#<name>'. Blender exports only the images that a material
-    socket uses, so the other images (for example the GH3 shader samplers) become PNG files in textures/.
-    Returns the written package paths.
+    socket uses, so the other images (for example the GH3 shader samplers) become texture files in textures/. All
+    images become pre-encoded GH3TEX02 textures (section 7). Returns the written package paths.
     """
     gltf, binary = glb_tools.read_glb(Path(path).read_bytes())
     exported = {image.get("name") for image in gltf.get("images", [])}
@@ -50,16 +50,16 @@ def finish_glb(path, folder, issues, blender_materials):
             else:
                 new = written.get(image.name)
                 if new is None:
-                    new = ref if not ref.startswith("#") else f"textures/{safe_name(image.name)}.png"
-                    while new in written.values(): new = new[:-4] + "-1.png"
+                    new = ref[:-4] + ".tex" if ref.endswith((".png", ".tex")) and not ref.startswith("#") else f"textures/{safe_name(image.name)}.tex"
+                    while new in written.values(): new = new[:-4] + "-1.tex"
                     target = Path(folder)/new
                     target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_bytes(materials.image_png_bytes(image))
+                    target.write_bytes(textures.encode_png(materials.image_png_bytes(image)))
                     written[image.name] = new
             if new != ref:
                 container_[key] = new
                 changed = True
-    if changed: Path(path).write_bytes(glb_tools.write_glb(gltf, binary))
+    Path(path).write_bytes(textures.encode_glb(glb_tools.write_glb(gltf, binary) if changed else Path(path).read_bytes()))
     return sorted(written.values())
 
 
@@ -159,6 +159,7 @@ def build_files(scene, folder, issues, keeper=None, render_preview_image=True, a
         path = actor_tools.model_path(root)
         data = actor_tools.model_bytes(scene, root, issues, actor_models)
         if data is None: continue
+        data = textures.encode_glb(data)
         if path in models:
             if models[path] != data: issues.error(f"actors '{root.name}' and others use the model file {path} with different models", root.name)
             continue

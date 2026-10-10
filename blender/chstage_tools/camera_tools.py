@@ -12,7 +12,7 @@ from pathlib import Path
 import bpy
 from mathutils import Matrix
 
-from . import actor_tools, collect, glb_tools, gltf_io, rig, sidecars
+from . import actor_tools, collect, glb_tools, gltf_io, rig, sidecars, textures
 from .vendor.package_format.validate import Report, Source
 
 LIBRARY_NAME = "gh3-band-v1.chlib"
@@ -86,7 +86,7 @@ def freeze_first_pose(armature, imported_actions):
 
 def import_rig(scene, marker, data, collection):
     before_objects, before_actions = set(bpy.data.objects), set(bpy.data.actions)
-    data = glb_tools.keep_animations(data, glb_tools.animation_names(data)[:1])
+    data = textures.decode_glb(glb_tools.keep_animations(data, glb_tools.animation_names(data)[:1]))
     with tempfile.TemporaryDirectory(prefix="chstage-rig-") as folder:
         path = Path(folder)/"rig.glb"
         path.write_bytes(data)

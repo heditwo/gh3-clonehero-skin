@@ -10,7 +10,7 @@ from pathlib import Path
 import bpy
 from mathutils import Matrix
 
-from . import actor_tools, blobs, camera_tools, collect, glb_tools, gltf_io, sidecars, template
+from . import actor_tools, blobs, camera_tools, collect, glb_tools, gltf_io, sidecars, template, textures
 from .vendor.package_format.validate import Report, Source, Validator
 
 ADDON_FILES = ("model", "placements", "cameras", "lighting", "actors")
@@ -72,6 +72,7 @@ def child_collection(scene, name):
 
 def import_stage(scene, data, issues):
     """Import stage.glb into the scene. Returns (glTF JSON, binary, node objects, materials, images by glTF index)."""
+    data = textures.decode_glb(data)
     # Changes that keep the data that the Blender importer would lose. The exporter writes the same triangles again.
     prepared, faces = glb_tools.separate_faces(data)
     prepared, uv_maps = glb_tools.fill_texcoord_gaps(prepared)
@@ -119,7 +120,7 @@ def open_materials(gltf, binary, mats, images, source, issues):
         if index not in images:
             images[index] = packed_image(image.get("name") or f"image-{index}", glb_tools.image_bytes(gltf, binary, index))
     by_name = {image.get("name"): images[index] for index, image in enumerate(gltf.get("images", [])) if image.get("name")}
-    textures = gltf.get("textures", [])
+    gltf_textures = gltf.get("textures", [])
     for index, variants in mats.items():
         material = gltf["materials"][index]
         props, other = sidecars.open_material(material)
@@ -127,7 +128,7 @@ def open_materials(gltf, binary, mats, images, source, issues):
 
         def resolve(ref):
             if ref.startswith("#"): image = by_name.get(ref[1:])
-            elif ref in source.set: image = bpy.data.images.get(ref) or packed_image(ref, source.read(ref))
+            elif ref in source.set: image = bpy.data.images.get(ref) or packed_image(ref, textures.png_of(source.read(ref)))
             else: image = None
             if image is None: issues.warn(f"material '{material.get('name')}': texture reference {ref} has no image")
             return image
@@ -144,7 +145,7 @@ def open_materials(gltf, binary, mats, images, source, issues):
             # An unchanged material keeps its source reference (sidecars.Keeper), which can differ from the Blender image name.
             if image is not None: refs[ref[1:] if ref.startswith("#") else ref] = image
         occlusion = material.get("occlusionTexture")
-        lightmap = images.get(textures[occlusion["index"]].get("source")) if occlusion else None
+        lightmap = images.get(gltf_textures[occlusion["index"]].get("source")) if occlusion else None
         for blender_material in variants:
             set_properties(blender_material.chstage, props)
             for prop, image in toon_images.items(): setattr(blender_material.chstage, prop, image)

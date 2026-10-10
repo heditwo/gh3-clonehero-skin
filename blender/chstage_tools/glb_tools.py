@@ -341,7 +341,7 @@ def restore_names(data, materials=(), nodes=()):
 
 
 def add_images(data, images):
-    """Embed PNG images with the given names (texture references '#<name>' to images that a material socket does not use).
+    """Embed PNG or GH3TEX02 images with the given names (texture references '#<name>' to images that a material socket does not use).
     Each image also gets a glTF texture: the pipeline compiler finds '#<name>' through the textures."""
     if not images: return data
     gltf, binary = read_glb(data)
@@ -350,7 +350,9 @@ def add_images(data, images):
     for name, payload in sorted(images.items()):
         if name in present: continue
         view = _append(gltf, binary, payload)
-        gltf.setdefault("images", []).append({"name": name, "mimeType": "image/png", "bufferView": view})
+        # Pre-encoded GH3TEX02 images (PACKAGE-FORMAT.md section 7) keep their media type.
+        mime = "image/vnd-gh3.tex" if payload[:8] == b"GH3TEX02" else "image/png"
+        gltf.setdefault("images", []).append({"name": name, "mimeType": mime, "bufferView": view})
         gltf.setdefault("textures", []).append({"source": len(gltf["images"]) - 1})
     if not gltf.get("buffers"): gltf["buffers"] = [{}]
     gltf["buffers"][0]["byteLength"] = len(binary)

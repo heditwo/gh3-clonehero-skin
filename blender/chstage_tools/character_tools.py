@@ -18,7 +18,7 @@ import numpy as np
 from mathutils import Matrix, Vector
 from mathutils.bvhtree import BVHTree
 
-from . import brotli_decode, camera_tools, glb_tools, gltf_io, package_open
+from . import brotli_decode, camera_tools, glb_tools, gltf_io, package_open, textures
 from .vendor.package_format import character, q48, skeleton
 from .vendor.package_format.glb import Glb
 
@@ -136,6 +136,7 @@ def import_glb(scene, data, collection, mapped=False, bone_heuristic=None):
     """Import GLB bytes with the safe settings and the import fixes. Returns (new objects, glTF JSON, binary, node
     objects, materials, images by glTF index); the last three only when mapped (the import hooks of package_open).
     bone_heuristic: the bone direction option of the glTF importer (default: the safe settings)."""
+    data = textures.decode_glb(data)
     prepared, _ = glb_tools.separate_faces(data)
     prepared, _ = glb_tools.fill_texcoord_gaps(prepared)
     prepared, _ = glb_tools.normalize_normals(prepared)

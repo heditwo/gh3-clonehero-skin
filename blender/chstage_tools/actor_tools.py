@@ -18,7 +18,7 @@ import bpy
 import numpy as np
 from mathutils import Matrix
 
-from . import blobs, glb_tools, gltf_io, sidecars
+from . import blobs, glb_tools, gltf_io, sidecars, textures
 
 ACTOR_IMPORT = {"disable_bone_shape": True}
 # The importer puts each clip on an NLA strip that starts at the scene start frame (1), not at the clip time 0. Slide
@@ -190,7 +190,7 @@ def import_model(scene, root, data, clips, collection):
     props = root.chstage.actor
     before, before_actions = set(bpy.data.objects), set(bpy.data.actions)
     # The same fixes as for stage.glb (package_open.import_stage): the importer drops repeated triangles.
-    data, _ = glb_tools.separate_faces(glb_tools.keep_animations(data, clips))
+    data, _ = glb_tools.separate_faces(glb_tools.keep_animations(textures.decode_glb(data), clips))
     data, _ = glb_tools.fill_texcoord_gaps(data)
     data, _ = glb_tools.normalize_normals(data)
     with tempfile.TemporaryDirectory(prefix="chstage-actor-") as folder:

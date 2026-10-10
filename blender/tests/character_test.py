@@ -265,8 +265,18 @@ with zipfile.ZipFile(target) as package_zip:
 summary["testCharacter"].update(files=names_in_zip, character=character_json, size=target.stat().st_size, validatorWarnings=report.warnings if report else None)
 check("test character package files", names_in_zip[0] == "manifest.json" and {"character.glb", "character.json"} <= set(names_in_zip)
       and character_json == {"version": 1, "library": "gh3-band-v1", "profile": "gh3-guitarist-axel-v1", "hairMaterials": ["test_hair"]}
-      and len(glb.list("skins")[0]["joints"]) == 125 and all(i.get("mimeType") == "image/png" for i in glb.list("images")) and not glb.list("animations"),
+      and len(glb.list("skins")[0]["joints"]) == 125 and all(i.get("mimeType") == "image/vnd-gh3.tex" for i in glb.list("images")) and not glb.list("animations"),
       (names_in_zip, character_json))
+texture_format = sys.modules[module + ".vendor.package_format.texture"]
+glb_images = {i.get("name"): bytes(glb.view(i["bufferView"])) for i in glb.list("images")}
+source_pixels = np.empty(64 * 64 * 4, dtype=np.float32)
+bpy.data.images["test_skin_color"].pixels.foreach_get(source_pixels)
+source_rgba = np.round(source_pixels * 255).astype(np.uint8).reshape(64, 64, 4)[::-1]
+skin_texture = glb_images.get("test_skin_color", b"")
+skin_psnr = texture_format.psnr(texture_format.decode(skin_texture), source_rgba) if skin_texture else 0
+summary["testCharacter"]["texture"] = {"format": texture_format.read_header(skin_texture)[0] if skin_texture else None, "psnr": skin_psnr}
+check("pre-encoded texture with its mip chain, close to the Blender image", skin_texture and not texture_format.problems(skin_texture)
+      and texture_format.read_header(skin_texture)[3] == 7 and skin_psnr > 35, summary["testCharacter"]["texture"])
 hair_row = next(m for m in glb.list("materials") if m.get("name") == "test_hair")
 images = {i.get("name") for i in glb.list("images")}
 toon_row = hair_row.get("extras", {}).get("gh3Toon", {})
@@ -283,6 +293,11 @@ copy = output / "test-character-reopened" / target.name
 operator_scene(reopened, bpy.ops.chstage.export_character, filepath=str(copy))
 differences = compare.compare_packages(target, copy) if copy.is_file() else {"failures": ["not written"], "stage": {"max": {}}}
 summary["testCharacter"]["reopened"] = {"failures": differences["failures"], "max": differences["stage"]["max"]}
+if copy.is_file():
+    with zipfile.ZipFile(copy) as package_zip:
+        copy_glb = character_format.Glb(package_zip.read("character.glb"))
+    copy_images = {i.get("name"): bytes(copy_glb.view(i["bufferView"])) for i in copy_glb.list("images")}
+    check("Open and Export keep the pre-encoded textures byte-equal", copy_images == glb_images, sorted(set(copy_images) ^ set(glb_images)))
 reopened_hair = next(m for m in bpy.data.materials if m.chstage.source_name == "test_hair" and m != hair_material)
 check("test character round trip", not differences["failures"] and [m.material.name for m in reopened.chstage.character.hair_materials if m.material][:1] != []
       and reopened_hair.chstage.shading == "toon" and reopened_hair.chstage.toon_shade_image is not None and reopened_hair.chstage.use_outline,
