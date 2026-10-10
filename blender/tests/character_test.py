@@ -776,6 +776,67 @@ check("own skeleton: Open restores the skeleton, the map, and the face", opened 
       and skeleton_tools.humanoid(opened) == own_json.get("skeleton", {}).get("humanoid") and skeleton_tools.face(opened) == own_json.get("face")
       and opened.chstage.character.source_rig is not None, [m for s, m, *_ in opened_issues if s == "ERROR"])
 
+# 9. Any humanoid (BLENDER-ADDON.md section 2.13): the same model with bone names that say nothing (joint1, joint2, ...),
+# turned to look toward +X, in centimetres (object scale 100), a helper bone without weights. Set Up Skeleton turns and
+# scales the model, finds the same roles, Check Clips, the map editor (Assign, Mirror, Clear), and a map preset.
+with bpy.context.temp_override(scene=bpy.context.scene):
+    status = bpy.ops.chstage.new_character(profile="gh3-guitarist-axel-v1", library=str(library), own_skeleton=True)
+any_scene = next(s for s in bpy.data.scenes if s.chstage.character.own_skeleton and s.chstage.character.rig is None)
+any_p = any_scene.chstage.character
+any_view = any_scene.view_layers[0]
+any_rig = model_rig.copy()
+any_rig.data = model_rig.data.copy()
+any_body = own_body.copy()
+any_body.data = own_body.data.copy()
+for obj in (any_rig, any_body): any_scene.collection.objects.link(obj)
+any_body.parent = any_rig
+any_body.modifiers["Armature"].object = any_rig
+renames = {bone.name: f"joint{k + 1}" for k, bone in enumerate(any_rig.data.bones)}
+for bone in any_rig.data.bones: bone.name = renames[bone.name]
+for group in any_body.vertex_groups: group.name = renames.get(group.name, group.name)
+with bpy.context.temp_override(scene=any_scene, view_layer=any_view, active_object=any_rig, object=any_rig, selected_objects=[any_rig]):
+    any_view.objects.active = any_rig
+    bpy.ops.object.mode_set(mode="EDIT")
+    helper = any_rig.data.edit_bones.new("ik_target")
+    helper.head, helper.tail = (0.6, -0.4, 1.0), (0.6, -0.4, 1.1)
+    bpy.ops.object.mode_set(mode="OBJECT")
+any_rig.matrix_world = Matrix.Rotation(math.radians(90), 4, "Z") @ Matrix.Scale(100, 4)
+any_body.matrix_parent_inverse = Matrix.Identity(4)
+any_view.update()
+for obj in any_scene.objects: obj.select_set(obj == any_rig, view_layer=any_view)
+any_view.objects.active = any_rig
+with bpy.context.temp_override(scene=any_scene, view_layer=any_view, active_object=any_rig, object=any_rig, selected_objects=[any_rig]):
+    status = bpy.ops.chstage.use_skeleton()
+any_map = skeleton_tools.humanoid(any_scene)
+expected = {role: renames[bone] for role, bone in mapped.items()}
+wrong = {role: (any_map.get(role), bone) for role, bone in expected.items() if any_map.get(role) != bone}
+bones = any_rig.data.bones
+toe, ankle = bones[renames["mixamorig:LeftToeBase"]].head_local, bones[renames["mixamorig:LeftFoot"]].head_local
+check("any humanoid: Set Up Skeleton turns and scales the model and finds the roles without names", status == {"FINISHED"} and not wrong
+      and np.abs(np.array(any_rig.matrix_world) - np.eye(4)).max() < 1e-6 and toe.y < ankle.y and bones[renames["mixamorig:LeftArm"]].head_local.x > 0
+      and 1.0 < bones[renames["mixamorig:Head"]].head_local.z < 2.0, (wrong, skeleton_tools.notes(any_scene)))
+rows = {row.role: k for k, row in enumerate(any_p.roles)}
+any_p.roles_index = rows["leftHand"]
+any_rig.data.bones.active = any_rig.data.bones[renames["mixamorig:LeftHand"]]
+for row in any_p.roles:
+    if row.role.startswith("right"): row.bone = ""
+with bpy.context.temp_override(scene=any_scene, view_layer=any_view):
+    clear = bpy.ops.chstage.role_edit(action="CLEAR")
+    assign = bpy.ops.chstage.role_edit(action="ASSIGN")
+    mirror = bpy.ops.chstage.role_edit(action="LEFT")
+restored = skeleton_tools.humanoid(any_scene)
+check("any humanoid: Clear, Assign Active Bone, and Mirror Left to Right edit the map", {clear.pop(), assign.pop(), mirror.pop()} == {"FINISHED"}
+      and {r: b for r, b in restored.items()} == {r: b for r, b in any_map.items()}, {r: (restored.get(r), b) for r, b in any_map.items() if restored.get(r) != b})
+preset = output / "any-map.json"
+skeleton_tools.save_preset(any_scene, preset)
+for row in any_p.roles: row.bone = ""
+done, missing_roles = skeleton_tools.load_preset(any_scene, preset)
+check("any humanoid: a map preset saves and loads the map", done == len(any_map) and not missing_roles and skeleton_tools.humanoid(any_scene) == any_map, (done, missing_roles))
+findings = skeleton_tools.run_checks(any_scene, limit=3)
+check("any humanoid: Check Clips finds no error in the clips", not [f for f in findings if f["severity"] == "ERROR"], findings)
+issues = character_package.validate_scene(any_scene)
+check("any humanoid: validates without errors", not errors_of(issues), errors_of(issues))
+
 bpy.ops.preferences.addon_disable(module=module)
 check("disable", module not in bpy.context.preferences.addons and not hasattr(bpy.types.Scene, "chstage"))
 (output / "character-summary.json").write_text(json.dumps(summary, indent=2) + "\n")

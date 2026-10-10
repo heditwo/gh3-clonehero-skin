@@ -455,6 +455,11 @@ def preview_selected_clip(self, context):
     character_tools.preview_clip_index(self.id_data)
 
 
+def toggle_map_overlay(self, context):
+    from . import skeleton_tools
+    skeleton_tools.overlay(self.show_map)
+
+
 class CHSTAGE_PG_material_ref(PropertyGroup):
     material: PointerProperty(name="Material", type=bpy.types.Material)
 
@@ -470,6 +475,17 @@ class CHSTAGE_PG_role(PropertyGroup):
     """A humanoid role of the character's own skeleton (character.json skeleton.humanoid)."""
     role: StringProperty(name="Role")
     bone: StringProperty(name="Bone", description="The bone of the character's armature that has this role. Empty: no bone")
+    confidence: FloatProperty(name="Confidence", min=0.0, max=1.0, description="How sure the automatic map is (1: sure). A bone that you set gets 1")
+
+
+class CHSTAGE_PG_check(PropertyGroup):
+    """A finding of Check Clips (the retarget of the GH3 clips on the character's own skeleton)."""
+    severity: StringProperty()
+    kind: StringProperty()
+    role: StringProperty()
+    clip: StringProperty()
+    message: StringProperty()
+    fix: StringProperty()
 
 
 class CHSTAGE_PG_character(PropertyGroup):
@@ -506,6 +522,14 @@ class CHSTAGE_PG_character(PropertyGroup):
                                            description="Moves the instrument from its place (metres, Blender axes)")
     instrument_scale: FloatProperty(name="Instrument scale", min=0.0, max=1.5, description="The size of the instrument and of its distance from the chest. "
                                     "0: the arm length of the character against the arm length of the GH3 rig")
+    map_notes: StringProperty(description="Notes of the automatic map and of Set Up Skeleton (JSON list of text)")
+    show_map: BoolProperty(name="Show Map", description="Draw the humanoid map on the armature in the viewport (colours: green sure, yellow check, red missing)",
+                           update=toggle_map_overlay)
+    target_height: FloatProperty(name="Height", min=0.0, max=5.0, unit="LENGTH", description="Set Up Skeleton scales the model to this height. "
+                                 "0: keep the height when it is 0.5-3 m, else find the unit (cm, mm) or use 1.7 m")
+    checks: CollectionProperty(type=CHSTAGE_PG_check)
+    checks_index: IntProperty()
+    checked: BoolProperty()
     face_blink: StringProperty(name="Blink", description="Shape key that closes the eyes (MMD まばたき, VRM Blink)")
     face_a: StringProperty(name="A", description="Mouth shape key 'a' (MMD あ, VRM A)")
     face_i: StringProperty(name="I", description="Mouth shape key 'i' (MMD い, VRM I)")
@@ -586,7 +610,7 @@ CLASSES = (
     CHSTAGE_PG_name, CHSTAGE_PG_image_ref, CHSTAGE_PG_kept_file, CHSTAGE_PG_number, CHSTAGE_PG_author, CHSTAGE_PG_requirement, CHSTAGE_PG_package,
     CHSTAGE_PG_point, CHSTAGE_PG_object_ref, CHSTAGE_PG_shot, CHSTAGE_PG_light, CHSTAGE_PG_actor_action, CHSTAGE_PG_actor, CHSTAGE_PG_object,
     CHSTAGE_PG_material, CHSTAGE_PG_snapshot_light, CHSTAGE_PG_beam, CHSTAGE_PG_snapshot, CHSTAGE_PG_mood, CHSTAGE_PG_color,
-    CHSTAGE_PG_camera_note, CHSTAGE_PG_crowd, CHSTAGE_PG_issue, CHSTAGE_PG_script_row, CHSTAGE_PG_material_ref, CHSTAGE_PG_clip, CHSTAGE_PG_role,
+    CHSTAGE_PG_camera_note, CHSTAGE_PG_crowd, CHSTAGE_PG_issue, CHSTAGE_PG_script_row, CHSTAGE_PG_material_ref, CHSTAGE_PG_clip, CHSTAGE_PG_role, CHSTAGE_PG_check,
     CHSTAGE_PG_character, CHSTAGE_PG_scene, CHSTAGE_AP_preferences,
 )
 
