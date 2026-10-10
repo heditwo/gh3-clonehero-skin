@@ -654,7 +654,7 @@ internal sealed class StageAssets : IDisposable
         var unityFormat = (TextureFormat)format;
         if (!SystemInfo.SupportsTextureFormat(unityFormat)) throw new InvalidDataException($"This GPU does not support {unityFormat}; delete the package cache");
         var texture = Own(new Texture2D(width, height, unityFormat, mips > 1, false));
-        texture.LoadRawTextureData(new Il2CppStructArray<byte>(data[Packages.TextureCodec.HeaderSize..]));
+        SkinAssets.LoadRaw(texture, data, Packages.TextureCodec.HeaderSize);
         texture.Apply(false, true);
         TexturesUploaded++;
         TextureMilliseconds += clock.Elapsed.TotalMilliseconds;

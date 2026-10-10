@@ -80,8 +80,8 @@ internal sealed class SkinAssets
     }
 
     // The workers decode the images in upload order and stop while the decoded images that wait for the upload would
-    // pass the budget, so the skin needs about 64 MB at a time instead of 190 MB.
-    private const long DecodeBudget = 64_000_000;
+    // pass the budget, so the skin needs about 32 MB at a time instead of 190 MB.
+    private const long DecodeBudget = 32_000_000;
     private readonly object _gate = new();
     private readonly long[] _sizes;
     private long _waiting;
@@ -389,11 +389,24 @@ internal sealed class SkinAssets
     private static Texture2D UploadRgba(DecodedImage image)
     {
         var texture = new Texture2D(image.Width, image.Height, TextureFormat.RGBA32, false);
-        texture.LoadRawTextureData(new Il2CppStructArray<byte>(image.Data));
+        LoadRaw(texture, image.Data, 0);
         texture.Apply(false, true);
         texture.filterMode = FilterMode.Bilinear;
         texture.hideFlags = HideFlags.DontUnloadUnusedAsset;
         return texture;
+    }
+
+    // Texture2D.LoadRawTextureDataImpl copies the bytes from a pointer: the managed array goes to the texture without a
+    // second copy in an Il2Cpp array.
+    internal static void LoadRaw(Texture2D texture, byte[] data, int offset)
+    {
+        var handle = System.Runtime.InteropServices.GCHandle.Alloc(data, System.Runtime.InteropServices.GCHandleType.Pinned);
+        try
+        {
+            if (!texture.LoadRawTextureDataImpl(handle.AddrOfPinnedObject() + offset, (ulong)(data.Length - offset)))
+                throw new InvalidDataException("The texture data does not match the texture size");
+        }
+        finally { handle.Free(); }
     }
 
     internal static Texture2D LoadTexture(string file)
@@ -425,7 +438,7 @@ internal sealed class SkinAssets
     {
         var texture = new Texture2D(image.Width, image.Height, TextureFormat.DXT5, false);
         texture.name = Path.GetFileNameWithoutExtension(file);
-        texture.LoadRawTextureData(new Il2CppStructArray<byte>(image.Data));
+        LoadRaw(texture, image.Data, 0);
         texture.Apply(false, true);
         texture.filterMode = FilterMode.Bilinear;
         texture.wrapMode = TextureWrapMode.Clamp;
