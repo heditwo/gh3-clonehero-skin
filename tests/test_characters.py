@@ -113,15 +113,15 @@ class CharacterLibraryPackageTests(unittest.TestCase):
             report = Validator(chlib).run()
             self.assertEqual((report.errors, report.warnings), ([], []))
             manifest = json.loads((root/"out/unpacked/gh3-characters-v1.chlib/manifest.json").read_text())
-            self.assertEqual((manifest["format"], manifest["entry"], manifest["minModVersion"]), ("chlib/1.2", {"characters": "characters.json"}, "0.9.10"))
+            self.assertEqual((manifest["format"], manifest["entry"], "minModVersion" in manifest), ("chlib/1.0", {"characters": "characters.json"}, False))
             character = root/"characters/gh3.test"
             skinned_model(character, "0000abcd", "gh3.test")
             write(character/"character.json", {"id": "gh3.test", "name": "Test guitarist", "profile": "gh3-guitarist-test-v1", "model": "Test.pak.xen",
                                                "instrumentInModel": False, "instrumentModel": "", "instrumentName": "", "unlock": "start"})
             unpacked, archive = build.build_character(character, folder, root/"out", characters_folder)
             manifest = json.loads((unpacked/"manifest.json").read_text())
-            self.assertEqual((manifest["format"], manifest["minModVersion"], [r["id"] for r in manifest["requires"]]),
-                             ("chchar/1.1", "0.9.9", ["gh3-band-v1", "gh3-characters-v1"]))
+            self.assertEqual((manifest["format"], "minModVersion" in manifest, [r["id"] for r in manifest["requires"]]),
+                             ("chchar/1.0", False, ["gh3-band-v1", "gh3-characters-v1"]))
             self.assertEqual(json.loads((unpacked/"character.json").read_text()), {"version": 1, "library": "gh3-characters-v1", "profile": "gh3-guitarist-test-v1"})
             report = Validator(archive, library=folder, character_library=chlib).run()
             self.assertEqual((report.errors, report.warnings), ([], []))
@@ -143,7 +143,7 @@ class CharacterLibraryPackageTests(unittest.TestCase):
             for text in ("no animation set missing", "no hair 00000000", "names clip d2d2d2d2"):
                 self.assertIn(text, errors)
 
-    def test_format_1_0_rejects_the_new_fields(self):
+    def test_band_library_profiles_reject_the_character_library_fields(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             folder, _ = library(root/"library")
@@ -157,8 +157,10 @@ class CharacterLibraryPackageTests(unittest.TestCase):
             manifest = json.loads((unpacked/"manifest.json").read_text()); manifest["files"] = {}
             write(unpacked/"manifest.json", manifest)
             errors = "\n".join(Validator(unpacked, library=folder).run().errors)
-            self.assertIn("'animations' needs format chchar/1.1", errors)
-            self.assertIn("unknown profile 'gh3-guitarist-judy-v1'", errors)
+            self.assertIn("the band library has no profile 'gh3-guitarist-judy-v1'", errors)
+            write(unpacked/"character.json", {"version": 1, "library": "gh3-band-v1", "profile": "gh3-singer-male-v1", "animations": "judy"})
+            errors = "\n".join(Validator(unpacked, library=folder).run().errors)
+            self.assertIn("'animations' needs a profile of a character library", errors)
 
 
 @unittest.skipUnless((DATA/"PAK/qb.pak.xen").is_file(), "needs the GH3 PC data")

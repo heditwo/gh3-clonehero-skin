@@ -445,7 +445,7 @@ props.reference.hide_render = True
 character_tools.clear_pose(scene)
 check("bind pose after clear", rig.animation_data is None or rig.animation_data.action is None)
 
-# 7. A character library profile (format 1.1): Midori of gh3-characters-v1, with the GH3 character packages next to it.
+# 7. A character library profile: Midori of gh3-characters-v1, with the GH3 character packages next to it.
 character_library = library.parent / "gh3-characters-v1.chlib"
 midori_package = library.parent / "gh3.midori.outfit1.style1.chchar"
 if character_library.exists() and midori_package.exists():
@@ -457,16 +457,16 @@ if character_library.exists() and midori_package.exists():
     p11 = scene11.chstage.character
     rig11 = p11.rig
     expected_rig = clib.rig(midori)
-    check("1.1: new character on a character library profile", status == {"FINISHED"} and rig11 is not None and set(rig11.data.bones.keys()) == set(expected_rig.names)
+    check("character library: new character on a character library profile", status == {"FINISHED"} and rig11 is not None and set(rig11.data.bones.keys()) == set(expected_rig.names)
           and p11.reference is not None and p11.attachment is not None and len(json.loads(p11.hair_chains)) == len(clib.hair_chains(midori))
           and len(p11.clips) > 100 and [r.package_id for r in scene11.chstage.package.requires] == ["gh3-band-v1", "gh3-characters-v1"]
-          and scene11.chstage.package.min_mod_version == "0.9.9",
+          and scene11.chstage.package.min_mod_version == "",
           (p11.library_id, len(p11.clips), [r.package_id for r in scene11.chstage.package.requires]))
     # Rig joints in Blender against the profile bind of characters.json.
     axes = character_tools.AXES
     worst = max(float(np.linalg.norm(np.array(rig11.data.bones[name].head_local) - (axes @ expected_rig.world[i])[:3, 3]))
                 for i, name in enumerate(expected_rig.names))
-    check("1.1: rig joints at the profile bind pose", worst < 1e-5, worst)
+    check("character library: rig joints at the profile bind pose", worst < 1e-5, worst)
     # A creator mesh: a copy of the GH3 body without its weights.
     body11 = p11.reference.copy()
     body11.data = p11.reference.data.copy()
@@ -486,7 +486,7 @@ if character_library.exists() and midori_package.exists():
     with bpy.context.temp_override(scene=scene11, view_layer=view11, selected_objects=[body11], active_object=body11, object=body11):
         status = bpy.ops.chstage.transfer_weights(exclude_hair=False)
     scene11.chstage.package.package_id, scene11.chstage.package.name = "tester.midori-edit", "Midori edit"
-    target11 = output / "test-character-1.1" / "tester.midori-edit.chchar"
+    target11 = output / "test-character-library" / "tester.midori-edit.chchar"
     status_export = operator_scene(scene11, bpy.ops.chstage.export_character, filepath=str(target11))
     report11 = validator.Validator(target11, library, character_library=character_library).run() if target11.is_file() else None
     with zipfile.ZipFile(target11) if target11.is_file() else zipfile.ZipFile(midori_package) as package_zip:
@@ -494,8 +494,8 @@ if character_library.exists() and midori_package.exists():
         character11 = json.loads(package_zip.read("character.json"))
     summary["characterLibrary"] = {"export": [(i.severity, i.message) for i in scene11.chstage.issues], "validator": (report11.errors + report11.warnings) if report11 else None,
                                    "manifest": {k: manifest11.get(k) for k in ("format", "requires", "minModVersion")}, "character": character11}
-    check("1.1: transfer weights and export a valid format 1.1 package", status == {"FINISHED"} and status_export == {"FINISHED"} and report11 is not None
-          and report11.ok and not report11.warnings and manifest11["format"] == "chchar/1.1" and manifest11.get("minModVersion") == "0.9.9"
+    check("character library: transfer weights and export a valid package on a character library profile", status == {"FINISHED"} and status_export == {"FINISHED"} and report11 is not None
+          and report11.ok and not report11.warnings and manifest11["format"] == "chchar/1.0" and "minModVersion" not in manifest11
           and character11["library"] == "gh3-characters-v1" and character11["profile"] == midori, summary["characterLibrary"])
     # The clip preview of a character library clip (the clip rig offsets and the game IK).
     clip11 = next(item.clip for item in p11.clips if item.label.startswith("stance_a/idle"))
@@ -509,13 +509,13 @@ if character_library.exists() and midori_package.exists():
         scene11.frame_set(frame)
         for joint, name in enumerate(expected_rig.names):
             worst = max(worst, float(np.linalg.norm(np.array(rig11.pose.bones[name].matrix)[:3, 3] - expected[frame, joint, :3, 3])))
-    check("1.1: clip preview gives the profile clip poses", status == {"FINISHED"} and worst < 1e-5, worst)
+    check("character library: clip preview gives the profile clip poses", status == {"FINISHED"} and worst < 1e-5, worst)
     character_tools.clear_pose(scene11)
-    # Open a GH3 character package of format 1.1 and export it without edits.
+    # Open a GH3 character package on a character library profile and export it without edits.
     with bpy.context.temp_override(scene=bpy.context.scene):
         status = bpy.ops.chstage.open_character(filepath=str(midori_package))
     opened11 = next((s for s in bpy.data.scenes if s.chstage.source_package == str(midori_package.resolve())), None)
-    copy11 = output / "roundtrip-1.1" / midori_package.name
+    copy11 = output / "roundtrip-character-library" / midori_package.name
     status_export = operator_scene(opened11, bpy.ops.chstage.export_character, filepath=str(copy11)) if opened11 else None
     report11 = validator.Validator(copy11, library, character_library=character_library).run() if copy11.is_file() else None
     # The GH3 character GLBs keep materials that no mesh uses (Blender drops them), and have coincident cards that the
@@ -542,7 +542,7 @@ if character_library.exists() and midori_package.exists():
                 worst = max(worst, min(np.abs(np.roll(other[k], r, 0) - triangle).max() for k in near for r in range(3)))
     differences = compare.compare_packages(midori_package, copy11) if copy11.is_file() else {"stage": {}}
     joints = differences["stage"].get("nodeTransform", {})
-    check("1.1: open a GH3 character package and export it without edits", status == {"FINISHED"} and opened11 is not None
+    check("character library: open a GH3 character package and export it without edits", status == {"FINISHED"} and opened11 is not None
           and opened11.chstage.character.library_profile == midori and status_export == {"FINISHED"} and counts_equal and worst < 1e-5
           and joints.get("position", 1) < 1e-4 and joints.get("rotation", 1) < 0.01 and report11 is not None and report11.ok,
           {"triangleCorners": worst, "joints": joints, "validator": report11.errors if report11 else None})

@@ -10,7 +10,7 @@ internal sealed class CharacterModel
     public string Role { get; private init; } = "";
     // character.json attachments.instrument; "" for the default (also in caches that are older than the field).
     public string Instrument { get; private init; } = "";
-    // Format 1.1: the character library that has the profile, and the animation set that character.json names ("" for the
+    // The character library that has the profile, and the animation set that character.json names ("" for the
     // profile's set). "" for a profile of the band library (also in caches that are older than the fields).
     public string Library { get; private init; } = "";
     public string Profile { get; private init; } = "";

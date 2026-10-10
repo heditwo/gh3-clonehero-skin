@@ -183,10 +183,10 @@ def encode_clip(job):
 
 
 def library_manifest(entry):
-    return {"format": "chlib/1.2", "id": "gh3-band-v1", "version": decisions.LIBRARY_VERSION, "name": "GH3 band library",
+    return {"format": "chlib/1.0", "id": "gh3-band-v1", "version": decisions.LIBRARY_VERSION, "name": "GH3 band library",
             "description": "The GH3 band, crowd, animation clips, stage sounds, Video Shoot movies, particle textures, and original song direction.",
             "authors": decisions.GH3_LIBRARY_AUTHORS, "license": decisions.GH3_LICENSE, "permissions": decisions.GH3_PERMISSIONS,
-            "credits": [decisions.CONVERTER_CREDIT], "entry": entry, "minModVersion": decisions.FORMAT_1_2_MOD_VERSION}
+            "credits": [decisions.CONVERTER_CREDIT], "entry": entry}
 
 
 def build_library(library, events, output, jobs=2):
@@ -253,11 +253,11 @@ CHARACTER_LIBRARY_ID = "gh3-characters-v1"
 
 
 def character_library_manifest():
-    return {"format": "chlib/1.2", "id": CHARACTER_LIBRARY_ID, "version": decisions.LIBRARY_VERSION, "name": "GH3 character library",
+    return {"format": "chlib/1.0", "id": CHARACTER_LIBRARY_ID, "version": decisions.LIBRARY_VERSION, "name": "GH3 character library",
             "description": "The rig profiles, animation sets, hair physics, and IK of the playable GH3 guitarists.",
             "authors": decisions.GH3_CHARACTER_LIBRARY_AUTHORS, "license": decisions.GH3_LICENSE, "permissions": decisions.GH3_PERMISSIONS,
             "credits": [decisions.CONVERTER_CREDIT], "requires": [{"id": "gh3-band-v1", "version": decisions.LIBRARY_VERSION}],
-            "entry": {"characters": "characters.json"}, "minModVersion": decisions.FORMAT_1_2_MOD_VERSION}
+            "entry": {"characters": "characters.json"}}
 
 
 def build_character_library(folder, output, jobs=2):
@@ -328,11 +328,10 @@ def build_character(folder, library, output, character_library=CHARACTER_LIBRARY
     description = f"{info['name']}, as GH3 offers it ({info['unlock']})." + (f" Instrument: {info['instrumentName']}." if info["instrumentInModel"] else "")
     requires = [{"id": "gh3-band-v1", "version": decisions.LIBRARY_VERSION}]
     if library_id != "gh3-band-v1": requires.append({"id": library_id, "version": decisions.LIBRARY_VERSION})
-    manifest = {"format": "chchar/1.0" if library_id == "gh3-band-v1" else "chchar/1.1", "id": info["id"], "version": decisions.PACKAGE_VERSION,
+    manifest = {"format": "chchar/1.0", "id": info["id"], "version": decisions.PACKAGE_VERSION,
                 "name": info["name"], "description": description, "authors": decisions.GH3_CHARACTER_AUTHORS, "license": decisions.GH3_LICENSE,
                 "permissions": decisions.GH3_PERMISSIONS, "credits": credits, "requires": requires,
                 "entry": {"model": "character.glb", "character": "character.json"}}
-    if library_id != "gh3-band-v1": manifest["minModVersion"] = decisions.FORMAT_1_1_MOD_VERSION
     writer.finish(manifest)
     return publish(writer, output, name)
 

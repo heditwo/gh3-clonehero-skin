@@ -7,7 +7,7 @@ Read this file completely before you start. You take over as the **orchestrator*
 The mission was [PACKAGING-PLAN.md](PACKAGING-PLAN.md): a release format and a creator workflow. Steps 1 to 6 are done. Step 6 is **release readiness**, not a release: nothing is published, tagged, uploaded, or announced. Build artifacts stay on the local disk.
 
 - `main` @ `d04137c` when this file was written (plus the commit that adds this file). Use `git log` for the current commit.
-- The mod is version 0.9.10 (package format 1.2: the character library `gh3-characters-v1`, the GH3 guitarists on their own rigs, and the Havok limit fields of the hair joints). It loads all stages, the band library, and the characters from packages. Linux is tested; Windows is tested under Wine only; macOS is not supported ([STATUS.md](STATUS.md#platforms)).
+- The mod is version 0.9.10 (package format 1.0 of all kinds: the character library `gh3-characters-v1`, the GH3 guitarists on their own rigs, and the Havok limit fields of the hair joints). It loads all stages, the band library, and the characters from packages. Linux is tested; Windows is tested under Wine only; macOS is not supported ([STATUS.md](STATUS.md#platforms)).
 - What remains before a release (owner decisions and tests on real hardware): [PACKAGING-PLAN.md section 10](PACKAGING-PLAN.md#10-before-a-release).
 - Known gaps from GH3 and the remaining work: [STATUS.md](STATUS.md).
 - The owner decisions of the plan (section 2 of the plan) are final. Do not reopen them unless the owner asks.

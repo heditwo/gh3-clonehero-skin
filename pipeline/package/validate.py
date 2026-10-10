@@ -24,7 +24,8 @@ from . import q48
 from .glb import Glb, GlbError, decompose, quaternion_angle
 from .schema import Schemas
 
-FORMAT_MINOR = {"chstage": 0, "chchar": 1, "chinst": 0, "chlib": 2}
+# Every kind is format 1.0 (PACKAGING-PLAN decision 12). A higher minor comes from a newer mod.
+FORMAT_MINOR = 0
 HAIR_FRAME_FIELDS = ("twistAxis", "coneAxis", "planeAxis")
 EXTENSIONS = {".chstage": "chstage", ".chchar": "chchar", ".chinst": "chinst", ".chlib": "chlib"}
 STORED = {".glb", ".png", ".br", ".ogg", ".mp3", ".opus"}
@@ -219,9 +220,8 @@ class Validator:
             return self.report
         self.manifest = manifest
         self.kind, version = manifest["format"].split("/")
-        minor = self.minor = int(version.split(".")[1])
-        if minor > FORMAT_MINOR[self.kind]:
-            self.report.error("manifest.json", f"format {manifest['format']} needs a newer mod (this validator reads {self.kind}/1.{FORMAT_MINOR[self.kind]})")
+        if int(version.split(".")[1]) > FORMAT_MINOR:
+            self.report.error("manifest.json", f"format {manifest['format']} needs a newer mod (this validator reads {self.kind}/1.{FORMAT_MINOR})")
             return self.report
         suffix = self.source.path.suffix.lower()
         if suffix in EXTENSIONS and EXTENSIONS[suffix] != self.kind:
@@ -526,16 +526,14 @@ class Validator:
         glb = self.check_glb(entry["model"], skinned=True)
         if character is None or glb is None: return
         own = None
-        if "animations" in character and self.minor < 1:
-            self.report.error(entry["character"], "'animations' needs format chchar/1.1")
+        if "animations" in character and character["profile"] in PROFILES:
+            self.report.error(entry["character"], "'animations' needs a profile of a character library")
         if character["profile"] not in PROFILES:
-            if self.minor < 1:
-                self.report.error(entry["character"], f"unknown profile '{character['profile']}'")
-            elif character["library"] == LIBRARY_ID:
+            if character["library"] == LIBRARY_ID:
                 self.report.error(entry["character"], f"the band library has no profile '{character['profile']}'")
             elif not any(r["id"] == character["library"] for r in self.manifest.get("requires", [])):
                 self.report.error("manifest.json", f"'requires' must list the character library {character['library']}")
-            if self.minor >= 1 and self.character_library is not None:
+            if self.character_library is not None:
                 try:
                     library = load_character_library(self.character_library)
                 except (OSError, ValueError) as error:
@@ -668,7 +666,6 @@ class Validator:
     def check_library(self):
         entry = self.manifest["entry"]
         if "characters" in entry:
-            if self.minor < 1: self.report.error("manifest.json", "a character library needs format chlib/1.1")
             if self.manifest["id"] != CHARACTER_LIBRARY_ID: self.report.warn("manifest.json", f"the mod uses the character library {CHARACTER_LIBRARY_ID}")
             if any(key in entry for key in LIBRARY_SCHEMAS): self.report.error("manifest.json", "a character library has only the entry 'characters'")
             self.check_character_library(entry["characters"])
@@ -728,11 +725,9 @@ class Validator:
                 if not set(chain["bones"]) <= bones or chain["target"] not in bones: self.report.error(where, "an IK chain names a bone that is not in the rig")
 
     def check_hair_joints(self, where, joints):
-        """Format 1.2 hair fields (PACKAGE-FORMAT.md section 10.1): the Havok limit axes come together, on ragdoll joints."""
+        """The Havok limit fields of the hair joints (PACKAGE-FORMAT.md section 10.1) come together, on ragdoll joints."""
         for joint in joints:
             frames = [field for field in HAIR_FRAME_FIELDS if field in joint]
-            if (frames or "maxAngularVelocity" in joint) and self.minor < 2:
-                self.report.error(where, f"hair joint {joint['bone']}: the Havok limit axes and speed limit need format chlib/1.2")
             if frames and (len(frames) != len(HAIR_FRAME_FIELDS) or joint.get("type", "ragdoll") != "ragdoll"):
                 self.report.error(where, f"hair joint {joint['bone']}: twistAxis, coneAxis, and planeAxis come together, on a ragdoll joint")
             if any(abs(math.sqrt(sum(v * v for v in joint[field])) - 1) > 0.01 for field in frames):
@@ -859,7 +854,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="python -m pipeline.package.validate", description=__doc__.splitlines()[0])
     parser.add_argument("package", type=Path, nargs="+")
     parser.add_argument("--library", type=Path, help="library package (gh3-band-v1.chlib) or current library folder for the character profile check")
-    parser.add_argument("--character-library", type=Path, help="character library package (gh3-characters-v1.chlib) or folder for the profile check of format 1.1 characters")
+    parser.add_argument("--character-library", type=Path, help="character library package (gh3-characters-v1.chlib) or folder for the profile check of characters on its profiles")
     parser.add_argument("--json", action="store_true", help="print one JSON report for each package")
     args = parser.parse_args(argv)
     failed = False

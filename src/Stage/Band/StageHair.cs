@@ -62,13 +62,13 @@ internal sealed class HairJoint
     public string Type { get; set; } = "ragdoll";
     public float[] Axis { get; set; } = Array.Empty<float>();
     public float[] Range { get; set; } = Array.Empty<float>();
-    // Format 1.2 (optional): the Havok ragdoll limit frames in the joint's bind frame. The cone limits the angle from
+    // Optional: the Havok ragdoll limit frames in the joint's bind frame. The cone limits the angle from
     // TwistAxis (on the joint) to ConeAxis (on the parent); the planes limit the angle from TwistAxis to the plane normal
     // to PlaneAxis. Without them the cone is centred on the bind direction and the planes do not apply.
     public float[] TwistAxis { get; set; } = Array.Empty<float>();
     public float[] ConeAxis { get; set; } = Array.Empty<float>();
     public float[] PlaneAxis { get; set; } = Array.Empty<float>();
-    // Format 1.2 (optional): the Havok speed limit of the body in radians per second; 0 is no limit.
+    // Optional: the Havok speed limit of the body in radians per second; 0 is no limit.
     public float MaxAngularVelocity { get; set; }
 }
 

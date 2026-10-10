@@ -89,7 +89,7 @@ internal sealed class LibraryImporter
                 models++;
             }
         }
-        // A character library (format 1.1, section 10.1): characters.json and its clips, copied.
+        // A character library (section 10.1): characters.json and its clips, copied.
         if (_package.Manifest.Entry.TryGetValue("characters", out var characters))
         {
             if (characters != CharacterLibrary.FileName) throw new PackageException($"the characters entry must be {CharacterLibrary.FileName}");

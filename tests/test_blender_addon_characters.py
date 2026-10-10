@@ -263,22 +263,21 @@ MIDORI = "gh3-guitarist-midori-v1"
 
 
 class CharacterJsonTests(unittest.TestCase):
-    def test_fixed_profile_stays_format_1_0(self):
+    def test_fixed_profile(self):
         value = character.character_json("gh3-guitarist-axel-v1", ["hair"])
         self.assertEqual(value, {"version": 1, "library": "gh3-band-v1", "profile": "gh3-guitarist-axel-v1", "hairMaterials": ["hair"]})
         self.assertEqual(character.package_format(value["library"]), "chchar/1.0")
         description = character.complete_requirements({"requires": [{"id": "gh3-band-v1", "version": "1.0.0"}], "minModVersion": ""})
         self.assertEqual(description, {"requires": [{"id": "gh3-band-v1", "version": "1.0.0"}], "minModVersion": ""})
 
-    def test_character_library_profile_is_format_1_1(self):
+    def test_character_library_profile(self):
         value = character.character_json(MIDORI, [], "", "gh3-characters-v1", "midori")
         self.assertEqual(value, {"version": 1, "library": "gh3-characters-v1", "profile": MIDORI, "animations": "midori"})
         self.assertEqual(character.open_character_json(value)["animations"], "midori")
-        self.assertEqual(character.package_format("gh3-characters-v1"), "chchar/1.1")
-        description = character.complete_requirements({"requires": [], "minModVersion": "0.9.8"}, "gh3-characters-v1")
+        self.assertEqual(character.package_format("gh3-characters-v1"), "chchar/1.0")
+        description = character.complete_requirements({"requires": [], "minModVersion": ""}, "gh3-characters-v1")
         self.assertEqual([r["id"] for r in description["requires"]], ["gh3-band-v1", "gh3-characters-v1"])
-        self.assertEqual(description["minModVersion"], "0.9.9")
-        self.assertEqual(character.complete_requirements({"requires": [], "minModVersion": "1.2.0"}, "gh3-characters-v1")["minModVersion"], "1.2.0")
+        self.assertEqual(description["minModVersion"], "")
 
 
 @unittest.skipUnless(CHARACTER_LIBRARY.exists(), "no character library package")

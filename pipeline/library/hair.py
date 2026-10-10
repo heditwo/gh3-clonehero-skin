@@ -171,7 +171,7 @@ def ragdoll_member(rag, rig, accessories, all_chains=False):
         for field, vector in joint.pop("_axes").items():
             vector = to_bind @ vector
             joint[field] = (vector / np.linalg.norm(vector)).tolist()
-        # The fields in the order of the library rows, then the joint type fields, then (format 1.2) the Havok limit
+        # The fields in the order of the library rows, then the joint type fields, then the Havok limit
         # axes and the angular speed limit of the body.
         order = ["bone", "parent", "limits", "mass", "friction", "angularDamping", "linearDamping", "position", "rotation", "length", "type", "axis", "range",
                  "twistAxis", "coneAxis", "planeAxis", "maxAngularVelocity"]

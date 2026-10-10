@@ -199,7 +199,7 @@ Each GH3 model PAK has the magazine photo of its variant (`Mag_Photo`, a 512 × 
 2. Fix close-up cameras with `GH3_SKIN_DEBUG_VIEW` (one view for each role, `GH3_SKIN_DEBUG_VIEW_SECONDS=4`) and capture one frame in each view with `GH3_SKIN_CAPTURE_CLOCK=song` and `GH3_SKIN_CAPTURE_TIMES`.
 3. Check the log line `GH3 band <role>: character <id> (...) with <instrument>[; hair of the guitarist profile (9 joints)]`, and `python3 tools/audit-materials.py` (the `characters` line has no `FALLBACK`).
 
-The GH3 guitarists play on their own rig profiles (format 1.1). Check their motion against the GH3 clips:
+The GH3 guitarists play on their own rig profiles. Check their motion against the GH3 clips:
 
 1. Run the capture with `GH3_SKIN_TRACE=1` and a guitarist character, for example `GH3_SKIN_CHARACTER_GUITARIST=gh3.judy.outfit1.style1`. The log line `GH3 band guitarist: character <id> (...) on its GH3 profile <profile> with ...; animation set <set>, scale <s>, hair <n> joints | no hair physics, IK <ik>` names the profile.
 2. Run `MISE_QUIET=1 uv run --with numpy --with pillow python tools/check-character-trace.py <game>/MelonLoader/Latest.log`. It samples the GH3 clip of each `[trace] band` line on the GH3 skeleton of the profile, at the logged clip time, and prints the largest difference of the four logged bones. Expected: about 0.001 mm and less than 0.02° (q48 and the 30 fps resampling). The tool needs `assets/libraries/gh3-characters-v1` and the GH3 data.

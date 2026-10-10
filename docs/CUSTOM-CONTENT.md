@@ -6,7 +6,7 @@ This is the reference for song direction (sections 6 and 10 to 12) and for the s
 
 The authoring target is Moonscraper's chart workflow with complete GH3 data and behavior. Native GH3 archives are reference inputs and a possible export target. Authors do not need to edit or distribute PAK files. Sections 9 to 12 give the workflow.
 
-The library uses **four original GH3 skeletons and their animations**. Characters use these fixed profiles (PACKAGING-PLAN decision 2), or, from format 1.1, a GH3 guitarist profile of the character library `gh3-characters-v1` with its own skeleton and animations ([PACKAGE-FORMAT.md section 10.1](PACKAGE-FORMAT.md#101-character-library-format-11)). Instrument packages and retargeting are not in v1. Stages supply the setting and camera shots. Charts select the performance through timed cues.
+The library uses **four original GH3 skeletons and their animations**. Characters use these fixed profiles (PACKAGING-PLAN decision 2), or a GH3 guitarist profile of the character library `gh3-characters-v1` with its own skeleton and animations ([PACKAGE-FORMAT.md section 10.1](PACKAGE-FORMAT.md#101-character-library)). Instrument packages and retargeting are not in v1. Stages supply the setting and camera shots. Charts select the performance through timed cues.
 
 ## 1. Data ownership
 

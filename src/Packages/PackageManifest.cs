@@ -13,9 +13,8 @@ internal readonly record struct PackageRequirement(string Id, SemanticVersion Ve
 internal sealed class PackageManifest
 {
     public const int FormatMajor = 1;
-    // The highest minor of each kind that this mod reads: format 1.1 adds the character library and its profiles, and
-    // format 1.2 (libraries only) the Havok limit axes and speed limits of the hair joints.
-    public static int FormatMinor(PackageKind kind) => kind switch { PackageKind.Stage or PackageKind.Instrument => 0, PackageKind.Library => 2, _ => 1 };
+    // Every kind is format 1.0 (PACKAGING-PLAN decision 12); a higher minor comes from a newer mod.
+    public const int FormatMinor = 0;
     public PackageKind Kind { get; private init; }
     public string Format { get; private init; } = "";
     public string Id { get; private init; } = "";
@@ -67,7 +66,7 @@ internal sealed class PackageManifest
         var major = int.Parse(match.Groups[2].Value);
         var minor = int.Parse(match.Groups[3].Value);
         if (major != FormatMajor) throw new PackageException($"format '{format}' is not supported (this mod reads {match.Groups[1].Value}/{FormatMajor}.x)");
-        if (minor > FormatMinor(kind)) throw new PackageException($"format '{format}' needs a newer mod (this mod reads {match.Groups[1].Value}/{FormatMajor}.{FormatMinor(kind)})");
+        if (minor > FormatMinor) throw new PackageException($"format '{format}' needs a newer mod (this mod reads {match.Groups[1].Value}/{FormatMajor}.{FormatMinor})");
         var id = Text("id");
         if (!ValidId(id)) throw new PackageException($"invalid package id '{id}'");
         if (!SemanticVersion.TryParse(Text("version"), out var version)) throw new PackageException("invalid package version");
@@ -112,8 +111,8 @@ internal sealed class PackageManifest
             PackageKind.Stage => new[] { "model", "placements", "cameras" },
             PackageKind.Character => new[] { "model", "character" },
             PackageKind.Instrument => new[] { "model", "instrument" },
-            // Format 1.1 adds the character library (section 10.1); a band library keeps its three entries.
-            _ when minor >= 1 && entry.ContainsKey("characters") => new[] { "characters" },
+            // A character library (section 10.1); a band library has three entries.
+            _ when entry.ContainsKey("characters") => new[] { "characters" },
             _ => new[] { "catalog", "band", "performance" },
         };
         foreach (var role in requiredEntries)

@@ -319,7 +319,7 @@ class CharacterPackageTests(unittest.TestCase):
     def test_profile_tolerances(self):
         self.assertEqual(errors_of(self.character(skinned_glb(offset=0.00005)), library=self.library), [])
         self.assertTrue(any("joint positions differ" in e for e in errors_of(self.character(skinned_glb(offset=0.001, ibm_offset=0.001)), library=self.library)))
-        self.assertTrue(any("unknown profile" in e for e in errors_of(self.character(skinned_glb(), profile="gh3-keytarist-v1"), library=self.library)))
+        self.assertTrue(any("has no profile" in e for e in errors_of(self.character(skinned_glb(), profile="gh3-keytarist-v1"), library=self.library)))
         self.assertTrue(any("hair material" in e for e in errors_of(self.character(skinned_glb(), hair=["hair"]), library=self.library)))
 
     def test_toon_material_and_hair_layer(self):

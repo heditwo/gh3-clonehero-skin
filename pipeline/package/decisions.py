@@ -49,7 +49,3 @@ PREVIEW_SIZE = (512, 288)
 
 PACKAGE_VERSION = "1.0.0"
 LIBRARY_VERSION = "1.0.0"
-# The first mod version that reads format 1.1 packages (the character library and the characters on its profiles).
-FORMAT_1_1_MOD_VERSION = "0.9.9"
-# The first mod version that reads format 1.2 libraries (the Havok limit axes and speed limits of the hair joints).
-FORMAT_1_2_MOD_VERSION = "0.9.10"

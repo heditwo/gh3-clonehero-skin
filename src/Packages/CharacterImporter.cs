@@ -8,9 +8,9 @@ namespace Gh3Skin.Packages;
 // Character package (`.chchar`, PACKAGE-FORMAT.md section 9) to a band model folder that StageAssets draws as the library
 // members: GH3BND02 meshes, stage.json, and textures, plus the joint list (character.json) and the GLB inverse bind matrices
 // (bindposes.bin). The material rules are the library rules (LibraryImporter.ImportModel), so a library member exported as a
-// character gives the same meshes and materials. On a fixed profile of the band library (format 1.0), the band role's rig
-// and clips drive it; joints map by name. On a profile of a character library (format 1.1), its own rig, animation set,
-// hair, and IK drive it (StageBand).
+// character gives the same meshes and materials. On a fixed profile of the band library, the band role's rig and clips
+// drive it; joints map by name. On a profile of a character library, its own rig, animation set, hair, and IK drive it
+// (StageBand).
 internal sealed class CharacterImporter
 {
     public const double JointPosition = 1e-4;
@@ -44,9 +44,8 @@ internal sealed class CharacterImporter
     {
         var entry = _package.Manifest.Entry;
         var character = Object(_package.Read(entry["character"]));
-        var minor = _package.Manifest.Format.EndsWith(".0") ? 0 : 1;
-        Fields(character, "character.json", minor == 0 ? new[] { "version", "library", "profile", "hairMaterials", "attachments", "highway" } :
-            new[] { "version", "library", "profile", "animations", "hairMaterials", "attachments", "highway" }, "version", "library", "profile");
+        Fields(character, "character.json", new[] { "version", "library", "profile", "animations", "hairMaterials", "attachments", "highway" },
+            "version", "library", "profile");
         if (Number(character["version"], "version") != 1) throw new PackageException("character.json version must be 1");
         var profile = Text(character["profile"]) ?? "";
         var libraryId = Text(character["library"]) ?? "";
@@ -63,7 +62,7 @@ internal sealed class CharacterImporter
         }
         else
         {
-            // Format 1.1: a profile of a required character library (PACKAGE-FORMAT.md section 10.1).
+            // A profile of a required character library (PACKAGE-FORMAT.md section 10.1).
             var library = _libraries.TryGetValue(libraryId, out var libraryFolder) && CharacterLibrary.Has(libraryFolder) ? CharacterLibrary.Load(libraryFolder)
                 : throw new PackageException($"unknown character profile '{profile}' (library {libraryId} is not a required character library)");
             var own = library.Profiles.TryGetValue(profile, out var found) ? found : throw new PackageException($"library {libraryId} has no profile '{profile}'");

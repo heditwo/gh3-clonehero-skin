@@ -226,7 +226,7 @@ internal sealed class StageBand : IDisposable
         }
     }
 
-    // A character on a character library profile (format 1.1): its mesh on its own rig, with the GLB inverse bind matrices.
+    // A character on a character library profile: its mesh on its own rig, with the GLB inverse bind matrices.
     // Its own instrument plays in the role of its profile. In another role (GH3 co-op: a guitarist character plays the
     // bass with its own animation set), the role's library instrument hangs on the bones with the same names, bound
     // with the role rig's rest pose, so that it follows the character's instrument bones.

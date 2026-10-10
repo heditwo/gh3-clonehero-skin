@@ -144,7 +144,7 @@
         "properties": {
           "entry": {
             "additionalProperties": false,
-            "description": "A band library (catalog, band, performance) or, from format 1.1, a character library (characters).",
+            "description": "A band library (catalog, band, performance) or a character library (characters).",
             "anyOf": [{ "required": ["catalog", "band", "performance"] }, { "required": ["characters"] }],
             "properties": {
               "characters": { "$ref": "common.schema.json#/$defs/jsonPath" },

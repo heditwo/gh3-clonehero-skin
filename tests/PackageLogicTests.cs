@@ -57,17 +57,16 @@ internal static class PackageLogicTests
         Check(Rejection(Manifest("chstage/2.0")).Contains("not supported"), "an unknown major format is rejected");
         Check(Rejection(Manifest("chstage/1.0"), PackageKind.Library).Contains("does not agree"), "the extension selects the kind");
         Check(Rejection(Manifest("chstage/1.0", ",\"minModVersion\":\"9.0.0\"")).Contains("needs mod version 9.0.0"), "minModVersion is checked");
-        var character = Encoding.UTF8.GetString(Manifest("chchar/1.1")).Replace("\"model\":\"stage.glb\",\"placements\":\"placements.json\",\"cameras\":\"cameras.json\"",
+        var character = Encoding.UTF8.GetString(Manifest("chchar/1.0")).Replace("\"model\":\"stage.glb\",\"placements\":\"placements.json\",\"cameras\":\"cameras.json\"",
             "\"model\":\"character.glb\",\"character\":\"character.json\"");
-        Check(Rejection(Encoding.UTF8.GetBytes(character), PackageKind.Character) == "", "a v1.1 character manifest is read");
-        Check(Rejection(Encoding.UTF8.GetBytes(character.Replace("chchar/1.1", "chchar/1.2")), PackageKind.Character).Contains("needs a newer mod"), "chchar/1.2 asks for a newer mod");
-        var library = Encoding.UTF8.GetString(Manifest("chlib/1.1")).Replace("\"model\":\"stage.glb\",\"placements\":\"placements.json\",\"cameras\":\"cameras.json\"",
+        Check(Rejection(Encoding.UTF8.GetBytes(character), PackageKind.Character) == "", "a character manifest is read");
+        Check(Rejection(Encoding.UTF8.GetBytes(character.Replace("chchar/1.0", "chchar/1.1")), PackageKind.Character).Contains("needs a newer mod"), "chchar/1.1 asks for a newer mod");
+        var library = Encoding.UTF8.GetString(Manifest("chlib/1.0")).Replace("\"model\":\"stage.glb\",\"placements\":\"placements.json\",\"cameras\":\"cameras.json\"",
             "\"characters\":\"characters.json\"");
-        Check(Rejection(Encoding.UTF8.GetBytes(library), PackageKind.Library) == "", "a v1.1 character library manifest is read");
-        Check(Rejection(Encoding.UTF8.GetBytes(library.Replace("chlib/1.1", "chlib/1.0")), PackageKind.Library).Contains("needs 'catalog'"),
-            "a v1.0 library needs the band library entries");
-        Check(Rejection(Encoding.UTF8.GetBytes(library.Replace("chlib/1.1", "chlib/1.2")), PackageKind.Library) == "", "a v1.2 library manifest is read");
-        Check(Rejection(Encoding.UTF8.GetBytes(library.Replace("chlib/1.1", "chlib/1.3")), PackageKind.Library).Contains("needs a newer mod"), "chlib/1.3 asks for a newer mod");
+        Check(Rejection(Encoding.UTF8.GetBytes(library), PackageKind.Library) == "", "a character library manifest is read");
+        Check(Rejection(Encoding.UTF8.GetBytes(library.Replace("characters.json", "x.json").Replace("\"characters\"", "\"other\"")), PackageKind.Library).Contains("needs 'catalog'"),
+            "a band library needs the band library entries");
+        Check(Rejection(Encoding.UTF8.GetBytes(library.Replace("chlib/1.0", "chlib/1.1")), PackageKind.Library).Contains("needs a newer mod"), "chlib/1.1 asks for a newer mod");
     }
 
     private static void CheckPythonRepr()

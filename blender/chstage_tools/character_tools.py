@@ -4,7 +4,7 @@
 A character scene has the profile rig (an armature, scene.chstage.character.rig), the skinned meshes of the creator
 (children of the rig with an Armature modifier), and helpers that are never exported: the GH3 reference body and the
 attachment preview (instrument, microphone, or drum kit) of the profile, both from the library band model. A character
-library profile (format 1.1, for example gh3-guitarist-midori-v1) takes its rig from characters.json and its helpers
+library profile (for example gh3-guitarist-midori-v1) takes its rig from characters.json and its helpers
 from the GH3 character package of the profile (gh3.<name>...chchar next to the character library). The clip preview
 converts library clips (q48) to actions of the rig at the clip rate (30 fps); it has the fixed profiles only.
 """

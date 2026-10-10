@@ -127,7 +127,7 @@ Differences from GH3:
 
 - The hair moves with the GH3 joint limits, but it is not the GH3 physics engine. It collides only with the head.
 - Bret Michaels and the female singer move with the animations and the hair joints of the male singer.
-- To play the GH3 guitarist characters, the mod needs the character library `gh3-characters-v1.chlib` in `Mods/GH3Skin/Packages/` (the release installs it). A character that needs a newer mod is not in the picker; the log tells you why.
+- To play the GH3 guitarist characters, the mod needs the character library `gh3-characters-v1.chlib` in `Mods/GH3Skin/Packages/` (the release installs it). A character that cannot load is not in the picker; the log tells you why.
 
 If a character cannot load, the venue default plays, and the log tells you why.
 

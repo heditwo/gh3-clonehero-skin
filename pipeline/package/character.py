@@ -24,7 +24,6 @@ from .glb import Glb
 from .validate import CHARACTER_LIBRARY_ID, LIBRARY_ID, PROFILES, Report, Source, gh3_key
 
 FORMAT = "chchar/1.0"
-FORMAT_1_1 = "chchar/1.1"
 MODEL_FILE = "character.glb"
 CHARACTER_FILE = "character.json"
 ROLE_PROFILES = {role: profile for profile, role in PROFILES.items()}
@@ -326,7 +325,7 @@ class Library:
 
 
 class CharacterLibrary:
-    """Read a character library package (format chlib/1.1, PACKAGE-FORMAT 10.1) for the character tools."""
+    """Read a character library package (PACKAGE-FORMAT 10.1) for the character tools."""
 
     def __init__(self, path):
         report = Report()
@@ -723,26 +722,16 @@ def open_character_json(value):
 
 
 def package_format(library=LIBRARY_ID):
-    """The manifest format of a character: chchar/1.0 on a fixed profile, chchar/1.1 on a character library profile."""
-    return FORMAT if (library or LIBRARY_ID) == LIBRARY_ID else FORMAT_1_1
-
-
-def version_tuple(text):
-    try:
-        return tuple(int(part) for part in str(text).split("."))
-    except ValueError:
-        return ()
+    """The manifest format of a character (one format for all profiles)."""
+    return FORMAT
 
 
 def complete_requirements(description, library=LIBRARY_ID):
-    """Add the libraries that a character needs to the 'requires' of a package description, and raise its
-    'minModVersion' to the first mod that reads format 1.1 (character library profiles). Returns the description."""
+    """Add the libraries that a character needs to the 'requires' of a package description. Returns the description."""
     requires = description.setdefault("requires", [])
     needed = [LIBRARY_ID] + ([library] if library and library != LIBRARY_ID else [])
     for package in needed:
         if not any(row.get("id") == package for row in requires): requires.append({"id": package, "version": decisions.LIBRARY_VERSION})
-    if package_format(library) == FORMAT_1_1 and version_tuple(description.get("minModVersion") or "0") < version_tuple(decisions.FORMAT_1_1_MOD_VERSION):
-        description["minModVersion"] = decisions.FORMAT_1_1_MOD_VERSION
     return description
 
 
