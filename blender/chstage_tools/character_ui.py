@@ -48,6 +48,8 @@ class CHSTAGE_OT_new_character(Operator):
                                       description="gh3-characters-v1.chlib, for the profiles of the GH3 guitarists. Empty: the add-on preference, "
                                                   "or the file next to the GH3 library")
     use_gh3_body: BoolProperty(name="Start from the GH3 body", description="The GH3 body becomes the character mesh (else it is only a reference)")
+    own_skeleton: BoolProperty(name="Use my model's skeleton", description="Keep the skeleton of your model (MMD, VRM, Mixamo, Unreal names): "
+                               "the game retargets the GH3 clips of the profile to it. Then add your model and click Use Selected Armature")
 
     def invoke(self, context, event):
         if not self.library: self.library = camera_tools.find_library() or ""
@@ -60,7 +62,8 @@ class CHSTAGE_OT_new_character(Operator):
             return {"CANCELLED"}
         characters = bpy.path.abspath(self.character_library) if self.character_library else None
         try:
-            scene = character_tools.new_character(self.profile, library, self.use_gh3_body, character_library_file=characters)
+            scene = character_tools.new_character(self.profile, library, self.use_gh3_body and not self.own_skeleton, character_library_file=characters,
+                                                  own_skeleton=self.own_skeleton)
         except Exception as error:
             traceback.print_exc()
             self.report({"ERROR"}, f"New character stopped: {error}")
@@ -401,7 +404,8 @@ class CHSTAGE_PT_character(Panel):
             return
         p = context.scene.chstage.character
         box = layout.box()
-        box.label(text=f"Profile: {character_tools.profile_id(context.scene)}", icon="ARMATURE_DATA")
+        box.label(text=f"Profile: {character_tools.profile_id(context.scene)}" + (" (clips retargeted to its own skeleton)" if p.own_skeleton else ""),
+                  icon="ARMATURE_DATA")
         row = box.row(align=True)
         row.label(text=f"Rig: {p.rig.name if p.rig else 'none'}")
         if p.rig is not None: row.operator("chstage.select_rig", text="", icon="RESTRICT_SELECT_OFF")
@@ -443,12 +447,13 @@ class CHSTAGE_PT_character_weights(CharacterPanel, Panel):
             sub.operator("chstage.character_helpers", text=label, icon="HIDE_OFF" if shown else "HIDE_ON", depress=shown).action = action
         row.operator("chstage.character_helpers", text="", icon="FILE_REFRESH").action = "RELOAD"
         layout.label(text="Weights of the selected meshes")
-        layout.operator("chstage.transfer_weights", icon="MOD_DATA_TRANSFER")
+        if not p.own_skeleton: layout.operator("chstage.transfer_weights", icon="MOD_DATA_TRANSFER")
         layout.operator("chstage.limit_weights", icon="MOD_VERTEX_WEIGHT")
         box = layout.box()
-        box.label(text="Hair bones of the profile")
-        box.prop(p, "hair_chain", text="")
-        box.operator("chstage.assign_hair", icon="CURVES" if bpy.app.version >= (3, 3, 0) else "HAIR")
+        if not p.own_skeleton:
+            box.label(text="Hair bones of the profile")
+            box.prop(p, "hair_chain", text="")
+            box.operator("chstage.assign_hair", icon="CURVES" if bpy.app.version >= (3, 3, 0) else "HAIR")
         box.label(text="Hair materials (sorted transparency)")
         row = box.row()
         row.template_list("CHSTAGE_UL_hair_materials", "", p, "hair_materials", p, "hair_materials_index", rows=2)

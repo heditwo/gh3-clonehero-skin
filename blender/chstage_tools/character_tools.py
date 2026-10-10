@@ -187,8 +187,9 @@ def remove_helpers(scene):
 
 
 def load_helpers(scene, collection, lib, role, show_reference=True):
-    """Import the GH3 reference body and the attachment of a profile from the library as helpers of the rig."""
-    rig = props(scene).rig
+    """Import the GH3 reference body and the attachment of a profile from the library as helpers of the rig (of the GH3
+    rig helper of a character with its own skeleton)."""
+    rig = props(scene).source_rig or props(scene).rig
     remove_helpers(scene)
     parts = helper_parts(scene, lib, role)
     props(scene).hair_reference = json.dumps(parts["hairMaterials"])
@@ -243,11 +244,12 @@ def add_preview_camera(scene, collection):
     return camera
 
 
-def new_character(profile, library_file, use_gh3_body=False, name=None, character_library_file=None):
+def new_character(profile, library_file, use_gh3_body=False, name=None, character_library_file=None, own_skeleton=False):
     """Make a character scene for a profile: the rig from the library, the helpers, and the clip list. With
     use_gh3_body, the GH3 body of the library becomes the character mesh (a start for an edit). A profile that is not
     a fixed profile is a profile of the character library (character_library_file, else the preference or the file
-    next to the GH3 library)."""
+    next to the GH3 library). With own_skeleton, the GH3 rig is a helper (the source of the clip preview) and the
+    creator's armature becomes the rig (skeleton_tools.use_skeleton)."""
     clib = None
     if profile in character.PROFILES:
         role = role_of(profile)
@@ -291,7 +293,17 @@ def new_character(profile, library_file, use_gh3_body=False, name=None, characte
             for material in mats_by_name(gltf, mats).get(name, []): p.hair_materials.add().material = material
     else:
         for obj in meshes: bpy.data.objects.remove(obj, do_unlink=True)
-    load_helpers(scene, helpers, lib, role, show_reference=not use_gh3_body)
+    if own_skeleton:
+        # The GH3 rig plays the clips in the preview; the creator's armature becomes the rig.
+        rig.name = f"GH3 {role} rig (clip source)"
+        rig["chstage_source"] = True
+        rig.hide_render = True
+        p.source_rig, p.rig, p.own_skeleton = rig, None, True
+        for obj in list(collection.objects):
+            if obj == rig:
+                collection.objects.unlink(rig)
+                helpers.objects.link(rig)
+    load_helpers(scene, helpers, lib, role, show_reference=not use_gh3_body and not own_skeleton)
     load_profile_data(scene, lib, role)
     add_preview_camera(scene, helpers)
     return scene
@@ -536,6 +548,10 @@ def clip_basis(rig_object, rig_data, translations, quaternions):
 def clip_action(scene, clip):
     """Make (or reuse) the action of a library clip on the rig of the scene and show it. Returns the action."""
     p = props(scene)
+    if p.own_skeleton:
+        from . import skeleton_tools
+        if p.rig is None: raise ValueError("the character has no armature yet: select it and click Use Selected Armature")
+        return skeleton_tools.clip_action(scene, clip)
     rig = p.rig
     role = role_of(p.profile)
     clib, profile = library_profile(scene)
@@ -583,14 +599,17 @@ def clip_action(scene, clip):
 
 def clear_pose(scene):
     p = props(scene)
-    rig = p.rig
-    if rig is not None:
+    for rig in (p.rig, p.source_rig):
+        if rig is None: continue
         if rig.animation_data: rig.animation_data.action = None
         for bone in rig.pose.bones:
             bone.location = (0, 0, 0)
             bone.rotation_quaternion = (1, 0, 0, 0)
             bone.rotation_euler = (0, 0, 0)
             bone.scale = (1, 1, 1)
+    if p.own_skeleton:
+        from . import skeleton_tools
+        skeleton_tools.restore_constraints(p.rig)
     for action in clip_actions(): bpy.data.actions.remove(action)
     p.clip = ""
     p["clips_index"] = -1

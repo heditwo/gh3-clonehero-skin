@@ -652,6 +652,130 @@ if character_library.exists() and midori_package.exists():
 else:
     print(f"CHSTAGE-TEST SKIP character library: no {character_library.name} or {midori_package.name} next to the library")
 
+# 8. A character on its own skeleton (PACKAGE-FORMAT.md section 9.6): an armature with Mixamo names, other proportions, a
+# T-pose, and bone rolls, a primitive body with the shape keys Blink and A; Use Selected Armature, Validate, Export, the
+# retargeted clip preview, and Open.
+skeleton_tools = sys.modules[module + ".skeleton_tools"]
+with bpy.context.temp_override(scene=bpy.context.scene):
+    status = bpy.ops.chstage.new_character(profile="gh3-guitarist-axel-v1", library=str(library), own_skeleton=True)
+own_scene = next(s for s in bpy.data.scenes if s.chstage.character.own_skeleton)
+own = own_scene.chstage.character
+check("own skeleton: new character keeps the GH3 rig as the clip source", status == {"FINISHED"} and own.own_skeleton and own.rig is None
+      and own.source_rig is not None and len(own.clips) == 356, (own.own_skeleton, own.source_rig))
+source = own.source_rig
+
+
+def gh3_head(name):
+    return Vector(source.data.bones[f"bone-{character_format.gh3_key(name):08x}"].head_local)
+
+
+SCALE = 0.85
+joints = {"mixamorig:Hips": ("bone_pelvis", None), "mixamorig:Spine": ("bone_stomach_lower", "mixamorig:Hips"),
+          "mixamorig:Spine1": ("bone_stomach_upper", "mixamorig:Spine"), "mixamorig:Spine2": ("bone_chest", "mixamorig:Spine1"),
+          "mixamorig:Neck": ("bone_neck", "mixamorig:Spine2"), "mixamorig:Head": ("bone_head", "mixamorig:Neck")}
+for side, s in (("Left", "l"), ("Right", "r")):
+    joints.update({f"mixamorig:{side}Shoulder": (f"bone_collar_{s}", "mixamorig:Spine2"), f"mixamorig:{side}Arm": (f"bone_bicep_{s}", f"mixamorig:{side}Shoulder"),
+                   f"mixamorig:{side}ForeArm": (f"bone_forearm_{s}", f"mixamorig:{side}Arm"), f"mixamorig:{side}Hand": (f"bone_palm_{s}", f"mixamorig:{side}ForeArm"),
+                   f"mixamorig:{side}UpLeg": (f"bone_thigh_{s}", "mixamorig:Hips"), f"mixamorig:{side}Leg": (f"bone_knee_{s}", f"mixamorig:{side}UpLeg"),
+                   f"mixamorig:{side}Foot": (f"bone_ankle_{s}", f"mixamorig:{side}Leg"), f"mixamorig:{side}ToeBase": (f"bone_toe_{s}", f"mixamorig:{side}Foot")})
+heads = {name: gh3_head(gh3) * SCALE for name, (gh3, _) in joints.items()}
+for side in ("Left", "Right"):
+    # A T-pose: the arm turns up about the shoulder to the horizontal.
+    shoulder = heads[f"mixamorig:{side}Arm"]
+    for part in ("ForeArm", "Hand"):
+        offset = heads[f"mixamorig:{side}{part}"] - shoulder
+        heads[f"mixamorig:{side}{part}"] = shoulder + Vector((math.copysign(offset.length, offset.x), 0, 0))
+armature = bpy.data.armatures.new("Mixamo")
+model_rig = bpy.data.objects.new("Mixamo Rig", armature)
+own_scene.collection.objects.link(model_rig)
+own_view = own_scene.view_layers[0]
+own_view.objects.active = model_rig
+with bpy.context.temp_override(scene=own_scene, view_layer=own_view, active_object=model_rig, object=model_rig, selected_objects=[model_rig]):
+    bpy.ops.object.mode_set(mode="EDIT")
+    random = np.random.default_rng(7)
+    for name, (gh3, parent) in joints.items():
+        bone = armature.edit_bones.new(name)
+        bone.head = heads[name]
+        children = [heads[n] for n, (_, p) in joints.items() if p == name]
+        bone.tail = children[0] if len(children) == 1 else heads[name] + Vector((0, 0, 0.08))
+        if (bone.tail - bone.head).length < 1e-3: bone.tail = bone.head + Vector((0, 0, 0.08))
+        bone.roll = float(random.uniform(-math.pi, math.pi))
+    for name, (_, parent) in joints.items():
+        if parent: armature.edit_bones[name].parent = armature.edit_bones[parent]
+    bpy.ops.object.mode_set(mode="OBJECT")
+bm = bmesh.new()
+segments = [(n, p) for n, (_, p) in joints.items() if p]
+for name, parent in segments: limb(bm, heads[parent], heads[name], 0.05, 0.045, 8)
+ball(bm, heads["mixamorig:Head"] + Vector((0, 0, 0.1)), 0.11)
+own_mesh = bpy.data.meshes.new("OwnBody")
+bm.to_mesh(own_mesh)
+bm.free()
+own_body = bpy.data.objects.new("OwnBody", own_mesh)
+own_scene.collection.objects.link(own_body)
+own_body.parent = model_rig
+own_body.modifiers.new("Armature", "ARMATURE").object = model_rig
+groups = {name: own_body.vertex_groups.new(name=name) for name in joints}
+points = {name: (heads[name], heads[name] if not [n for n, (_, p) in joints.items() if p == name] else (heads[name] + armature.bones[name].tail_local) / 2)
+          for name in joints}
+for vertex in own_mesh.vertices:
+    nearest = min(joints, key=lambda n: (vertex.co - points[n][1]).length)
+    groups[nearest].add([vertex.index], 1.0, "REPLACE")
+own_body.shape_key_add(name="Basis")
+for key_name, lift in (("Blink", -0.01), ("A", 0.02)):
+    key = own_body.shape_key_add(name=key_name)
+    for vertex in own_mesh.vertices:
+        if (vertex.co - heads["mixamorig:Head"]).length < 0.25: key.data[vertex.index].co = vertex.co + Vector((0, 0, lift))
+own_body.data.materials.append(textured_material("own_skin", test_texture("own_skin_color")))
+for obj in own_scene.objects: obj.select_set(obj == model_rig, view_layer=own_view)
+own_view.objects.active = model_rig
+with bpy.context.temp_override(scene=own_scene, view_layer=own_view, active_object=model_rig, object=model_rig, selected_objects=[model_rig]):
+    status = bpy.ops.chstage.use_skeleton()
+mapped = skeleton_tools.humanoid(own_scene)
+check("own skeleton: Use Selected Armature maps the Mixamo names and the shape keys", status == {"FINISHED"} and own.rig == model_rig
+      and mapped.get("hips") == "mixamorig:Hips" and mapped.get("upperChest") == "mixamorig:Spine2" and mapped.get("leftLowerLeg") == "mixamorig:LeftLeg"
+      and mapped.get("rightToes") == "mixamorig:RightToeBase" and skeleton_tools.face(own_scene) == {"blink": "Blink", "a": "A"}, (mapped, skeleton_tools.face(own_scene)))
+issues = character_package.validate_scene(own_scene)
+check("own skeleton: validates without errors", not errors_of(issues), errors_of(issues))
+own_package = output / "own" / "tester.own-skeleton.chchar"
+own_scene.chstage.package.package_id, own_scene.chstage.package.name = "tester.own-skeleton", "Own skeleton test"
+own_scene.chstage.package.preview_mode = scene.chstage.package.preview_mode
+status = operator_scene(own_scene, bpy.ops.chstage.export_character, filepath=str(own_package))
+own_report = validator.Validator(own_package, library=library).run() if own_package.is_file() else None
+own_json, own_glb = {}, None
+if own_package.is_file():
+    with zipfile.ZipFile(own_package) as package:
+        own_json, own_glb = json.loads(package.read("character.json")), character_format.Glb(package.read("character.glb"))
+targets = sorted({name for mesh in own_glb.list("meshes") for name in (mesh.get("extras") or {}).get("targetNames", [])}) if own_glb else []
+check("own skeleton: export writes the skeleton, the face, and the face morph targets only", status == {"FINISHED"} and own_report is not None and own_report.ok
+      and own_json.get("skeleton", {}).get("humanoid", {}).get("hips") == "mixamorig:Hips" and own_json.get("face") == {"blink": "Blink", "a": "A"}
+      and targets == ["A", "Blink"] and "bones" not in own_json, (own_report.errors if own_report else None, targets, own_json.get("face")))
+
+# The retargeted clip preview: the GH3 clip on the GH3 rig helper, the retarget on the armature. A spine bone points along
+# its GH3 bone (the rest-pose correction), and the instrument scale follows the arm length.
+with bpy.context.temp_override(scene=own_scene, view_layer=own_view):
+    status = bpy.ops.chstage.preview_clip(clip=start_clip)
+worst = 0.0
+pairs = (("mixamorig:Spine", "mixamorig:Spine1", "bone_stomach_lower", "bone_stomach_upper"), ("mixamorig:Neck", "mixamorig:Head", "bone_neck", "bone_head"),
+         ("mixamorig:LeftShoulder", "mixamorig:LeftArm", "bone_collar_l", "bone_bicep_l"))
+moved = []
+head_bone = f"bone-{character_format.gh3_key('bone_head'):08x}"
+for frame in (0, 10, 20):
+    own_scene.frame_set(frame)
+    moved.append((Vector(model_rig.pose.bones["mixamorig:Head"].head), Vector(source.pose.bones[head_bone].head)))
+    for a, b, ga, gb in pairs:
+        ours = Vector(model_rig.pose.bones[b].head) - Vector(model_rig.pose.bones[a].head)
+        name_a, name_b = (f"bone-{character_format.gh3_key(n):08x}" for n in (ga, gb))
+        theirs = Vector(source.pose.bones[name_b].head) - Vector(source.pose.bones[name_a].head)
+        worst = max(worst, math.degrees(ours.angle(theirs)))
+check("own skeleton: the retargeted preview follows the GH3 bones (rest-pose correction, T-pose, bone rolls)", status == {"FINISHED"}
+      and model_rig.animation_data.action is not None and source.animation_data.action is not None and worst < 0.5
+      and min((moved[0][k] - moved[2][k]).length for k in (0, 1)) > 0.005, (worst, [(moved[0][k] - moved[2][k]).length for k in (0, 1)]))
+character_tools.clear_pose(own_scene)
+opened, opened_issues = character_package.open_package(own_package, library=str(library)) if own_package.is_file() else (None, [])
+check("own skeleton: Open restores the skeleton, the map, and the face", opened is not None and opened.chstage.character.own_skeleton
+      and skeleton_tools.humanoid(opened) == own_json.get("skeleton", {}).get("humanoid") and skeleton_tools.face(opened) == own_json.get("face")
+      and opened.chstage.character.source_rig is not None, [m for s, m, *_ in opened_issues if s == "ERROR"])
+
 bpy.ops.preferences.addon_disable(module=module)
 check("disable", module not in bpy.context.preferences.addons and not hasattr(bpy.types.Scene, "chstage"))
 (output / "character-summary.json").write_text(json.dumps(summary, indent=2) + "\n")

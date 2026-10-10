@@ -173,8 +173,10 @@ def chain_bones(rig, chain):
 
 
 def added_bones(scene):
-    """The rig bones that are not in the profile."""
+    """The rig bones that are not in the profile (none for a character with its own skeleton: its chain bones are
+    skeleton bones)."""
     rig = character_tools.props(scene).rig
+    if character_tools.props(scene).own_skeleton: return []
     try:
         profile = set(character_tools.scene_rig_data(scene).names)
     except (OSError, ValueError, KeyError):
@@ -196,6 +198,12 @@ def make_joints(scene, bones, chain, preset):
         joint.enabled, joint.chain = True, chain.name
         apply_preset(joint, preset)
         if hasattr(bone, "color"): bone.color.palette = "THEME04"
+
+
+class _Nothing:
+    def __enter__(self): return None
+
+    def __exit__(self, *error): return False
 
 
 class edit_rig:
@@ -288,9 +296,28 @@ def assign_chain(scene, obj, names, vertices, parent=None):
     return len(vertices)
 
 
+def body_bone(scene, label):
+    """The rig bone of a GH3 body bone name: 'bone-<checksum>' on a GH3 rig, the bone of the humanoid role on a skeleton."""
+    p = character_tools.props(scene)
+    if not p.own_skeleton: return bone_name(label)
+    roles = {row.role: row.bone for row in p.roles if row.bone}
+    spine = [r for r in ("spine", "chest", "upperChest") if r in roles]
+    by_label = {"bone_pelvis": "hips", "bone_neck": "neck", "bone_head": "head", "bone_stomach_lower": spine[0] if spine else "spine",
+                "bone_stomach_upper": spine[len(spine) // 2] if spine else "spine", "bone_chest": spine[-1] if spine else "spine"}
+    for side, s in (("left", "l"), ("right", "r")):
+        for part, gh3 in (("UpperLeg", "thigh"), ("LowerLeg", "knee"), ("Foot", "ankle"), ("UpperArm", "bicep"), ("LowerArm", "forearm"), ("Hand", "palm")):
+            by_label[f"bone_{gh3}_{s}"] = side + part
+    role = by_label.get(label)
+    return roles.get(role, "") if role else ""
+
+
 def nearest_body_bone(scene, point):
     """The body bone of the profile rig (not a hair joint, not a face bone) whose head is nearest to the point."""
     rig = character_tools.props(scene).rig
+    if character_tools.props(scene).own_skeleton:
+        world = np.array(rig.matrix_world)
+        bones = [row.bone for row in character_tools.props(scene).roles if row.bone in rig.data.bones]
+        return min(bones, key=lambda name: float(np.linalg.norm(world[:3, :3] @ np.array(rig.data.bones[name].head_local) + world[:3, 3] - point)), default=None)
     hair = set(character_tools.hair_bones(scene))
     head = rig.data.bones.get(bone_name("bone_head"))
     world = np.array(rig.matrix_world)
@@ -325,7 +352,8 @@ def selected_points(context):
 def export_rows(scene, glb_data):
     """character.json bones, colliders, and chains of the exported GLB. Empty lists without added bones."""
     rig = character_tools.props(scene).rig
-    added = {bone.name for bone in added_bones(scene)}
+    own = character_tools.props(scene).own_skeleton
+    added = {bone.name for bone in rig.data.bones if bone.chstage_joint.enabled} if own else {bone.name for bone in added_bones(scene)}
     if not added and not colliders(scene): return [], [], []
     profile = [b.name for b in rig.data.bones if b.name not in added]
     world = rig.matrix_world
@@ -341,12 +369,15 @@ def export_rows(scene, glb_data):
     for chain in scene.chstage_chains:
         wanted = None if chain.all_colliders else [n.strip() for n in chain.colliders.split(",") if n.strip() in names]
         chain_list.append({"name": chain.name, "colliders": wanted})
-    return chain_format.character_rows(glb_data, profile, joints, rows, chain_list)
+    return chain_format.character_rows(glb_data, profile, joints, rows, chain_list, own=own)
 
 
 def check(scene, issues):
     """Add-on checks of the chains: names of the added bones, joints outside a chain, joint limits of the format."""
     rig = character_tools.props(scene).rig
+    if character_tools.props(scene).own_skeleton:
+        check_own(scene, issues)
+        return
     added = added_bones(scene)
     chains = {c.name for c in scene.chstage_chains}
     for bone in added:
@@ -360,6 +391,26 @@ def check(scene, issues):
             issues.error(f"bone '{bone.name}' of the profile cannot be a chain joint; add a new bone", rig.name)
     count = sum(1 for bone in added if bone.chstage_joint.enabled)
     if count > chain_format.MAX_JOINTS: issues.error(f"the chains have {count} joints (limit {chain_format.MAX_JOINTS})", rig.name)
+    if len(colliders(scene)) > chain_format.MAX_COLLIDERS: issues.error(f"the character has {len(colliders(scene))} colliders (limit {chain_format.MAX_COLLIDERS})", rig.name)
+    for obj in colliders(scene):
+        if obj.parent_type != "BONE" or obj.parent_bone not in rig.data.bones: issues.error(f"collider '{obj.name}' must have a rig bone as parent", obj.name)
+        elif rig.data.bones[obj.parent_bone].chstage_joint.enabled: issues.error(f"collider '{obj.name}' is on a chain bone; put colliders on body bones", obj.name)
+
+
+def check_own(scene, issues):
+    """The chains of a character with its own skeleton: the joints are deform bones without a humanoid role (and not
+    parents of one); colliders are on other bones."""
+    from . import skeleton_tools
+    rig = character_tools.props(scene).rig
+    names, parents, bind, _ = skeleton_tools.rest_rows(rig)
+    _, _, allowed = skeleton_tools.skeleton.check_map(names, parents, bind, skeleton_tools.humanoid(scene), skeleton_tools.followers(scene))
+    chains = {c.name for c in scene.chstage_chains}
+    joints = [bone for bone in rig.data.bones if bone.chstage_joint.enabled]
+    for bone in joints:
+        if bone.name not in allowed:
+            issues.error(f"bone '{bone.name}' cannot be a chain joint: it has a humanoid role, is a parent of one, is a follower, or does not deform", rig.name)
+        if bone.chstage_joint.chain not in chains: issues.error(f"bone '{bone.name}' is a joint of the chain '{bone.chstage_joint.chain}', which does not exist", rig.name)
+    if len(joints) > chain_format.MAX_JOINTS: issues.error(f"the chains have {len(joints)} joints (limit {chain_format.MAX_JOINTS})", rig.name)
     if len(colliders(scene)) > chain_format.MAX_COLLIDERS: issues.error(f"the character has {len(colliders(scene))} colliders (limit {chain_format.MAX_COLLIDERS})", rig.name)
     for obj in colliders(scene):
         if obj.parent_type != "BONE" or obj.parent_bone not in rig.data.bones: issues.error(f"collider '{obj.name}' must have a rig bone as parent", obj.name)
@@ -459,7 +510,8 @@ def mmd_rows(armature, rigid_bodies, joints, names=None):
 def import_mmd(scene, armature, rigid_bodies, joints, names=None, parent=None, preset="long_hair", with_colliders=False, prefix="mmd"):
     """Chains from the dynamic MMD rigid bodies: a new rig bone for each one at its MMD bone (world), the MMD masses,
     damping, and joint limits, and a chain for each root. A body without a turning joint gives a bone without a joint
-    (it follows its parent). Returns {MMD bone name: new bone name} and the colliders made."""
+    (it follows its parent). When the rig is the MMD armature itself (a character with its own skeleton), the MMD bones
+    become the joints and no bone is added. Returns {MMD bone name: rig bone name} and the colliders made."""
     rows, statics = mmd_rows(armature, rigid_bodies, joints, names)
     rig = character_tools.props(scene).rig
     taken = {b.name for b in rig.data.bones}
@@ -467,9 +519,11 @@ def import_mmd(scene, armature, rigid_bodies, joints, names=None, parent=None, p
     english = {b.name: (getattr(getattr(b, "mmd_bone", None), "name_e", "") or "") for b in armature.pose.bones}
     order = sorted(rows, key=lambda n: len(armature.data.bones[n].parent_recursive))
     inverse = rig.matrix_world.inverted()
-    targets = {name: parent or nearest_body_bone(scene, rows[name]["head"]) for name in order}
-    with edit_rig(scene) as edit:
-        for index, name in enumerate(order):
+    in_place = rig == armature or all(name in rig.data.bones for name in order) and character_tools.props(scene).own_skeleton
+    targets = {} if in_place else {name: parent or nearest_body_bone(scene, rows[name]["head"]) for name in order}
+    if in_place: made = {name: name for name in order}
+    with (edit_rig(scene) if not in_place else _Nothing()) as edit:
+        for index, name in enumerate(order if not in_place else []):
             row = rows[name]
             label = english.get(name) if chain_format.NAME.fullmatch(english.get(name) or "-") and english.get(name) else f"{index + 1:02d}"
             new = chain_format.chain_name(f"{prefix}_{label}", taken)
@@ -490,7 +544,10 @@ def import_mmd(scene, armature, rigid_bodies, joints, names=None, parent=None, p
         row = rows[name]
         if not row["cone"]: continue
         root = root_of[name]
-        if root not in chains: chains[root] = new_chain(scene, made[root], preset)
+        if root not in chains:
+            # A chain on MMD bones of the skeleton gets an ASCII name from the prefix and the English MMD name.
+            label = english.get(root) if english.get(root) and chain_format.NAME.fullmatch(english.get(root)) else f"{order.index(root) + 1:02d}"
+            chains[root] = new_chain(scene, made[root] if not in_place else f"{prefix}_{label}", preset)
         bone = rig.data.bones[made[name]]
         make_joints(scene, [bone], chains[root], preset)
         joint = bone.chstage_joint
@@ -528,7 +585,7 @@ def fit_body_colliders(scene, meshes, guitar=True, replace=True):
     world = np.array(rig.matrix_world)
 
     def head(label):
-        bone = rig.data.bones.get(bone_name(label))
+        bone = rig.data.bones.get(body_bone(scene, label))
         return None if bone is None else world[:3, :3] @ np.array(bone.head_local) + world[:3, 3]
 
     points, dominant = [], []
@@ -542,6 +599,7 @@ def fit_body_colliders(scene, meshes, guitar=True, replace=True):
     dominant = np.concatenate(dominant) if dominant else np.zeros(0, dtype=str)
     segments = []
     for label, start, end in BODY_SEGMENTS:
+        if not isinstance(end, tuple) and body_bone(scene, start) == body_bone(scene, end): continue
         a = head(start)
         b = np.mean([head(e) for e in end], axis=0) if isinstance(end, tuple) else head(end)
         if a is None or b is None or (isinstance(end, tuple) and any(head(e) is None for e in end)): continue
@@ -562,14 +620,14 @@ def fit_body_colliders(scene, meshes, guitar=True, replace=True):
             # The thigh capsule starts below the hip joint, so that a skirt or a hip flap that starts at the hip is
             # outside it at rest.
             a = a + (b - a) / np.linalg.norm(b - a) * min(radius, 0.4 * np.linalg.norm(b - a))
-        made.append(add_collider(scene, bone_name(start), a, b, radius, label))
+        made.append(add_collider(scene, body_bone(scene, start), a, b, radius, label))
     hair = None
     clib, profile = character_tools.library_profile(scene)
     try:
         hair = clib.hair(profile) if clib is not None else None
     except (OSError, ValueError, KeyError):
         hair = None
-    head_bone = rig.data.bones.get(bone_name("bone_head"))
+    head_bone = rig.data.bones.get(body_bone(scene, "bone_head"))
     if head_bone is not None:
         # A sphere at the centre of the head vertices (the vertices that follow the head bone or a face bone).
         hair = set(character_tools.hair_bones(scene))
@@ -578,7 +636,8 @@ def fit_body_colliders(scene, meshes, guitar=True, replace=True):
         centre = face.mean(0) if len(face) else head("bone_head")
         radius = float(np.quantile(np.linalg.norm(face - centre, axis=1), 0.5)) if len(face) else 0.1
         made.append(add_collider(scene, head_bone.name, centre, centre, min(max(radius, 0.06), 0.15), "head"))
-    if guitar and p.attachment is not None:
+    # The instrument of a character with its own skeleton hangs on the GH3 rig helper, not on the armature: no guitar capsule.
+    if guitar and p.attachment is not None and not p.own_skeleton:
         guitar_bone = rig.data.bones.get(bone_name("bone_guitar_body"))
         if guitar_bone is not None:
             matrix = np.array(p.attachment.matrix_world)

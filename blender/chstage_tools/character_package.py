@@ -15,7 +15,7 @@ from pathlib import Path
 import bpy
 import numpy as np
 
-from . import chain_tools, character_tools, collect, glb_tools, gltf_io, materials, package_export, package_open, sidecars, toon
+from . import skeleton_tools, chain_tools, character_tools, collect, glb_tools, gltf_io, materials, package_export, package_open, sidecars, toon
 from .vendor.package_format import character, container
 from .vendor.package_format.validate import Report, Source, Validator
 
@@ -81,7 +81,10 @@ def check_scene(scene, issues):
         issues.error("the rig must stay at the origin without rotation or scale (the profile fixes the rig): clear its transform", rig.name)
     library = character_tools.library_path(scene)
     profile = character_tools.profile_id(scene)
-    if library or p.library_profile:
+    if p.own_skeleton:
+        skeleton_tools.check(scene, issues)
+        chain_tools.check(scene, issues)
+    elif library or p.library_profile:
         try:
             rig_data = character_tools.scene_rig_data(scene)
             bones = set(rig.data.bones.keys())
@@ -138,10 +141,15 @@ def export_glb(scene, path, rig, meshes, keeper, issues):
             for obj in scene.objects: obj.select_set(obj in objects, view_layer=view_layer)
             collect._EXPORT.update(active=True, keeper=keeper, materials={})
             exported = collect.exported_materials(meshes)
+            # Own skeleton: the deform bones are the joints, and the shape keys go out as morph targets (finish_glb keeps
+            # the face shapes only). Modifiers stay unapplied: an applied modifier drops the shape keys.
+            own = {"export_def_bones": True, "export_morph": True, "export_morph_normal": False, "export_morph_tangent": False,
+                   "export_try_sparse_sk": False, "export_try_omit_sparse_sk": False, "export_apply": False} if scene.chstage.character.own_skeleton else {}
             with bpy.context.temp_override(scene=scene, view_layer=view_layer), materials.vertex_alpha_for_export(exported), \
                     toon.preview_off_for_export(exported):
-                gltf_io.export_glb(path, use_selection=True, export_animations=False, export_cameras=False, export_lights=False,
-                                   export_apply=True, export_vertex_color="ACTIVE", export_skins=True)
+                options = {"use_selection": True, "export_animations": False, "export_cameras": False, "export_lights": False, "export_apply": True,
+                           "export_vertex_color": "ACTIVE", "export_skins": True, **own}
+                gltf_io.export_glb(path, **options)
     finally:
         mapping = dict(collect._EXPORT["materials"])
         collect._EXPORT.update(active=False, keeper=None)
@@ -150,11 +158,15 @@ def export_glb(scene, path, rig, meshes, keeper, issues):
     return mapping
 
 
-def finish_glb(data, blender_materials, issues):
+def finish_glb(data, blender_materials, issues, morphs=None):
     """The character GLB after the export: no animations, the package names of the materials, and the images of the
-    '#<name>' texture references that Blender does not export (embedded, each with a glTF texture)."""
+    '#<name>' texture references that Blender does not export (embedded, each with a glTF texture). morphs: the morph
+    target names to keep (a character with its own skeleton); None: no morph targets."""
     gltf, binary = glb_tools.read_glb(data)
     if gltf.pop("animations", None) is not None: data = glb_tools.write_glb(gltf, binary)
+    if morphs is not None:
+        gltf, binary = glb_tools.read_glb(data)
+        data = glb_tools.write_glb(*character.keep_morphs(gltf, binary, morphs or ()))
     wanted = [m.chstage.source_name for m in blender_materials.values() if m.chstage.source_name]
     data = glb_tools.restore_names(data, wanted)
     gltf, _ = glb_tools.read_glb(data)
@@ -177,6 +189,9 @@ def character_row(scene, blender_materials, glb_data=None):
     by_material = {material: name for name, material in blender_materials.items()}
     names = [by_material.get(material, collect.package_name(material)) for material in hair_materials(scene)]
     row = character.character_json(character_tools.profile_id(scene), names, p.instrument.strip(), p.library_id or character.LIBRARY_ID, p.animations.strip())
+    if p.own_skeleton:
+        row["skeleton"], face = skeleton_tools.skeleton_rows(scene)
+        if face: row["face"] = face
     if glb_data is not None:
         bones, colliders, chains = chain_tools.export_rows(scene, glb_data)
         for key, value in (("bones", bones), ("colliders", colliders), ("chains", chains)):
@@ -195,7 +210,8 @@ def build_files(scene, folder, issues, keeper=None, render_preview_image=True):
     with tempfile.TemporaryDirectory(prefix="chstage-character-") as temporary:
         path = Path(temporary)/character.MODEL_FILE
         blender_materials = export_glb(scene, path, rig, meshes, keeper, issues)
-        data = finish_glb(path.read_bytes(), blender_materials, issues)
+        morphs = list(skeleton_tools.face(scene).values()) if scene.chstage.character.own_skeleton else None
+        data = finish_glb(path.read_bytes(), blender_materials, issues, morphs)
     (folder/character.MODEL_FILE).write_bytes(data)
     (folder/character.CHARACTER_FILE).write_bytes(container.json_bytes(character_row(scene, blender_materials, data)))
     paths = {character.MODEL_FILE, character.CHARACTER_FILE}
@@ -358,6 +374,18 @@ def open_package(path, library=None):
     rigs = [obj for obj in new if obj.type == "ARMATURE"]
     if len(rigs) != 1: issues.error(f"the character GLB has {len(rigs)} armatures; the format needs one skin")
     if rigs: p.rig = rigs[0]
+    if "skeleton" in raw_character and rigs:
+        # A character with its own skeleton: the GLB armature is the rig; the GH3 rig of the profile becomes the clip source.
+        p.own_skeleton = True
+        own = raw_character["skeleton"]
+        skeleton_tools.fill_roles(scene, own.get("humanoid", {}))
+        p.followers = json.dumps(own.get("followers", []), ensure_ascii=False)
+        instrument = own.get("instrument", {})
+        p.instrument_bone = instrument.get("bone", "")
+        offset = instrument.get("offset", [0, 0, 0])
+        p.instrument_offset = (offset[0], offset[2], offset[1])
+        p.instrument_scale = instrument.get("scale", 0.0)
+        for slot, name in raw_character.get("face", {}).items(): setattr(p, skeleton_tools.FACE_PROPS[slot], name)
     if rigs: chain_tools.open_rows(scene, raw_character, source.read(entry["model"]))
     by_name = character_tools.mats_by_name(gltf, mats)
     for name in description["hairMaterials"]:
@@ -373,6 +401,15 @@ def open_package(path, library=None):
         scene.collection.children.link(helpers)
         try:
             lib = character_tools.library(library)
+            if p.own_skeleton:
+                parts = character_tools.helper_parts(scene, lib, role)
+                made, *_ = character_tools.import_glb(scene, parts["body"], helpers)
+                source = next(o for o in made if o.type == "ARMATURE")
+                for obj in made:
+                    if obj != source: bpy.data.objects.remove(obj, do_unlink=True)
+                source.name, source.hide_render = f"GH3 {role} rig (clip source)", True
+                source["chstage_source"] = True
+                p.source_rig = source
             character_tools.load_helpers(scene, helpers, lib, role, show_reference=False)
             character_tools.load_profile_data(scene, lib, role)
             character_tools.add_preview_camera(scene, helpers)

@@ -466,6 +466,12 @@ class CHSTAGE_PG_clip(PropertyGroup):
     frames: IntProperty(name="Frames")
 
 
+class CHSTAGE_PG_role(PropertyGroup):
+    """A humanoid role of the character's own skeleton (character.json skeleton.humanoid)."""
+    role: StringProperty(name="Role")
+    bone: StringProperty(name="Bone", description="The bone of the character's armature that has this role. Empty: no bone")
+
+
 class CHSTAGE_PG_character(PropertyGroup):
     """character.json of a character package and the state of the character tools."""
     enabled: BoolProperty(description="This scene is a character (.chchar), not a stage")
@@ -488,6 +494,24 @@ class CHSTAGE_PG_character(PropertyGroup):
     clips: CollectionProperty(type=CHSTAGE_PG_clip)
     clips_index: IntProperty(default=-1, update=preview_selected_clip)
     clip: StringProperty(name="Previewed clip")
+    own_skeleton: BoolProperty(name="Own skeleton", description="The character keeps the skeleton of its model; the game retargets the GH3 clips of "
+                               "the profile to it (character.json skeleton)")
+    source_rig: PointerProperty(name="GH3 rig", type=bpy.types.Object, description="The GH3 rig of the profile (helper, never exported): "
+                                "the clip preview plays the GH3 clip on it and retargets it to the character's armature")
+    roles: CollectionProperty(type=CHSTAGE_PG_role, description="The humanoid map (character.json skeleton.humanoid)")
+    roles_index: IntProperty()
+    followers: StringProperty(description="character.json skeleton.followers (JSON list): bones that turn with another bone (MMD append rotation)")
+    instrument_bone: StringProperty(name="Instrument bone", description="The bone whose movement the instrument follows. Empty: the top spine bone")
+    instrument_offset: FloatVectorProperty(name="Instrument offset", size=3, subtype="TRANSLATION", unit="LENGTH",
+                                           description="Moves the instrument from its place (metres, Blender axes)")
+    instrument_scale: FloatProperty(name="Instrument scale", min=0.0, max=1.5, description="The size of the instrument and of its distance from the chest. "
+                                    "0: the arm length of the character against the arm length of the GH3 rig")
+    face_blink: StringProperty(name="Blink", description="Shape key that closes the eyes (MMD まばたき, VRM Blink)")
+    face_a: StringProperty(name="A", description="Mouth shape key 'a' (MMD あ, VRM A)")
+    face_i: StringProperty(name="I", description="Mouth shape key 'i' (MMD い, VRM I)")
+    face_u: StringProperty(name="U", description="Mouth shape key 'u' (MMD う, VRM U)")
+    face_e: StringProperty(name="E", description="Mouth shape key 'e' (MMD え, VRM E)")
+    face_o: StringProperty(name="O", description="Mouth shape key 'o' (MMD お, VRM O)")
 
 
 class CHSTAGE_PG_scene(PropertyGroup):
@@ -562,7 +586,7 @@ CLASSES = (
     CHSTAGE_PG_name, CHSTAGE_PG_image_ref, CHSTAGE_PG_kept_file, CHSTAGE_PG_number, CHSTAGE_PG_author, CHSTAGE_PG_requirement, CHSTAGE_PG_package,
     CHSTAGE_PG_point, CHSTAGE_PG_object_ref, CHSTAGE_PG_shot, CHSTAGE_PG_light, CHSTAGE_PG_actor_action, CHSTAGE_PG_actor, CHSTAGE_PG_object,
     CHSTAGE_PG_material, CHSTAGE_PG_snapshot_light, CHSTAGE_PG_beam, CHSTAGE_PG_snapshot, CHSTAGE_PG_mood, CHSTAGE_PG_color,
-    CHSTAGE_PG_camera_note, CHSTAGE_PG_crowd, CHSTAGE_PG_issue, CHSTAGE_PG_script_row, CHSTAGE_PG_material_ref, CHSTAGE_PG_clip,
+    CHSTAGE_PG_camera_note, CHSTAGE_PG_crowd, CHSTAGE_PG_issue, CHSTAGE_PG_script_row, CHSTAGE_PG_material_ref, CHSTAGE_PG_clip, CHSTAGE_PG_role,
     CHSTAGE_PG_character, CHSTAGE_PG_scene, CHSTAGE_AP_preferences,
 )
 
