@@ -1,6 +1,7 @@
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using MelonLoader;
 using System.Buffers.Binary;
+using System.Runtime;
 using System.Text.Json;
 using UnityEngine;
 
@@ -60,27 +61,38 @@ internal sealed class SkinAssets
     public SkinAssets(string root)
     {
         Root = root;
+        var steps = new LoadTiming.Steps();
         LoadCoreTextures(root);
+        steps.Step("highway");
         LoadReadyAnimation(root);
+        steps.Step("ready animation");
         LoadGameplaySprites(root);
+        steps.Step("gems, beat lines, sustains");
         LoadHudTextures(root);
+        // The decoded images (about 190 MB, mostly the ready animation) are garbage now; give the memory back at once.
+        GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+        GC.Collect();
+        steps.Step("HUD");
+        steps.Finish("skin textures");
     }
 
     private void LoadCoreTextures(string root)
     {
         var highway = SkinAssetPaths.Highway(root);
-        _textures["highway"] = LoadTexture(Path.Combine(highway, "highway.png"));
+        var frames = Enumerable.Range(0, StarPowerHighwayAnimation.FrameCount).Select(frame => $"active-highway-{frame:00}").ToList();
+        var textures = LoadTextures(new[] { "highway", "highway-edges-blue", "highway-edges-normal" }.Select(name => Path.Combine(highway, name + ".png"))
+            .Concat(frames.Select(name => Path.Combine(SkinAssetPaths.StarPowerHighway(root), name + ".png"))).ToList());
+        _textures["highway"] = textures[0];
         _textures["highway"].wrapMode = TextureWrapMode.Repeat;
         HighwayTexture = _textures["highway"];
-        _textures["highway-edges-blue"] = LoadTexture(Path.Combine(highway, "highway-edges-blue.png"));
-        _textures["highway-edges-normal"] = LoadTexture(Path.Combine(highway, "highway-edges-normal.png"));
-        for (var frame = 0; frame < StarPowerHighwayAnimation.FrameCount; frame++)
+        _textures["highway-edges-blue"] = textures[1];
+        _textures["highway-edges-normal"] = textures[2];
+        for (var frame = 0; frame < frames.Count; frame++)
         {
-            var name = $"active-highway-{frame:00}";
-            var texture = LoadTexture(Path.Combine(SkinAssetPaths.StarPowerHighway(root), name + ".png"));
-            texture.name = name;
+            var texture = textures[3 + frame];
+            texture.name = frames[frame];
             texture.wrapMode = TextureWrapMode.Clamp;
-            _textures[name] = texture;
+            _textures[frames[frame]] = texture;
         }
     }
 
@@ -102,9 +114,12 @@ internal sealed class SkinAssets
 
     private static void LoadAnimationFrames(string root, string prefix, JsonElement entries, List<AnimationFrame> destination)
     {
-        foreach (var frame in entries.EnumerateArray())
+        var frames = entries.EnumerateArray().ToList();
+        var textures = LoadTextures(Enumerable.Range(destination.Count, frames.Count).Select(index => Path.Combine(root, $"{prefix}-{index:000}.png")).ToList());
+        for (var index = 0; index < frames.Count; index++)
         {
-            var texture = LoadTexture(Path.Combine(root, $"{prefix}-{destination.Count:000}.png"));
+            var frame = frames[index];
+            var texture = textures[index];
             texture.filterMode = FilterMode.Point;
             var layout = new Rect(
                 frame.GetProperty("x").GetInt32() * 1.2f,
@@ -117,19 +132,18 @@ internal sealed class SkinAssets
 
     private void LoadGameplaySprites(string root)
     {
+        var gemSprites = new List<(string Name, string File, float PixelsPerUnit)>();
         foreach (var lane in Lanes.Append("active"))
         {
             var gems = SkinAssetPaths.Gems(root, lane);
-            Load(gems, $"{lane}-note", 720, new Vector2(0.5f, 0.16f));
-            Load(gems, $"{lane}-glow", 720, new Vector2(0.5f, 0.16f));
-            Load(gems, $"{lane}-tap", 720, new Vector2(0.5f, 0.16f));
+            foreach (var kind in new[] { "note", "glow", "tap" }) gemSprites.Add(($"{lane}-{kind}", Path.Combine(gems, $"{lane}-{kind}.png"), 720));
             for (var frame = 0; frame < GemAnimation.FrameCount; frame++)
-            {
-                Load(gems, $"{lane}-star-{frame}", 550, new Vector2(0.5f, 0.16f));
-                Load(gems, $"{lane}-star-glow-{frame}", 550, new Vector2(0.5f, 0.16f));
-                Load(gems, $"{lane}-star-tap-{frame}", 550, new Vector2(0.5f, 0.16f));
-            }
+                foreach (var kind in new[] { "star", "star-glow", "star-tap" })
+                    gemSprites.Add(($"{lane}-{kind}-{frame}", Path.Combine(gems, $"{lane}-{kind}-{frame}.png"), 550));
         }
+        var gemTextures = LoadTextures(gemSprites.Select(sprite => sprite.File).ToList());
+        for (var index = 0; index < gemSprites.Count; index++)
+            AddSprite(gemSprites[index].Name, gemTextures[index], gemSprites[index].PixelsPerUnit, new Vector2(0.5f, 0.16f));
 
         for (var lane = 0; lane < Lanes.Length; lane++)
             for (var frame = 0; frame < GemAnimation.FrameCount; frame++)
@@ -232,14 +246,41 @@ internal sealed class SkinAssets
         return sprite;
     }
 
-    private void Load(string directory, string name, float pixelsPerUnit, Vector2 pivot)
+    private void Load(string directory, string name, float pixelsPerUnit, Vector2 pivot) =>
+        AddSprite(name, LoadTexture(Path.Combine(directory, name + ".png")), pixelsPerUnit, pivot);
+
+    private void AddSprite(string name, Texture2D texture, float pixelsPerUnit, Vector2 pivot)
     {
-        var texture = LoadTexture(Path.Combine(directory, name + ".png"));
         var sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), pivot, pixelsPerUnit);
         sprite.name = "GH3_" + name;
         sprite.hideFlags = HideFlags.DontUnloadUnusedAsset;
         texture.hideFlags = HideFlags.DontUnloadUnusedAsset;
         _sprites[name] = sprite;
+    }
+
+    // Decodes the PNG files on worker threads (Unity's LoadImage decodes on the main thread: 0.6 s for the skin at start),
+    // then uploads them in order on the main thread. The texels equal LoadImage's: 8-bit RGBA, bottom row first, sRGB.
+    private static List<Texture2D> LoadTextures(IReadOnlyList<string> files)
+    {
+        var decoded = new (byte[] Rgba, int Width, int Height)[files.Count];
+        Parallel.For(0, files.Count, new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount / 2, 1, 8) }, index =>
+        {
+            var rgba = Packages.Png.DecodeRgba(File.ReadAllBytes(files[index]), out var width, out var height);
+            decoded[index] = (rgba, width, height);
+        });
+        var textures = new List<Texture2D>(files.Count);
+        for (var index = 0; index < files.Count; index++)
+        {
+            var (rgba, width, height) = decoded[index];
+            decoded[index] = default;
+            var texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
+            texture.LoadRawTextureData(new Il2CppStructArray<byte>(rgba));
+            texture.Apply(false, true);
+            texture.filterMode = FilterMode.Bilinear;
+            texture.hideFlags = HideFlags.DontUnloadUnusedAsset;
+            textures.Add(texture);
+        }
+        return textures;
     }
 
     internal static Texture2D LoadTexture(string file)
