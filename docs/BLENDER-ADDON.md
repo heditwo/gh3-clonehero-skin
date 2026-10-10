@@ -147,11 +147,11 @@ Export gives the same bytes for the same scene and Blender version (fixed zip ti
 
 - Material preview node trees for GH3 shading in the viewport (toon materials have a preview, section 1.15).
 - GH3 script code: the script bank browser shows and sets values only.
-- Characters on other rigs (retargeting, VRM). A character must use a GH3 rig: a fixed profile or a profile of the character library (PACKAGING-PLAN decision 2). The add-on has no tool that moves a rigged model (for example an MMD or VRM model) onto the GH3 bind pose; see [CREATOR-GUIDE.md section 5.1](CREATOR-GUIDE.md#51-use-a-rigged-model-mmd-vrm-fbx).
+- A tool that moves a rigged model onto the GH3 bind pose (the fit alternative of [CREATOR-GUIDE.md section 5.1](CREATOR-GUIDE.md#51-use-your-models-skeleton-mmd-vrm-mixamo-fbx)). Use the model's own skeleton instead (section 1.17).
 
 ### 1.15 Make a character (.chchar)
 
-A character is a skinned mesh on one GH3 rig. The rig, its bind pose, and the clips come from the GH3 library (`gh3-band-v1.chlib`) for a fixed profile, or from the GH3 character library (`gh3-characters-v1.chlib`) for a GH3 guitarist profile. The game plays the library clips on your mesh. You do not make a skeleton or animations.
+A character is a skinned mesh on one GH3 rig, or a model with its own skeleton (section 1.17). The rig, its bind pose, and the clips come from the GH3 library (`gh3-band-v1.chlib`) for a fixed profile, or from the GH3 character library (`gh3-characters-v1.chlib`) for a GH3 guitarist profile. The game plays the library clips on your mesh. You do not make a skeleton or animations.
 
 Before you start: set **Edit > Preferences > Add-ons > CH Stage Tools > GH3 library (.chlib)** to `gh3-band-v1.chlib`. Optional: set **Custom/Characters folder**, and **GH3 character library (.chlib)** (empty: the add-on uses `gh3-characters-v1.chlib` in the folder of the GH3 library).
 
@@ -242,6 +242,23 @@ Rules:
 - At most 64 joints and 32 colliders. More than 32 joints gives a warning: each joint costs solver time.
 - MMD joints have springs that hold the shape inside wide limits. The chains have no spring, so the import uses the smaller of the MMD limit and the preset swing limit, and the larger damping, when the MMD joint has a spring.
 - Export writes `character.json` `bones`, `colliders`, and `chains`. Open makes the chains and the colliders again. The colliders are helpers: the GLB export does not write them.
+
+### 1.17 Use the model's skeleton
+
+A character can keep the skeleton of its model (PACKAGE-FORMAT 9.6). The game retargets the GH3 clips of the profile to it. Steps for creators: [CREATOR-GUIDE.md section 5.1](CREATOR-GUIDE.md#51-use-your-models-skeleton-mmd-vrm-mixamo-fbx).
+
+- **New Character from GH3 Rig** with **Use my model's skeleton**: the GH3 rig of the profile becomes a helper (`GH3 <role> rig (clip source)`, `character.source_rig`), the GH3 body reference is hidden, and the attachment preview hangs on the GH3 rig. The scene has no rig until **Use Selected Armature**.
+- **Skeleton** panel (tab **CH Character**):
+  - **Use Selected Armature** (`chstage.use_skeleton`): the active armature becomes the rig (`character.rig`). The add-on fills the role list from the VRM Add-on humanoid map, else from the bone names (`skeleton.auto_map`: MMD Japanese and English, VRM and VRoid `J_Bip_*`, Mixamo `mixamorig:*`, Unreal `pelvis`, `spine_01`, `thigh_l`...), the followers from the MMD append rotations (`mmd_bone.additional_transform_bone`, only for exported bones without a role), and the face shape keys (`skeleton.auto_face`).
+  - **Auto Map** (`chstage.auto_map`) maps again.
+  - The role list: a bone search field for each role. A required role (the 15 VRM required roles) without a bone has a red mark.
+  - The face fields (blink, a, i, u, e, o) search the shape keys of the character meshes.
+  - **Instrument bone**, **Instrument offset** (Blender axes), **Instrument scale** (0: automatic).
+- **Validate** checks the map, the hierarchy, and the rest pose with the rules of the game (`skeleton.check_map`), the deform bone count (255 at most), the face shape keys, and the chain joints (a chain joint is a deform bone without a role, not a parent of a bone with a role, not a follower).
+- **Export .chchar** writes the deform bones only (glTF option "deform bones only"), the shape keys as morph targets (modifiers are not applied, so the shape keys stay), and then keeps only the face morph targets in the GLB (`character.keep_morphs`). `character.json` gets `skeleton` (humanoid, followers, instrument) and `face`, and no `bones`.
+- **Clip Preview**: the GH3 clip (with the game IK) plays on the GH3 rig helper; `skeleton.Retarget` (the algorithm of the game, vectorized over the frames) moves the armature. The add-on mutes the bone constraints of the armature during the preview (MMD IK and append rotation constraints) and turns them on again with **Bind Pose**. The GH3 instrument helper takes the instrument scale.
+- **Open .chchar** of a package with `skeleton`: the GLB armature is the rig, the role list, the followers, the instrument, and the face come from `character.json`, and the GH3 rig of the profile becomes the clip source again.
+- **Chains from MMD Physics** on the MMD armature itself (the rig) uses the MMD bones as the joints and adds no bones; the chains get ASCII names from the group prefix. **Fit Body Colliders** puts the capsules on the bones with the roles and makes no guitar capsule.
 
 ## 2. For developers
 
@@ -552,7 +569,7 @@ TMPDIR=~/.cache/addon-chars/tmp flock /tmp/opencode/gh3-heavy.lock bash blender/
 
 The character test checks (Blender 5.2.1 and 4.2.23): New Character on `gh3-guitarist-midori-v1` (125 bones at the profile bind pose within 0.0007 mm, the helpers, 9 hair chains, 325 clips, the requirements); Transfer Weights and export of a valid package (0 errors, 0 warnings with both libraries); the clip preview against `clip_local_poses` with the offsets (0.0009 mm); Open of `gh3.midori.outfit1.style1.chchar` and export without edits (all triangles of each material within 0.0006 mm, joints within 0.0008 mm and 0.0003°, valid). That GH3 package has two materials that no mesh uses (Blender drops them) and coincident cards that the attribute pairing of `pipeline.package.compare` matches wrongly, so the test compares triangle corners.
 
-**Creator test with a third-party model (2026-10-09).** An MMD model (Tda式初音ミク・アペンド Ver1.10, 25,164 vertices, 17 materials) went onto `gh3-guitarist-midori-v1` with the add-on: fit to the bind pose with a script (the add-on has no retarget tool), Transfer Weights, head, finger, and tail weights from the MMD weights, Assign to Hair Bones for the twin tails, Validate, and Export (7.2 MB, valid with both libraries). The mod imported it in 0.42 s and played it as guitarist and bassist on gh3.dive and gh3.prison. Problems that this test found and that are now fixed: the add-on had no character library profiles; Open stopped on packages on a character library profile ("unknown profile"); MMD toon materials exported without a texture and without a message (now a warning). The model and the package are not in the repository (third-party terms). Steps: [CREATOR-GUIDE.md section 5.1](CREATOR-GUIDE.md#51-use-a-rigged-model-mmd-vrm-fbx).
+**Creator test with a third-party model (2026-10-09).** An MMD model (Tda式初音ミク・アペンド Ver1.10, 25,164 vertices, 17 materials) went onto `gh3-guitarist-midori-v1` with the add-on: fit to the bind pose with a script (the add-on has no retarget tool), Transfer Weights, head, finger, and tail weights from the MMD weights, Assign to Hair Bones for the twin tails, Validate, and Export (7.2 MB, valid with both libraries). The mod imported it in 0.42 s and played it as guitarist and bassist on gh3.dive and gh3.prison. Problems that this test found and that are now fixed: the add-on had no character library profiles; Open stopped on packages on a character library profile ("unknown profile"); MMD toon materials exported without a texture and without a message (now a warning). The model and the package are not in the repository (third-party terms). Steps: [CREATOR-GUIDE.md section 5.1](CREATOR-GUIDE.md#51-use-your-models-skeleton-mmd-vrm-mixamo-fbx).
 
 Python tests without Blender (`tests/test_blender_addon_characters.py`): the Brotli decoder against the `brotli` module (texts at 4 qualities, 2 modes, 3 windows; every 60th library clip; a damaged stream), weight limits, quaternions, character.json, the model split of the four roles, the four members as valid and reproducible packages, the hair chains, the clip list, bind pose of channels that a clip does not animate, the game IK (the strum hand on its target in all frames), the comparison with another joint order, the bundle, character.json and the manifest requirements of both kinds of profile, and the character library (the rig from `characters.json` against the GH3 package GLB, the hair chains, the split of a GH3 character, the GH3 package before a custom character, the clip offsets).
 
@@ -575,3 +592,20 @@ The character test (`blender/tests/character_test.py`, section 8) makes a twin t
 | Project SEKAI Miku (FBX) | **Chain along Strand** at the source bones: 2 twin tails (8 joints each), 8 skirt panels (2 each) | 32 | 14: **Fit Body Colliders** | Peak 4.3 m/s; solver 0.28 / 0.11 ms; maximum depth 0.1 mm |
 
 The poses at common times at 60 and 144 fps are equal (0.0 difference). The values of the MMD import that hold the shape in MMD (springs) gave twin tails that whipped up to 60–90° from vertical; the preset limits (22°, damping 3, speed limit 6 rad/s) keep 95% of the frames within 30–35° of vertical. Each chain touches only the colliders near it: with the arm colliders, a twin tail rested on the upper arm and flicked over it.
+
+### 2.13 Own skeleton
+
+`skeleton_tools.py` holds the tools of section 1.17; `pipeline/package/skeleton.py` (bundled) holds the roles, the checks (`check_map`, the rules of `src/Packages/CharacterSkeleton.cs`), the automatic map, and the retarget (`Retarget`, the algorithm of `src/Stage/Band/CharacterRetarget.cs` for whole clips).
+
+- Blender world coordinates go to runtime coordinates with the reflection (x, y, z) → (x, z, y) (`skeleton_tools.A`). `rest_rows` gives the exported bones (deform bones, each with its nearest deform parent) and their runtime bind rows.
+- The preview keys the pose bones of the exported bones; a bone that the export does not write keeps its rest pose relative to its parent.
+- `tests/fixtures/retarget-case.json` is the shared test case of the Python and the C# retarget: an MMD-like skeleton (center and waist above sibling upper and lower body, twist bones, followers, a T-pose, bone rolls, 0.85 scale) and six GH3 poses with arm IK strengths. `tests/test_skeleton.py` writes it (`RETARGET_FIXTURE_WRITE=1`) and checks the Python output against it; `tests/RetargetLogicTests.cs` checks the C# output against it (0.1 mm, 0.005°).
+
+The character test (`blender/tests/character_test.py`, section 8, own skeleton) makes an armature with Mixamo names (0.85 scale, T-pose arms, random bone rolls) and a primitive body with the shape keys `Blink` and `A`, maps it, validates, exports (valid, morph targets `A` and `Blink` only, no `bones`), checks the retargeted preview (spine, neck, and shoulder bones point along their GH3 bones: 0.0°; the heads move 3.6 and 4.2 cm), and opens the package again. Result 2026-10-10: 53 checks pass on Blender 5.2.1 and 4.2.23.
+
+**Creator test (2026-10-10).** The two Miku test characters (not in the repository) were made again on their own skeletons by scripts that call the add-on as a creator does (`~/.cache/retarget/scripts/build_miku_own.py`, `prep_sekai_own.py`, `build_sekai_own.py`):
+
+| Character | Skeleton | Roles | Followers | Chains | Face shapes | Package |
+| --- | --- | --- | --- | --- | --- | --- |
+| Tda Miku Append (MMD, MMD Tools import) | 206 deform bones | 57 (all fingers, twist bones, legs on the `D` bones) | 20 | 10 chains, 40 joints on the MMD bones (**Chains from MMD Physics**), 13 colliders | まばたき, あ, い, う, え, お | 9.2 MB, valid |
+| Project SEKAI Miku (FBX from the game, body and face armatures merged, scaled to 1.58 m) | 144 bones | 52 (all fingers; the roll bones are siblings and keep their rest pose under the arm) | 0 | 10 chains, 24 joints on the source bones, 13 colliders | eye_close, mouth_a, i, u, e, o (named from the FBX channels) | valid |

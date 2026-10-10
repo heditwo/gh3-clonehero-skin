@@ -220,6 +220,16 @@ The GH3 guitarists play on their own rig profiles. Check their motion against th
 
 On 2026-10-09 (38 runs on gh3.dive, two guitarist characters and one singer in each run) every variant had a close-up in one role, each character family as guitarist and as bassist, and the colors and outfits agreed with the photos.
 
+### Characters on their own skeleton
+
+1. Select a character with `skeleton` (PACKAGE-FORMAT 9.6) for the guitarist, and run the capture with `GH3_SKIN_TRACE=1`. The log line `GH3 band guitarist: character <id> (...) on its own skeleton (<n> joints, <n> humanoid roles), retargeted from ...; hip scale ..., torso scale ..., instrument scale ...` names the source. Each `[trace] band` line ends with `retarget handMiss=<cm> move=<cm>`: `handMiss` must stay below 0.1 cm.
+2. Run the same song times with the GH3 character of the profile (for example `gh3.midori.outfit1.style1`) and put the frames side by side: the stance, the legs, the head, the guitar angle, and the hands must agree. Fix the camera with `GH3_SKIN_DEBUG_VIEW` (full body, and a close view of the guitar for the fret and strum hands).
+3. Measure the proportions: joint ratios of the package GLB (`pipeline/package/skeleton.py` `glb_skeleton`, `world_positions`) against the source model.
+4. Twist: retarget all clips of the set with `skeleton.Retarget` (equal to the game, `tests/fixtures/retarget-case.json`) and measure the twist between adjacent arm bones about the limb axis.
+5. Face: a singer on a chart with vocals (`GH3_SKIN_CHARACTER_SINGER`), with `GH3_SKIN_DEBUG_VIEW_HEAD=local` and `GH3_SKIN_DEBUG_VIEW_ROLE=singer` (for example the view `0.03,3,0,0.03,0,0,9`). The log has `GH3 band singer: face blend shapes with lip sync from the sung notes`.
+6. GH3 characters must not change: `tools/check-character-trace.py` on a GH3 guitarist run, and screenshots of the default band against `main`.
+7. `GH3_SKIN_PROFILE=1` logs `band.retarget`.
+
 ### Instruments and highways
 
 1. Select instruments with `GH3_SKIN_INSTRUMENT_GUITARIST` and `_BASSIST`, with and without characters. The log has `GH3 band <role>: ... with instrument <id> (<name>; the player's choice)` and `GH3 highway: <source> (the player is the <role>)`.

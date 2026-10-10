@@ -169,6 +169,10 @@ Textures `079_1024x16_DXT5`, `090_…`, `100_…` from `global_gfx` (thick: bar,
 - Hand fire: `GP_4X_FingerFlames01` and `GP_4X_FingerSparks01` (2 × 2 frames at 20 fps; 24 flames and 64 sparks per second per hand at `Bone_Hand_Middle_Mid_L/R`). GH3 starts it with `GuitarEvent_Multiplier4xOn`; the mod uses a 100-note streak.
 - Credits: `create_band` with `current_level = z_credits` destroys the bassist, vocalist, and drummer.
 
+## Characters on their own skeleton
+
+Not a GH3 feature: GH3 has no retarget, and its characters use the GH3 skeletons. The mod retargets the GH3 clips to a creator character that keeps its own skeleton ([PACKAGE-FORMAT.md section 9.6](PACKAGE-FORMAT.md#96-own-skeleton)). The GH3 rig of the profile still plays the GH3 performance (clips, blends, IK, fingers, frets, strums) as before; only the character's bones and the instrument position come from the retarget. GH3 characters and the default band do not use it and do not change (`tools/check-character-trace.py` and screenshots against `main`, [STATUS.md](STATUS.md#characters-on-their-own-skeleton)). Blink on every role and the mouth shapes of the singer are additions of the mod, with the blink timing measured from the GH3 facial clips.
+
 ## Playable characters
 
 Sources: `Musician_Profiles` (`guitar_band_profile.qb`: name, skeletons, ragdolls, `musician_body`, `musician_instrument`, `finger_anims`, `fret_anims`, `strum_anims`, `anim_set`, `outfits` with `styles`), `musician_body` and `musician_instrument` (`guitar_band_profile_data.qb`: model and instrument PAKs), `Secret_Characters`, `Bonus_Outfits`, `Bonus_Styles` (`store_data.qb`). `pipeline/characters.py` reads them and writes `assets/characters/inventory.json`.

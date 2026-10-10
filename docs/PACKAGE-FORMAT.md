@@ -327,14 +327,17 @@ The field meanings are the same as in [CUSTOM-CONTENT.md, section 5](CUSTOM-CONT
 | `highway` | No | Package path of the highway image of the character: a PNG, 512 × 1024 in GH3 (other sizes stretch; the validator warns). When the character plays the role of the Clone Hero player, the player's highway uses it, as GH3 `create_guitarist` does ([PARITY-NOTES.md](PARITY-NOTES.md#instruments-and-highways)). The GH3 guitarist packages have the highway of their GH3 profile |
 | `attachments` | No | `instrument`: a library instrument ID (the `instrument` of a `band/band.json` member: `SG_Black`, `tobB4`, `Microphone001`, `Drum_Set001`). Absent: the default. The v1 library has one instrument for each band role, and the instrument follows the role that the character plays (rules in [section 20.6](#206-characters)). Do not model the instrument in the character GLB |
 | `bones`, `colliders`, `chains` | No | Custom hair, skirt, and tail chains: bones that the character adds to the profile rig, capsules on rig bones, and the physics of the added bones ([section 9.5](#95-custom-chains)) |
+| `skeleton` | No | The character keeps its own skeleton: the GLB skin joints, a humanoid map, followers, and the instrument place. The mod retargets the clips of the profile to it ([section 9.6](#96-own-skeleton)). Without it, the GLB joints are the profile rig |
+| `face` | No | Needs `skeleton`. The morph target names of the face shapes `blink`, `a`, `i`, `u`, `e`, `o` ([section 9.6](#96-own-skeleton)) |
 
 ### 9.2 GLB rules
 
 - One skin. All mesh nodes use it. Inverse bind matrices are required.
+- With `skeleton` ([section 9.6](#96-own-skeleton)), the joints are free; the rules below that name the profile rig do not apply.
 - Joints map to GH3 bones **by name**: `bone-<8 hex digits>` (the GH3 checksum) or the GH3 bone name. Joint order and vertex order are free.
 - The skin contains every joint of the profile and the added bones of `character.json` `bones` ([section 9.5](#95-custom-chains)), and no other joints, with the profile parents. A character library profile gives its rig in `characters.json` (`bones`, `parents`, `bind`); the checks are the same. The added bones have the same tolerances against their `bind`.
 - Nodes above the root joint (for example the Blender `Armature` node) have the identity transform (1e-4).
-- Maximum four influences for each vertex. Blend shapes (morph targets) are optional. Mod 0.9.8 accepts them but does not animate them (warning): the GH3 clips move the face with bones.
+- Maximum four influences for each vertex. Blend shapes (morph targets) are optional. On a GH3 rig the mod does not animate them (warning): the GH3 clips move the face with bones. A character with its own skeleton uses the morph targets of `face` (section 9.6).
 - Animations in the GLB are ignored (warning). The library supplies the clips.
 
 ### 9.3 Tolerances (spike result 9.6)
@@ -398,7 +401,7 @@ flowchart LR
     Chains --> Solver[Hair solver, 120 Hz]
 ```
 
-The rows name bones, not rig indices: a GH3 bone name, `bone-<8 hex digits>`, or the name of an added bone (letters, digits, `_`, `.`, `-`; at most 64). So the same rows also work when a character later keeps its own skeleton (PACKAGING-PLAN decision 13).
+The rows name bones, not rig indices: a GH3 bone name, `bone-<8 hex digits>`, the name of an added bone, or a joint of the character's own skeleton (at most 64 characters, no control characters; MMD names are Japanese). A character with its own skeleton ([section 9.6](#96-own-skeleton)) has no `bones`: its chain joints are skeleton joints.
 
 `bones` (at most 64):
 
@@ -458,6 +461,56 @@ Example (one joint of a twin tail on the head, and one collider):
 ```
 
 The Blender add-on makes these rows ([BLENDER-ADDON.md section 1.16](BLENDER-ADDON.md#116-chains-and-colliders)).
+
+### 9.6 Own skeleton
+
+A character can keep the skeleton of its model (PACKAGING-PLAN decision 13). `profile` (and `library`, `animations`) still selects the band role and the animation set; the mod plays these GH3 clips on the GH3 rig of the profile without a mesh and retargets them to the GLB joints. GH3 characters and characters without `skeleton` play as before.
+
+```mermaid
+flowchart LR
+    Clips[Clips of the profile] --> Rig[GH3 rig, no mesh]
+    Rig --> Retarget[Retarget: rest-pose correction, root motion, twist, followers]
+    Retarget --> IK[Arm and leg IK with the character's lengths]
+    IK --> Skeleton[Character skeleton and mesh]
+    Rig --> Instrument[Instrument on the GH3 rig, moved to the character's chest]
+    Instrument --> IK
+```
+
+`skeleton` fields:
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `humanoid` | Yes | Role to joint name (a GLB node name of a skin joint, or `bone-<8 hex digits>` of its checksum). Roles: the VRM 1.0 humanoid bone names (`hips`, `spine`, `chest`, `upperChest`, `neck`, `head`, `jaw`, `leftEye`, `leftShoulder`, `leftUpperArm`, `leftLowerArm`, `leftHand`, `leftThumbMetacarpal`, `leftThumbProximal`, `leftThumbDistal`, `leftIndexProximal`, `leftIndexIntermediate`, `leftIndexDistal`, and the same for `Middle`, `Ring`, `Little`; `leftUpperLeg`, `leftLowerLeg`, `leftFoot`, `leftToes`; and the `right` roles), and the twist roles `leftUpperArmTwist`, `leftLowerArmTwist` (and `right`). Required: the 15 VRM required roles (`hips`, `spine`, `head`, upper and lower arms, hands, upper and lower legs, feet). A joint has one role at most |
+| `followers` | No | At most 128 rows `{bone, source, weight}`: the bone turns by `weight` (−4 to 4) times the turn of `source` from its rest pose, in its own rest frame (MMD append rotation). A follower has no role. No cycles |
+| `instrument` | No | `bone`: the joint whose movement the instrument follows (default: the joint of the top spine role). `offset`: metres in runtime coordinates, in the GH3 frame of the chest (at most 1 m). `scale`: the instrument size, 0.5–1.5 (default: the arm length of the character divided by the arm length of the GH3 rig) |
+
+The GH3 bone of each role: `hips` `bone_pelvis`, `neck` `bone_neck`, `head` `bone_head`, `jaw` `bone_jaw`, eyes `bone_eye_l`/`_r`, shoulders `bone_collar_*`, upper arms `bone_bicep_*`, lower arms `bone_forearm_*`, hands `bone_palm_*`, upper legs `bone_thigh_*`, lower legs `bone_knee_*`, feet `bone_ankle_*`, toes `bone_toe_*`, and the three joints of each GH3 finger. The spine roles that the skeleton has take, bottom to top: one role `bone_stomach_upper`; two roles `bone_stomach_lower` and `bone_chest`; three roles `bone_stomach_lower`, `bone_stomach_upper`, `bone_chest`.
+
+`face`: the morph target name (GLB mesh `extras.targetNames`, as Blender writes it) of each slot. Each name must be on at least one primitive. The importer keeps only these morph targets (position deltas); normal deltas are not used.
+
+Rules (the validator and `CharacterSkeleton` check them):
+
+- 1–255 joints with unique names and unit scale; the nodes above the root joints have no transform. `bones` is not allowed.
+- Hierarchy: the hips are a parent of the upper legs; the spine roles are parents of the neck, the head, the shoulders, and the upper arms; each limb chain (shoulder, upper arm, upper arm twist, lower arm, lower arm twist, hand; upper leg, lower leg, foot, toes; hand and the finger joints) is in parent order.
+- Rest pose, runtime coordinates: upright (the head 0.2–5 m above the lower foot, the hips between), the left roles on +X, the toes in front of the feet (−Z; the model looks toward +Z in glTF). A T-pose or an A-pose is correct; the validator warns when an arm points more than 80° below or 10° above the horizontal.
+- Chain joints (section 9.5) are skeleton joints without a role, not parents of a joint with a role, and not followers. Colliders are on other joints.
+- Warning: fewer than the 30 finger roles.
+
+Retarget at run time (`CharacterRetarget`; the Blender add-on preview uses the same algorithm, `pipeline/package/skeleton.py`, and `tests/fixtures/retarget-case.json` holds them equal within 0.1 mm and 0.005°):
+
+| Step | Rule |
+| --- | --- |
+| Rest-pose correction | For each role joint: the turn that points the joint's bone (to the joint of the next role: upper arm to lower arm, hand to the middle finger with the index-to-little line as a second axis, and so on) along its GH3 bone at rest. The hips, the head, the jaw, and the eyes keep their world frame; a joint without a next role takes the turn of its nearest corrected parent |
+| Rotation | World rotation = GH3 world rotation × inverse(GH3 rest world rotation) × turn × own rest world rotation. A joint without a role keeps its rest pose relative to its parent |
+| Root motion | The lowest common parent of the hips, the spine, and the upper legs (for MMD: `腰`) moves as the GH3 pelvis moves from rest, scaled by the hip height ratio (upper leg joints) |
+| Twist | An upper arm with a twist joint keeps its swing; the twist joint takes the turn of the whole arm. A lower arm twist joint takes the hand's turn about the forearm; without it, the lower arm takes half of that turn |
+| Followers | After their source, in the frame of their rest pose |
+| Legs | Two-bone IK with the character's lengths, in the bend plane of the pose: the foot goes where the GH3 foot is from the GH3 upper leg joint, scaled by the hip height ratio, plus the difference of the rest ankle heights (strength 1) |
+| Instrument | Guitarist and bassist: the GH3 instrument subtree (`bone_guitar_body`) moves to the character's chest (the GH3 offset from `bone_chest`, scaled by the torso ratio, plus `offset`), takes the instrument scale, and moves nearer to the shoulders when a hand goal is beyond the reach of the arm (98 % of its length). Singer: the microphone follows the nearer hand while the GH3 hand is within 25 cm of it. The drum kit and the microphone stand stay |
+| Arms | Two-bone IK with the character's lengths and the strength of the GH3 arm IK: the middle knuckle (else the wrist) goes to the GH3 middle knuckle on the moved and scaled instrument |
+| Anchors | Camera anchors and hand fire use a frame on the role joint that turns as the GH3 bone; a GH3 bone without a role uses its nearest mapped parent, an instrument bone the moved GH3 bone |
+| Face | Blink: the GH3 blink timing (`StageLipSync`, about 6 blinks per minute) for every role. Singer with sung notes: the mouth shapes a, i, u, e, o from the vowels of the syllables. Songs with GH3 facial clips: `a` from the GH3 jaw angle (24° = 1), blink from the eyelid angle |
+| Roles | In the role of its profile: the profile's animation set (a guitarist profile also in the bassist role). In another role: the role's library rig and clips. Every role is possible |
 
 ## 10. Library (`.chlib`)
 
@@ -969,6 +1022,8 @@ GH3 characters (2026-10-09): `python -m pipeline.characters` and the `packages` 
 | Hand fire, camera anchors | The bones with the GH3 names on the profile rig |
 | Another role | Only roles whose role rig has all joints (guitarist and bassist). The character keeps its rig, set, hair, and scale; the role's library instrument hangs on the bones with the same names, bound with the role rig's rest pose |
 
+**Own skeleton** (section 9.6). `CharacterSkeleton` checks `skeleton` and `face`. The cache `character.json` records `skeleton` (`names` in skin order, `parents`, local `bind` rows in runtime coordinates, `humanoid` as joint indices, `followers` as `[bone, source, weight]`, `instrumentBone`, `instrumentOffset`, `instrumentScale`) and `face` (the six slot names, `""` for none); `joints` are the checksums of the joint names. `morphs.bin` (magic `GH3MRP01`) has, for each mesh part, the count of its shapes and, for each shape, the slot (byte), the vertex count, and the position deltas (float32 x, y, z, runtime coordinates); a split part (more than 65,535 vertices) gets the deltas of its vertices. At load, `StageBand` makes the GH3 rig of the performance without a mesh (with the role's instrument), the character's bones, and a `StageRetarget`; `StageAssets` adds the blend shapes (`Mesh.AddBlendShapeFrame`, weight 100) and `CharacterFace` sets their weights. The log line is `GH3 band <role>: character <id> (...) on its own skeleton (<n> joints, <n> humanoid roles), retargeted from ...; hip scale ..., torso scale ..., instrument scale ...; <instrument>; <n> chain joints, <n> colliders; face shapes ...`. With `GH3_SKIN_TRACE=1`, the `[trace] band` lines end with `retarget handMiss=<cm> move=<cm>` (the largest distance of a hand from its goal, and the instrument move).
+
 **Custom chains** (section 9.5). `CharacterChains` checks `bones`, `colliders`, and `chains` and adds the bones to the rig for the GLB checks. The cache `character.json` records `bones` (name and parent as checksums, `bind`), `colliders` (bone checksum, ends, radius), and `chains` (one row for each joint, with the bitmask of its colliders); a cache that is older than these fields reads as "no chains". At load, `CharacterExtras` makes a Unity bone for each added bone (after the rig bones), the bind poses come from the GLB inverse bind matrices, and `HairDefinition.Merge` puts the custom joints after the profile hair. A chain that cannot load gives a warning; the character plays without hair physics. The log line of the character ends with `N added bones, N chain joints, N colliders`.
 
 A character that cannot load gives the venue default, as a character on a fixed profile does. With `GH3_SKIN_TRACE=1`, the log has a `[trace] band` line for the guitarist and the bassist twice per song second: the profile, the set, the stance, the body clip, its clip time, the scale, and the local pose of four bones of the clip without blends, layers, or IK ([VERIFICATION.md](VERIFICATION.md#gh3-characters)).
@@ -984,4 +1039,5 @@ When all imports end (or at a warm start, on a worker thread), `PackageManager.C
 | 1.0 | 2026-10-09 | First version (before the first release: no compatibility rules, PACKAGING-PLAN decision 12) |
 | 1.0 | 2026-10-10 | Added to 1.0: `character.json` `bones`, `colliders`, and `chains` (custom chains, section 9.5) |
 | 1.0 | 2026-10-10 | Added to 1.0: `gh3Shading` `toon`, `gh3Toon`, and `gh3HairLayer` for characters and instruments (section 6.5.1) |
+| 1.0 | 2026-10-10 | Added to 1.0: `character.json` `skeleton` and `face` (own skeleton, section 9.6); bone names of `bones`, `colliders`, and `chains` can use any script |
 | 1.0 | 2026-10-10 | Added to 1.0: the character library (`.chlib` with the entry `characters`, section 10.1: rig profiles, animation sets, hair with hinge and prismatic joints and the Havok limit fields, IK chains, and `clips/`); `character.json` `library` of a character library and `animations` (section 9.1); the kind instrument (`.chinst`, section 9.4) and the folder `Custom/Instruments/`; `character.json` `highway` (section 9.1). The earlier versions `chchar/1.1`, `chlib/1.1`, and `chlib/1.2` are now 1.0, without `minModVersion` |

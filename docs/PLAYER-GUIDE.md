@@ -121,7 +121,7 @@ All characters are available. You do not unlock them as in GH3. A guitarist char
 
 Each GH3 guitarist character moves as in GH3: with its own skeleton, its own animations (stances, idles, strums, finger and fret movements, solos, intro, win, and lose), its own hair and accessory physics, and its own size (Judy Nails is smaller, as in GH3). As the bassist, a guitarist character keeps its own animations and plays the bass, as in a GH3 co-op game.
 
-A character for one member can also play another member when the two GH3 skeletons have the same bones. In GH3, the guitarist and the bassist have the same bones; thus a guitarist character can play the bassist, and the reverse. The picker shows such a character with its original member in parentheses, for example "Midori: Puffball (Aqua) (a guitarist)". Other characters (for example the two singers, and characters made with the Blender add-on) play with the animations of the member that they replace.
+A character for one member can also play another member when the two GH3 skeletons have the same bones. In GH3, the guitarist and the bassist have the same bones; thus a guitarist character can play the bassist, and the reverse. The picker shows such a character with its original member in parentheses, for example "Midori: Puffball (Aqua) (a guitarist)". Other characters (for example the two singers, and characters made with the Blender add-on) play with the animations of the member that they replace. A character that keeps the skeleton of its model (made with **Use my model's skeleton** in the Blender add-on) can play every member: the mod moves its skeleton with the GH3 animations of that member, and it blinks; as the singer it also moves its mouth with the song's vocals.
 
 Differences from GH3:
 

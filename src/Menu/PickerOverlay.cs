@@ -106,7 +106,8 @@ internal sealed class PickerOverlay
             {
                 var model = CharacterModel.Load(package.CacheDirectory);
                 _characters.Add(new CharacterRow(package.Manifest.Id, package.Manifest.Name, model.Role));
-                foreach (var role in PlayerChoices.Roles.Where(r => r != model.Role && (!_rigs.TryGetValue(r, out var rig) || model.Map(rig) == null)))
+                // A character with its own skeleton plays every role (the clips of the role are retargeted to it).
+                foreach (var role in PlayerChoices.Roles.Where(r => r != model.Role && model.Skeleton == null && (!_rigs.TryGetValue(r, out var rig) || model.Map(rig) == null)))
                     _incompatible.Add((package.Manifest.Id, role));
             }
             catch (Exception error) when (error is IOException or PackageException or System.Text.Json.JsonException) { }
@@ -124,7 +125,8 @@ internal sealed class PickerOverlay
 
     private readonly HashSet<(string Id, string Role)> _incompatible = new();
 
-    // A character can play its own role, and another role whose rig has all of its joints (the GH3 guitarist and bassist).
+    // A character can play its own role, and another role whose rig has all of its joints (the GH3 guitarist and bassist);
+    // a character with its own skeleton plays every role.
     private List<CharacterRow> Choices(string role) =>
         _characters.Where(c => c.Role == role || !_incompatible.Contains((c.Id, role))).OrderBy(c => c.Role == role ? 0 : 1).ThenBy(c => c.Name).ToList();
 

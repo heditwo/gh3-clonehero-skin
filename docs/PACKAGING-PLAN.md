@@ -16,7 +16,7 @@ Prepare the mod for a public release to the Clone Hero community:
 | # | Topic | Decision |
 |---|---|---|
 | 1 | GH3 content | The release **includes** the original GH3 venues, crowd, band, and animations, converted to the new format. Players do not need a GH3 copy. (The owner accepts the IP risk. Keep the project non-commercial and keep GH or Activision trademarks out of the product name.) |
-| 2 | Characters | **Fixed GH3 skeletons only** for the first release (the GHWT:DE model: fit the mesh to the GH3 rig). Retargeting (VRM, arbitrary rigs) is a later improvement, only if the fixed rigs are not sufficient. |
+| 2 | Characters | **Fixed GH3 skeletons only** for the first release (the GHWT:DE model: fit the mesh to the GH3 rig). Retargeting (VRM, arbitrary rigs) is a later improvement, only if the fixed rigs are not sufficient. Changed by decision 13: characters can also keep their own skeleton. |
 | 3 | File types | `.chstage` for venues and `.chchar` for characters. The shared GH3 band, crowd, and animation library is also a package. |
 | 4 | HUD art | The HUD is GH3 art. Two small gem sets are not from GH3: tap gems (from BetterGH3) and the cyan overlapping Star Power phrase gems (from FastGH3). Credit those projects, ask their authors, or draw replacements. This is a small cleanup item, not a blocker. Status: credited in [CREDITS.md](../CREDITS.md); the authors were not asked (section 10). |
 | 5 | Release | Clean up the repository, then the owner posts it with a showcase video and a Discord link. No mod manager, gallery site, or index is needed for the first release. |
@@ -27,7 +27,7 @@ Prepare the mod for a public release to the Clone Hero community:
 | 10 | Direction | Charts without direction get generated cues by default (an option turns them off). The Rock Band `VENUE` mapping choices in [CUSTOM-CONTENT.md](CUSTOM-CONTENT.md#rock-band-venue-track) are accepted. |
 | 11 | Upstream | No upstream report of the MelonLoader Dobby hook-page bug. |
 | 12 | Format versions | Before the first release, the format has no compatibility rules. Format 1.1 goes into 1.0, and new features (for example custom hair chains) change 1.0 directly. There are no `minModVersion` gates for our own packages. The format becomes frozen at the first release. |
-| 13 | Custom skeletons | Custom characters keep their own skeleton. The mod retargets the GH3 clips to it (bone map, rest-pose correction, rotations only, arm IK with the character's arm lengths, own shape keys for blink and lip sync). GH3 characters keep their original clips. This work starts after the custom hair chains. |
+| 13 | Custom skeletons | Custom characters keep their own skeleton. The mod retargets the GH3 clips to it (bone map, rest-pose correction, rotations only, arm IK with the character's arm lengths, own shape keys for blink and lip sync). GH3 characters keep their original clips. Done 2026-10-10: `character.json` `skeleton` and `face` ([PACKAGE-FORMAT.md section 9.6](PACKAGE-FORMAT.md#96-own-skeleton)), the add-on path **Use my model's skeleton** ([BLENDER-ADDON.md section 1.17](BLENDER-ADDON.md#117-use-the-models-skeleton)). Fitting to a GH3 rig stays an alternative. |
 
 ## 3. Research summary
 
@@ -186,7 +186,7 @@ A thin venue MVP is about 8–10 weeks of that estimate. Agent-driven work will 
 
 - Blender API changes: set a minimum of 4.2 and test new versions.
 - The Blender viewport cannot match GH3 shading exactly; the game is the reference, so fast reload matters.
-- Fixed rigs restrict characters to GH3 proportions (accepted for v1).
+- Fixed rigs restrict characters to GH3 proportions. A character with its own skeleton (decision 13) keeps its proportions.
 - Shader portability to Windows (D3D11): the spike showed that the bundles failed on D3D11 (section 9.5). Fixed: the bundles now have Direct3D 11 programs. Metal (macOS) is not done.
 - IP: the release ships GH3-derived content by decision; keep it non-commercial and unbranded.
 

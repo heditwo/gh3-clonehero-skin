@@ -155,7 +155,7 @@ The GH3 venues have the license `LicenseRef-GH3-Derived` with the permissions `r
 
 ## 5. Make a character on a GH3 rig
 
-A character is a mesh on one GH3 rig. The game plays the GH3 animations of the band member on your mesh and adds the instrument. You do not make a skeleton or animations. The example is `examples/example-guitarist.blend`.
+A character is a mesh on one GH3 rig, or a model with its own skeleton ([section 5.1](#51-use-your-models-skeleton-mmd-vrm-mixamo-fbx)). The game plays the GH3 animations of the band member on your character and adds the instrument. You do not make animations. The example is `examples/example-guitarist.blend`.
 
 1. Set **GH3 library (.chlib)** in the add-on preferences (section 2).
 2. Click **File > New > New Character from GH3 Rig**. Select a profile:
@@ -178,27 +178,66 @@ A character is a mesh on one GH3 rig. The game plays the GH3 animations of the b
 
 ![The character package panel after Validate](images/creator/character-package.png)
 
-### 5.1 Use a rigged model (MMD, VRM, FBX)
+### 5.1 Use your model's skeleton (MMD, VRM, Mixamo, FBX)
 
-You can use a model that has its own skeleton, for example an MMD model (`.pmx`). Read the terms of the model first: many models do not permit changes or distribution. The steps below are the steps of a test with an MMD model of a small anime character on the profile **Midori (outfit 1)**.
+A model with its own skeleton (MMD `.pmx`, VRM, a Mixamo or Unreal FBX) can keep that skeleton. The game then moves your model with the GH3 animations of the profile: it retargets the GH3 clips to your bones. The proportions of your model do not change. Read the terms of the model first: many models do not permit changes or distribution.
 
-1. Import the model. Blender cannot read `.pmx`: install the extension **MMD Tools** (Blender extensions platform). Import at the scale 0.08 (1 MMD unit is 8 cm).
-2. **Move the model onto the GH3 bind pose.** The add-on has no tool for this step. In Pose Mode of the model's armature, turn and scale the bones so that each joint is on the joint of the GH3 rig: hips, knees, ankles, toes, spine, neck, head, shoulders, elbows, wrists, and each finger joint. Then apply the Armature modifier of the mesh (**Object > Apply**), and delete the model's armature. Small differences in the proportions are normal: the GH3 rig sets the length of each bone, so the mesh stretches a little.
-   - If you move the mesh with a script, use only the vertex groups of deform bones, as the Armature modifier does. MMD Tools adds the vertex groups `mmd_edge_scale` and `mmd_vertex_order`; they are not bones. A script that used them as weights moved the parts of the head of the test model against each other by up to 1.4 cm: the bangs and the face skin then covered the inner part of the eyes, and the eyes looked too far apart.
-   - A model that comes from a Unity game (FBX from an asset tool) can be mirrored: object scale −1 and the face toward +Y. Mirror it so that the face looks toward −Y and the left side of the character is at +X, and check that the normals point out.
-3. Remove the shape keys (**Object Data > Shape Keys**). The mod does not play shape keys; the GH3 clips move the face with bones.
-4. **Materials.** Importers of MMD and VRM models make toon shader node groups. The glTF export does not read them, and the package then has no texture (the character is white in the game). Validate gives a warning for each such material. Give each material a **Principled BSDF** with the image on **Base Color**, and save the images as PNG. Images of 1024 × 1024 pixels are sufficient (the GH3 characters use 1024 pixels or less).
-5. Set the material panel: for example **Toon** for an anime look ([section 5.2](#52-toon-look-and-eyebrows-over-the-hair)), **Unlit** for parts that glow, **Blend** for hair cards and other parts with transparency. For an MMD model, click **Toon from MMD** before you replace the MMD node groups: it reads the toon texture, the sphere map, and the edge of each MMD material.
-6. **Weights.** Click **Transfer Weights from the GH3 Body**. Then correct these parts with Weight Paint:
-   - The face and the hair on the head: full weight on `bone_head`. The face bones of the GH3 body are at other places than the eyes and the mouth of your character; with their weights, the face changes shape when the GH3 face moves.
-   - The hands: Transfer Weights can give a finger the weight of the next finger. When the model has good finger weights, keep them: rename the finger vertex groups to the GH3 finger bones (the add-on shows the bone names), then remove the other vertex groups.
-   - Parts far from the body (a long tail, cables): they get the weights of the nearest body part (for example the heels). Paint them to `bone_pelvis`.
-7. **Long hair, skirt, tail.** Make your own chains (section 5.3). With MMD Tools, **Chains from MMD Physics** makes them from the MMD rigid bodies of the model. Or use the hair chains of the profile: select the vertices of each pigtail and click **Assign to Hair Bones** (Midori has two pigtail chains; the vertices below the end of a chain go to the last bone and move as one part). Add the hair materials to **Hair materials**.
-8. Click **Limit and Normalize**, look at some clips in **Clip Preview**, then Validate and export.
+```mermaid
+flowchart LR
+    Clip[GH3 clip on the GH3 rig] --> Turn[Bone turns from the GH3 rest pose]
+    Turn --> Bones[Your bones, rest pose corrected]
+    Bones --> IK[Arm and leg IK with your lengths]
+    IK --> Mesh[Your mesh and shape keys]
+```
 
-Compare the face of your export with the source model: render both front-on in Blender (the export with **File > Import > glTF**). The eyes must be at the same places. Measure a ratio, for example the distance between the eyes divided by the width of the face at the height of the eyes: it must be the same in the source and in the export. To see the face in the game at a fixed angle, use `GH3_SKIN_DEBUG_VIEW_HEAD=local` ([VERIFICATION.md](VERIFICATION.md)). The game shows the face as Blender does with the same camera. Thus, if the eyes look too far apart in the game but the ratios are correct, the cause is the design of the model or the camera angle, not the export. (In a test on gh3.dive, half of the frames that show the guitarist's face are 12° to 42° to the side of the face.)
+1. Click **File > New > New Character from GH3 Rig**. Select the profile whose animations you want, for example **Midori (outfit 1)** for a guitarist. Set **Use my model's skeleton**. The add-on makes a scene with the GH3 rig as a helper (the source of the clip preview) and the instrument preview.
+2. Import your model into the scene:
+   - MMD: install the extension **MMD Tools** and import at the scale 0.08 (1 MMD unit is 8 cm). Import the morphs (shape keys) too.
+   - VRM: use the **VRM Add-on for Blender**. The add-on reads its humanoid map.
+   - FBX (Mixamo, Unreal mannequin, a game): **File > Import > FBX**.
+3. Put the model in the rest position that the game expects:
+   - It stands on the floor at the origin, with +Z up. It looks toward −Y, and its left side is at +X.
+   - It has its real size (for example 1.58 m). The game does not scale your character.
+   - The armature has no transform: unparent it from an import root, then **Object > Apply > All Transforms** on the armature and on the meshes. The meshes keep an Armature modifier for the armature.
+   - A T-pose or an A-pose is correct. The game corrects the rest pose: each bone points along its GH3 bone.
+   - A model from a Unity game can come in mirrored (object scale −1, face toward +Y). Mirror it, and check that the normals point out.
+4. Select the armature and click **Use Selected Armature** in the **Skeleton** panel. The add-on maps the roles (hips, spine, chest, neck, head, shoulders, arms, hands, all finger bones, legs, feet, toes) from the bone names: MMD in Japanese and English, VRM and VRoid, Mixamo, and the Unreal mannequin. A required role without a bone has a red mark. Correct a wrong bone in the list.
+   - MMD: the legs map to the deform bones `足D`, `ひざD`, `足首D` (they have the weights; the IK bones `足`, `ひざ`, `足首` have none). `腕捩` and `手捩` become the twist bones. The add-on also reads the MMD append rotations (付与) as **followers**, for example `手捩1` turns with 25 % of `手捩`.
+   - Fingers: map all of them for a good fret hand. A finger without a bone keeps its rest pose.
+5. **Face.** The add-on finds the shape keys for blink and the mouth shapes a, i, u, e, o (MMD `まばたき`, `あ`, `い`, `う`, `え`, `お`; VRM `Blink`, `A`, `I`, `U`, `E`, `O`; VRoid `Fcl_EYE_Close`, `Fcl_MTH_A`...). Correct them in the face fields. The game blinks with the GH3 blink timing, and the singer moves the mouth with the sung notes of the chart. The export writes only these shape keys.
+6. **Materials.** Importers of MMD and VRM models make toon shader node groups. The glTF export does not read them, and the package then has no texture (the character is white in the game). Validate gives a warning for each such material. For an MMD model, click **Toon from MMD** first ([section 5.2](#52-toon-look-and-eyebrows-over-the-hair)). Then give each material a **Principled BSDF** with the image on **Base Color**, and save the images as PNG (1024 × 1024 pixels are sufficient).
+7. **Weights.** Keep the weights of your model. Click **Limit and Normalize** (four influences at most). The export writes only the deform bones: turn **Deform** off on helper bones (IK targets, controls). At most 255 deform bones.
+8. **Long hair, skirt, tail.** Make chains on the bones of your model ([section 5.3](#53-make-hair-skirt-and-tail-chains)). With MMD Tools, **Chains from MMD Physics** uses the MMD bones of your model; it adds no bones.
+9. **Clip Preview.** Click a clip. The clip plays on the GH3 rig helper, and the add-on moves your armature with the same retarget as the game. During the preview, the add-on mutes the bone constraints of your armature (the game does not use them; **Bind Pose** turns them on again).
+10. Optional, **Instrument**: the instrument hangs in front of the top spine bone, at the GH3 distance scaled by your torso. Its size is your arm length divided by the GH3 arm length. **Instrument bone**, **Instrument offset**, and **Instrument scale** change this.
+11. Click **Validate**, then **Export .chchar**.
 
-Known limits: the character does not blink and does not move its mouth (the face is on the head bone). The hair chains of the profile collide only with the head; use your own chains with colliders for long hair.
+What the game does with your skeleton:
+
+| Part | Rule |
+| --- | --- |
+| Bones with a role | The turn of the GH3 bone from the GH3 rest pose, on your rest pose. At rest, each bone points along its GH3 bone |
+| Spine | Two spine bones take the lowest and the highest GH3 spine bone; three take all three |
+| Hips | They move as the GH3 pelvis moves, scaled by your hip height |
+| Legs | IK with your leg lengths: the feet go where the GH3 feet go from the GH3 hips, scaled by the hip height |
+| Arms | IK with your arm lengths: the hands go to the GH3 hand places on the instrument. When your arms are too short, the instrument moves nearer |
+| Wrists and upper arms | The twist goes to the twist bones and the followers (MMD `手捩`, `腕捩`); without a twist bone, the forearm takes half of the hand twist |
+| Bones without a role | They keep their rest pose relative to their parent (or follow their follower source) |
+| Face | Blink and lip sync with the shape keys. In songs with GH3 facial clips, the jaw opening gives `a` and the eyelids give blink |
+| Roles | A character on its own skeleton plays every role. In the role of its profile it has the animations of the profile; in another role, the animations of that role |
+
+Measured with two Miku models (2026-10-10): the own skeleton keeps the proportions of the source model (torso/leg 0.469 against 0.469, arm/leg 0.485 against 0.486); the fit to the Midori rig gave 0.648 and 0.593. The hands miss their places on the guitar by at most 0.3 mm.
+
+**Alternative: fit the mesh to a GH3 rig.** You can also move your model onto the GH3 bind pose and use the GH3 skeleton (the character then has the GH3 proportions):
+
+1. In Pose Mode of the model's armature, turn and scale the bones so that each joint is on the joint of the GH3 rig. Apply the Armature modifier and delete the model's armature. Use only the vertex groups of deform bones (MMD Tools adds `mmd_edge_scale` and `mmd_vertex_order`; they are not bones).
+2. Remove the shape keys (a character on a GH3 rig moves the face with bones).
+3. Click **Transfer Weights from the GH3 Body**. Give the face and the head hair full weight on `bone_head`. Keep good finger weights: rename the finger vertex groups to the GH3 finger bones.
+4. Use the hair chains of the profile (**Assign to Hair Bones**) or your own chains, then Validate and export.
+
+A fitted character does not blink and does not move its mouth.
+
+Compare the face of your export with the source model: render both front-on in Blender (the export with **File > Import > glTF**). The eyes must be at the same places. To see the face in the game at a fixed angle, use `GH3_SKIN_DEBUG_VIEW_HEAD=local` and `GH3_SKIN_DEBUG_VIEW_ROLE` ([VERIFICATION.md](VERIFICATION.md)).
 
 ### 5.2 Toon look and eyebrows over the hair
 
@@ -242,7 +281,9 @@ A chain is a line of bones that you add to the rig. The game moves the chain wit
 
 ![A twin tail chain (blue) and the Chains and Colliders panel](images/creator/character-chains.png)
 
-With an MMD model: import the model with MMD Tools with physics, move the MMD model onto the rig (the same fit as the mesh), and click **Chains from MMD Physics**. The tool makes a bone for each moving rigid body, with the MMD mass, damping, and limits. Then remove the MMD model.
+With an MMD model: import the model with MMD Tools with physics and click **Chains from MMD Physics**. On a GH3 rig, first move the MMD model onto the rig (the same fit as the mesh); the tool makes a bone for each moving rigid body. On the model's own skeleton, the tool uses the MMD bones themselves. Both get the MMD mass, damping, and limits. Then remove the MMD model that you imported for the physics.
+
+On a character with its own skeleton, a chain joint is a bone of your model that has no role, that is not a parent of a bone with a role, and that is not a follower. **Fit Body Colliders** puts the capsules on the bones with the roles (no guitar capsule: the instrument hangs on the GH3 rig).
 
 Hints:
 
@@ -257,7 +298,7 @@ To use the character:
 
 1. Start Clone Hero, and push **F6** in the menus.
 2. In **Band**, click **<** or **>** on the line of the band member (for example **Guitarist**) until your character shows.
-3. Start a song. A guitarist character can also play the bassist (the two rigs have the same bones).
+3. Start a song. A guitarist character can also play the bassist (the two rigs have the same bones). A character with its own skeleton can play every role.
 
 ![The example guitarist in the example club](images/creator/game-example.png)
 
