@@ -4,8 +4,22 @@ namespace Gh3Skin;
 
 internal readonly record struct StageParticleBirth(Vector3 Position, Vector3 Velocity, float Rotation, float ColorMix, float Life, float PathFraction = 0);
 
+// The emitter shape and the birth of one particle, ported from GH3's particle code (tests/ParticleShapeTests.cs compares
+// it with the native oracle). GH3: the constants are the float32 values of GH3.exe.
 internal sealed class StageParticleShape
 {
+    // GH3: one draw of the random generator is Rnd(10000), scaled by 0.0001 to 0-1 (or by 0.0002 around 5000 to -1..1).
+    private const int RandomSteps = StageParticleConstants.RandomSteps;
+    private const int RandomCenter = 5000;
+    private const float RandomScale = StageParticleConstants.RandomScale;
+    private const float CenteredRandomScale = .0002f;
+    // GH3: 1/360 (spread degrees to half turns), pi/180, and 2pi/10000 (a random rotation).
+    private const float HalfTurnsPerDegree = .0027777778450399637f;
+    private const float RadiansPerDegree = .01745329238474369f;
+    private const float RandomRotationScale = .00062831852119416f;
+    // GH3: a target this close to the Y axis builds its basis on the X axis; a shorter radius is zero.
+    private const float NearYAxis = .99f;
+    private const float ZeroRadius = .00001f;
     public Vector3 Elevation { get; private set; }
     public Vector3 Sweep { get; private set; }
     public Vector3 Target { get; private set; }
@@ -19,7 +33,7 @@ internal sealed class StageParticleShape
 
     public void SourceSpread(float degrees)
     {
-        var half = degrees * .0027777778450399637f;
+        var half = degrees * HalfTurnsPerDegree;
         SetElevation(-half, half);
         SetSweep(0, 2);
     }
@@ -37,14 +51,14 @@ internal sealed class StageParticleShape
     {
         if (target == Vector3.Zero) return Matrix4x4.Identity;
         var forward = Vector3.Normalize(target);
-        var right = Vector3.Cross(Math.Abs(forward.Y) > .99f ? Vector3.UnitX : Vector3.UnitY, forward);
+        var right = Vector3.Cross(Math.Abs(forward.Y) > NearYAxis ? Vector3.UnitX : Vector3.UnitY, forward);
         var up = Vector3.Cross(right, forward);
         return new(right.X, right.Y, right.Z, 0, up.X, up.Y, up.Z, 0, forward.X, forward.Y, forward.Z, 0, 0, 0, 0, 1);
     }
 
     public void SetAngle(Vector3 degrees)
     {
-        Angle = degrees * .01745329238474369f;
+        Angle = degrees * RadiansPerDegree;
         AngleBasis = Matrix4x4.CreateRotationX(Angle.X) * Matrix4x4.CreateRotationY(Angle.Y) * Matrix4x4.CreateRotationZ(Angle.Z);
     }
 
@@ -87,16 +101,16 @@ internal sealed class StageParticleShape
         Vector3 direction;
         if (Radiate && TargetPosition == null)
         {
-            var elevation = random(10000) * .0001f;
-            var sweep = random(10000) * .0001f;
+            var elevation = random(RandomSteps) * RandomScale;
+            var sweep = random(RandomSteps) * RandomScale;
             direction = Spherical(Elevation.X + Elevation.Z * elevation, Sweep.X + Sweep.Z * sweep);
             position = Spherical((Elevation.Y + Elevation.X) * .5f - MathF.PI + elevation * (2 * MathF.PI),
                 (Sweep.Y + Sweep.X) * .5f - MathF.PI + sweep * (2 * MathF.PI));
             direction = Transform(direction, targetBasis);
             position = Transform(position, targetBasis);
-            var radius = random(10000);
+            var radius = random(RandomSteps);
             var extent = Math.Max(Math.Max(Math.Abs(position.X), Math.Abs(position.Y)), Math.Abs(position.Z));
-            position *= (float)((double)(1f / extent) * radius * .0001f);
+            position *= (float)((double)(1f / extent) * radius * RandomScale);
             if (Circular)
             {
                 var length = MathF.Sqrt(position.X * position.X + position.Y * position.Y);
@@ -106,11 +120,12 @@ internal sealed class StageParticleShape
         }
         else
         {
-            position = new((random(10000) - 5000) * .0002f, (random(10000) - 5000) * .0002f, (random(10000) - 5000) * .0002f);
+            position = new((random(RandomSteps) - RandomCenter) * CenteredRandomScale, (random(RandomSteps) - RandomCenter) * CenteredRandomScale,
+                (random(RandomSteps) - RandomCenter) * CenteredRandomScale);
             if (Circular)
             {
                 var length = MathF.Sqrt(position.X * position.X + position.Y * position.Y);
-                var inverse = length > .00001f ? 1 / length : 0;
+                var inverse = length > ZeroRadius ? 1 / length : 0;
                 position.X *= Math.Abs(position.X) * inverse;
                 position.Y *= Math.Abs(position.Y) * inverse;
             }
@@ -122,17 +137,17 @@ internal sealed class StageParticleShape
             }
             else
             {
-                direction = Spherical(random(10000) * Elevation.Z * .0001f + Elevation.X, random(10000) * Sweep.Z * .0001f + Sweep.X);
+                direction = Spherical(random(RandomSteps) * Elevation.Z * RandomScale + Elevation.X, random(RandomSteps) * Sweep.Z * RandomScale + Sweep.X);
                 direction = Transform(direction, targetBasis);
             }
         }
         position = Transform(position, AngleBasis);
         direction = Transform(direction, AngleBasis);
-        var velocity = direction * (random(10000) * (speed.Y - speed.X) * .0001f + speed.X);
-        var pathFraction = fillPath ? random(10000) * .0001f : 0;
-        var rotation = random(10000) * .00062831852119416f;
-        var color = random(10000) * .0001f;
-        var lifetime = random(10000) * (life.Y - life.X) * .0001f + life.X;
+        var velocity = direction * (random(RandomSteps) * (speed.Y - speed.X) * RandomScale + speed.X);
+        var pathFraction = fillPath ? random(RandomSteps) * RandomScale : 0;
+        var rotation = random(RandomSteps) * RandomRotationScale;
+        var color = random(RandomSteps) * RandomScale;
+        var lifetime = random(RandomSteps) * (life.Y - life.X) * RandomScale + life.X;
         return new(new(position.X, position.Y, -position.Z), new(velocity.X, velocity.Y, -velocity.Z), rotation, color, lifetime, pathFraction);
     }
 

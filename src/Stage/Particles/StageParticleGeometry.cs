@@ -50,7 +50,9 @@ internal static class StageParticleGeometry
             right = Vector3.Cross(up, forward);
             return new(right * (size.X * .5f), up * (size.Y * .5f));
         }
+        // GH3: the rotation is quantized to 256 steps of a turn (1/2pi and 2pi/256 as float32).
         var index = (int)(angle * .15915493667125702f * 256) & 255;
+        // GH3: see above.
         var rotation = index * .02454369328916073f;
         var sine = (float)Math.Sin(rotation);
         var cosine = (float)Math.Cos(rotation);
@@ -160,6 +162,7 @@ internal static class StageParticleGeometry
             }
             if (rotate3d)
             {
+                // GH3: 2pi/128 per random index.
                 var x = randomIndex * .04908738657832146f;
                 var y = colorMix * MathF.PI;
                 var axis = new Vector3((float)Math.Cos(x) * (float)Math.Sin(y), -(float)Math.Sin(x), (float)Math.Cos(x) * (float)Math.Cos(y));

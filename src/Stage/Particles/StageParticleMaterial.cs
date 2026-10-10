@@ -61,6 +61,7 @@ internal sealed record StageParticleMaterial
         BurnValue = Number("BurnValue");
         Bloom = Flag("Bloom");
         FillBurst = Flag("FillBurst");
+        // GH3: the packed blend words of the blend modes (factor and operation bytes, see StageParticles.Blend).
         PackedBlend = Burn ? 0x01220622u : Blend == Gh3Checksum.Value("add") ? 0x02250225u :
             Blend == Gh3Checksum.Value("sub") || Blend == Gh3Checksum.Value("subtract") ? 0x02650265u :
             Blend == Gh3Checksum.Value("blend") ? 0x06250625u : Blend == Gh3Checksum.Value("modulate") ? 0x05210521u :

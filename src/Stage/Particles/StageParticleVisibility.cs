@@ -11,9 +11,10 @@ internal sealed class StageParticleVisibility
 
     public void Register(Vector3 center, float radius)
     {
-        static float Quantize(float value) => unchecked((short)(int)(value * 32)) / 32f;
-        Center = new(Quantize(Math.Clamp(center.X, -1023, 1023)), Quantize(Math.Clamp(center.Y, -1023, 1023)), Quantize(Math.Clamp(center.Z, -1023, 1023)));
-        Radius = Quantize(Math.Min(radius, 1023));
+        static float Quantize(float value) => unchecked((short)(int)(value * StageParticleConstants.VisibilitySteps)) / (float)StageParticleConstants.VisibilitySteps;
+        const int limit = StageParticleConstants.VisibilityLimit;
+        Center = new(Quantize(Math.Clamp(center.X, -limit, limit)), Quantize(Math.Clamp(center.Y, -limit, limit)), Quantize(Math.Clamp(center.Z, -limit, limit)));
+        Radius = Quantize(Math.Min(radius, limit));
     }
 
     public bool Test(IReadOnlyList<Vector4> planes)

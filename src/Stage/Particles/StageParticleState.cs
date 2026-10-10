@@ -132,14 +132,14 @@ internal sealed class StageParticleState
     private bool Create(uint id, Gh3QbValue source, uint parent, uint bone, uint group, Vector3? position)
     {
         if (Exists(id) || _objectExists(id)) return false;
-        if (_emitters.Count >= 10000) throw new InvalidDataException("Too many particle emitters");
+        if (_emitters.Count >= StageParticleConstants.MaximumEmitters) throw new InvalidDataException("Too many particle emitters");
         var defaultLightGroup = _values.GetValueOrDefault(Gh3Checksum.Value("default_light_group"))?.Integer ?? 0;
-        var definition = new StageParticleDefinition(Resolve(source), defaultLightGroup == 0 ? 0xe3714dc1 : defaultLightGroup);
-        var textureIndex = _runtime.NextRandom(64);
+        var definition = new StageParticleDefinition(Resolve(source), defaultLightGroup == 0 ? StageParticleConstants.DefaultLightGroup : defaultLightGroup);
+        var textureIndex = _runtime.NextRandom(StageParticleConstants.TextureIndexCount);
         var lodFrame = _runtime.NextRandom(2);
-        var seed = _runtime.NextRandom(65536);
+        var seed = _runtime.NextRandom(StageParticleConstants.SeedRange);
         var rotationSpeeds = definition.RotationSpeed == Vector2.Zero ? Array.Empty<float>() : Enumerable.Range(0, definition.Maximum)
-            .Select(_ => (_runtime.NextRandom(10000) * (definition.RotationSpeed.Y - definition.RotationSpeed.X) * .0001f + definition.RotationSpeed.X) * (2 * MathF.PI)).ToArray();
+            .Select(_ => (_runtime.NextRandom(StageParticleConstants.RandomSteps) * (definition.RotationSpeed.Y - definition.RotationSpeed.X) * StageParticleConstants.RandomScale + definition.RotationSpeed.X) * (2 * MathF.PI)).ToArray();
         var emitter = new StageParticleEmitter { Id = id, Parent = parent, Bone = bone, Group = group, Definition = definition,
             Placement = new(position ?? definition.Position, definition.Rotation, true), Start = _runtime.Time,
             DelayRemaining = (float)definition.Delay, PrewarmPending = definition.TimeSeed > 0,
@@ -211,7 +211,7 @@ internal sealed class StageParticleState
             Wind.Advance(_runtime.Time);
             if (JobQueueEnabled)
             {
-                emitter.Seed = _runtime.NextRandom(65536);
+                emitter.Seed = _runtime.NextRandom(StageParticleConstants.SeedRange);
                 emitter.Wind = Wind.Target;
                 var selected = emitter.Live.Count > 0 ?
                     Wind.SelectSphere(Reflect(emitter.Bounds.Center), emitter.Bounds.Radius) : Wind.Select(Reflect(position));
@@ -288,6 +288,7 @@ internal sealed class StageParticleState
             foreach (var particle in emitter.Live)
             {
                 if (particle.Age == 0)
+                    // GH3: TimeSeed draws CRT rand() / 32767 (3.0518509e-05 as float32).
                     particle.Age = particle.Life * Math.Min(duration / particle.Life, 1) * (_runtime.NextCrtRandom() * 3.0518509447574615e-05f);
                 else
                 {
@@ -333,7 +334,7 @@ internal sealed class StageParticleState
             emitter.RotationSpeeds.Length == 0 ? 0 : emitter.RotationSpeeds[slot], emitter.Emitted) {
                 ColorMix = birth.ColorMix, RandomIndex = emitter.TextureIndex, History = history
             };
-        emitter.TextureIndex = (emitter.TextureIndex + 1) & 63;
+        emitter.TextureIndex = (emitter.TextureIndex + 1) & (StageParticleConstants.TextureIndexCount - 1);
         particle.Color = new(0, 0, d.ColorAt(0, particle.ColorMix));
         emitter.Live.Add(particle);
         _liveCount++;

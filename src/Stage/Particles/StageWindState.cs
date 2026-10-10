@@ -51,6 +51,7 @@ internal sealed record StageWindField
 
 internal sealed class StageWindState
 {
+    private const int MaximumFields = 50;
     private readonly List<StageWindField> _fields = new();
     private readonly double _start;
     private readonly double _frameDuration;
@@ -89,7 +90,7 @@ internal sealed class StageWindState
             var field = new StageWindField { Id = create.Field("name")?.Integer ?? Gh3Checksum.Value("localwind") }.Apply(create);
             var index = _fields.FindIndex(value => value.Id == field.Id);
             if (index >= 0) _fields[index] = field;
-            else if (_fields.Count <= 50) _fields.Add(field);
+            else if (_fields.Count <= MaximumFields) _fields.Add(field);
             return true;
         }
         if (parameters.Field("modify") is { Type: Gh3QbType.Structure } modify)

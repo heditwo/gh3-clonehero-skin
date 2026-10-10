@@ -4,6 +4,7 @@ namespace Gh3Skin;
 
 internal sealed class StageParticleLod
 {
+    // GH3: the default LOD distances (UseDefLODDistances).
     public Vector2 Distances { get; private set; } = new(5, 20);
     public int Minimum { get; private set; }
     public int Counter { get; private set; }
@@ -18,7 +19,7 @@ internal sealed class StageParticleLod
         Minimum = (int)StageParticleDefinition.Number(source, "LODMinParticles", 0, int.MinValue, int.MaxValue);
         foreach (var field in source.Fields)
         {
-            if (field.Name == 0 && field.Value.Type == Gh3QbType.Checksum && field.Value.Integer == Gh3Checksum.Value("UseDefLODDistances")) Distances = new(5, 20);
+            if (field.Name == 0 && field.Value.Type == Gh3QbType.Checksum && field.Value.Integer == Gh3Checksum.Value("UseDefLODDistances")) Distances = new(5, 20); // GH3: see above
             else if (field.Name == Gh3Checksum.Value("LODDistances") || field.Name == Gh3Checksum.Value("LOD_Distances"))
             {
                 if (field.Value.Data is not float[] values || values.Length != 2 || values.Any(value => !float.IsFinite(value)))

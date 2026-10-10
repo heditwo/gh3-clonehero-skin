@@ -38,6 +38,7 @@
     <Compile Include="../src/Stage/Scripts/StageScriptActorState.cs" Link="StageScriptActorState.cs" />
     <Compile Include="../src/Stage/Scripts/StageObjectState.cs" Link="StageObjectState.cs" />
     <Compile Include="../src/Stage/Particles/StageParticleDefinition.cs" Link="StageParticleDefinition.cs" />
+    <Compile Include="../src/Stage/Particles/StageParticleConstants.cs" Link="StageParticleConstants.cs" />
     <Compile Include="../src/Stage/Particles/StageParticleMaterial.cs" Link="StageParticleMaterial.cs" />
     <Compile Include="../src/Stage/Particles/StageParticleRenderOrder.cs" Link="StageParticleRenderOrder.cs" />
     <Compile Include="../src/Stage/Particles/StageParticleRenderList.cs" Link="StageParticleRenderList.cs" />

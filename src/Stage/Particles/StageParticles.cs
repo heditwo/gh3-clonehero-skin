@@ -4,6 +4,10 @@ namespace Gh3Skin;
 
 internal sealed class StageParticles : IDisposable
 {
+    // Unity's transparent render queue.
+    private const int TransparentQueue = 3000;
+    // GH3: technique flag 0x800 sorts a technique with the transparent particles.
+    private const uint TransparentTechniqueFlag = 0x800;
     private static readonly int CameraForwardId = Shader.PropertyToID("_Gh3CameraForward");
     private static readonly uint TextureRibbonTrailKey = Gh3Checksum.Value("TextureRibbonTrail");
     private static readonly uint FlatRibbonTrailKey = Gh3Checksum.Value("FlatRibbonTrail");
@@ -80,7 +84,7 @@ internal sealed class StageParticles : IDisposable
             var material = _scripts.State.Particles.Emitters[id].Definition.Material;
             var technique = _techniques.Select(material);
             RenderKeys.Add(id, StageParticleRenderOrder.Key(material.RenderSortGroup, material.RenderDrawOrder,
-                material.RenderBlend != 0 || (technique.Flags & 0x800) != 0, technique.SortId, _scripts.State.Particles.Position(id, time), eye, distanceScale));
+                material.RenderBlend != 0 || (technique.Flags & TransparentTechniqueFlag) != 0, technique.SortId, _scripts.State.Particles.Position(id, time), eye, distanceScale));
         }
         DrawOrder = StageParticleRenderOrder.Sort(RenderedEmitters.Select(id => RenderKeys[id]).ToArray()).Select(index => RenderedEmitters[index]).ToArray();
 
@@ -191,7 +195,7 @@ internal sealed class StageParticles : IDisposable
         var definition = particle.Material;
         var quads = particle.Type == TextureRibbonTrailKey || particle.Type == FlatRibbonTrailKey ? particle.History + 1 :
             particle.Type == XTypeKey ? 4 : particle.Type == VTypeKey ? 2 : 1;
-        var capacity = (int)Math.Clamp((long)particle.Maximum * quads, 1, 8192);
+        var capacity = (int)Math.Clamp((long)particle.Maximum * quads, 1, StageParticleConstants.MaximumBatchQuads);
         var key = (emitter, textureId, definition, lit);
         if (!_batches.TryGetValue(key, out var batches))
         {
@@ -211,6 +215,7 @@ internal sealed class StageParticles : IDisposable
         Configure(material, definition);
         if (lit)
         {
+            // GH3: the lit particle constants of the native renderer.
             material.SetVector("_Gh3Lighting", new(.4f, 1, .5f, 1));
             material.SetVector("_Gh3AmbientWeights", new(1, 0, 0, 0));
             material.SetVector("_Gh3Maps", new(definition.NormalMap != 0 ? 1 : 0, definition.SpecularPower != 0 ? 1 : 0,
@@ -275,18 +280,21 @@ internal sealed class StageParticles : IDisposable
         material.SetVector("_Gh3Particle", new(definition.Burn ? definition.BurnValue : 0, (byte)definition.AlphaCutoff / 255f, 1,
             !definition.Burn && definition.AlphaCutoff > 0 ? 1 : 0));
         material.SetVector("_Gh3SoftEdge", new(definition.SoftEdge ? 1 : 0, definition.SoftEdgeScale, 0, 0));
-        material.renderQueue = 3000;
+        material.renderQueue = TransparentQueue;
     }
 
     public static void ConfigureBlend(Material material, uint packed)
     {
+        // GH3: the D3D blend factors of the packed blend word (1-11) as Unity BlendMode values.
         static int Factor(uint value) => value switch { 1 => 0, 2 => 1, 3 => 3, 4 => 7, 5 => 5, 6 => 10, 7 => 6, 8 => 8, 9 => 2, 10 => 4, 11 => 9, _ => throw new InvalidDataException("Invalid particle blend factor") };
+        // GH3: packed blend word: source factor (bits 0-4), operation (5-7), destination factor (8-15), and the same for
+        // alpha from bit 16.
         material.SetInt("_SrcBlend", Factor(packed & 31));
         material.SetInt("_DstBlend", Factor((packed >> 8) & 255));
-        material.SetInt("_SrcBlendAlpha", Factor((packed >> 16) & 31));
+        material.SetInt("_SrcBlendAlpha", Factor((packed >> 16) & 31)); // GH3: see above
         material.SetInt("_DstBlendAlpha", Factor(packed >> 24));
         material.SetInt("_BlendOp", (int)((packed >> 5) & 7) - 1);
-        material.SetInt("_BlendOpAlpha", (int)((packed >> 21) & 7) - 1);
+        material.SetInt("_BlendOpAlpha", (int)((packed >> 21) & 7) - 1); // GH3: see above
     }
 
     public void Dispose()

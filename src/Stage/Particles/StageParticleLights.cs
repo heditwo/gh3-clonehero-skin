@@ -10,6 +10,7 @@ internal sealed record StageParticleLightSet(uint Flags, int[] Indices, float[] 
 
 internal static class StageParticleLights
 {
+    // GH3: light group 0xb7205d14 also lights group 0x89e1cc18; 0x8aebf027 (the default group) lights all.
     public static bool Accepts(uint group, uint lightGroup, uint enabled, uint flags) =>
         (enabled & 2) != 0 && (flags & 2) != 0 && (lightGroup == group || group == (lightGroup == 0xb7205d14 ? 0x89e1cc18u : 0u) || lightGroup == 0x8aebf027);
 
@@ -26,10 +27,13 @@ internal static class StageParticleLights
         {
             var light = lights[i];
             var delta = light.Position - position;
+            // GH3: native light ranking: distance falloff, Rec. 601 luminance, shadow lights first (x 50000).
             var distance = (delta.X * delta.X + delta.Z * delta.Z) + delta.Y * delta.Y + .0001f;
             attenuation[i] = Math.Clamp((light.FarSquared - distance) * light.InverseRange, 0, 1);
             energy[i] = light.Intensity * light.Weight;
+            // GH3: see above.
             var luminance = (light.Color.Z * .114f + light.Color.Y * .587f) + light.Color.X * .299f;
+            // GH3: see above.
             rank[i] = luminance * attenuation[i] * ((light.Flags & 8) != 0 ? 50000 : 1) * energy[i];
         }
         for (var i = 0; i < count - 1; i++)
@@ -78,9 +82,13 @@ internal static class StageParticleLights
         if (!disableSH)
             foreach (var sample in projected[..projectedCount])
             {
+                // GH3: the native spherical-harmonic projection weights.
                 harmonics[0] += sample.Color * .2352944314479828f;
+                // GH3: see above.
                 harmonics[1] += sample.Color * (-sample.Direction.X * .47058919072151184f);
+                // GH3: see above.
                 harmonics[2] += sample.Color * (-sample.Direction.Y * .47058919072151184f);
+                // GH3: see above.
                 harmonics[3] += sample.Color * (-sample.Direction.Z * .47058919072151184f);
             }
         for (var i = selected; i < indices.Length; i++) indices[i] = indices[0];
@@ -104,6 +112,6 @@ internal static class StageParticleLights
     {
         var direction = new Vector3(value.X, value.Y, value.Z);
         var length = MathF.Sqrt((value.X * value.X + value.Y * value.Y) + value.Z * value.Z);
-        return length > .00001f ? direction * (1 / length) : direction;
+        return length > .00001f ? direction * (1 / length) : direction; // GH3: zero-length guard
     }
 }

@@ -4,6 +4,15 @@ namespace Gh3Skin;
 
 internal sealed class StageParticleDefinition
 {
+    // Validation limits of particle definitions.
+    private const int MaximumLife = 600;
+    private const int MaximumSpeed = 10000;
+    private const int MaximumEmitCount = 1000000;
+    private const int MaximumHistory = 1024;
+    private const int MaximumHistoryEntries = 2000000;
+    private const int MaximumColors = 20;
+    // GH3: ElevSpread and SweepSpread are degrees; 1/180 as float32 turns them into half turns.
+    private const float HalfTurnsPer90Degrees = .0055555556900799274f;
     public Gh3QbValue Source { get; }
     public StageParticleMaterial Material { get; }
     public uint Texture { get; }
@@ -56,7 +65,7 @@ internal sealed class StageParticleDefinition
     public Vector4[] Colors { get; }
     public float[] ColorTimes { get; }
 
-    public StageParticleDefinition(Gh3QbValue source, uint defaultLightGroup = 0xe3714dc1)
+    public StageParticleDefinition(Gh3QbValue source, uint defaultLightGroup = StageParticleConstants.DefaultLightGroup)
     {
         Source = source;
         Material = new(source.Field("QuickMaterial"));
@@ -65,9 +74,9 @@ internal sealed class StageParticleDefinition
         AtlasColumns = Material.AtlasColumns;
         AtlasRows = Material.AtlasRows;
         Fps = Material.Fps;
-        Life = Pair(source, "LifeRange", Vector2.Zero, 0, 600);
-        Speed = Pair(source, "SpeedRange", Vector2.Zero, -10000, 10000);
-        RotationSpeed = Pair(source, "RotVel", Vector2.Zero, -10000, 10000);
+        Life = Pair(source, "LifeRange", Vector2.Zero, 0, MaximumLife);
+        Speed = Pair(source, "SpeedRange", Vector2.Zero, -MaximumSpeed, MaximumSpeed);
+        RotationSpeed = Pair(source, "RotVel", Vector2.Zero, -MaximumSpeed, MaximumSpeed);
         RotationTimeScale = (float)Number(source, "RotVelTimeScale", 1, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude);
         var size = source.Field("SizeRange")?.Items;
         var start = Size(size?.ElementAtOrDefault(0));
@@ -95,7 +104,7 @@ internal sealed class StageParticleDefinition
         Lifetime = Number(source, "Lifetime", 0, 0, StageLimits.MaximumSeconds);
         Delay = Number(source, "EmitDelayStart", 0, 0, StageLimits.MaximumSeconds);
         TimeSeed = (float)Number(source, "TimeSeed", 0, 0, StageLimits.MaximumSeconds);
-        EmitCount = (int)Number(source, "EmitNum", 0, 0, 1000000);
+        EmitCount = (int)Number(source, "EmitNum", 0, 0, MaximumEmitCount);
         Maximum = (int)Number(source, "Max", 1, 0, StageLimits.MaximumMagnitude);
         if (Maximum == 0) Maximum = EmitCount > 0 ? EmitCount : (int)((float)Rate * Math.Max(Life.X, Life.Y) + .5f);
         if (Maximum > StageLimits.MaximumCount) throw new InvalidDataException("Too many particles in one emitter");
@@ -121,11 +130,11 @@ internal sealed class StageParticleDefinition
         LightGroup = source.Field("LightGroup")?.Integer ?? defaultLightGroup;
         UpdateScript = source.Field("UpdateScript")?.Integer ?? 0;
         ScriptParameters = source.Field("params");
-        History = (int)Number(source, "History", 1, 0, 1024);
-        if ((long)Maximum * History > 2000000) throw new InvalidDataException("Too many particle history entries");
+        History = (int)Number(source, "History", 1, 0, MaximumHistory);
+        if ((long)Maximum * History > MaximumHistoryEntries) throw new InvalidDataException("Too many particle history entries");
         Color = DecodeColor(source.Field("Color")?.Integer ?? uint.MaxValue);
         Colors = source.Field("ParticleColor")?.Items.Select(value => DecodeColor(value.Integer)).ToArray() ?? new[] { Vector4.One, Vector4.One };
-        if (Colors.Length is < 2 or > 20 || Colors.Length % 2 != 0) throw new InvalidDataException("Invalid particle color ranges");
+        if (Colors.Length is < 2 or > MaximumColors || Colors.Length % 2 != 0) throw new InvalidDataException("Invalid particle color ranges");
         ColorTimes = source.Field("VertexWeight")?.Items.Select(value => (float)Gh3ScriptRuntime.Numeric(value)).ToArray() ??
             Enumerable.Range(1, Colors.Length / 2 - 1).Select(index => index / (float)(Colors.Length / 2 - 1)).ToArray();
         if (ColorTimes.Length != Colors.Length / 2 - 1 || ColorTimes.Where((value, index) => !float.IsFinite(value) || value <= (index == 0 ? 0 : ColorTimes[index - 1]) || value > 1).Any())
@@ -143,7 +152,7 @@ internal sealed class StageParticleDefinition
             if (field.Name == Gh3Checksum.Value("AngleSpread")) shape.SourceSpread((float)Gh3ScriptRuntime.Numeric(field.Value));
             else if (field.Name == Gh3Checksum.Value("ElevSpread") || field.Name == Gh3Checksum.Value("SweepSpread"))
             {
-                var pair = Pair(field.Value, Vector2.Zero, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude) * .0055555556900799274f - Vector2.One;
+                var pair = Pair(field.Value, Vector2.Zero, -StageLimits.MaximumMagnitude, StageLimits.MaximumMagnitude) * HalfTurnsPer90Degrees - Vector2.One;
                 if (field.Name == Gh3Checksum.Value("ElevSpread")) shape.SetElevation(pair.X, pair.Y);
                 else shape.SetSweep(pair.X, pair.Y);
             }
