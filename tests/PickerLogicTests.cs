@@ -189,10 +189,10 @@ internal static class PickerLogicTests
 
         public int Indices(int[] values) => Bytes(values.SelectMany(BitConverter.GetBytes).ToArray(), "SCALAR", values.Length, 5125);
 
-        public void Image(string name, byte[] png)
+        public void Image(string name, byte[] texture)
         {
             Json["images"] ??= new JsonArray();
-            ((JsonArray)Json["images"]!).Add(new JsonObject { ["name"] = name, ["mimeType"] = "image/png", ["bufferView"] = View(png) });
+            ((JsonArray)Json["images"]!).Add(new JsonObject { ["name"] = name, ["mimeType"] = "image/vnd-gh3.tex", ["bufferView"] = View(texture) });
         }
 
         public byte[] Build()
@@ -212,6 +212,16 @@ internal static class PickerLogicTests
 
     internal static byte[] Png4() =>
         PackageLogicTests.PngFile(4, 4, 6, 8, Enumerable.Range(0, 4).SelectMany(_ => new byte[] { 0 }.Concat(Enumerable.Repeat(new byte[] { 10, 20, 30, 255 }, 4).SelectMany(p => p))).ToArray());
+
+    // A 4 × 4 GH3TEX02 texture: one BC1 colour, three mip levels.
+    internal static byte[] Tex4()
+    {
+        var data = new byte[TextureCodec.HeaderSize + 3 * 8];
+        TextureCodec.Magic.CopyTo(data, 0);
+        foreach (var (offset, value) in new[] { (8, TextureCodec.Dxt1), (12, 4), (16, 4), (20, 3) }) BitConverter.GetBytes(value).CopyTo(data, offset);
+        for (var mip = 0; mip < 3; mip++) BitConverter.GetBytes((ushort)0x08A3).CopyTo(data, TextureCodec.HeaderSize + mip * 8);
+        return data;
+    }
 
     internal static string Manifest(string format, string id, string entry, string requires = "") =>
         $"{{\"format\":\"{format}\",\"id\":\"{id}\",\"version\":\"1.0.0\",\"name\":\"{id}\",\"authors\":[{{\"name\":\"T\"}}],\"license\":\"CC0-1.0\"," +
@@ -248,7 +258,7 @@ internal static class PickerLogicTests
         // Column-major inverse bind matrices: identity, and a translation by -(1 + bindOffset) on y.
         var ibm = glb.Floats(new float[] { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -1 - bindOffset, 0, 1 }
             .Concat(tail ? new float[] { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -1.3f, 0, 1 } : Array.Empty<float>()).ToArray(), "MAT4", tail ? 3 : 2);
-        glb.Image("skin", Png4());
+        glb.Image("skin", Tex4());
         glb.Json["textures"] = new JsonArray(new JsonObject { ["source"] = 0 });
         glb.Json["materials"] = new JsonArray(new JsonObject
         {
@@ -283,7 +293,7 @@ internal static class PickerLogicTests
         var folder = Path.Combine(root, name + ".chchar");
         Directory.CreateDirectory(folder);
         Directory.CreateDirectory(Path.Combine(folder, "textures"));
-        File.WriteAllBytes(Path.Combine(folder, "textures", "shade.png"), Png4());
+        File.WriteAllBytes(Path.Combine(folder, "textures", "shade.tex"), Tex4());
         File.WriteAllBytes(Path.Combine(folder, "character.glb"), glb);
         File.WriteAllText(Path.Combine(folder, "character.json"), "{\"version\":1,\"library\":\"gh3-band-v1\",\"profile\":\"gh3-singer-male-v1\",\"hairMaterials\":[\"body\"]" +
             (attachments.Length > 0 ? ",\"attachments\":" + attachments : "") + fields + "}");
@@ -347,7 +357,7 @@ internal static class PickerLogicTests
     private static void CheckToon(string root, string library)
     {
         var extras = (JsonObject)JsonNode.Parse("{\"gh3Shading\":\"toon\",\"gh3HairLayer\":\"overHair\",\"gh3Toon\":{\"threshold\":0.4,\"shadeTexture\":\"#skin\"," +
-            "\"shadeMaskTexture\":\"textures/shade.png\",\"sphereTexture\":\"textures/shade.png\",\"sphereMode\":\"multiply\",\"outline\":{\"width\":0.002}}}")!;
+            "\"shadeMaskTexture\":\"textures/shade.tex\",\"sphereTexture\":\"textures/shade.tex\",\"sphereMode\":\"multiply\",\"outline\":{\"width\":0.002}}}")!;
         var output = Path.Combine(root, "toon-cache");
         var error = ImportCharacter(CharacterPackage(root, "toon", CharacterGlb(extras: extras)), library, output);
         Check(error == "", "a toon character imports: " + error);
@@ -355,7 +365,7 @@ internal static class PickerLogicTests
         // StageAssets reads the row with these options.
         var toon = System.Text.Json.JsonSerializer.Deserialize<StageToon>(material["toon"]!.ToJsonString(), new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
         toon.Validate();
-        var file = Gh3Checksum.Of("file-textures/shade.png");
+        var file = Gh3Checksum.Of("file-textures/shade.tex");
         Check(PackageJson.Text(material["shading"]) == "toon" && PackageJson.Text(material["hairLayer"]) == "overHair" && toon.Threshold == 0.4f && toon.Softness == 0.05f && toon.ShadeColor.SequenceEqual(new[] { 1f, 1, 1 }),
             "the toon row keeps the values and fills the defaults");
         Check(toon.ShadeTexture == Gh3Checksum.Of("image-0") && toon.ShadeMaskTexture == file && toon.SphereTexture == file &&
@@ -429,8 +439,8 @@ internal static class PickerLogicTests
         var position = glb.Floats(new float[] { 0, 0, 0, 1, 0, 0, 0, 1, 0 }, "VEC3", 3);
         var normal = glb.Floats(new float[] { 0, 0, 1, 0, 0, 1, 0, 0, 1 }, "VEC3", 3);
         var indices = glb.Indices(new[] { 0, 1, 2 });
-        glb.Image("base", Png4());
-        glb.Image("sampler-only", Png4());
+        glb.Image("base", Tex4());
+        glb.Image("sampler-only", Tex4());
         glb.Json["textures"] = new JsonArray(new JsonObject { ["source"] = 0 });
         glb.Json["materials"] = new JsonArray(new JsonObject
         {

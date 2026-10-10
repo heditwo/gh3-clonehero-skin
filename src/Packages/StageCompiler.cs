@@ -5,8 +5,8 @@ using static Gh3Skin.Packages.PackageJson;
 namespace Gh3Skin.Packages;
 
 // C# port of pipeline/stagepack/pack.py compile_stage and actor.py compile_actor: a venue package becomes the compiled
-// stage folder that the mod loads (GH3STG04 meshes, stage.json, cameras, lighting, scripts, fixtures, actors). Textures
-// go to `textures/<name>.tex` (TextureCodec) instead of PNG. pipeline/package/cachecheck.py compares the output with the
+// stage folder that the mod loads (GH3STG04 meshes, stage.json, cameras, lighting, scripts, fixtures, actors). The
+// pre-encoded textures go to `textures/<name>.tex` (TextureCodec) instead of PNG. pipeline/package/cachecheck.py compares the output with the
 // Python compiler.
 internal sealed class StageCompiler
 {
@@ -460,7 +460,7 @@ internal sealed class StageCompiler
         });
     }
 
-    // pipeline/stagepack/pack.py texture_reference: '#<image name>', a package PNG path, or (older packs) a texture index.
+    // pipeline/stagepack/pack.py texture_reference: '#<image name>', a package texture path (.tex), or (older packs) a texture index.
     private string TextureReference(GlbDocument glb, JsonNode? reference, string textureFolder, HashSet<string> images)
     {
         if (reference == null || Text(reference) == "" || IsInteger(reference) && Number(reference, "texture") == -1) return "";
@@ -482,14 +482,14 @@ internal sealed class StageCompiler
                 return imageName;
             }
         }
-        else if (Text(reference) is { } path && path.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+        else if (Text(reference) is { } path && path.EndsWith(".tex", StringComparison.OrdinalIgnoreCase))
         {
             var name = Key("file-" + path);
             if (images.Add(name))
             {
                 _sources.Add(path);
-                var png = _package.Read(path);
-                _textures.Add(Path.Combine(textureFolder, name), () => png);
+                var data = _package.Read(path);
+                _textures.Add(Path.Combine(textureFolder, name), () => data);
             }
             return name;
         }

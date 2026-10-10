@@ -2,11 +2,11 @@ using System.Diagnostics;
 
 namespace Gh3Skin.Packages;
 
-// Collects the textures of one GLB and encodes them in parallel; the importer flushes before it reads the next GLB, so
-// only one GLB stays in memory.
+// Collects the pre-encoded textures of one GLB and writes them to the cache (TextureCodec.ForCache: a copy, or a decode to
+// RGBA32 for a GPU without BC1/BC3); the importer flushes before it reads the next GLB, so only one GLB stays in memory.
 internal sealed class TextureJobs
 {
-    private readonly List<(string Path, Func<byte[]> Png)> _jobs = new();
+    private readonly List<(string Path, Func<byte[]> Data)> _jobs = new();
     private readonly bool _compressed;
     private readonly int _threads;
     public int Written { get; private set; }
@@ -18,17 +18,21 @@ internal sealed class TextureJobs
         _threads = Math.Max(1, threads);
     }
 
-    public void Add(string pathWithoutExtension, Func<byte[]> png) => _jobs.Add((pathWithoutExtension, png));
+    public void Add(string pathWithoutExtension, Func<byte[]> data) => _jobs.Add((pathWithoutExtension, data));
 
     public void Flush()
     {
         if (_jobs.Count == 0) return;
         var clock = Stopwatch.StartNew();
-        Parallel.ForEach(_jobs, new ParallelOptions { MaxDegreeOfParallelism = _threads }, job =>
+        void Write((string Path, Func<byte[]> Data) job)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(job.Path)!);
-            File.WriteAllBytes(job.Path + ".tex", TextureCodec.Encode(job.Png(), _compressed));
-        });
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(job.Path)!);
+            File.WriteAllBytes(job.Path + ".tex", TextureCodec.ForCache(job.Data(), _compressed, System.IO.Path.GetFileName(job.Path)));
+        }
+        if (_compressed) foreach (var job in _jobs) Write(job);
+        else
+            try { Parallel.ForEach(_jobs, new ParallelOptions { MaxDegreeOfParallelism = _threads }, Write); }
+            catch (AggregateException error) when (error.InnerExceptions.Count > 0) { throw error.InnerExceptions[0]; }
         Written += _jobs.Count;
         _jobs.Clear();
         Time += clock.Elapsed;

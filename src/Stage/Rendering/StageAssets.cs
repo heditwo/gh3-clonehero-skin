@@ -650,10 +650,10 @@ internal sealed class StageAssets : IDisposable
         if (!File.Exists(path)) return null;
         var clock = System.Diagnostics.Stopwatch.StartNew();
         var data = File.ReadAllBytes(path);
-        var (format, width, height, mips) = Packages.TextureCodec.ReadHeader(data);
+        var (format, width, height, mips, flags) = Packages.TextureCodec.ReadHeader(data);
         var unityFormat = (TextureFormat)format;
         if (!SystemInfo.SupportsTextureFormat(unityFormat)) throw new InvalidDataException($"This GPU does not support {unityFormat}; delete the package cache");
-        var texture = Own(new Texture2D(width, height, unityFormat, mips > 1, false));
+        var texture = Own(new Texture2D(width, height, unityFormat, mips > 1, (flags & Packages.TextureCodec.FlagLinear) != 0));
         SkinAssets.LoadRaw(texture, data, Packages.TextureCodec.HeaderSize);
         texture.Apply(false, true);
         TexturesUploaded++;

@@ -3,16 +3,19 @@ using System.IO.Compression;
 
 namespace Gh3Skin.Packages;
 
-// Cache texture (`textures/<name>.tex`): magic GH3TEX01, Unity TextureFormat, width, height, mip count, then the full
-// mip chain, largest level first, as Texture2D.LoadRawTextureData expects. Rows are bottom first (Unity order).
+// Package and cache texture (PACKAGE-FORMAT.md section 7): magic GH3TEX02, Unity TextureFormat, width, height, mip count,
+// flags (int32 each), then the full mip chain, largest level first, rows bottom first, as Texture2D.LoadRawTextureData
+// expects. Packages store it pre-encoded (pipeline/package/texture.py); the importer copies it into the cache.
 internal static class TextureCodec
 {
     public const int Rgba32 = 4;
     public const int Dxt1 = 10;
     public const int Dxt5 = 12;
-    public static readonly byte[] Magic = System.Text.Encoding.ASCII.GetBytes("GH3TEX01");
-    public const int HeaderSize = 24;
-    public const double MinimumPsnr = 36;
+    public const int FlagLinear = 1;
+    public static readonly byte[] Magic = System.Text.Encoding.ASCII.GetBytes("GH3TEX02");
+    private static readonly byte[] PngSignature = { 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a };
+    public const int HeaderSize = 28;
+    public const int MaxSize = 8192;
 
     public static int MipCount(int width, int height)
     {
@@ -21,82 +24,51 @@ internal static class TextureCodec
         return count;
     }
 
-    // Packages ship PNG; the cache holds BC1 (opaque) or BC3 (alpha) when the GPU takes them and the size is a multiple
-    // of 4 (PACKAGE-FORMAT.md section 7), otherwise RGBA32. Always a full mip chain (the stage samples trilinear).
-    public static byte[] Encode(byte[] png, bool compressed)
-    {
-        var rgba = Png.DecodeRgba(png, out var width, out var height);
-        var opaque = true;
-        for (var i = 3; i < rgba.Length; i += 4) if (rgba[i] != 255) { opaque = false; break; }
-        var format = compressed && width % 4 == 0 && height % 4 == 0 ? opaque ? Dxt1 : Dxt5 : Rgba32;
-        byte[]? first = null;
-        if (format != Rgba32)
-        {
-            // Art that GH3 did not store as DXT can lose too much in BC1/BC3 (for example the band face gradients); keep it
-            // uncompressed when the first level falls below the quality limit.
-            first = BlockCompression.Encode(rgba, width, height, format == Dxt5, out var squaredError);
-            var error = (double)squaredError / (width * height * (format == Dxt5 ? 4 : 3));
-            if (error > 0 && 10 * Math.Log10(255.0 * 255.0 / error) < MinimumPsnr)
-            {
-                format = Rgba32;
-                first = null;
-            }
-        }
-        var mips = MipCount(width, height);
-        using var output = new MemoryStream();
-        Span<byte> header = stackalloc byte[HeaderSize];
-        Magic.CopyTo(header);
-        BinaryPrimitives.WriteInt32LittleEndian(header[8..], format);
-        BinaryPrimitives.WriteInt32LittleEndian(header[12..], width);
-        BinaryPrimitives.WriteInt32LittleEndian(header[16..], height);
-        BinaryPrimitives.WriteInt32LittleEndian(header[20..], mips);
-        output.Write(header);
-        int levelWidth = width, levelHeight = height;
-        var level = rgba;
-        for (var mip = 0; mip < mips; mip++)
-        {
-            output.Write(format == Rgba32 ? level : mip == 0 && first != null ? first : BlockCompression.Encode(level, levelWidth, levelHeight, format == Dxt5));
-            if (mip + 1 < mips) level = Downsample(level, ref levelWidth, ref levelHeight);
-        }
-        return output.ToArray();
-    }
-
     public static int LevelSize(int format, int width, int height) =>
         format == Rgba32 ? width * height * 4 : Math.Max(1, (width + 3) / 4) * Math.Max(1, (height + 3) / 4) * (format == Dxt1 ? 8 : 16);
 
-    public static (int Format, int Width, int Height, int Mips) ReadHeader(ReadOnlySpan<byte> data)
+    public static (int Format, int Width, int Height, int Mips, int Flags) ReadHeader(ReadOnlySpan<byte> data)
     {
-        if (data.Length < HeaderSize || !data[..8].SequenceEqual(Magic)) throw new InvalidDataException("Invalid cache texture header");
+        if (data.Length < HeaderSize || !data[..8].SequenceEqual(Magic)) throw new InvalidDataException("Invalid texture header");
         var format = BinaryPrimitives.ReadInt32LittleEndian(data[8..]);
         var width = BinaryPrimitives.ReadInt32LittleEndian(data[12..]);
         var height = BinaryPrimitives.ReadInt32LittleEndian(data[16..]);
         var mips = BinaryPrimitives.ReadInt32LittleEndian(data[20..]);
-        if (format is not (Rgba32 or Dxt1 or Dxt5) || width is < 1 or > 8192 || height is < 1 or > 8192 || mips != MipCount(width, height))
-            throw new InvalidDataException("Invalid cache texture header");
+        var flags = BinaryPrimitives.ReadInt32LittleEndian(data[24..]);
+        if (format is not (Rgba32 or Dxt1 or Dxt5) || width is < 1 or > MaxSize || height is < 1 or > MaxSize || mips != MipCount(width, height) ||
+            (flags & ~FlagLinear) != 0 || format != Rgba32 && (width % 4 != 0 || height % 4 != 0))
+            throw new InvalidDataException("Invalid texture header");
         long size = 0;
         for (int mip = 0, w = width, h = height; mip < mips; mip++, w = Math.Max(1, w / 2), h = Math.Max(1, h / 2)) size += LevelSize(format, w, h);
-        if (data.Length != HeaderSize + size) throw new InvalidDataException("Invalid cache texture size");
-        return (format, width, height, mips);
+        if (data.Length != HeaderSize + size) throw new InvalidDataException("Invalid texture size");
+        return (format, width, height, mips, flags);
     }
 
-    private static byte[] Downsample(byte[] source, ref int width, ref int height)
+    // A package texture for the cache: the same bytes, or RGBA32 when the GPU has no BC1/BC3 (decoded on the worker).
+    public static byte[] ForCache(byte[] data, bool compressed, string name)
     {
-        int sourceWidth = width, sourceHeight = height;
-        width = Math.Max(1, width / 2);
-        height = Math.Max(1, height / 2);
-        var level = new byte[width * height * 4];
-        for (var y = 0; y < height; y++)
+        if (data.AsSpan().StartsWith(PngSignature))
+            throw new PackageException($"texture {name} is a PNG image; package format 1.0 stores textures pre-encoded (GH3TEX02): export the package again with the current CH Stage Tools add-on");
+        (int Format, int Width, int Height, int Mips, int Flags) header;
+        try { header = ReadHeader(data); }
+        catch (InvalidDataException error) { throw new PackageException($"texture {name}: {error.Message}"); }
+        return compressed || header.Format == Rgba32 ? data : ToRgba32(data, header);
+    }
+
+    private static byte[] ToRgba32(byte[] data, (int Format, int Width, int Height, int Mips, int Flags) header)
+    {
+        using var output = new MemoryStream();
+        Span<byte> head = stackalloc byte[HeaderSize];
+        data.AsSpan(0, HeaderSize).CopyTo(head);
+        BinaryPrimitives.WriteInt32LittleEndian(head[8..], Rgba32);
+        output.Write(head);
+        var offset = HeaderSize;
+        for (int mip = 0, w = header.Width, h = header.Height; mip < header.Mips; mip++, w = Math.Max(1, w / 2), h = Math.Max(1, h / 2))
         {
-            int y0 = Math.Min(y * 2, sourceHeight - 1), y1 = Math.Min(y * 2 + 1, sourceHeight - 1);
-            for (var x = 0; x < width; x++)
-            {
-                int x0 = Math.Min(x * 2, sourceWidth - 1), x1 = Math.Min(x * 2 + 1, sourceWidth - 1);
-                for (var c = 0; c < 4; c++)
-                    level[(y * width + x) * 4 + c] = (byte)((source[(y0 * sourceWidth + x0) * 4 + c] + source[(y0 * sourceWidth + x1) * 4 + c] +
-                        source[(y1 * sourceWidth + x0) * 4 + c] + source[(y1 * sourceWidth + x1) * 4 + c] + 2) >> 2);
-            }
+            output.Write(BlockCompression.Decode(data.AsSpan(offset, LevelSize(header.Format, w, h)), w, h, header.Format == Dxt5));
+            offset += LevelSize(header.Format, w, h);
         }
-        return level;
+        return output.ToArray();
     }
 }
 

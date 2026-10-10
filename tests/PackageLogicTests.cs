@@ -119,34 +119,46 @@ internal static class PackageLogicTests
 
     private static void CheckBlockCompression()
     {
-        var rgba = new byte[16 * 16 * 4];
-        for (var y = 0; y < 16; y++)
-            for (var x = 0; x < 16; x++)
-            {
-                var i = (y * 16 + x) * 4;
-                (rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3]) = ((byte)(x * 15 + y), (byte)(x * 12 + y), (byte)(200 - x * 8), (byte)(x < 8 ? 255 : 64 + y * 8));
-            }
-        var bc3 = BlockCompression.Encode(rgba, 16, 16, alpha: true);
-        var error = BlockCompression.MeanSquaredError(rgba, 16, 16, bc3, alpha: true);
-        Check(bc3.Length == 16 * 16 && 10 * Math.Log10(255.0 * 255 / error) > 40, $"BC3 keeps a smooth gradient (PSNR {10 * Math.Log10(255.0 * 255 / error):0.0} dB)");
-        var noise = new byte[32 * 16 * 4];
-        new Random(7).NextBytes(noise);
-        foreach (var withAlpha in new[] { false, true })
-        {
-            var blocks = BlockCompression.Encode(noise, 32, 16, withAlpha, out var squared);
-            Check(Math.Abs(squared / (32.0 * 16 * (withAlpha ? 4 : 3)) - BlockCompression.MeanSquaredError(noise, 32, 16, blocks, withAlpha)) < 1e-9,
-                "the encoder's block error equals the decoded mean squared error");
-        }
-        var solid = Enumerable.Range(0, 64).SelectMany(_ => new byte[] { 200, 101, 37, 255 }).ToArray();
-        var bc1 = BlockCompression.Encode(solid, 4, 4, alpha: false);
-        Check(BlockCompression.MeanSquaredError(solid, 4, 4, bc1, alpha: false) < 1, "BC1 reproduces a single colour within one step");
-        var texture = TextureCodec.Encode(PngFile(1, 1, 6, 8, new byte[] { 0, 1, 2, 3, 4 }), compressed: true);
-        var header = TextureCodec.ReadHeader(texture);
-        Check(header == (TextureCodec.Rgba32, 1, 1, 1), "sizes that are not a multiple of 4 stay RGBA32");
-        var rows = new byte[8 * (1 + 8 * 4)];
-        for (var y = 0; y < 8; y++) for (var x = 0; x < 32; x++) rows[y * 33 + 1 + x] = (byte)(x % 4 == 3 ? 255 : y * 30);
-        var opaque = TextureCodec.ReadHeader(TextureCodec.Encode(PngFile(8, 8, 6, 8, rows), compressed: true));
-        Check(opaque == (TextureCodec.Dxt1, 8, 8, 4), "opaque textures use BC1 with the full mip chain");
+        // BC1: red and blue endpoints, indices 0, 1, 2, 3 in each row.
+        var bc1 = new byte[] { 0x00, 0xF8, 0x1F, 0x00, 0xE4, 0xE4, 0xE4, 0xE4 };
+        var rgba = BlockCompression.Decode(bc1, 4, 4, alpha: false);
+        Check(rgba[0..16].SequenceEqual(new byte[] { 255, 0, 0, 255, 0, 0, 255, 255, 170, 0, 85, 255, 85, 0, 170, 255 }), "BC1 decodes the four-colour palette");
+        var three = BlockCompression.Decode(new byte[] { 0x1F, 0x00, 0x00, 0xF8, 0xE4, 0xE4, 0xE4, 0xE4 }, 4, 4, alpha: false);
+        Check(three[8..16].SequenceEqual(new byte[] { 127, 0, 127, 255, 0, 0, 0, 0 }), "BC1 with color0 <= color1 has three colours and transparent black");
+        // BC3: alpha endpoints 255 and 0, codes 0..7 in the first 8 pixels.
+        ulong codes = 0;
+        for (var i = 0; i < 8; i++) codes |= (ulong)i << (3 * i);
+        var bc3 = new byte[16];
+        bc3[0] = 255;
+        for (var i = 0; i < 6; i++) bc3[2 + i] = (byte)(codes >> (8 * i));
+        bc1.CopyTo(bc3, 8);
+        var alpha = BlockCompression.Decode(bc3, 4, 4, alpha: true);
+        Check(Enumerable.Range(0, 8).Select(i => alpha[i * 4 + 3]).SequenceEqual(new byte[] { 255, 0, 219, 182, 146, 109, 73, 36 }), "BC3 decodes eight alpha levels");
+        var small = BlockCompression.Decode(bc1, 2, 1, alpha: false);
+        Check(small.Length == 8 && small[4..8].SequenceEqual(new byte[] { 0, 0, 255, 255 }), "a level smaller than a block keeps its own pixels");
+
+        // A 4 × 4 BC1 texture with its 3 mip levels (each one block).
+        var texture = new byte[TextureCodec.HeaderSize + 3 * 8];
+        TextureCodec.Magic.CopyTo(texture, 0);
+        foreach (var (offset, value) in new[] { (8, TextureCodec.Dxt1), (12, 4), (16, 4), (20, 3), (24, 0) }) BitConverter.GetBytes(value).CopyTo(texture, offset);
+        for (var mip = 0; mip < 3; mip++) bc1.CopyTo(texture, TextureCodec.HeaderSize + mip * 8);
+        Check(TextureCodec.ReadHeader(texture) == (TextureCodec.Dxt1, 4, 4, 3, 0), "GH3TEX02 header");
+        Check(ReferenceEquals(TextureCodec.ForCache(texture, compressed: true, "t"), texture), "the importer copies a pre-encoded texture");
+        var decoded = TextureCodec.ForCache(texture, compressed: false, "t");
+        Check(TextureCodec.ReadHeader(decoded) == (TextureCodec.Rgba32, 4, 4, 3, 0) && decoded.AsSpan(TextureCodec.HeaderSize, 64).SequenceEqual(rgba),
+            "a GPU without BC1 gets RGBA32 with the same mip chain");
+        Throws(() => TextureCodec.ForCache(PngFile(1, 1, 6, 8, new byte[] { 0, 1, 2, 3, 4 }), compressed: true, "t"), "PNG", "a PNG texture is refused");
+        var bad = texture[..^1];
+        Throws(() => TextureCodec.ForCache(bad, compressed: true, "t"), "size", "a truncated texture is refused");
+        BitConverter.GetBytes(6).CopyTo(texture, 12);
+        Throws(() => TextureCodec.ForCache(texture, compressed: true, "t"), "header", "BC1 needs a multiple of 4");
+    }
+
+    private static void Throws(Action action, string text, string message)
+    {
+        try { action(); }
+        catch (PackageException error) when (error.Message.Contains(text, StringComparison.Ordinal)) { Check(true, message); return; }
+        Check(false, message);
     }
 
     private static string Folder(string root, string name, Dictionary<string, byte[]> files, string format, string id, string requires = "", bool hashes = true)

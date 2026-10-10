@@ -46,7 +46,7 @@ internal sealed record PackageSettings(
 // packages import at the same time: the libraries first, then at most one stage beside the characters and instruments.
 internal sealed class PackageManager
 {
-    public const int ImporterVersion = 1;
+    public const int ImporterVersion = 2;
     public const int MaxGroupDepth = 4;
     private readonly PackageSettings _settings;
     private readonly ConcurrentQueue<(bool Warning, string Text)> _log = new();

@@ -16,6 +16,8 @@ internal sealed class GlbDocument
     private readonly int _binary;
     private readonly int _binaryLength;
     public JsonObject Json { get; }
+    // PACKAGE-FORMAT.md section 6.2: images with the media type image/vnd-gh3.tex hold GH3TEX02 textures.
+    public const string TextureExtension = "GH3_texture_bc";
 
     public GlbDocument(byte[] data)
     {
@@ -46,7 +48,8 @@ internal sealed class GlbDocument
         }
         Json = json ?? throw new PackageException("GLB has no JSON chunk");
         _data = data;
-        if (Json["extensionsRequired"] is JsonArray { Count: > 0 }) throw new PackageException("GLB requires glTF extensions");
+        if (Json["extensionsRequired"] is JsonArray required && required.Any(e => e?.GetValue<string>() != TextureExtension))
+            throw new PackageException("GLB requires glTF extensions");
         var buffers = List("buffers");
         if (buffers.Count != 1 || buffers[0]!["uri"] != null || buffers[0]!["byteLength"]!.GetValue<long>() > _binaryLength)
             throw new PackageException("GLB must contain one embedded buffer");

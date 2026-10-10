@@ -271,13 +271,13 @@ internal sealed class CharacterImporter
                 referenced.TryAdd(imageNames[image], () => glb.Image(image));
                 return imageNames[image];
             }
-            if (!reference.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || !_package.Contains(reference)) throw new PackageException($"invalid texture reference {reference}");
+            if (!reference.EndsWith(".tex", StringComparison.OrdinalIgnoreCase) || !_package.Contains(reference)) throw new PackageException($"invalid texture reference {reference}");
             var name = Key("file-" + reference);
             // Read on this thread: the texture jobs run in parallel and the package source is not thread-safe.
             if (!referenced.ContainsKey(name))
             {
-                var png = _package.Read(reference);
-                referenced.Add(name, () => png);
+                var data = _package.Read(reference);
+                referenced.Add(name, () => data);
             }
             return name;
         }
