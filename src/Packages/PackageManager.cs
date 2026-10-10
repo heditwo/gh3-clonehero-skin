@@ -379,9 +379,9 @@ internal sealed class PackageManager
             Import(package, key, folder, clock);
             package.CacheDirectory = folder;
             package.State = PackageState.Ready;
-            // Give the large import buffers of a library or a stage back before the next one. A full compacting
-            // collection stops all threads, so the small packages do not force one.
-            if (Large(package))
+            // Give the import buffers back, so the import memory stays near one package for each worker. A full compacting
+            // collection stops all threads, so after a small package it runs only when the heap has grown.
+            if (Large(package) || GC.GetTotalMemory(false) > 256_000_000)
             {
                 GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
                 GC.Collect();
