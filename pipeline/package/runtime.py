@@ -4,6 +4,7 @@ GH3BND02 skinned meshes, GH3ANM01 rigs with sampled clips, GH3CLP01 performance 
 and the gzip PCM stage sounds. The package converter reads them; the round-trip check writes them again.
 """
 
+import json
 import struct
 import wave
 from io import BytesIO
@@ -12,7 +13,11 @@ import numpy as np
 
 from pipeline.stagepack.gltf import SKINNED_GH3_VERTEX
 
+# Sampled clips (GH3ANM01 and GH3CLP01) have 30 frames per second, the GH3 animation rate of the band.
+CLIP_SAMPLE_RATE = 30
 BIND = struct.Struct("<i7f")
+# GH3CLP01 track masks: the clip animates the translation, the rotation, or both of a bone.
+TRACK_TRANSLATION, TRACK_ROTATION = 1, 2
 CLIP_HEADER = struct.Struct("<8sIIIf")
 MOVIE_HEADER = struct.Struct("<8s5I")
 
@@ -44,6 +49,29 @@ def write_meshes(parts, magic=b"GH3BND02"):
         faces = np.asarray(faces, dtype="<u4")
         out += struct.pack("<III", int(material, 16), count, faces.size) + packed + faces.tobytes()
     return bytes(out)
+
+
+def model_stage(name, materials):
+    """The stage.json of a model folder."""
+    return {
+        "version": 1,
+        "name": name,
+        "cameraPosition": [0, 0, 0],
+        "cameraTarget": [0, 1, 0],
+        "materials": materials,
+    }
+
+
+def write_model(directory, name, materials, meshes):
+    """Write meshes.bin (GH3BND02) and stage.json of a model folder."""
+    (directory / "meshes.bin").write_bytes(write_meshes(meshes))
+    (directory / "stage.json").write_text(json.dumps(model_stage(name, materials), indent=2) + "\n")
+
+
+def sample_times(duration):
+    """The frame count and the frame times of a clip sampled at CLIP_SAMPLE_RATE from 0 to its duration."""
+    frames = round(duration * CLIP_SAMPLE_RATE) + 1
+    return frames, np.linspace(0, duration, frames)
 
 
 def read_animation(data):

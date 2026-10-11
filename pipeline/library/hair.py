@@ -21,6 +21,8 @@ REFLECT = np.diag([1, 1, -1, 1])
 # Rock ragdoll on Axel's skeleton: 0.47 m and 150 degrees), and its hair hangs from the wrong place in the wrong direction.
 BODY_AXES = np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]])
 REST_OFFSET, REST_ANGLE = 0.25, np.radians(45)
+# Hair segment lengths (metres) outside this range mean that the ragdoll body is not a hair segment.
+MIN_SEGMENT_LENGTH, MAX_SEGMENT_LENGTH = 0.005, 1
 JOINT_TYPES = {
     "hkRagdollConstraintData": "ragdoll",
     "hkLimitedHingeConstraintData": "hinge",
@@ -190,7 +192,7 @@ def ragdoll_member(rag, rig, accessories, all_chains=False):
                 length = np.linalg.norm(ends[1] - ends[0]) + 2 * rag.field(shape, shape_class, "radius")
             else:
                 raise ValueError("Unsupported hair collision shape")
-        if not 0.005 < length < 1:
+        if not MIN_SEGMENT_LENGTH < length < MAX_SEGMENT_LENGTH:
             raise ValueError("Invalid hair segment length")
         joint["length"] = float(length)
         to_bind = REFLECT[:3, :3] @ np.linalg.inv(matrix(i))[:3, :3]

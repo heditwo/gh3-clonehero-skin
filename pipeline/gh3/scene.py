@@ -197,7 +197,7 @@ def mark_cube_samplers(materials, cubes):
                 gh3["addressing"][slot] = ADDRESS_CLAMP_V
 
 
-def _texture_entries(data):
+def texture_entries(data):
     """(name checksum, image bytes) of each texture dictionary entry."""
     table = word(data, TEX_TABLE)
     for index in range(values(data, TEX_COUNT, "H")[0]):
@@ -208,13 +208,13 @@ def _texture_entries(data):
 
 def cube_names(data):
     """Names of the cube maps in a GH3 texture dictionary."""
-    return {f"{name:08x}" for name, blob in _texture_entries(data) if cube_map(blob)}
+    return {f"{name:08x}" for name, blob in texture_entries(data) if cube_map(blob)}
 
 
 def textures(data):
     if word(data, 0) != TEX_MAGIC:
         raise ValueError("Expected a GH3 PC texture dictionary")
-    for name, blob in _texture_entries(data):
+    for name, blob in texture_entries(data):
         image = cube_to_equirect(blob) if cube_map(blob) else Image.open(BytesIO(blob)).convert("RGBA")
         yield f"{name:08x}", image
 

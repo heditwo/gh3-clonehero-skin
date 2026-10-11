@@ -101,6 +101,11 @@ def skeleton(data):
     return names, parents, positions, rotations
 
 
+def clip_bone_count(data):
+    """The bone count of a .ska clip header (clips play only on skeletons with this many bones)."""
+    return values(data, CLIP_BONE_COUNT, "H")[0]
+
+
 def remap_animation(clip, source_names, target_names):
     source = {name: i for i, name in enumerate(source_names)}
     if len(source) != len(source_names) or len(set(target_names)) != len(target_names):

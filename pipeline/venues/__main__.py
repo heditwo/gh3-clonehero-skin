@@ -12,6 +12,7 @@ from PIL import Image
 from pipeline.gh3 import scene, shader as gh3_shader
 from pipeline.gh3.band_formats import (
     animation,
+    clip_bone_count,
     remap_animation,
     sample_animation,
     skeleton,
@@ -371,7 +372,7 @@ def export_actors(source, scripts, global_entries, entries, nodes, directory, zo
         rig = skeleton(global_entries[key(".ske"), creation[key("skeletonname")]])
 
         def animation_rig(reference):
-            count = values(clips[reference], 44, "H")[0]
+            count = clip_bone_count(clips[reference])
             if count == len(rig[0]):
                 return rig
             candidate = source_rigs.get(count)

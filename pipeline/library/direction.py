@@ -2,19 +2,48 @@
 
 import gzip
 import json
-import struct
 
 import numpy as np
 
 from pipeline.gh3.band_formats import (
     animation,
+    clip_bone_count,
     multiply_quaternions,
     sample_animation,
     skeleton,
 )
 from pipeline.gh3.data import Source, scalar, script
 from pipeline.gh3.direction import cameras, name
-from pipeline.gh3.formats import find_array, find_struct, is_qb_file, key, values
+from pipeline.gh3.formats import find_array, find_struct, is_qb_file, key
+from pipeline.package import runtime
+
+MIN_CLIP_SECONDS = 1 / 60
+CLIP_GZIP_LEVEL = 3
+# Scalars of guitar_animation_data.qb that the band animation uses, with the value that applies when the file has none.
+ANIMATION_CONSTANTS = [
+    ("slow_tempo", 75),
+    ("med_tempo", 115),
+    ("fast_tempo", 145),
+    ("short_strum_max_gem_length", 150),
+    ("med_strum_max_gem_length", 600),
+    ("strum_anim_lead_time", 250),
+    ("drum_blend_time", 0.1),
+    ("fret_blend_time", 0.1),
+    ("drum_anim_lead_time", 150),
+    ("drummer_arm_blend_out_delay", 0.25),
+    ("drummer_clear_arm_twist_value_delay", 0),
+    ("drummer_twist_rate", 0.05),
+    ("finger_press_blend_time", 0.07),
+    ("finger_release_blend_time", 0.2),
+    ("finger_note_padding", 0.01),
+]
+# MIDI notes of the GH3 animation tracks: drums (track_36 to track_57) and the fret hand positions (track_101 to 127).
+DRUM_PITCHES = range(36, 58)
+FRET_PITCHES = range(101, 128)
+# Chord layers: one for each combination of the five fret colours; a chord clip names at most four colours.
+FRET_COLORS = ["green", "red", "yellow", "blue", "orange"]
+CHORD_MASKS = 1 << len(FRET_COLORS)
+MAX_CHORD_COLORS = 4
 
 # The last column lists extra paks with clips: Axel's model pak holds his intro and win animations.
 MEMBERS = [
@@ -67,13 +96,13 @@ def hand_layers(data, common, profile, profiles):
         for field, refs in flatten(found).items():
             layers[f"strum/{style}/{field}"] = refs
     fingers = find_struct(data, profile[key("finger_anims")])
-    for mask in range(32):
-        colors = [color for i, color in enumerate(["green", "red", "yellow", "blue", "orange"]) if mask & (1 << i)][:4]
+    for mask in range(CHORD_MASKS):
+        colors = [color for i, color in enumerate(FRET_COLORS) if mask & (1 << i)][:MAX_CHORD_COLORS]
         ref = fingers.get(key("_".join(colors) or "none"), fingers.get(key("none")))
         if ref:
             layers[f"chord/{mask}"] = [f"{ref:08x}"]
     frets = find_struct(common, profile[key("fret_anims")])
-    for pitch in range(101, 128):
+    for pitch in FRET_PITCHES:
         if key(f"track_{pitch}") in frets:
             layers[f"fret/{pitch}"] = [f"{frets[key(f'track_{pitch}')]:08x}"]
     return layers
@@ -83,8 +112,8 @@ def write_clip(path, data, rig, source_rig=None, rotations_only=False):
     names, parents, positions, rotations = rig
     source_names, _, source_positions, source_rotations = source_rig or rig
     clip = animation(data, len(source_names))
-    duration = max(clip[0], 1 / 60)
-    frames = max(2, round(duration * 30) + 1)
+    duration = max(clip[0], MIN_CLIP_SECONDS)
+    frames = max(2, round(duration * runtime.CLIP_SAMPLE_RATE) + 1)
     p, q = sample_animation(clip, source_positions, source_rotations, np.linspace(0, duration, frames))
     mapping = [
         (i, names.index(source_names[i])) for i in sorted(clip[1].keys() | clip[2].keys()) if source_names[i] in names
@@ -103,143 +132,84 @@ def write_clip(path, data, rig, source_rig=None, rotations_only=False):
     packed = np.concatenate((p[:, source_indices] * [1, 1, -1], q[:, source_indices] * [1, 1, -1, 1]), axis=2)
     if not np.isfinite(packed).all():
         raise ValueError("Non-finite direction clip")
+    tracks = [
+        (
+            target,
+            (runtime.TRACK_TRANSLATION if source_index in clip[2] and not rotations_only else 0)
+            | (runtime.TRACK_ROTATION if source_index in clip[1] else 0),
+        )
+        for source_index, target in mapping
+    ]
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("wb") as raw, gzip.GzipFile(fileobj=raw, mode="wb", mtime=0, compresslevel=3) as stream:
-        stream.write(b"GH3CLP01" + struct.pack("<IIIf", len(names), frames, len(mapping), duration))
-        for source_index, target in mapping:
-            stream.write(
-                struct.pack(
-                    "<II",
-                    target,
-                    (1 if source_index in clip[2] and not rotations_only else 0)
-                    | (2 if source_index in clip[1] else 0),
-                )
-            )
-        stream.write(packed.astype("<f4").tobytes())
+    with (
+        path.open("wb") as raw,
+        gzip.GzipFile(fileobj=raw, mode="wb", mtime=0, compresslevel=CLIP_GZIP_LEVEL) as stream,
+    ):
+        stream.write(runtime.write_clip(len(names), duration, tracks, packed))
     return {"duration": duration, "frames": frames, "rootDistance": distance}
 
 
-def convert(data_directory, output, shared=False):
-    source = Source(data_directory)
-    scripts = source.scripts()
-    output.mkdir(parents=True, exist_ok=True)
-    if not shared:
-        camera_bank = cameras(source, scripts)
-        (output / "cameras.json").write_text(json.dumps(camera_bank, separators=(",", ":")) + "\n")
-    global_entries = source.load("ZONES/global.pak.xen")
-    rigs = {n: b for k, n, b in global_entries if k == key(".ske")}
-    del global_entries
-    hands = {n: b for k, n, b in source.load("PAK/perm_anims.pak.xen") if k == key(".ska")}
-    walking = {n: b for k, n, b in source.load("PAK/Judy_1_anims.pak.xen") if k == key(".ska")}
-    walking_rig = skeleton(rigs[key("GH3_guitarist_judy")])
-    common = script(scripts, "guitar_animation_data")
-    definition = {
-        "version": 1,
-        "members": {},
-        "constants": {
-            n: scalar(common, n, d)
-            for n, d in [
-                ("slow_tempo", 75),
-                ("med_tempo", 115),
-                ("fast_tempo", 145),
-                ("short_strum_max_gem_length", 150),
-                ("med_strum_max_gem_length", 600),
-                ("strum_anim_lead_time", 250),
-                ("drum_blend_time", 0.1),
-                ("fret_blend_time", 0.1),
-                ("drum_anim_lead_time", 150),
-                ("drummer_arm_blend_out_delay", 0.25),
-                ("drummer_clear_arm_twist_value_delay", 0),
-                ("drummer_twist_rate", 0.05),
-                ("finger_press_blend_time", 0.07),
-                ("finger_release_blend_time", 0.2),
-                ("finger_note_padding", 0.01),
-            ]
-        },
-    }
+def _animation_constants(common):
+    constants = {n: scalar(common, n, d) for n, d in ANIMATION_CONSTANTS}
     for table in ["drummer_left_arm_twist_factors", "drummer_right_arm_twist_factors"]:
-        for pitch in range(36, 58):
+        for pitch in DRUM_PITCHES:
             factor = find_struct(common, table).get(key(f"track_{pitch}"))
             if factor is not None:
-                definition["constants"][f"{table}/{pitch}"] = factor
-    for _kind, _, data in [] if shared else source.load("ZONES/z_budokan.pak.xen"):
-        if not is_qb_file(data):
-            continue
-        nodes = find_array(data, "z_budokan_NodeArray")
-        if nodes is not None:
-            definition["waypoints"] = {
-                f"{node[key('Name')]:08x}": [
-                    *np.asarray(node[key("Pos")]) * [1, 1, -1],
-                    -node.get(key("Angles"), [0, 0, 0])[1] * 180 / np.pi,
-                ]
-                for node in nodes
-                if key("Name") in node and key("Pos") in node
-            }
-    member_rigs = {}
-    profiles = find_array(script(scripts, "guitar_band_profile"), "Musician_Profiles")
-    for role, rig_name, pak, qb, group, extra in MEMBERS:
-        rig = skeleton(rigs[key(rig_name)])
-        member_rigs[role] = rig
-        body = find_struct(script(scripts, qb), group)
-        groups = flatten(body)
-        if role in ("guitarist", "bassist"):
-            groups.update(flatten(find_struct(common, "normal_walk_data"), "walk/"))
-        layers = {}
-        if role in ("guitarist", "bassist"):
-            profile = next(
-                p for p in profiles if p.get(key("Skeleton")) == key(rig_name) and p.get(key("Type")) == key(role)
+                constants[f"{table}/{pitch}"] = factor
+    return constants
+
+
+def _waypoints(nodes):
+    """{node checksum: [x, y, z, yaw in degrees]} of the Budokan nodes with a position (runtime coordinates)."""
+    return {
+        f"{node[key('Name')]:08x}": [
+            *np.asarray(node[key("Pos")]) * [1, 1, -1],
+            -node.get(key("Angles"), [0, 0, 0])[1] * 180 / np.pi,
+        ]
+        for node in nodes
+        if key("Name") in node and key("Pos") in node
+    }
+
+
+def _drummer_layers(common):
+    drums = find_struct(common, "drummer_anims")
+    layers = {}
+    for pitch in DRUM_PITCHES:
+        refs = drums.get(key(f"track_{pitch}"))
+        if refs:
+            layers[f"drum/{pitch}"] = [f"{ref:08x}" for ref in refs]
+    for field in ["sticktap_l", "sticktap_r", "stickdown_l", "stickdown_r"]:
+        layers[field] = [f"{drums[key(field)]:08x}"]
+    for i, ref in enumerate(find_array(common, "cymbal_anims")):
+        layers[f"cymbal/{i}"] = [f"{ref:08x}"]
+    # Difference clip of applydifference in drummer_static_tree; its translations are deltas, not poses.
+    layers["bodytwist"] = [f"{key('Test_Drum_BodyTwist_D'):08x}"]
+    return layers
+
+
+def _member_clips(output, role, rig, groups, layers, bank, walking, walking_rig):
+    """Write the clips of a member's groups and layers; returns (clips, missing references)."""
+    missing = []
+    needed = {ref for refs in [*groups.values(), *layers.values()] for ref in refs}
+    walk_refs = {r for k, refs in groups.items() if k.startswith("walk/") for r in refs}
+    clips = {}
+    for ref in sorted(needed):
+        if int(ref, 16) not in bank and ref in walk_refs and int(ref, 16) in walking:
+            clips[ref] = write_clip(output / role / f"{ref}.bin.gz", walking[int(ref, 16)], rig, walking_rig)
+        elif int(ref, 16) not in bank:
+            missing.append(ref)
+        else:
+            clips[ref] = write_clip(
+                output / role / f"{ref}.bin.gz",
+                bank[int(ref, 16)],
+                rig,
+                rotations_only=ref in layers.get("bodytwist", []),
             )
-            layers = hand_layers(script(scripts, qb), common, profile, profiles)
-        if role == "drummer":
-            drums = find_struct(common, "drummer_anims")
-            for pitch in range(36, 58):
-                refs = drums.get(key(f"track_{pitch}"))
-                if refs:
-                    layers[f"drum/{pitch}"] = [f"{ref:08x}" for ref in refs]
-            for field in ["sticktap_l", "sticktap_r", "stickdown_l", "stickdown_r"]:
-                layers[field] = [f"{drums[key(field)]:08x}"]
-            for i, ref in enumerate(find_array(common, "cymbal_anims")):
-                layers[f"cymbal/{i}"] = [f"{ref:08x}"]
-            # Difference clip of applydifference in drummer_static_tree; its translations are deltas, not poses.
-            layers["bodytwist"] = [f"{key('Test_Drum_BodyTwist_D'):08x}"]
-        bank = {n: b for k, n, b in source.load(f"PAK/{pak}.pak.xen") if k == key(".ska")}
-        for extra_pak in extra:
-            bank.update({n: b for k, n, b in source.load(f"PAK/{extra_pak}.pak.xen") if k == key(".ska")})
-        bank.update({n: b for n, b in hands.items() if values(b, 44, "H")[0] == len(rig[0])})
-        missing = []
-        needed = {ref for refs in [*groups.values(), *layers.values()] for ref in refs}
-        clips = {}
-        for ref in sorted(needed):
-            if (
-                int(ref, 16) not in bank
-                and ref in {r for k, refs in groups.items() if k.startswith("walk/") for r in refs}
-                and int(ref, 16) in walking
-            ):
-                clips[ref] = write_clip(output / role / f"{ref}.bin.gz", walking[int(ref, 16)], rig, walking_rig)
-            elif int(ref, 16) not in bank:
-                missing.append(ref)
-            else:
-                clips[ref] = write_clip(
-                    output / role / f"{ref}.bin.gz",
-                    bank[int(ref, 16)],
-                    rig,
-                    rotations_only=ref in layers.get("bodytwist", []),
-                )
-        for table in [groups, layers]:
-            for field in list(table):
-                table[field] = [ref for ref in table[field] if ref in clips]
-                if not table[field]:
-                    del table[field]
-        definition["members"][role] = {
-            "bones": [f"{n:08x}" for n in rig[0]],
-            "groups": groups,
-            "layers": layers,
-            "clips": clips,
-            "missingClips": missing,
-        }
-        print(
-            f"{role}: {len(clips)} original clips, {len(groups)} state groups, {len(layers)} layers; {len(missing)} unavailable references"
-        )
+    return clips, missing
+
+
+def _song_facial_clips(source, output, definition, member_rigs):
+    """Write the facial clips (Band_PlayFacialAnim) of every song into the singer and guitarist clip lists."""
     for pak in sorted((source.directory / "SONGS").glob("*_song.pak.xen")):
         song_id = pak.name.split("_song.")[0]
         entries = source.load(f"SONGS/{pak.name}")
@@ -262,6 +232,69 @@ def convert(data_directory, output, shared=False):
                 member["clips"][ref_name] = write_clip(
                     output / role / f"{ref_name}.bin.gz", clips[ref], member_rigs[role], member_rigs["singer"]
                 )
+
+
+def convert(data_directory, output, shared=False):
+    """Export the band performance library: the clips of each member, the song facial clips, and performance.json.
+
+    shared: the library build (no Budokan cameras and waypoints).
+    """
+    source = Source(data_directory)
+    scripts = source.scripts()
+    output.mkdir(parents=True, exist_ok=True)
+    if not shared:
+        camera_bank = cameras(source, scripts)
+        (output / "cameras.json").write_text(json.dumps(camera_bank, separators=(",", ":")) + "\n")
+    global_entries = source.load("ZONES/global.pak.xen")
+    rigs = {n: b for k, n, b in global_entries if k == key(".ske")}
+    del global_entries
+    hands = {n: b for k, n, b in source.load("PAK/perm_anims.pak.xen") if k == key(".ska")}
+    walking = {n: b for k, n, b in source.load("PAK/Judy_1_anims.pak.xen") if k == key(".ska")}
+    walking_rig = skeleton(rigs[key("GH3_guitarist_judy")])
+    common = script(scripts, "guitar_animation_data")
+    definition = {"version": 1, "members": {}, "constants": _animation_constants(common)}
+    for _kind, _, data in [] if shared else source.load("ZONES/z_budokan.pak.xen"):
+        if not is_qb_file(data):
+            continue
+        nodes = find_array(data, "z_budokan_NodeArray")
+        if nodes is not None:
+            definition["waypoints"] = _waypoints(nodes)
+    member_rigs = {}
+    profiles = find_array(script(scripts, "guitar_band_profile"), "Musician_Profiles")
+    for role, rig_name, pak, qb, group, extra in MEMBERS:
+        rig = skeleton(rigs[key(rig_name)])
+        member_rigs[role] = rig
+        groups = flatten(find_struct(script(scripts, qb), group))
+        layers = {}
+        if role in ("guitarist", "bassist"):
+            groups.update(flatten(find_struct(common, "normal_walk_data"), "walk/"))
+            profile = next(
+                p for p in profiles if p.get(key("Skeleton")) == key(rig_name) and p.get(key("Type")) == key(role)
+            )
+            layers = hand_layers(script(scripts, qb), common, profile, profiles)
+        if role == "drummer":
+            layers = _drummer_layers(common)
+        bank = {n: b for k, n, b in source.load(f"PAK/{pak}.pak.xen") if k == key(".ska")}
+        for extra_pak in extra:
+            bank.update({n: b for k, n, b in source.load(f"PAK/{extra_pak}.pak.xen") if k == key(".ska")})
+        bank.update({n: b for n, b in hands.items() if clip_bone_count(b) == len(rig[0])})
+        clips, missing = _member_clips(output, role, rig, groups, layers, bank, walking, walking_rig)
+        for table in [groups, layers]:
+            for field in list(table):
+                table[field] = [ref for ref in table[field] if ref in clips]
+                if not table[field]:
+                    del table[field]
+        definition["members"][role] = {
+            "bones": [f"{n:08x}" for n in rig[0]],
+            "groups": groups,
+            "layers": layers,
+            "clips": clips,
+            "missingClips": missing,
+        }
+        print(
+            f"{role}: {len(clips)} original clips, {len(groups)} state groups, {len(layers)} layers; {len(missing)} unavailable references"
+        )
+    _song_facial_clips(source, output, definition, member_rigs)
     definition["sources"] = source.hashes
     (output / "performance.json").write_text(json.dumps(definition, separators=(",", ":")) + "\n")
     print(

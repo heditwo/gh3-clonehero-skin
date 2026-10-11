@@ -8,8 +8,15 @@ from PIL import Image
 
 from pipeline.gh3.formats import find_struct, key
 
+# (particle struct, QB file checksum, texture checksum, output file) of the GH3 hand flames and sparks.
+EMITTERS = [
+    ("GP_4X_FingerFlames01", 0x16ECB37E, 0x1BD73987, "flames.png"),
+    ("GP_4X_FingerSparks01", 0x017BE24B, 0xFEFE220B, "sparks.png"),
+]
+
 
 def color(value):
+    """RGBA floats of a QB colour word (0xRRGGBBAA)."""
     return [((value >> shift) & 255) / 255 for shift in (24, 16, 8, 0)]
 
 
@@ -18,10 +25,7 @@ def convert(source, output):
     images = {name: blob for kind, name, blob in source.load("ZONES/global.pak.xen") if kind == key(".img")}
     output.mkdir(parents=True, exist_ok=True)
     emitters = []
-    for name, script_id, texture_id, file in [
-        ("GP_4X_FingerFlames01", 0x16ECB37E, 0x1BD73987, "flames.png"),
-        ("GP_4X_FingerSparks01", 0x017BE24B, 0xFEFE220B, "sparks.png"),
-    ]:
+    for name, script_id, texture_id, file in EMITTERS:
         data = find_struct(scripts[script_id], name)
         material = data[key("QuickMaterial")]
         if material[key("DiffuseTexture")] != texture_id or material[key("BlendMode")] != key("add"):

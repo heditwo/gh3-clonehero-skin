@@ -32,12 +32,13 @@ from pathlib import Path
 
 import numpy as np
 
-from pipeline.gh3 import scene
 from pipeline.gh3.band_formats import rotation, skeleton
 from pipeline.gh3.data import Source, script
 from pipeline.gh3.formats import find_array, key
 from pipeline.gh3.hair_mesh import combine_hair
 from pipeline.gh3.mesh_cutout import trim_prop_cutouts
+from pipeline.library.models import read_models
+from pipeline.package import runtime
 from pipeline.paths import CHARACTERS, GH3_DATA, LIBRARY
 from pipeline.stagepack.gltf import SKINNED_GH3_VERTEX
 
@@ -407,25 +408,8 @@ def retarget(meshes, plan):
 
 def load_models(source, files, directory, role):
     """GH3 meshes, materials, and textures of the model and instrument PAKs, as pipeline/library/band.py converts them."""
-    materials, meshes, available, cubes = {}, [], set(), set()
-    for path in files:
-        if not path:
-            continue
-        for kind, _, data in source.load(f"PAK/{path}"):
-            if kind == key(".skin"):
-                found, parts = scene.scene(data, skinned=True)
-                if any(materials[name] != found[name] for name in materials.keys() & found.keys()):
-                    raise ValueError("character material ID collision")
-                materials.update(found)
-                meshes.extend(parts)
-            elif kind == key(".tex"):
-                cubes.update(scene.cube_names(data))
-                for name, image in scene.textures(data):
-                    image.save(directory / "textures" / f"{name}.png")
-                    available.add(name)
-    for material in materials.values():
-        material["texture"] = scene.diffuse_texture(material, available)
-    scene.mark_cube_samplers(materials, cubes)
+    paks = [f"PAK/{path}" for path in files if path]
+    materials, meshes = read_models(source, paks, directory / "textures", "character material ID collision")
     if role == "singer":
         meshes = trim_prop_cutouts(meshes, materials, directory / "textures")
     meshes = combine_hair(meshes, materials, directory / "textures")
@@ -453,25 +437,7 @@ def export(variant, source, rigs, hair, output):
         chain = [joint["bone"] for joint in hair["members"][role]["joints"]]
         plan, hair_map = retarget_plan(skeleton(rigs[key(variant["skeleton"])]), skeleton(rigs[key(SINGER_RIG)]), chain)
         meshes = retarget(meshes, plan)
-    with (directory / "meshes.bin").open("wb") as stream:
-        stream.write(b"GH3BND02" + struct.pack("<I", len(meshes)))
-        for material, count, vertices, faces in meshes:
-            stream.write(struct.pack("<III", int(material, 16), count, len(faces) * 3))
-            stream.write(vertices)
-            stream.write(np.asarray(faces, dtype="<u4").tobytes())
-    (directory / "stage.json").write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "name": variant["id"],
-                "cameraPosition": [0, 0, 0],
-                "cameraTarget": [0, 1, 0],
-                "materials": materials,
-            },
-            indent=2,
-        )
-        + "\n"
-    )
+    runtime.write_model(directory, variant["id"], materials, meshes)
     info = {
         **variant,
         "instrumentInModel": bool(instrument),

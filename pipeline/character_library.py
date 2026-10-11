@@ -37,9 +37,9 @@ from pathlib import Path
 import numpy as np
 
 from pipeline.characters import CLIP_RIG_PROFILE, outfits, profile_id, qb_items, slug
-from pipeline.gh3.band_formats import skeleton
+from pipeline.gh3.band_formats import clip_bone_count, skeleton
 from pipeline.gh3.data import Source, script
-from pipeline.gh3.formats import find_array, find_struct, key, values
+from pipeline.gh3.formats import find_array, find_struct, key
 from pipeline.gh3.havok import Ragdoll
 from pipeline.library import hair as hair_export
 from pipeline.library.direction import flatten, hand_layers, write_clip
@@ -138,7 +138,7 @@ def build(data_directory, output):
     accessories = hair_export.accessory_bones(scripts)
     clip_rig = skeleton(rigs[key(CLIP_RIG)])
     hands = {n: b for k, n, b in source.load("PAK/perm_anims.pak.xen") if k == key(".ska")}
-    hands = {n: b for n, b in hands.items() if values(b, 44, "H")[0] == len(clip_rig[0])}
+    hands = {n: b for n, b in hands.items() if clip_bone_count(b) == len(clip_rig[0])}
     walking = {n: b for k, n, b in source.load("PAK/Judy_1_anims.pak.xen") if k == key(".ska")}
     walk_groups = flatten(find_struct(common, "normal_walk_data"), "walk/")
 

@@ -25,7 +25,6 @@ import hashlib
 import json
 import re
 import shutil
-import struct
 from pathlib import Path
 
 import numpy as np
@@ -34,6 +33,7 @@ from pipeline.characters import SLUGS, load_models, pak_file, qb_items, text
 from pipeline.gh3 import scene
 from pipeline.gh3.data import Source, script
 from pipeline.gh3.formats import find_array, key, values
+from pipeline.package import runtime
 from pipeline.paths import GH3_DATA, INSTRUMENTS
 from pipeline.stagepack.gltf import SKINNED_GH3_VERTEX
 
@@ -180,25 +180,7 @@ def export(instrument, source, output):
         rows = np.frombuffer(bytes(vertices), dtype=SKINNED_GH3_VERTEX)
         if not np.all((rows["joints"] == 119) | (rows["weights"] == 0)):
             raise ValueError(f"{instrument['pak']}: a vertex follows a bone other than bone_guitar_body")
-    with (directory / "meshes.bin").open("wb") as stream:
-        stream.write(b"GH3BND02" + struct.pack("<I", len(meshes)))
-        for material, count, vertices, faces in meshes:
-            stream.write(struct.pack("<III", int(material, 16), count, len(faces) * 3))
-            stream.write(vertices)
-            stream.write(np.asarray(faces, dtype="<u4").tobytes())
-    (directory / "stage.json").write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "name": instrument["id"],
-                "cameraPosition": [0, 0, 0],
-                "cameraTarget": [0, 1, 0],
-                "materials": materials,
-            },
-            indent=2,
-        )
-        + "\n"
-    )
+    runtime.write_model(directory, instrument["id"], materials, meshes)
     info = {
         **instrument,
         "vertices": sum(m[1] for m in meshes),

@@ -244,13 +244,7 @@ def model_runtime(data):
     referenced = {m["texture"] for m in used.values()} | {
         t for m in used.values() for t in m.get("gh3", {}).get("textures", [])
     }
-    stage = {
-        "version": 1,
-        "name": model.get("name", ""),
-        "cameraPosition": [0, 0, 0],
-        "cameraTarget": [0, 1, 0],
-        "materials": used,
-    }
+    stage = runtime.model_stage(model.get("name", ""), used)
     return {
         "meshes": runtime.write_meshes(parts),
         "parents": parents,

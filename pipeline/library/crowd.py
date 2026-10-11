@@ -1,16 +1,15 @@
 """Convert the owner's GH3 crowd models and original cheering animations."""
 
 import json
-import struct
-from hashlib import sha256
 
 import numpy as np
 
 from pipeline.gh3 import scene
 from pipeline.gh3.band_formats import animation, sample_animation, skeleton
 from pipeline.gh3.data import Source, scalar, script
-from pipeline.gh3.formats import find_struct, key, pak_entries
+from pipeline.gh3.formats import find_struct, key
 from pipeline.library import direction
+from pipeline.package import runtime
 
 MODELS = [
     ("crowd_ped_01", ["bill_reg_fast1", "bill_good_slow1"]),
@@ -50,45 +49,17 @@ def write_model(directory, materials, meshes, images):
         image.save(directory / "textures" / f"{name}.png")
     for material in materials.values():
         material["texture"] = scene.diffuse_texture(material, images)
-    with (directory / "meshes.bin").open("wb") as stream:
-        stream.write(b"GH3BND02" + struct.pack("<I", len(meshes)))
-        for material, count, vertices, faces in meshes:
-            stream.write(struct.pack("<III", int(material, 16), count, len(faces) * 3))
-            stream.write(vertices)
-            for face in faces:
-                stream.write(struct.pack("<3I", *face))
-    (directory / "stage.json").write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "name": directory.name,
-                "cameraPosition": [0, 0, 0],
-                "cameraTarget": [0, 1, 0],
-                "materials": materials,
-            },
-            indent=2,
-        )
-        + "\n"
-    )
+    runtime.write_model(directory, directory.name, materials, meshes)
 
 
 def convert(data_dir, output):
-    sources = {}
-
-    def load(relative):
-        path = data_dir / relative
-        data = path.read_bytes()
-        sources[relative] = sha256(data).hexdigest()
-        pab = path.with_name(path.name.replace(".pak.", ".pab."))
-        if pab.exists():
-            extra = pab.read_bytes()
-            sources[str(pab.relative_to(data_dir))] = sha256(extra).hexdigest()
-            data += extra
-        return pak_entries(data)
-
+    # The model PAKs and the scripts have their own source hashes; crowd.json lists the PAKs first.
+    pak_source = Source(data_dir)
+    load = pak_source.load
     global_entries = {(kind, name): blob for kind, name, blob in load("ZONES/global.pak.xen")}
     rig = next(blob for (kind, name), blob in global_entries.items() if kind == key(".ske") and name == key("GH3_ped"))
     names, parents, positions, rotations = skeleton(rig)
+    bind = np.concatenate((positions * [1, 1, -1], rotations * [1, 1, -1, 1]), axis=1)
     source = Source(data_dir)
     scripts = source.scripts()
     members = performance_data(script(scripts, "guitar_animation_data_crowd"))
@@ -119,19 +90,16 @@ def convert(data_dir, output):
             raise ValueError(f"Missing crowd model: {model}")
         scene.mark_cube_samplers(materials, cubes)
         write_model(directory, materials, meshes, images)
-        with (directory / "animation.bin").open("wb") as stream:
-            stream.write(b"GH3ANM01" + struct.pack("<II", len(names), len(clip_names)))
-            for i, parent in enumerate(parents):
-                stream.write(struct.pack("<i7f", parent, *(positions[i] * [1, 1, -1]), *(rotations[i] * [1, 1, -1, 1])))
-            for name in clip_names:
-                clip = animation(clips[key("gh3_crowd_" + name)], len(names))
-                frames = round(clip[0] * 30) + 1
-                p, q = sample_animation(clip, positions, rotations, np.linspace(0, clip[0], frames))
-                packed = np.concatenate((p * [1, 1, -1], q * [1, 1, -1, 1]), axis=2)
-                if not np.isfinite(packed).all():
-                    raise ValueError("Invalid crowd pose")
-                stream.write(struct.pack("<fI", clip[0], frames))
-                stream.write(packed.astype("<f4").tobytes())
+        start_clips = []
+        for name in clip_names:
+            clip = animation(clips[key("gh3_crowd_" + name)], len(names))
+            _, times = runtime.sample_times(clip[0])
+            p, q = sample_animation(clip, positions, rotations, times)
+            packed = np.concatenate((p * [1, 1, -1], q * [1, 1, -1, 1]), axis=2)
+            if not np.isfinite(packed).all():
+                raise ValueError("Invalid crowd pose")
+            start_clips.append((clip[0], packed))
+        (directory / "animation.bin").write_bytes(runtime.write_animation(parents, bind, start_clips))
         print(f"{model}: {len(names)} bones, {sum(m[1] for m in meshes)} vertices, {len(clip_names)} clips")
     hands = []
     for side, hand in (("left", "HandL"), ("right", "HandR")):
@@ -175,7 +143,7 @@ def convert(data_dir, output):
             if value is None:
                 raise ValueError(f"Missing crowd constant: {name}")
             constants[name] = value
-    sources.update(source.hashes)
+    sources = {**pak_source.hashes, **source.hashes}
     (output / "crowd.json").write_text(
         json.dumps(
             {

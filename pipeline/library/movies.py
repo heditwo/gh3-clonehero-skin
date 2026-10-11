@@ -9,8 +9,16 @@ from fractions import Fraction
 from hashlib import sha256
 from pathlib import Path
 
+from pipeline.package.runtime import MOVIE_HEADER
+
+MAX_SIZE = 4096
+MAX_FRAME_RATE = 240
+MAX_FRAMES = 100000
+MAX_SECONDS = 86400
+
 
 def convert(source, output):
+    """Write a GH3VID01 frame bank (PNG frames) of a movie; skip it when its stamp has the same source hash."""
     source = Path(source)
     output = Path(output)
     digest = sha256(source.read_bytes()).hexdigest()
@@ -27,7 +35,7 @@ def convert(source, output):
     )["streams"][0]
     width, height = probe["width"], probe["height"]
     rate = Fraction(probe["avg_frame_rate"])
-    if not 1 <= width <= 4096 or not 1 <= height <= 4096 or not 0 < rate <= 240:
+    if not 1 <= width <= MAX_SIZE or not 1 <= height <= MAX_SIZE or not 0 < rate <= MAX_FRAME_RATE:
         raise ValueError("Unsupported movie dimensions or frame rate")
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="movie-", dir=output.parent) as temporary:
@@ -51,14 +59,14 @@ def convert(source, output):
             check=True,
         )
         frames = sorted(folder.glob("*.png"))
-        if not 1 <= len(frames) <= 100000 or len(frames) / float(rate) > 86400:
+        if not 1 <= len(frames) <= MAX_FRAMES or len(frames) / float(rate) > MAX_SECONDS:
             raise ValueError("Movie exceeds its frame limit")
-        offsets = [28 + (len(frames) + 1) * 8]
+        offsets = [MOVIE_HEADER.size + (len(frames) + 1) * 8]
         for frame in frames:
             offsets.append(offsets[-1] + frame.stat().st_size)
         bank = folder / "movie.gh3video"
         with bank.open("wb") as stream:
-            stream.write(b"GH3VID01" + struct.pack("<5I", width, height, len(frames), rate.numerator, rate.denominator))
+            stream.write(MOVIE_HEADER.pack(b"GH3VID01", width, height, len(frames), rate.numerator, rate.denominator))
             stream.write(struct.pack(f"<{len(offsets)}Q", *offsets))
             for frame in frames:
                 stream.write(frame.read_bytes())

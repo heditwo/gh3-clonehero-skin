@@ -12,15 +12,22 @@ from pipeline.gh3.script_bank import definitions, references
 from pipeline.library import movies
 from pipeline.stagepack.pack import write_json
 
+# DDS pixel format FourCC (+84). DXT2 and DXT4 are DXT3 and DXT5 with premultiplied colour.
+DDS_FOURCC = slice(84, 88)
+PREMULTIPLIED_FORMATS = {b"DXT2": b"DXT3", b"DXT4": b"DXT5"}
+# Typed QB values of Gh3SongTool: (type, value) with the QB type numbers of pipeline.gh3.formats.
+QB_STRUCT, QB_ARRAY, QB_CHECKSUM = 10, 12, 13
+
 
 def decode_image(blob, texture):
+    """The RGBA image of a GH3 .img entry (a DDS after a header); premultiplied DXT2/DXT4 colour is divided by alpha."""
     start = blob.find(b"DDS ")
     if start < 0:
         raise ValueError(f"Script image has no DDS: {texture:08x}")
     data = blob[start:]
-    premultiplied = data[84:88] in (b"DXT2", b"DXT4")
+    premultiplied = data[DDS_FOURCC] in PREMULTIPLIED_FORMATS
     if premultiplied:
-        data = data[:84] + (b"DXT3" if data[84:88] == b"DXT2" else b"DXT5") + data[88:]
+        data = data[: DDS_FOURCC.start] + PREMULTIPLIED_FORMATS[data[DDS_FOURCC]] + data[DDS_FOURCC.stop :]
     image = Image.open(BytesIO(data)).convert("RGBA")
     if premultiplied:
         pixels = np.asarray(image).astype(np.float32)
@@ -38,9 +45,9 @@ def convert(data, output):
     textures = {}
 
     def scan(value):
-        if value[0] == 10:
+        if value[0] == QB_STRUCT:
             for name, item in value[1]:
-                if name == f"0x{key('DiffuseTexture'):08x}" and item[0] == 13:
+                if name == f"0x{key('DiffuseTexture'):08x}" and item[0] == QB_CHECKSUM:
                     texture = int(item[1], 16)
                     if texture not in images:
                         continue
@@ -49,12 +56,12 @@ def convert(data, output):
                     decode_image(images[texture], texture).save(output.parent / file)
                     textures[f"0x{texture:08x}"] = file
                 scan(item)
-        elif value[0] == 12:
+        elif value[0] == QB_ARRAY:
             for item in value[1]:
                 scan(item)
 
     for value in bank.values():
-        if value[0] == 10 and any(name == f"0x{key('QuickMaterial'):08x}" for name, _ in value[1]):
+        if value[0] == QB_STRUCT and any(name == f"0x{key('QuickMaterial'):08x}" for name, _ in value[1]):
             scan(value)
     referenced = {reference for items in references(scripts.values()).values() for reference in items}
     for texture in sorted(referenced & images.keys()):

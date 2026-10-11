@@ -14,19 +14,29 @@ from pipeline.gh3.data import Source, scalar
 from pipeline.gh3.formats import find_struct, key
 from pipeline.stagepack.pack import write_json
 
+# FMOD FSB3 sample bank with one sample: a 24-byte file header (sample count, header size, data size at +4), a sample
+# header of at least 80 bytes (sample count, data size, loop start and end, mode, rate at +56), then the data.
+FSB3_MAGIC = b"FSB3"
+FSB3_HEADER_SIZE = 24
+FSB3_MIN_SAMPLE_HEADER = 80
+FSB3_SAMPLE_INFO = 56
+FSB3_MIN_SIZE = FSB3_HEADER_SIZE + FSB3_MIN_SAMPLE_HEADER
+
 
 def audio_payload(blob):
-    if not blob.startswith(b"FSB3"):
+    """(audio data, (loop start, loop end) in seconds) of an FSB3 sample; other data comes back unchanged with no loop."""
+    if not blob.startswith(FSB3_MAGIC):
         return blob, None
-    if len(blob) < 104:
+    if len(blob) < FSB3_MIN_SIZE:
         raise ValueError("Truncated FSB sample")
     count, headers, length = struct.unpack_from("<III", blob, 4)
-    if count != 1 or headers < 80 or 24 + headers + length > len(blob):
+    if count != 1 or headers < FSB3_MIN_SAMPLE_HEADER or FSB3_HEADER_SIZE + headers + length > len(blob):
         raise ValueError("Invalid FSB sample")
-    samples, size, start, end, mode, rate = struct.unpack_from("<6I", blob, 56)
+    samples, size, start, end, mode, rate = struct.unpack_from("<6I", blob, FSB3_SAMPLE_INFO)
     if size > length or not rate or start > end or end >= samples:
         raise ValueError("Invalid FSB loop")
-    return blob[24 + headers : 24 + headers + size], (start / rate, (end + 1) / rate)
+    data_start = FSB3_HEADER_SIZE + headers
+    return blob[data_start : data_start + size], (start / rate, (end + 1) / rate)
 
 
 def convert(data, output):
