@@ -33,16 +33,23 @@ internal sealed class CharacterMotionBank
     }
 }
 
-// How a character on a character library profile plays: its own rig, the clips of its animation set, and the position
-// offsets that move a clip from the clip rig to the profile rig. GH3 keys clip translations relative to the skeleton rest
-// pose, and the library stores them on the clip rig (pipeline/character_library.py), so a clip plays on the profile with
+// The animation set that a performer plays and the GH3 rig that it plays on (PACKAGING-PLAN decision 15): a set of a
+// character library profile on the profile rig (PACKAGE-FORMAT.md section 10.1), or the set of a band library member
+// on the role rig. GH3 keys clip translations relative to the skeleton rest pose, and the character library stores them
+// on the clip rig of the set (pipeline/character_library.py), so a clip plays on the profile with
 // offset = profile rest position - clip rig rest position for each bone.
 internal sealed class CharacterMotion
 {
     public CharacterProfile Profile { get; init; } = new();
-    public PerformanceMember Member { get; init; } = new();
-    public string ClipDirectory { get; init; } = "";
-    public Vector3[] Offsets { get; init; } = Array.Empty<Vector3>();
+    // The rig of Profile (for a band library member: the rig of band/<role>/animation.bin).
+    public BandAnimation Rig { get; init; } = null!;
+    // The band role of a band library set ("" for a set of a character library). Its member comes from
+    // direction/performance.json when the timeline loads.
+    public string LibraryRole { get; init; } = "";
+    public PerformanceMember Member { get; set; } = new();
+    // The clip folder (for a band library set: direction/<role> of the band library, set when the timeline loads).
+    public string ClipDirectory { get; set; } = "";
+    public Vector3[]? Offsets { get; init; }
     public HairDefinition? Hair { get; init; }
     public IkChainDefinition[]? Ik { get; init; }
     public string SetName { get; init; } = "";
@@ -50,6 +57,18 @@ internal sealed class CharacterMotion
     public PerformanceMember? Face { get; set; }
     public string FaceDirectory { get; set; } = "";
     public Vector3[]? FaceOffsets { get; set; }
+
+    public bool IsLibrary => LibraryRole.Length > 0;
+    // The band role of the set: the role of the band library member or of the profile.
+    public string Role => IsLibrary ? LibraryRole : Profile.Role;
+
+    // The set of the band library member of a role on its rig. `bones` and `bind`: the rig bone names (catalog.json) and
+    // local bind rows; a performer without a character does not need them.
+    public static CharacterMotion Library(string role, BandAnimation rig, HairDefinition? hair, string[]? bones = null, float[][]? bind = null) => new()
+    {
+        Profile = new CharacterProfile { Role = role, Bones = bones ?? Array.Empty<string>(), Parents = rig.Parents, Bind = bind ?? Array.Empty<float[]>() },
+        Rig = rig, LibraryRole = role, Hair = hair,
+    };
 
     public static CharacterMotion Create(CharacterModel character)
     {
@@ -64,7 +83,7 @@ internal sealed class CharacterMotion
         if (profile.Hair.Length > 0 && !bank.Hair.TryGetValue(profile.Hair, out hair)) throw new InvalidDataException($"no hair {profile.Hair}");
         return new CharacterMotion
         {
-            Profile = profile, SetName = setName,
+            Profile = profile, SetName = setName, Rig = BandAnimation.FromRig(profile.Parents, profile.Bind),
             // The sets are shared by the profiles; each performer gets its own member with the bone names of its rig.
             Member = new PerformanceMember { Bones = profile.Bones, Groups = set.Groups, Layers = set.Layers, Clips = set.Clips },
             ClipDirectory = Path.Combine(character.LibraryFolder, "clips"),

@@ -7,8 +7,8 @@ namespace Gh3Skin;
 // bench uses it directly).
 internal static class CharacterChainRig
 {
-    // CharacterRig.Map for the joints of the rig, with the added joints after the rig bones: for each character joint,
-    // the rig bone (rigCount + k for added bone k) and the joint whose bind pose skins it.
+    // `map` for the joints of the rig (ByName), with the added joints after the rig bones: for each character joint, the
+    // rig bone (rigCount + k for added bone k) and the joint whose bind pose skins it.
     public static (int[] Bones, int[] Bind)? MapJoints(CharacterModel character, int rigCount, Func<string[], (int[] Bones, int[] Bind)?> map)
     {
         var added = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -25,6 +25,18 @@ internal static class CharacterChainRig
             at++;
         }
         return (bones, bind);
+    }
+
+    // For each joint, the rig bone with the same name, and the joint itself as the bind pose. Null: a joint that the rig
+    // does not have.
+    public static (int[] Bones, int[] Bind)? ByName(IReadOnlyList<string> joints, IReadOnlyList<string> rig)
+    {
+        var index = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (var i = 0; i < rig.Count; i++) index.TryAdd(rig[i], i);
+        var bones = new int[joints.Count];
+        for (var i = 0; i < joints.Count; i++)
+            if (!index.TryGetValue(joints[i], out bones[i])) return null;
+        return (bones, Enumerable.Range(0, joints.Count).ToArray());
     }
 
     // The rig rows of the added bones (parent rig index, bind pose relative to it), the chain joints, and the colliders,

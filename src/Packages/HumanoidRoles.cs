@@ -30,6 +30,36 @@ internal static class HumanoidRoles
 
     public static IEnumerable<string> All => Gh3.Keys.Concat(Spine).Concat(Twist);
 
+    // The roles that a GH3 rig does not map: its jaw and eyes are face bones (Gh3Face).
+    private static readonly string[] FaceRoles = { "jaw", "leftEye", "rightEye" };
+
+    // The GH3 face bones that the singer's facial clips and lip sync move (StageLipSync). The GH3 guitarist, bassist,
+    // and singer rigs have all of them; the drummer rig has none.
+    public static readonly string[] Gh3Face =
+    {
+        "Bone_Jaw", "Bone_Tongue", "Bone_Mouth_L", "Bone_Mouth_R", "Bone_Lip_Lower_Mid", "Bone_Lip_Upper_Mid", "Bone_Lip_Lower_L",
+        "Bone_Lip_Lower_R", "Bone_Lip_Upper_L", "Bone_Lip_Upper_R", "Bone_Lip_Lower_Corner_L", "Bone_Lip_Lower_Corner_R",
+        "Bone_Lip_Upper_Corner_L", "Bone_Lip_Upper_Corner_R", "Bone_Cheek_L", "Bone_Cheek_R", "Bone_Cheek_Upper_L", "Bone_Cheek_Upper_R",
+        "Bone_Eye_L", "Bone_Eye_R", "Bone_Eyelid_Upper_L", "Bone_Eyelid_Upper_R", "Bone_Eyelid_Lower_L", "Bone_Eyelid_Lower_R",
+        "Bone_Brow_L", "Bone_Brow_R", "Bone_Brow_Mid", "Bone_Brow_Mid_L", "Bone_Brow_Mid_R",
+    };
+
+    // The humanoid map of a GH3 rig (bone checksums) from the GH3 bone names: the bones of the Gh3 table, and the three
+    // spine roles on bone_stomach_lower, bone_stomach_upper, and bone_chest (SpineSources(3)), so that a GH3 rig maps to
+    // itself. The face bones move by name (Gh3Face).
+    public static Dictionary<string, int> FromGh3(IReadOnlyList<string> bones)
+    {
+        var index = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (var i = 0; i < bones.Count; i++) index.TryAdd(bones[i], i);
+        var result = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var (role, checksum) in Gh3)
+            if (Array.IndexOf(FaceRoles, role) < 0 && index.TryGetValue(checksum, out var bone)) result[role] = bone;
+        var spine = SpineSources(Spine.Length);
+        for (var i = 0; i < Spine.Length; i++)
+            if (index.TryGetValue(spine[i], out var bone)) result[Spine[i]] = bone;
+        return result;
+    }
+
     private static Dictionary<string, string> Build()
     {
         var table = new Dictionary<string, string>(StringComparer.Ordinal)

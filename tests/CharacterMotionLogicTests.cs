@@ -39,7 +39,7 @@ internal static class CharacterMotionLogicTests
             var model = CharacterModelFor(folder, "gh3-guitarist-test-v1");
             var motion = CharacterMotion.Create(model);
             Check(motion.Member.Bones.SequenceEqual(profile.Bones) && motion.Member.Groups.ContainsKey("stance_a/idle/normal/med"), "the set gets the bones of the profile");
-            Check(Vector3.Distance(motion.Offsets[0], new Vector3(0, -0.1f, 0)) < 1e-6 && Vector3.Distance(motion.Offsets[1], new Vector3(0.1f, 0, 0)) < 1e-6,
+            Check(motion.Offsets != null && Vector3.Distance(motion.Offsets[0], new Vector3(0, -0.1f, 0)) < 1e-6 && Vector3.Distance(motion.Offsets[1], new Vector3(0.1f, 0, 0)) < 1e-6,
                 "clip offsets are the profile rest positions minus the clip rig rest positions");
             Check(motion.Hair == null && motion.Ik?.Length == 1, "a profile without hair has no hair physics; the IK chains come from the library");
             var broken = Path.Combine(folder, "broken");
@@ -73,9 +73,9 @@ internal static class CharacterMotionLogicTests
             var library = CharacterLibrary.Load(folder);
             Check(library.SetClipRigs["singer-test"].Bones[1] == "0000000b" && library.Profiles["gh3-singer-test-v1"].Role == "singer", "a set names its clip rig");
             var motion = CharacterMotion.Create(CharacterModelFor(folder, "gh3-singer-test-v1"));
-            Check(Vector3.Distance(motion.Offsets[1], new Vector3(0, -0.1f, 0)) < 1e-6, "the offsets use the clip rig of the set");
-            Check(CharacterLibrary.Plays("singer", "singer") && !CharacterLibrary.Plays("singer", "guitarist") && CharacterLibrary.Plays("guitarist", "bassist") &&
-                !CharacterLibrary.Plays("guitarist", "singer"), "a singer profile plays the singer only; a guitarist profile plays the guitarist and the bassist");
+            Check(motion.Offsets != null && Vector3.Distance(motion.Offsets[1], new Vector3(0, -0.1f, 0)) < 1e-6, "the offsets use the clip rig of the set");
+            Check(CharacterLibrary.UsesOwnSet("singer", "singer") && !CharacterLibrary.UsesOwnSet("singer", "guitarist") && CharacterLibrary.UsesOwnSet("guitarist", "bassist") &&
+                !CharacterLibrary.UsesOwnSet("guitarist", "singer"), "a singer profile plays its own set as the singer; a guitarist profile as the guitarist and the bassist");
             var broken = Path.Combine(folder, "broken");
             Directory.CreateDirectory(broken);
             File.WriteAllText(Path.Combine(broken, "characters.json"), json.Replace("\"clipRig\": \"singer\", ", ""));

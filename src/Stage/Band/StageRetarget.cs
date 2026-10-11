@@ -3,10 +3,10 @@ using Gh3Skin.Packages;
 
 namespace Gh3Skin;
 
-// A character with its own skeleton on stage (PACKAGE-FORMAT.md section 9.6): the GH3 rig of the role (or of the
-// character's library profile) plays the GH3 performance without a mesh; CharacterRetarget moves the character's own
-// bones from it each frame. The instrument stays on the GH3 rig, moved to the character's chest. Camera and hand-fire
-// anchors use a frame on the mapped character bone that turns as the GH3 bone turns.
+// A retargeted character on stage (PACKAGE-FORMAT.md section 9.6): the GH3 rig of the animation set plays the GH3
+// performance without a mesh; CharacterRetarget moves the character's skeleton (its own skeleton, or its GH3 rig in another
+// role) from it each frame. The instrument stays on the GH3 rig, moved and scaled to fit the character. Camera and
+// hand-fire anchors use a frame on the mapped character bone that turns as the GH3 bone turns.
 internal sealed class StageRetarget
 {
     public CharacterRetarget Rig { get; }
@@ -14,6 +14,8 @@ internal sealed class StageRetarget
     public Transform[] SourceBones { get; }
     public BandPose[] SourcePose { get; }
     public CharacterFace? Face { get; set; }
+    // A GH3 rig as the character's skeleton: the GH3 twist and split bone constraints on its pose (StageGuitarRig).
+    public StageGuitarRig? Constraints { get; init; }
     private readonly Transform?[] _anchors;
     private bool _scaled;
 
@@ -61,8 +63,8 @@ internal sealed class StageRetarget
         if (!_scaled)
         {
             _scaled = true;
-            foreach (var root in Rig.InstrumentRoots)
-                SourceBones[root].localScale = new Vector3(Rig.InstrumentScale, Rig.InstrumentScale, Rig.InstrumentScale);
+            foreach (var (bone, scale) in Rig.Scales)
+                SourceBones[bone].localScale = new Vector3(scale, scale, scale);
         }
     }
 }

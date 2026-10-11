@@ -21,7 +21,7 @@ internal static class AttachmentLogicTests
     {
         CheckSplit();
         CheckChoice();
-        CheckCharacterRig();
+        CheckJointNames();
         var library = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../assets/libraries/gh3-band-v1"));
         if (File.Exists(Path.Combine(library, "catalog.json"))) CheckLibrary(library);
     }
@@ -80,27 +80,13 @@ internal static class AttachmentLogicTests
             "in another role, the role's instrument replaces the own instrument");
     }
 
-    // Joints of a character on another role's rig (CharacterRig.Map): 0 root, 1 body, 2 head, 3 face (under the head),
-    // 4 and 5 a hair chain under the head, 6 an accessory on the body, 7 an instrument bone under the root.
-    private static void CheckCharacterRig()
+    // The joints of a character on its GH3 rig (CharacterChainRig.ByName): each joint follows the bone with the same name.
+    private static void CheckJointNames()
     {
-        string Acc(int i) => Gh3Checksum.Of($"Bone_ACC_{i:00}");
-        var profile = new[] { "r", "b", CharacterRig.Head, "f", Acc(1), Acc(2), Acc(3), "g" };
-        var parents = new[] { -1, 0, 1, 2, 2, 4, 1, 0 };
-        var role = new[] { "g", "r", "b", CharacterRig.Head, "f", Acc(1), Acc(2), Acc(3), "x" };
-        var joints = new[] { "g", "r", "b", CharacterRig.Head, "f", Acc(1), Acc(2), Acc(3) };
-        var hair = new HashSet<int> { 4, 5 };
-        var own = CharacterRig.Map(joints, profile, parents, role, hair, ownRole: true)!.Value;
-        Check(own.Bones.SequenceEqual(new[] { 0, 1, 2, 3, 4, 5, 6, 7 }) && own.Bind.SequenceEqual(Enumerable.Range(0, 8)), "own role: joints by name, own bind poses");
-        var other = CharacterRig.Map(joints, profile, parents, role, hair, ownRole: false)!.Value;
-        Check(other.Bones.SequenceEqual(new[] { 0, 1, 2, 3, 3, 5, 6, 2 }), "another role: face on the head, accessory on its body bone, hair and body by name");
-        Check(other.Bind.SequenceEqual(new[] { 0, 1, 2, 3, 3, 5, 6, 2 }), "another role: moved joints use the bind pose of the joint that they follow");
-        Check(CharacterRig.Map(joints.Append("missing").ToArray(), profile, parents, role, hair, ownRole: true) == null, "a joint outside the role rig");
-        var definition = new HairDefinition { Head = 2, Joints = new[] { new HairJoint { Bone = 4, Parent = 2 }, new HairJoint { Bone = 5, Parent = 4 } } };
-        var remapped = definition.Remap(bone => Array.IndexOf(role, profile[bone]))!;
-        Check(remapped.Head == 3 && remapped.Joints[0].Bone == 5 && remapped.Joints[0].Parent == 3 && remapped.Joints[1].Bone == 6 && remapped.Joints[1].Parent == 5,
-            "the profile hair chains on the role rig");
-        Check(definition.Remap(bone => bone == 5 ? -1 : bone) == null, "a hair joint outside the role rig");
+        var rig = new[] { "r", "b", "h", "f" };
+        var own = CharacterChainRig.ByName(new[] { "f", "r", "b" }, rig)!.Value;
+        Check(own.Bones.SequenceEqual(new[] { 3, 0, 1 }) && own.Bind.SequenceEqual(Enumerable.Range(0, 3)), "joints by name, own bind poses");
+        Check(CharacterChainRig.ByName(new[] { "r", "missing" }, rig) == null, "a joint outside the rig");
     }
 
     private static void CheckLibrary(string library)

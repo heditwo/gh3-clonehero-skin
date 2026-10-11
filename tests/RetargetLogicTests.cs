@@ -49,7 +49,10 @@ internal static class RetargetLogicTests
         CheckRootMotionAndIk();
         CheckPythonFixture("retarget-case.json");
         CheckPythonFixture("retarget-any-rig.json");
-        Console.WriteLine("Retarget identity, rest-pose correction (T-pose, bone rolls, scale), twist bones, followers, root motion, IK, and the two Python fixtures passed.");
+        var library = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../assets/libraries/gh3-band-v1"));
+        if (File.Exists(Path.Combine(library, "catalog.json"))) CheckGh3Rigs(library);
+        Console.WriteLine("Retarget identity, rest-pose correction (T-pose, bone rolls, scale), twist bones, followers, root motion, IK, the two Python fixtures, " +
+            "GH3 rigs as skeletons (humanoid map, face bones, scale), and the drum kit, throne, sticks, and microphone stand fit passed.");
     }
 
     private static string Key(string name) => name.StartsWith("bone-") ? name[5..] : Gh3Checksum.Of(name);
@@ -332,6 +335,68 @@ internal static class RetargetLogicTests
             }
         }
         Check(worstPosition < 1e-4f && worstAngle < 0.005f, $"the game and the Python preview agree on {file} ({worstPosition * 1000:0.###} mm, {worstAngle:0.###}°)");
+    }
+
+    private static RetargetSkeleton Gh3Skeleton((string[] Bones, int[] Parents, float[][] Bind) rig, float scale = 1) => new()
+    {
+        Bones = rig.Bones, Parents = rig.Parents, Bind = Poses(rig.Bind), Humanoid = HumanoidRoles.FromGh3(rig.Bones), Scale = scale, Gh3Face = true,
+    };
+
+    private static BandPose[] Poses(float[][] rows) =>
+        rows.Select(r => new BandPose(new(r[0], r[1], r[2]), Quaternion.Normalize(new(r[3], r[4], r[5], r[6])))).ToArray();
+
+    // The GH3 rigs of the band library (PACKAGING-PLAN decision 15): a GH3 rig maps to itself by its bone names, its face
+    // bones follow the GH3 face bones by name, a profile scale scales the skeleton, and the drum kit and the microphone
+    // stand fit the size of the body.
+    private static void CheckGh3Rigs(string library)
+    {
+        var guitarist = CharacterImporter.Rig(library, "guitarist");
+        var singer = CharacterImporter.Rig(library, "singer");
+        var drummer = CharacterImporter.Rig(library, "drummer");
+        var map = HumanoidRoles.FromGh3(guitarist.Bones);
+        Check(map.Count == 52 && map["upperChest"] == Array.IndexOf(guitarist.Bones, Gh3Checksum.Of("bone_chest")) && !map.ContainsKey("jaw"),
+            $"a GH3 rig maps 52 roles from its bone names, the face bones by name ({map.Count})");
+
+        // The singer rig on the guitarist rig: the bind pose gives the guitarist's own rest pose, and the face bones turn as
+        // the singer's face bones turn from their rest pose.
+        var bind = Poses(singer.Bind);
+        var retarget = new CharacterRetarget(singer.Bones, singer.Parents, bind, Gh3Skeleton(guitarist), "singer");
+        var result = new BandPose[guitarist.Bones.Length];
+        retarget.Apply(bind, result, 0, 0);
+        var jaw = Array.IndexOf(guitarist.Bones, Gh3Checksum.Of("Bone_Jaw"));
+        var rest = Poses(guitarist.Bind);
+        Check(Quaternion.Dot(result[jaw].Rotation, rest[jaw].Rotation) > 0.99999f && Vector3.Distance(result[jaw].Position, rest[jaw].Position) < 1e-5f,
+            "at rest the face bones keep their own rest pose");
+        var sourceJaw = Array.IndexOf(singer.Bones, Gh3Checksum.Of("Bone_Jaw"));
+        var open = (BandPose[])bind.Clone();
+        var turn = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, 0.4f);
+        open[sourceJaw] = open[sourceJaw] with { Rotation = Quaternion.Normalize(turn * bind[sourceJaw].Rotation) };
+        retarget.Apply(open, result, 0, 0);
+        var jawTurn = Quaternion.Normalize(result[jaw].Rotation * Quaternion.Inverse(rest[jaw].Rotation));
+        Check(Math.Abs(Quaternion.Dot(jawTurn, turn)) > 0.99999f, "the jaw takes the turn of the GH3 jaw in its parent frame");
+        Check(retarget.HasMicrophone && retarget.StandScale is > 0.9f and < 1.1f, $"the stand fits the head height ({retarget.StandScale:0.###})");
+
+        // The drummer rig on itself at 0.8 of its size: the kit, the throne, and the sticks scale by the arm length
+        // ratio, the character sits at the GH3 seat (no lift), and the hands and the stick tips reach the GH3 places on
+        // the scaled kit.
+        var drum = Poses(drummer.Bind);
+        var small = new CharacterRetarget(drummer.Bones, drummer.Parents, drum, Gh3Skeleton(drummer, 0.8f), "drummer");
+        Check(small.HasKit && Math.Abs(small.InstrumentScale - 0.8f) < 1e-4f && Math.Abs(small.SeatLift) < 1e-4f,
+            $"the kit scales with the arms ({small.InstrumentScale:0.####}), no seat lift ({small.SeatLift:0.####})");
+        var output = new BandPose[drummer.Bones.Length];
+        var hit = (BandPose[])drum.Clone();
+        var bicep = Array.IndexOf(drummer.Bones, Gh3Checksum.Of("Bone_Bicep_L"));
+        hit[bicep] = hit[bicep] with { Rotation = Quaternion.Normalize(Quaternion.CreateFromAxisAngle(Vector3.UnitX, 0.5f) * drum[bicep].Rotation) };
+        small.Apply(hit, output, 1, 1);
+        var kit = Array.IndexOf(drummer.Bones, Gh3Checksum.Of("Bone_Drum_Stick_L")) is var stick and >= 0 ? drummer.Parents[stick] : -1;
+        Check(Vector3.Distance(small.SourceOut[kit].Position, drum[kit].Position * 0.8f) < 1e-5f, "the kit root moves to 0.8 of its place");
+        Check(small.HandMiss < 1e-3f && small.StickTipMiss.Max() < 1e-3f, $"the hands and the stick tips reach the scaled kit ({small.HandMiss * 100:0.###} cm, " +
+            $"{small.StickTipMiss.Max() * 100:0.###} cm)");
+        var hips = Array.IndexOf(drummer.Bones, Gh3Checksum.Of("bone_pelvis"));
+        Check(Vector3.Distance(small.World(hips).Position, small.SourceWorld(hips).Position * 0.8f) < 1e-4f, "the hips sit on the scaled seat");
+        for (var bone = 0; bone < output.Length; bone++)
+            if (drummer.Parents[bone] >= 0 && bone != hips && small.MappedSource(bone) < 0)
+                Check(Vector3.Distance(output[bone].Position, drum[bone].Position) < 1e-5f, "the scaled skeleton keeps its bone lengths in its own units");
     }
 
     private static void Check(bool condition, string message)

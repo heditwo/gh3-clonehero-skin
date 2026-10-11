@@ -28,8 +28,9 @@ internal sealed class CharacterLibrary
     private static readonly ConcurrentDictionary<string, CharacterLibrary> Loaded = new(StringComparer.Ordinal);
     public string Folder { get; private init; } = "";
     public string Id { get; private init; } = "";
-    // Roles that a profile can have, and the band roles that a character on it plays (GH3 create_band makes the co-op
-    // bassist with create_guitarist, so a guitarist profile also plays the bassist).
+    // Roles that a profile can have, and the band roles in which a character on it plays the animation set of its
+    // profile (GH3 create_band makes the co-op bassist with create_guitarist, so a guitarist profile also plays the
+    // bassist with its own set). In the other roles it plays the set of the role, retargeted (PACKAGING-PLAN decision 15).
     public static readonly IReadOnlyDictionary<string, string[]> ProfileRoles = new Dictionary<string, string[]>(StringComparer.Ordinal)
     {
         ["guitarist"] = new[] { "guitarist", "bassist" }, ["singer"] = new[] { "singer" },
@@ -41,7 +42,7 @@ internal sealed class CharacterLibrary
     // The clip rig of each animation set: the rig of clipRigs that the set names, else clipRig.
     public IReadOnlyDictionary<string, CharacterProfile> SetClipRigs { get; private init; } = new Dictionary<string, CharacterProfile>();
 
-    public static bool Plays(string profileRole, string bandRole) => ProfileRoles.TryGetValue(profileRole, out var roles) && roles.Contains(bandRole);
+    public static bool UsesOwnSet(string profileRole, string bandRole) => ProfileRoles.TryGetValue(profileRole, out var roles) && roles.Contains(bandRole);
 
     public static bool Has(string folder) => File.Exists(Path.Combine(folder, FileName));
 

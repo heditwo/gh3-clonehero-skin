@@ -5,9 +5,7 @@ namespace Gh3Skin;
 
 // The bones that a character package adds to its rig (character.json bones, PACKAGE-FORMAT.md section 9.5) and its
 // custom chains and colliders, on the performer that plays it. The added bones come after the rig bones (rig index
-// N + k). Their bind poses come from the GLB inverse bind matrices, relative to the character joint whose bind pose skins
-// the bone that drives the parent (CharacterRig.Map), so in another role an added bone follows the same body bone as
-// the mesh around it.
+// N + k). Their bind poses come from the GLB inverse bind matrices, relative to their parent joint.
 internal sealed class CharacterExtras
 {
     public Transform[] Bones { get; private init; } = System.Array.Empty<Transform>();

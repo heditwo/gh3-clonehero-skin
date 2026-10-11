@@ -248,7 +248,7 @@ internal static class HairBench
         else
         {
             var (mapped, bind) = CharacterChainRig.MapJoints(model, profile.Bones.Length,
-                names => Gh3Skin.Packages.CharacterRig.Map(names, profile.Bones, profile.Parents, profile.Bones, new HashSet<int>(), ownRole: true))!.Value;
+                names => CharacterChainRig.ByName(names, profile.Bones))!.Value;
             map = mapped;
             int[] extraParents;
             (extraParents, extraBind, joints, colliders) = CharacterChainRig.Plan(model, map, bind);
@@ -267,7 +267,7 @@ internal static class HairBench
         };
         var player = new PerformancePlayer(profile.Role, "", motion.Member, animation.BindPose, timeline, animation.Parents, performance.Constants, motion);
         player.Prepare();
-        var profileHead = Array.IndexOf(profile.Bones, Gh3Skin.Packages.CharacterRig.Head);
+        var profileHead = Array.IndexOf(profile.Bones, Gh3Checksum.Of("bone_head"));
         var headBone = skeleton != null ? skeleton.Humanoid["head"] : profileHead;
         var path = Environment.GetEnvironmentVariable("GH3_HAIR_BENCH_MOTION") is { } motionFile ? Motion(motionFile) : null;
         if (path != null) seconds = Math.Min(seconds, path.Duration);

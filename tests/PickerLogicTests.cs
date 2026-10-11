@@ -327,8 +327,6 @@ internal static class PickerLogicTests
         Check(model.Role == "singer" && model.Joints.SequenceEqual(new[] { "0000000a", "0000000b" }), "the character keeps its joint names and role");
         // Unity coordinates: the second inverse bind matrix moves 1 m down (row-major m13 = -1).
         Check(Math.Abs(model.Bindposes[1][7] + 1) < 1e-6 && Math.Abs(model.Bindposes[1][5] - 1) < 1e-6 && Math.Abs(model.Bindposes[0][7]) < 1e-6, "bind poses come from the GLB");
-        Check(model.Map(new[] { "0000000b", "0000000a", "0000000c" })!.SequenceEqual(new[] { 1, 0 }), "joints map to a rig by name");
-        Check(model.Map(new[] { "0000000a", "0000000c" }) == null, "a rig without a joint cannot take the character");
         var stage = PackageJson.Object(File.ReadAllBytes(Path.Combine(output, "stage.json")));
         var material = (JsonObject)((JsonObject)stage["materials"]!)[Gh3Checksum.Of("material-body")]!;
         Check(PackageJson.Text(material["texture"]) == Gh3Checksum.Of("image-0") && PackageJson.Bool(material["sortedTransparency"]) == true,

@@ -20,7 +20,6 @@ internal sealed class PickerOverlay
     private List<StageRow> _stages = new();
     private List<CharacterRow> _characters = new();
     private List<InstrumentRow> _instruments = new();
-    private Dictionary<string, string[]> _rigs = new();
     private EventSystem? _blockedEvents;
     private Vector2 _scroll;
     private string _hover = "";
@@ -95,22 +94,12 @@ internal sealed class PickerOverlay
             .Select(p => new StageRow(p.Manifest.Id, p.Manifest.Name, p.State == PackageState.Ready ? p.Manifest.Id : p.Manifest.Id + " (importing)",
                 p.CacheDirectory.Length > 0 ? Path.Combine(p.CacheDirectory, "preview.png") : ""))
             .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
-        var library = manager?.Find(PackageKind.Library, "gh3-band-v1");
-        _rigs = new Dictionary<string, string[]>();
-        if (library?.State == PackageState.Ready)
-            foreach (var role in PlayerChoices.Roles)
-                try { _rigs[role] = CharacterImporter.Rig(library.CacheDirectory, role).Bones; }
-                catch (Exception error) when (error is IOException or PackageException or System.Text.Json.JsonException) { }
         _characters = new List<CharacterRow>();
-        _incompatible.Clear();
         foreach (var package in packages.Where(p => p.Manifest.Kind == PackageKind.Character && p.State == PackageState.Ready))
             try
             {
                 var model = CharacterModel.Load(package.CacheDirectory);
                 _characters.Add(new CharacterRow(package.Manifest.Id, package.Manifest.Name, model.Role));
-                // A character with its own skeleton plays every role (the clips of the role are retargeted to it).
-                foreach (var role in PlayerChoices.Roles.Where(r => r != model.Role && model.Skeleton == null && (!_rigs.TryGetValue(r, out var rig) || model.Map(rig) == null)))
-                    _incompatible.Add((package.Manifest.Id, role));
             }
             catch (Exception error) when (error is IOException or PackageException or System.Text.Json.JsonException) { }
         _instruments = new List<InstrumentRow>();
@@ -125,12 +114,9 @@ internal sealed class PickerOverlay
         _instruments = _instruments.OrderBy(i => i.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
-    private readonly HashSet<(string Id, string Role)> _incompatible = new();
-
-    // A character can play its own role, and another role whose rig has all of its joints (the GH3 guitarist and bassist);
-    // a character with its own skeleton plays every role.
+    // Every character plays every role (PACKAGING-PLAN decision 15); the characters of the role come first.
     private List<CharacterRow> Choices(string role) =>
-        _characters.Where(c => c.Role == role || !_incompatible.Contains((c.Id, role))).OrderBy(c => c.Role == role ? 0 : 1).ThenBy(c => c.Name).ToList();
+        _characters.OrderBy(c => c.Role == role ? 0 : 1).ThenBy(c => c.Name).ToList();
 
     public void OnGUI()
     {

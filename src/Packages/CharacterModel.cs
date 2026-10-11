@@ -73,19 +73,6 @@ internal sealed class CharacterModel
     }
 
     private static float[] Floats(System.Text.Json.Nodes.JsonNode? node) => PackageJson.Vector(node, 3, "vector").Select(v => (float)v).ToArray();
-
-    // For each character joint, the index of the bone with the same name in a band role's rig. A joint that the rig does
-    // not have gives null: the character cannot play that role.
-    public int[]? Map(IReadOnlyList<string> rigBones)
-    {
-        var result = new int[Joints.Length];
-        for (var i = 0; i < Joints.Length; i++)
-        {
-            result[i] = rigBones is string[] array ? Array.IndexOf(array, Joints[i]) : rigBones.ToList().IndexOf(Joints[i]);
-            if (result[i] < 0) return null;
-        }
-        return result;
-    }
 }
 
 internal sealed record AddedBone(string Name, string Parent, float[] Bind);

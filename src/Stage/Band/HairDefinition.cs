@@ -26,23 +26,6 @@ internal sealed class HairDefinition
     // with the head capsule only.
     public HairCollider[] Colliders { get; set; } = Array.Empty<HairCollider>();
 
-    // The same chains on another rig: `bone` gives the rig index of a bone of this definition's rig, or -1.
-    public HairDefinition? Remap(Func<int, int> bone)
-    {
-        var head = bone(Head);
-        var joints = Joints.Select(j => new HairJoint
-        {
-            Bone = bone(j.Bone), Parent = bone(j.Parent), Position = j.Position, Rotation = j.Rotation, Length = j.Length, Mass = j.Mass,
-            Friction = j.Friction, AngularDamping = j.AngularDamping, LinearDamping = j.LinearDamping, Limits = j.Limits, Type = j.Type, Axis = j.Axis, Range = j.Range,
-            TwistAxis = j.TwistAxis, ConeAxis = j.ConeAxis, PlaneAxis = j.PlaneAxis, MaxAngularVelocity = j.MaxAngularVelocity,
-            Direction = j.Direction, Radius = j.Radius, ColliderMask = j.ColliderMask, HeadCapsule = j.HeadCapsule,
-            Custom = j.Custom, Stiffness = j.Stiffness, Drag = j.Drag, Gravity = j.Gravity, BendLimit = j.BendLimit,
-        }).ToArray();
-        var colliders = Colliders.Select(c => new HairCollider { Bone = bone(c.Bone), A = c.A, B = c.B, Radius = c.Radius }).ToArray();
-        return head < 0 || joints.Any(j => j.Bone < 0 || j.Parent < 0) || colliders.Any(c => c.Bone < 0) ? null :
-            new HairDefinition { Head = head, Joints = joints, Capsule = Capsule, Colliders = colliders };
-    }
-
     // The profile hair (or none) with the custom chains of a character package after it. Without profile hair the
     // definition has no head capsule (Head -1): the custom joints collide with their own colliders only.
     public static HairDefinition? Merge(HairDefinition? profile, HairJoint[] joints, HairCollider[] colliders)
