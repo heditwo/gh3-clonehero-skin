@@ -362,7 +362,7 @@ internal sealed partial class StageBand : IDisposable
             (face is { } facial ? FormattableString.Invariant($" face={facial.Clip} faceTime={facial.ClipTime:F4} faceBones={Values(TraceFaceBones, raw)}") : "") +
             (player.Retarget is { } retarget ? FormattableString.Invariant($" retarget handMiss={retarget.Rig.HandMiss * 100:F2}cm move={retarget.Rig.InstrumentMove.Length() * 100:F1}cm") +
                 (retarget.Rig.HasMicrophone ? FormattableString.Invariant($" micToMouth={System.Numerics.Vector3.Distance(retarget.Rig.MicrophoneHead, retarget.Rig.Mouth) * 100:F1}cm ") +
-                    FormattableString.Invariant($"gh3MicToMouth={System.Numerics.Vector3.Distance(retarget.Rig.Gh3MicrophoneHead, retarget.Rig.Gh3Mouth) * 100:F1}cm") : "") : ""));
+                    FormattableString.Invariant($"gh3MicToMouth={System.Numerics.Vector3.Distance(retarget.Rig.Gh3MicrophoneHead, retarget.Rig.Gh3Mouth) * 100:F1}cm mouthHandMiss={retarget.Rig.MouthMiss * 100:F1}cm") : "") : ""));
     }
 
     private static string ProfileName(CharacterMotion motion) => motion.IsLibrary ? "library" : motion.Profile.Id;

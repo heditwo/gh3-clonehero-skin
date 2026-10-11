@@ -61,14 +61,14 @@ SPINE = ("spine", "chest", "upperChest")
 # The gear of the singer and the drummer (CharacterRetarget.cs). GH3: the throne bone of the drum kit (name not known);
 # measured: the throne mesh of Drum_Set001 is on it and its top is 0.505 m above the bone; the drum stick mesh goes
 # 0.389 m along +X of Bone_Drum_Stick_L and _R; the microphone head is 0.1 m along -Y of Bone_Mic. Tuned: the throne
-# height limits, and the microphone goes to the mouth from 20 cm (fully at 10 cm) between the GH3 microphone head and
+# height limits, and the microphone goes to the mouth from 35 cm (fully at 20 cm) between the GH3 microphone head and
 # the GH3 mouth.
 THRONE_BONE = "fdeaebd9"
 THRONE_TOP = 0.505
 STICK_LENGTH = 0.389
 MICROPHONE_LENGTH = 0.1
 THRONE_SCALE = (0.25, 2.0)
-MOUTH_FOLLOW = (0.2, 0.1)
+MOUTH_FOLLOW = (0.35, 0.15)
 HAND_FOLLOW = (0.25, 0.15)
 SCALE_LIMITS = (0.5, 1.5)
 # A head height (m) below this is not a usable measure.

@@ -131,12 +131,15 @@ internal sealed class CharacterRetarget
     private const float MinimumThroneScale = 0.25f;
     private const float MaximumThroneScale = 2;
     // Tuned: the singer's hand that holds the microphone goes to the character's mouth while the GH3 microphone head is
-    // within 20 cm of the GH3 mouth, fully at 10 cm.
-    private const float MouthFollowStart = 0.2f;
-    private const float MouthFollowRange = 0.1f;
+    // within 35 cm of the GH3 mouth, fully at 20 cm (GH3 sings with the microphone head 9-15 cm from the mouth).
+    private const float MouthFollowStart = 0.35f;
+    private const float MouthFollowRange = 0.15f;
     // Measured: the microphone mesh of Microphone001 ends 0.1 m along -Y of Bone_Mic (its head).
     private const float MicrophoneLength = 0.1f;
     private readonly (int Upper, int Lower) _lips = (-1, -1);
+    private readonly (Vector3 Goal, float Gain)[] _mouthGoals;
+    // The largest distance (m) between the hand that holds the microphone and its goal at the mouth in the last call.
+    public float MouthMiss { get; private set; }
     // The character's mouth in the frame of its head bone.
     private readonly Vector3 _mouthOffset;
     private readonly int _stand = -1, _mic = -1, _kit = -1, _hipsTarget = -1, _mouthTarget = -1, _mouthSource = -1;
@@ -319,6 +322,7 @@ internal sealed class CharacterRetarget
         _arms = arms.ToArray();
         _legs = legs.ToArray();
         _armMiss = new Vector3[2];
+        _mouthGoals = new (Vector3, float)[_arms.Length];
         _palms[0] = S("leftHand"); _palms[1] = S("rightHand");
         _hands[0] = T("leftHand"); _hands[1] = T("rightHand");
 
@@ -467,7 +471,13 @@ internal sealed class CharacterRetarget
             pelvisMove = seat - _restPosition[_hipsTarget];
         }
         Forward(pelvisMove);
-        if (_mic >= 0 && HoldMicrophone()) Forward(pelvisMove);
+        MouthMiss = 0;
+        if (_mic >= 0 && HoldMicrophone())
+        {
+            Forward(pelvisMove);
+            for (var k = 0; k < _mouthGoals.Length; k++)
+                if (_mouthGoals[k].Gain > 0) MouthMiss = Math.Max(MouthMiss, Vector3.Distance(_wp[_arms[k].End], _mouthGoals[k].Goal) * _mouthGoals[k].Gain);
+        }
 
         // The instrument keeps its offset from the chest and its size, both scaled by the arm length ratio.
         Array.Copy(source, SourceOut, source.Length);
@@ -586,12 +596,15 @@ internal sealed class CharacterRetarget
         var near = Smooth((MouthFollowStart - Vector3.Distance(Gh3MicrophoneHead, gh3Mouth)) / MouthFollowRange);
         if (near <= 0) return false;
         var moved = false;
-        foreach (var arm in _arms)
+        for (var k = 0; k < _arms.Length; k++)
         {
+            var arm = _arms[k];
             var gain = near * Smooth((HandFollowStart - Vector3.Distance(_sp[arm.SourceEnd], _sp[_mic])) / HandFollowRange);
+            _mouthGoals[k] = (Vector3.Zero, 0);
             if (gain <= 0) continue;
             var goal = Mouth + (_sp[_mic] - gh3Mouth) * StandScale - (_sp[_mic] - _sp[arm.SourceEnd]);
             Solve(arm.Upper, arm.Lower, arm.End, goal, gain, Pole(arm.SourceUpper, arm.SourceLower, arm.SourceEnd));
+            _mouthGoals[k] = (goal, gain);
             moved = true;
         }
         return moved;
