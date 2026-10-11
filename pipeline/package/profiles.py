@@ -22,23 +22,23 @@ LIBRARY_ID = "gh3-band-v1"
 CHARACTER_LIBRARY_ID = "gh3-characters-v1"
 
 
-def bone_key(name):
+def bone_key(name: str) -> str:
     """The rig key of a bone name of character.json: the checksum of 'bone-<checksum>', else the GH3 checksum of the name."""
     match = re.fullmatch(r"bone-([0-9a-f]{8})", name)
     return match.group(1) if match else f"{gh3_key(name):08x}"
 
 
-def gh3_key(name):
+def gh3_key(name: str) -> int:
     """GH3 checksum of a name (pipeline.gh3.formats.key, repeated here so the add-on bundle has no other dependency)."""
     return ~zlib.crc32(name.lower().encode()) & 0xFFFFFFFF
 
 
-def name_key(name):
+def name_key(name) -> int:
     """A GH3 name as the mod reads it (Gh3QbText.Key): a '0x' checksum or a name text."""
     return int(name[2:], 16) if isinstance(name, str) and name.lower().startswith("0x") else gh3_key(str(name))
 
 
-def library_instruments(library):
+def library_instruments(library) -> set[str]:
     """The instrument IDs of band/band.json in a library package (zip or folder) or the current library folder."""
     library = Path(library)
     try:
@@ -87,7 +87,7 @@ def load_profile(library, role):
     return [b.lower() for b in bones], [r[0] for r in rows], translations, rotations
 
 
-def load_character_library(path):
+def load_character_library(path) -> dict:
     """characters.json of a character library package (zip or folder) or of the pipeline folder."""
     path = Path(path)
     if path.is_file() or (path / "manifest.json").is_file():

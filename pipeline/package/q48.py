@@ -21,7 +21,7 @@ WORD_MASK = 0xFFFF
 MIN_ROTATION_NORM = 1e-6
 
 
-def frame_count(duration):
+def frame_count(duration: float) -> int:
     return round(duration * FPS) + 1
 
 
@@ -85,7 +85,7 @@ def encode(positions, rotations, tracks, bones, duration, bits=BITS):
     )
 
 
-def decode(data):  # noqa: C901
+def decode(data: bytes) -> tuple[dict, np.ndarray, np.ndarray]:  # noqa: C901
     """Return (header dict, positions (frames, tracks, 3), rotations (frames, tracks, 4)). Raises ValueError on a
     malformed clip. Channels absent from a track mask decode as zero position and identity rotation."""
     if len(data) < HEADER.size:

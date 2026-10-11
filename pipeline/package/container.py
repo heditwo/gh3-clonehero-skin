@@ -18,11 +18,11 @@ REGULAR_FILE_644 = 0o100644
 COPY_BUFFER = 1 << 20
 
 
-def json_bytes(value):
+def json_bytes(value) -> bytes:
     return (json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + "\n").encode()
 
 
-def sha256_file(path):
+def sha256_file(path) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as stream:
         for block in iter(lambda: stream.read(COPY_BUFFER), b""):
@@ -30,7 +30,7 @@ def sha256_file(path):
     return digest.hexdigest()
 
 
-def file_list(folder, names):
+def file_list(folder, names) -> dict[str, dict]:
     """The manifest 'files' object for package paths in a folder."""
     folder = Path(folder)
     return {
@@ -38,7 +38,7 @@ def file_list(folder, names):
     }
 
 
-def write_zip(folder, target):
+def write_zip(folder, target) -> None:
     """Zip a package folder reproducibly: manifest.json first, then sorted paths, fixed time and attributes."""
     folder, target = Path(folder), Path(target)
     names = sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*") if p.is_file())
@@ -51,7 +51,7 @@ def write_zip(folder, target):
             info.external_attr = REGULAR_FILE_644 << 16
             info.compress_type = decisions.zip_method(name)
             # ZipFile.open does not apply the archive level to a given ZipInfo (3.13 keeps _compresslevel as an alias).
-            info._compresslevel = decisions.DEFLATE_LEVEL
+            info._compresslevel = decisions.DEFLATE_LEVEL  # type: ignore[attr-defined]
             info.file_size = (folder / name).stat().st_size
             with open(folder / name, "rb") as source, archive.open(info, "w") as destination:
                 shutil.copyfileobj(source, destination, COPY_BUFFER)

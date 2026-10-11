@@ -16,6 +16,7 @@ The Python code is the asset pipeline (`pipeline/`), the Blender add-on (`blende
   ```
 
 - The rule sets: pyflakes, pycodestyle, isort, pyupgrade (Python 3.11), bugbear, pep8-naming, flake8-simplify, and a complexity limit of 20. `ruff.toml` gives the reason for each rule that is off.
+- `mypy.ini` lists the package format modules that `mypy` checks (Python 3.11); `scripts/test.sh` runs it. Public functions of these modules have type hints; give new public functions type hints too.
 - There is no `pyproject.toml`: in a folder with one, `uv run` makes a project environment.
 - The formatter sets the layout (120 columns). Do not align code by hand.
 

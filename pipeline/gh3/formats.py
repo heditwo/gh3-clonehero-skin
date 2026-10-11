@@ -4,6 +4,7 @@ The C# readers in src/Native/Gh3Pak.cs and src/Native/Gh3Qb.cs read the same lay
 """
 
 import struct
+from collections.abc import Iterator
 from zlib import crc32
 
 # PAK entry header: type, data offset (relative to the header), size, 4 bytes, name checksum, 8 bytes, flags (eight
@@ -57,26 +58,26 @@ NODE_PREFIX_HEADER_SIZE = 8
 NODE_PREFIX_ROW_SIZE = 12
 
 
-def key(text):
+def key(text: str) -> int:
     """The GH3 checksum of a name: the inverted CRC-32 of the lower-case text."""
     return ~crc32(text.lower().encode()) & 0xFFFFFFFF
 
 
-def is_qb_file(data):
+def is_qb_file(data: bytes) -> bool:
     return len(data) > QB_HEADER_SIZE and data[8:12] == QB_FILE_TAG
 
 
-def values(data, offset, fmt):
+def values(data: bytes, offset: int, fmt: str) -> tuple:
     if offset < 0 or offset + struct.calcsize(">" + fmt) > len(data):
         raise ValueError(f"Data outside file at {offset}")
     return struct.unpack_from(">" + fmt, data, offset)
 
 
-def word(data, offset):
+def word(data: bytes, offset: int) -> int:
     return values(data, offset, "I")[0]
 
 
-def pak_entries(data):
+def pak_entries(data: bytes) -> Iterator[tuple[int, int, bytes]]:
     """(type checksum, name checksum, bytes) of each PAK entry, up to the end marker."""
     offset = 0
     while offset + PAK_ENTRY_SIZE <= len(data):
@@ -110,7 +111,7 @@ def node_prefixes(data, arrays):
     return result
 
 
-def qb_array(data, offset, depth=0):
+def qb_array(data: bytes, offset: int, depth: int = 0) -> list:
     if depth > MAX_QB_DEPTH:
         raise ValueError("QB array nesting is too deep")
     kind, count = values(data, offset, "II")
@@ -135,7 +136,7 @@ def qb_array(data, offset, depth=0):
     raise ValueError(f"Unsupported QB array type {kind:08x}")
 
 
-def qb_text(data, offset, wide):
+def qb_text(data: bytes, offset: int, wide: bool) -> str:
     if not wide:
         end = data.find(b"\0", offset)
         if offset >= len(data) or end < 0:
@@ -147,13 +148,13 @@ def qb_text(data, offset, wide):
     return data[offset:end].decode("utf-16-be")
 
 
-def qb_struct(data, offset, depth=0):
+def qb_struct(data: bytes, offset: int, depth: int = 0) -> dict:
     """A QB struct as {name checksum: value}; unnamed items go to the list at key 0."""
     if depth > MAX_QB_DEPTH or word(data, offset) != QB_STRUCT_HEADER:
         raise ValueError("Invalid QB struct")
-    result = {0: []}
+    result: dict = {0: []}
     offset = word(data, offset + 4)
-    visited = set()
+    visited: set[int] = set()
     while offset:
         if offset in visited or len(visited) > MAX_QB_STRUCT_ITEMS:
             raise ValueError("Invalid QB struct links")
@@ -191,13 +192,13 @@ def _find_section(data, section_type, name):
     return word(data, offset + 12)
 
 
-def find_array(data, name):
+def find_array(data: bytes, name: str | int) -> list | None:
     """The top-level QB array with this name (or checksum), or None."""
     start = _find_section(data, QB_SECTION_ARRAY, name)
     return None if start is None else qb_array(data, start)
 
 
-def find_struct(data, name):
+def find_struct(data: bytes, name: str | int) -> dict | None:
     """The top-level QB struct with this name (or checksum), or None."""
     start = _find_section(data, QB_SECTION_STRUCT, name)
     return None if start is None else qb_struct(data, start)

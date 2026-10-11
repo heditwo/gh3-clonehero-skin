@@ -8,6 +8,7 @@ import json
 import struct
 import wave
 from io import BytesIO
+from pathlib import Path
 
 import numpy as np
 
@@ -43,7 +44,7 @@ def read_meshes(data, magic=b"GH3BND02", dtype=SKINNED_GH3_VERTEX):
     return parts
 
 
-def write_meshes(parts, magic=b"GH3BND02"):
+def write_meshes(parts, magic: bytes = b"GH3BND02") -> bytes:
     out = bytearray(magic + struct.pack("<I", len(parts)))
     for material, count, packed, faces in parts:
         faces = np.asarray(faces, dtype="<u4")
@@ -51,7 +52,7 @@ def write_meshes(parts, magic=b"GH3BND02"):
     return bytes(out)
 
 
-def model_stage(name, materials):
+def model_stage(name: str, materials: dict) -> dict:
     """The stage.json of a model folder."""
     return {
         "version": 1,
@@ -62,13 +63,13 @@ def model_stage(name, materials):
     }
 
 
-def write_model(directory, name, materials, meshes):
+def write_model(directory: Path, name: str, materials: dict, meshes) -> None:
     """Write meshes.bin (GH3BND02) and stage.json of a model folder."""
     (directory / "meshes.bin").write_bytes(write_meshes(meshes))
     (directory / "stage.json").write_text(json.dumps(model_stage(name, materials), indent=2) + "\n")
 
 
-def sample_times(duration):
+def sample_times(duration: float) -> tuple[int, np.ndarray]:
     """The frame count and the frame times of a clip sampled at CLIP_SAMPLE_RATE from 0 to its duration."""
     frames = round(duration * CLIP_SAMPLE_RATE) + 1
     return frames, np.linspace(0, duration, frames)
@@ -95,7 +96,7 @@ def read_animation(data):
     return parents, bind, clips
 
 
-def write_animation(parents, bind, clips):
+def write_animation(parents, bind, clips) -> bytes:
     out = bytearray(b"GH3ANM01" + struct.pack("<II", len(parents), len(clips)))
     for parent, row in zip(parents, bind):
         out += BIND.pack(parent, *row)
@@ -117,7 +118,7 @@ def read_clip(data):
     return bones, duration, tracks, poses
 
 
-def write_clip(bones, duration, tracks, poses):
+def write_clip(bones: int, duration: float, tracks, poses) -> bytes:
     out = bytearray(CLIP_HEADER.pack(b"GH3CLP01", bones, len(poses), len(tracks), duration))
     for bone, mask in tracks:
         out += struct.pack("<II", bone, mask)
@@ -139,7 +140,7 @@ def read_movie(data):
     return width, height, [numerator, denominator], [bytes(data[a:b]) for a, b in zip(offsets, offsets[1:])]
 
 
-def write_movie(width, height, rate, frames):
+def write_movie(width: int, height: int, rate, frames) -> bytes:
     offsets = [MOVIE_HEADER.size + 8 * (len(frames) + 1)]
     for frame in frames:
         offsets.append(offsets[-1] + len(frame))
@@ -150,7 +151,7 @@ def write_movie(width, height, rate, frames):
     )
 
 
-def wav_from_pcm(pcm, rate, channels):
+def wav_from_pcm(pcm: bytes, rate: int, channels: int) -> bytes:
     """16-bit PCM in a WAV container; the samples are not changed."""
     out = BytesIO()
     with wave.open(out, "wb") as audio:

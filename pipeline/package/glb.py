@@ -17,7 +17,7 @@ class GlbError(ValueError):
     pass
 
 
-def split_glb(data, error=GlbError):
+def split_glb(data: bytes, error: type[Exception] = GlbError) -> tuple[dict, bytes]:
     """(glTF JSON, binary chunk) of GLB bytes; raises `error` when the data is not a glTF 2.0 GLB."""
     magic, version, length = struct.unpack_from("<3I", data)
     if magic != GLB_MAGIC or version != 2 or length != len(data):
@@ -35,7 +35,7 @@ def split_glb(data, error=GlbError):
     return gltf, binary
 
 
-def join_glb(gltf, binary, allow_nan=True):
+def join_glb(gltf: dict, binary: bytes, allow_nan: bool = True) -> bytes:
     """GLB bytes. The JSON chunk is padded with spaces and the binary chunk with zeros (glTF 2.0, section 4.4)."""
     text = json.dumps(gltf, ensure_ascii=False, separators=(",", ":"), allow_nan=allow_nan).encode("utf-8")
     text += b" " * (-len(text) % 4)
@@ -180,7 +180,7 @@ class Glb:
         return cache[index]
 
 
-def quaternion_angle(a, b):
+def quaternion_angle(a, b) -> float:
     a = np.asarray(a, dtype=np.float64)
     b = np.asarray(b, dtype=np.float64)
     dot = abs(float(np.dot(a / np.linalg.norm(a), b / np.linalg.norm(b))))

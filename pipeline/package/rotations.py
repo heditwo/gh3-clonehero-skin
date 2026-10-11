@@ -4,7 +4,7 @@ over the leading axes."""
 import numpy as np
 
 
-def matrix_quaternions(matrices):
+def matrix_quaternions(matrices) -> np.ndarray:
     """[x, y, z, w] quaternions (w >= 0 where possible) of rotation matrices [..., 3, 3]."""
     m = np.asarray(matrices, dtype=np.float64)
     shape = m.shape[:-2]
@@ -42,7 +42,7 @@ def matrix_quaternions(matrices):
     return q.reshape(*shape, 4)
 
 
-def quaternion_matrices(q):
+def quaternion_matrices(q: np.ndarray) -> np.ndarray:
     """3x3 rotation matrices of quaternions [..., 4] ([x, y, z, w])."""
     x, y, z, w = (q[..., i] for i in range(4))
     return np.stack(
@@ -55,11 +55,11 @@ def quaternion_matrices(q):
     )
 
 
-def qnormalize(q):
+def qnormalize(q: np.ndarray) -> np.ndarray:
     return q / np.linalg.norm(q, axis=-1, keepdims=True)
 
 
-def quaternion_matrix(q):
+def quaternion_matrix(q) -> np.ndarray:
     """The rotation matrix of one quaternion [x, y, z, w] (normalized first)."""
     x, y, z, w = np.asarray(q, dtype=float) / np.linalg.norm(q)
     return np.array(

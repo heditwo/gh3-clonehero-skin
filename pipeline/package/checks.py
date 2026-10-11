@@ -43,14 +43,14 @@ def unit_quaternions(value, name, report, location=""):
             unit_quaternions(item, name, report, f"{location}[{index}]")
 
 
-def png_size(data):
+def png_size(data: bytes) -> tuple[int, int] | None:
     """Width and height of a PNG file, or None when the data is not a PNG file."""
     if len(data) < 29 or data[:8] != PNG_SIGNATURE or data[12:16] != b"IHDR":
         return None
     return struct.unpack(">II", data[16:24])
 
 
-def png_problem(data):
+def png_problem(data: bytes) -> str | None:
     """Why a PNG file is not allowed in a package, or None."""
     size = png_size(data)
     if size is None:

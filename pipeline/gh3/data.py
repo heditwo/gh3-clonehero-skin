@@ -31,7 +31,7 @@ class Source:
         return {n: data for kind, n, data in self.load("PAK/qb.pak.xen") if kind == key(".qb")}
 
 
-def script(scripts, filename):
+def script(scripts: dict[int, bytes], filename: str) -> bytes:
     """The QB file scripts/guitar/<filename>.qb."""
     return scripts[key(f"scripts\\guitar\\{filename}.qb")]
 

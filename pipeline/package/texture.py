@@ -14,6 +14,8 @@ Relative imports only: the Blender add-on bundles this module (blender/build.py)
 import math
 import struct
 import zlib
+from collections.abc import Iterator
+from typing import cast
 
 import numpy as np
 
@@ -52,7 +54,7 @@ class TextureError(ValueError):
     pass
 
 
-def mip_count(width, height):
+def mip_count(width: int, height: int) -> int:
     count, size = 1, max(width, height)
     while size > 1:
         size >>= 1
@@ -60,20 +62,20 @@ def mip_count(width, height):
     return count
 
 
-def level_size(fmt, width, height):
+def level_size(fmt: int, width: int, height: int) -> int:
     if fmt == RGBA32:
         return width * height * 4
     return max(1, (width + 3) // 4) * max(1, (height + 3) // 4) * (BC1_BLOCK_SIZE if fmt == BC1 else BC3_BLOCK_SIZE)
 
 
-def levels(width, height, mips):
+def levels(width: int, height: int, mips: int) -> Iterator[tuple[int, int]]:
     """(width, height) of each mip level."""
     for _ in range(mips):
         yield width, height
         width, height = max(1, width // 2), max(1, height // 2)
 
 
-def read_header(data):
+def read_header(data: bytes) -> tuple[int, int, int, int, int]:
     """(format, width, height, mips, flags) of a GH3TEX02 file. Raises TextureError when the file is not valid."""
     if len(data) < HEADER_SIZE:
         raise TextureError("file is too short for a GH3TEX02 texture")
@@ -96,7 +98,7 @@ def read_header(data):
     return fmt, width, height, mips, flags
 
 
-def downsample(level):
+def downsample(level: np.ndarray) -> np.ndarray:
     """Next mip level: 2 x 2 box filter with rounding; an odd last row or column repeats (as the C# importer did)."""
     height, width = level.shape[:2]
     h, w = max(1, height // 2), max(1, width // 2)
@@ -330,14 +332,14 @@ def _encode_batch(block, alpha):
     return color.reshape(-1).tobytes(), total
 
 
-def encode_level(level, alpha):
+def encode_level(level: np.ndarray, alpha: bool) -> tuple[bytes, int]:
     """BC1 (alpha False) or BC3 bytes of one level (H, W, 4) uint8, and the summed squared error."""
     blocks = _blocks(level)
     parts = [_encode_batch(blocks[start : start + BATCH], alpha) for start in range(0, len(blocks), BATCH)]
     return b"".join(data for data, _ in parts), sum(error for _, error in parts)
 
 
-def choose_format(rgba):
+def choose_format(rgba: np.ndarray) -> int:
     """BC1 for opaque, BC3 for alpha, RGBA32 when a side is not a multiple of 4."""
     height, width = rgba.shape[:2]
     if width % 4 or height % 4:
@@ -345,7 +347,7 @@ def choose_format(rgba):
     return BC1 if (rgba[:, :, 3] == 255).all() else BC3
 
 
-def encode(rgba, linear=False):
+def encode(rgba: np.ndarray, linear: bool = False) -> bytes:
     """GH3TEX02 bytes of an RGBA image (H, W, 4) uint8 with the top row first (as PNG files store it).
 
     A first level under MINIMUM_PSNR in BC1/BC3 (art that GH3 did not store as DXT, for example smooth gradients) stays
@@ -370,7 +372,7 @@ def encode(rgba, linear=False):
         if fmt == RGBA32:
             out.append(level.tobytes())
         elif mip == 0:
-            out.append(first)
+            out.append(cast(bytes, first))
         else:
             out.append(encode_level(level, fmt == BC3)[0])
         if mip + 1 < mips:
@@ -378,7 +380,7 @@ def encode(rgba, linear=False):
     return b"".join(out)
 
 
-def decode_level(fmt, data, width, height):
+def decode_level(fmt: int, data: bytes, width: int, height: int) -> np.ndarray:
     """RGBA (H, W, 4) uint8 of one level, rows in file order (bottom first). BC1 three-colour blocks decode as the GPU
     does: index 3 is transparent black."""
     if fmt == RGBA32:
@@ -429,7 +431,7 @@ def decode_level(fmt, data, width, height):
     return image[:height, :width]
 
 
-def level_data(data):
+def level_data(data: bytes) -> list[tuple[int, int, bytes]]:
     """[(width, height, bytes)] of all levels of a GH3TEX02 file."""
     fmt, width, height, mips, _ = read_header(data)
     result, cursor = [], HEADER_SIZE
@@ -440,21 +442,21 @@ def level_data(data):
     return result
 
 
-def decode(data, mip=0):
+def decode(data: bytes, mip: int = 0) -> np.ndarray:
     """RGBA (H, W, 4) uint8 of one level, top row first (as PNG files store it)."""
     fmt = read_header(data)[0]
     width, height, payload = level_data(data)[mip]
     return decode_level(fmt, payload, width, height)[::-1].copy()
 
 
-def psnr(a, b, channels=4):
+def psnr(a, b, channels: int = 4) -> float:
     error = np.mean(
         (np.asarray(a, dtype=np.float64)[..., :channels] - np.asarray(b, dtype=np.float64)[..., :channels]) ** 2
     )
     return float("inf") if error == 0 else float(10 * np.log10(255.0 * 255.0 / error))
 
 
-def problems(data):
+def problems(data: bytes) -> list[str]:
     """Rule failures of a package texture (docs/PACKAGE-FORMAT.md section 7), as text; empty when it is valid."""
     try:
         fmt, width, height, mips, _ = read_header(data)
@@ -477,12 +479,12 @@ def problems(data):
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
-def split_glb(data):
+def split_glb(data: bytes) -> tuple[dict, bytes]:
     """(glTF JSON, binary chunk) of GLB bytes."""
     return glb.split_glb(data, TextureError)
 
 
-def join_glb(gltf, binary):
+def join_glb(gltf: dict, binary: bytes) -> bytes:
     return glb.join_glb(gltf, binary, allow_nan=False)
 
 
@@ -513,7 +515,7 @@ def replace_images(gltf, binary, payloads):
     return bytes(out)
 
 
-def linear_images(gltf):
+def linear_images(gltf: dict) -> set[int]:
     """Indices of the images that hold data, not colour: the sources of glTF normal textures."""
     textures = gltf.get("textures", [])
     result = set()
@@ -590,7 +592,7 @@ def glb_textures(data):
 SOURCE_CHUNK = b"ghTx"
 
 
-def png_bytes(rgba, source=None):
+def png_bytes(rgba: np.ndarray, source: bytes | None = None) -> bytes:
     """PNG file of an RGBA image (H, W, 4) uint8, top row first: RGB when it is opaque, filter Sub, zlib level 1 (fast;
     the file is for editing, not for the package).
     source: GH3TEX02 bytes to keep in a SOURCE_CHUNK."""
@@ -616,7 +618,7 @@ def png_bytes(rgba, source=None):
     return PNG_SIGNATURE + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw, 1)) + kept + chunk(b"IEND", b"")
 
 
-def png_source(png):
+def png_source(png: bytes) -> bytes | None:
     """The GH3TEX02 bytes of the SOURCE_CHUNK of a PNG file, or None."""
     cursor = len(PNG_SIGNATURE)
     if not png.startswith(PNG_SIGNATURE):
@@ -632,7 +634,7 @@ def png_source(png):
     return None
 
 
-def unchanged_source(png, linear=False):
+def unchanged_source(png: bytes, linear: bool = False) -> bytes | None:
     """The GH3TEX02 file of the SOURCE_CHUNK when the PNG is still the file that png_bytes made from it (no decode of
     the PNG needed), else None."""
     source = png_source(png)
@@ -646,7 +648,7 @@ def unchanged_source(png, linear=False):
     return None
 
 
-def encode_png_image(png, rgba, linear=False):
+def encode_png_image(png: bytes, rgba: np.ndarray, linear: bool = False) -> bytes:
     """GH3TEX02 bytes of a PNG image with its decoded pixels (top row first): the texture of its SOURCE_CHUNK when the
     pixels and the linear flag are still the same, else a new encoding."""
     source = png_source(png)
@@ -659,7 +661,7 @@ def encode_png_image(png, rgba, linear=False):
     return encode(rgba, linear)
 
 
-def png_rgba(png):
+def png_rgba(png: bytes) -> np.ndarray:
     """RGBA (H, W, 4) uint8 of a PNG file, top row first. Needs Pillow (the Blender add-on decodes with Blender)."""
     from io import BytesIO
 
