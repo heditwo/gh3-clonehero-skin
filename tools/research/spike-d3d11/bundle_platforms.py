@@ -1,3 +1,5 @@
+"""Print the shader compiler platforms of the shaders in Unity asset bundles."""
+
 import sys
 
 import UnityPy

@@ -1,3 +1,5 @@
+"""Compare the interop types that the mod uses between the Linux and the Windows assemblies."""
+
 import sys
 
 import dnfile

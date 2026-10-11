@@ -1,3 +1,5 @@
+"""Compile HLSL to DXBC with d3dcompiler_47.dll (run under Wine) and time it."""
+
 import ctypes
 import re
 import sys

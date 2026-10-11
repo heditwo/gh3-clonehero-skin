@@ -1,3 +1,5 @@
+"""Print the shader compiler platforms and GPU program types of the shaders in one Unity serialized file."""
+
 import struct
 import sys
 

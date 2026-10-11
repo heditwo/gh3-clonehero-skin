@@ -1,3 +1,5 @@
+"""Compare the metadata string tables of two global-metadata.dat files."""
+
 import struct
 import sys
 

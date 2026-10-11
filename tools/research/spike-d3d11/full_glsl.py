@@ -1,3 +1,5 @@
+"""Write the GLSL vertex and fragment code of the stage shader for the HLSL translation probe."""
+
 from pathlib import Path
 
 import pipeline.render.shaders as s

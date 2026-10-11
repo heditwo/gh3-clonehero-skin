@@ -1,3 +1,5 @@
+"""Print all bodies and constraints of the GH3 ragdolls (hair motion check)."""
+
 import math
 import sys
 

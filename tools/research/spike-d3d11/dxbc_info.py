@@ -1,3 +1,5 @@
+"""Print the chunks and the signatures of DXBC shader programs."""
+
 import struct
 import sys
 

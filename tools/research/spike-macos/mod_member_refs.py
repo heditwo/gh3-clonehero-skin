@@ -1,3 +1,5 @@
+"""List the members of other assemblies that a mod assembly refers to."""
+
 import sys
 from collections import defaultdict
 from pathlib import Path
