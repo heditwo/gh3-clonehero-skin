@@ -15,6 +15,10 @@ FPS = 30
 POSITION, ROTATION = 1, 2
 SQRT1_2 = np.sqrt(0.5)
 OTHERS = np.array([[1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 1, 2]])
+# Positions: 16-bit steps between the lowest and the highest value of each axis; delta-coded 16-bit words.
+POSITION_STEPS = 65535
+WORD_MASK = 0xFFFF
+MIN_ROTATION_NORM = 1e-6
 
 
 def frame_count(duration):
@@ -25,18 +29,18 @@ def _delta(values):
     values = values.astype(np.int64)
     out = values.copy()
     out[1:] = values[1:] - values[:-1]
-    return (out & 0xFFFF).astype("<u2").tobytes()
+    return (out & WORD_MASK).astype("<u2").tobytes()
 
 
 def _undelta(raw, frames):
-    return np.cumsum(np.frombuffer(raw, dtype="<u2", count=frames).astype(np.int64)) & 0xFFFF
+    return np.cumsum(np.frombuffer(raw, dtype="<u2", count=frames).astype(np.int64)) & WORD_MASK
 
 
 def _positions(p):
     low, high = p.min(0), p.max(0)
     if len(p) == 1 or np.all(high == low):
         return struct.pack("<3f", *p[0]), True
-    scale = (high - low) / 65535
+    scale = (high - low) / POSITION_STEPS
     scale[scale == 0] = 1
     ints = np.round((p - low) / scale).astype(np.int64)
     return struct.pack("<6f", *low, *scale) + b"".join(_delta(ints[:, c]) for c in range(3)), False
@@ -128,7 +132,7 @@ def decode(data):
         if flags & ROTATION:
             q = np.array(struct.unpack("<4f", take(16)))
             norm = np.linalg.norm(q)
-            if not np.isfinite(norm) or norm < 1e-6:
+            if not np.isfinite(norm) or norm < MIN_ROTATION_NORM:
                 raise ValueError("Invalid q48 constant rotation")
             rotations[:, t] = q / norm
             continue
