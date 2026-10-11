@@ -32,6 +32,20 @@ MAX_SIZE = 4096
 MINIMUM_PSNR = 36.0
 # Blocks for each numpy batch (a 256 x 256 pixel area): about 10 MB of work arrays.
 BATCH = 1 << 12
+# BC1 and BC3 (Microsoft block compression reference): 4 x 4 pixel blocks; BC1 is 8 bytes (two RGB565 endpoints and
+# 2-bit indices), BC3 adds 8 bytes of alpha (two endpoints and 3-bit indices) before them.
+BLOCK_PIXELS = 16
+BC1_BLOCK_SIZE = 8
+BC3_BLOCK_SIZE = 16
+RED_BITS, GREEN_BITS, BLUE_BITS = 5, 6, 5
+# The encoder of src/Packages/BlockCompression.cs (before format 1.0): power iterations for the principal axis, least-
+# squares refinement passes, the axis of a block without colour spread (Rec. 601 luma), and the singular limit.
+AXIS_ITERATIONS = 6
+REFINE_PASSES = 2
+LUMA_AXIS = (0.299, 0.587, 0.114)
+SINGULAR = 1e-9
+# Single-colour table: the mix error wins, then the smaller endpoint distance.
+MIX_ERROR_WEIGHT = 100
 
 
 class TextureError(ValueError):
@@ -49,7 +63,7 @@ def mip_count(width, height):
 def level_size(fmt, width, height):
     if fmt == RGBA32:
         return width * height * 4
-    return max(1, (width + 3) // 4) * max(1, (height + 3) // 4) * (8 if fmt == BC1 else 16)
+    return max(1, (width + 3) // 4) * max(1, (height + 3) // 4) * (BC1_BLOCK_SIZE if fmt == BC1 else BC3_BLOCK_SIZE)
 
 
 def levels(width, height, mips):
@@ -117,32 +131,40 @@ def _single_table(bits):
     mix = (2 * a + b) // 3
     table = np.zeros((256, 2), dtype=np.int64)
     for value in range(256):
-        error = np.abs(mix - value) * 100 + np.abs(a - b)
+        error = np.abs(mix - value) * MIX_ERROR_WEIGHT + np.abs(a - b)
         index = int(np.argmin(error))
         table[value] = divmod(index, top + 1)
     return table
 
 
-_SINGLE5 = _single_table(5)
-_SINGLE6 = _single_table(6)
+_SINGLE5 = _single_table(RED_BITS)
+_SINGLE6 = _single_table(GREEN_BITS)
 
 
 def _pack(r, g, b):
-    return r << 11 | g << 5 | b
+    return r << (GREEN_BITS + BLUE_BITS) | g << BLUE_BITS | b
+
+
+def _encode565(r, g, b):
+    """RGB565 of 8-bit channels (rounded)."""
+    return _pack(_quantize(r, RED_BITS), _quantize(g, GREEN_BITS), _quantize(b, BLUE_BITS))
+
+
+def _decode565(c):
+    """8-bit (r, g, b) of RGB565 values, with the bit replication of the GPU."""
+    return _expand5(c >> 11), _expand6(c >> 5 & 63), _expand5(c & 31)
 
 
 def _palette(c0, c1):
     """(N, 4, 3) BC1 four-colour palette."""
-    r0, g0, b0 = _expand5(c0 >> 11), _expand6(c0 >> 5 & 63), _expand5(c0 & 31)
-    r1, g1, b1 = _expand5(c1 >> 11), _expand6(c1 >> 5 & 63), _expand5(c1 & 31)
-    first, second = np.stack([r0, g0, b0], -1), np.stack([r1, g1, b1], -1)
+    first, second = np.stack(_decode565(c0), -1), np.stack(_decode565(c1), -1)
     return np.stack([first, second, (2 * first + second) // 3, (first + 2 * second) // 3], 1)
 
 
 def _match(rgb, c0, c1):
     """Indices (N, 16) and the summed squared error (N) of the nearest palette colours; the first of equal ones wins."""
     palette = _palette(c0, c1).astype(np.int32)
-    errors = np.zeros((len(rgb), 16, 4), dtype=np.int32)
+    errors = np.zeros((len(rgb), BLOCK_PIXELS, 4), dtype=np.int32)
     for channel in range(3):
         difference = rgb[:, :, None, channel] - palette[:, None, :, channel]
         errors += difference * difference
@@ -159,7 +181,7 @@ def _refine(rgb, indices):
     aa, bb, ab = zeros.copy(), zeros.copy(), zeros.copy()
     a_sum, b_sum = np.zeros((len(rgb), 3)), np.zeros((len(rgb), 3))
     # Sequential sums over the 16 pixels in pixel order, so the floating-point results equal the C# encoder.
-    for i in range(16):
+    for i in range(BLOCK_PIXELS):
         w = w_all[:, i]
         v = 1 - w
         aa += w * w
@@ -168,12 +190,12 @@ def _refine(rgb, indices):
         a_sum += w[:, None] * rgb[:, i]
         b_sum += v[:, None] * rgb[:, i]
     det = aa * bb - ab * ab
-    ok = np.abs(det) >= 1e-9
+    ok = np.abs(det) >= SINGULAR
     f = 1 / np.where(ok, det, 1.0)
     first = np.clip((a_sum * bb[:, None] - b_sum * ab[:, None]) * f[:, None], 0, 255)
     second = np.clip((b_sum * aa[:, None] - a_sum * ab[:, None]) * f[:, None], 0, 255)
-    c0 = _pack(_quantize(first[:, 0], 5), _quantize(first[:, 1], 6), _quantize(first[:, 2], 5))
-    c1 = _pack(_quantize(second[:, 0], 5), _quantize(second[:, 1], 6), _quantize(second[:, 2], 5))
+    c0 = _encode565(first[:, 0], first[:, 1], first[:, 2])
+    c1 = _encode565(second[:, 0], second[:, 1], second[:, 2])
     return ok, c0, c1
 
 
@@ -191,15 +213,16 @@ def _encode_color(block):
         r, g, b = low[s, 0], low[s, 1], low[s, 2]
         a = _pack(_SINGLE5[r, 0], _SINGLE6[g, 0], _SINGLE5[b, 0])
         z = _pack(_SINGLE5[r, 1], _SINGLE6[g, 1], _SINGLE5[b, 1])
-        exact = _pack(_quantize(r, 5), _quantize(g, 6), _quantize(b, 5))
-        same = (_expand5(exact >> 11) == r) & (_expand6(exact >> 5 & 63) == g) & (_expand5(exact & 31) == b)
+        exact = _encode565(r, g, b)
+        exact_r, exact_g, exact_b = _decode565(exact)
+        same = (exact_r == r) & (exact_g == g) & (exact_b == b)
         c0[s] = np.where(same, exact, a)
         c1[s] = np.where(same, exact, z)
 
     m = np.nonzero(~single)[0]
     if len(m):
         pixels = rgb[m].astype(np.float64)
-        mean = rgb[m].sum(1) / 16
+        mean = rgb[m].sum(1) / BLOCK_PIXELS
         centered = pixels - mean[:, None, :]
         xx = np.zeros(len(m))
         xy = xx.copy()
@@ -207,7 +230,7 @@ def _encode_color(block):
         yy = xx.copy()
         yz = xx.copy()
         zz = xx.copy()
-        for i in range(16):
+        for i in range(BLOCK_PIXELS):
             r, g, b = centered[:, i, 0], centered[:, i, 1], centered[:, i, 2]
             xx += r * r
             xy += r * g
@@ -218,29 +241,29 @@ def _encode_color(block):
         span = (high[m] - low[m]).astype(np.float64)
         ax, ay, az = span[:, 0], span[:, 1], span[:, 2]
         active = np.ones(len(m), dtype=bool)
-        for _ in range(6):
+        for _ in range(AXIS_ITERATIONS):
             nx = xx * ax + xy * ay + xz * az
             ny = xy * ax + yy * ay + yz * az
             nz = xz * ax + yz * ay + zz * az
             length = np.maximum(np.abs(nx), np.maximum(np.abs(ny), np.abs(nz)))
-            active &= length >= 1e-9
+            active &= length >= SINGULAR
             safe = np.where(active, length, 1.0)
             ax = np.where(active, nx / safe, ax)
             ay = np.where(active, ny / safe, ay)
             az = np.where(active, nz / safe, az)
-        flat = np.abs(ax) + np.abs(ay) + np.abs(az) < 1e-9
-        ax = np.where(flat, 0.299, ax)
-        ay = np.where(flat, 0.587, ay)
-        az = np.where(flat, 0.114, az)
+        flat = np.abs(ax) + np.abs(ay) + np.abs(az) < SINGULAR
+        ax = np.where(flat, LUMA_AXIS[0], ax)
+        ay = np.where(flat, LUMA_AXIS[1], ay)
+        az = np.where(flat, LUMA_AXIS[2], az)
         d = rgb[m, :, 0] * ax[:, None] + rgb[m, :, 1] * ay[:, None] + rgb[m, :, 2] * az[:, None]
         rows = np.arange(len(m))
         top, bottom = rgb[m][rows, d.argmax(1)], rgb[m][rows, d.argmin(1)]
-        c0[m] = _pack(_quantize(top[:, 0], 5), _quantize(top[:, 1], 6), _quantize(top[:, 2], 5))
-        c1[m] = _pack(_quantize(bottom[:, 0], 5), _quantize(bottom[:, 1], 6), _quantize(bottom[:, 2], 5))
+        c0[m] = _encode565(top[:, 0], top[:, 1], top[:, 2])
+        c1[m] = _encode565(bottom[:, 0], bottom[:, 1], bottom[:, 2])
 
     indices, error = _match(rgb, c0, c1)
     refining = ~single
-    for _ in range(2):
+    for _ in range(REFINE_PASSES):
         refining &= error > 0
         r = np.nonzero(refining)[0]
         if not len(r):
@@ -257,8 +280,8 @@ def _encode_color(block):
     c0, c1 = np.where(swap, c1, c0), np.where(swap, c0, c1)
     indices = np.where(swap[:, None], np.array([1, 0, 3, 2])[indices], indices)
     indices = np.where((c0 == c1)[:, None], 0, indices)
-    bits = (indices.astype(np.uint64) << (2 * np.arange(16, dtype=np.uint64))).sum(1, dtype=np.uint64)
-    out = np.zeros((n, 8), dtype=np.uint8)
+    bits = (indices.astype(np.uint64) << (2 * np.arange(BLOCK_PIXELS, dtype=np.uint64))).sum(1, dtype=np.uint64)
+    out = np.zeros((n, BC1_BLOCK_SIZE), dtype=np.uint8)
     out[:, 0], out[:, 1], out[:, 2], out[:, 3] = c0 & 255, c0 >> 8, c1 & 255, c1 >> 8
     for k in range(4):
         out[:, 4 + k] = (bits >> np.uint64(8 * k)) & np.uint64(255)
@@ -279,7 +302,7 @@ def _encode_alpha(block):
     flat = high == low
     choice[flat] = 0
     best[flat] = 0
-    bits = (choice.astype(np.uint64) << (3 * np.arange(16, dtype=np.uint64))).sum(1, dtype=np.uint64)
+    bits = (choice.astype(np.uint64) << (3 * np.arange(BLOCK_PIXELS, dtype=np.uint64))).sum(1, dtype=np.uint64)
     out = np.zeros((len(block), 8), dtype=np.uint8)
     out[:, 0], out[:, 1] = high, low
     for k in range(6):
@@ -294,7 +317,7 @@ def _blocks(level):
     ys = np.minimum(np.arange(by * 4), height - 1)
     xs = np.minimum(np.arange(bx * 4), width - 1)
     padded = level[ys][:, xs]
-    return padded.reshape(by, 4, bx, 4, 4).transpose(0, 2, 1, 3, 4).reshape(-1, 16, 4).astype(np.int32)
+    return padded.reshape(by, 4, bx, 4, 4).transpose(0, 2, 1, 3, 4).reshape(-1, BLOCK_PIXELS, 4).astype(np.int32)
 
 
 def _encode_batch(block, alpha):
@@ -361,15 +384,15 @@ def decode_level(fmt, data, width, height):
     if fmt == RGBA32:
         return np.frombuffer(data, dtype=np.uint8).reshape(height, width, 4).copy()
     bx, by = max(1, (width + 3) // 4), max(1, (height + 3) // 4)
-    size = 8 if fmt == BC1 else 16
+    size = BC1_BLOCK_SIZE if fmt == BC1 else BC3_BLOCK_SIZE
     raw = np.frombuffer(data, dtype=np.uint8).reshape(-1, size)
-    color = raw[:, size - 8 :]
+    color = raw[:, size - BC1_BLOCK_SIZE :]
     words = color[:, :4].copy().view("<u2").astype(np.int32)
     c0, c1 = words[:, 0], words[:, 1]
     palette = np.empty((len(raw), 4, 4), dtype=np.int32)
     palette[:, :, 3] = 255
-    first = np.stack([_expand5(c0 >> 11), _expand6(c0 >> 5 & 63), _expand5(c0 & 31)], -1)
-    second = np.stack([_expand5(c1 >> 11), _expand6(c1 >> 5 & 63), _expand5(c1 & 31)], -1)
+    first = np.stack(_decode565(c0), -1)
+    second = np.stack(_decode565(c1), -1)
     palette[:, 0, :3], palette[:, 1, :3] = first, second
     palette[:, 2, :3], palette[:, 3, :3] = (2 * first + second) // 3, (first + 2 * second) // 3
     if fmt == BC1:
@@ -377,16 +400,16 @@ def decode_level(fmt, data, width, height):
         palette[three, 2, :3] = (first[three] + second[three]) // 2
         palette[three, 3] = 0
     bits = color[:, 4:].copy().view("<u4")[:, 0]
-    indices = (bits[:, None] >> (2 * np.arange(16, dtype=np.uint32))) & 3
+    indices = (bits[:, None] >> (2 * np.arange(BLOCK_PIXELS, dtype=np.uint32))) & 3
     pixels = palette[np.arange(len(raw))[:, None], indices]
     if fmt == BC3:
         a0, a1 = raw[:, 0].astype(np.int32), raw[:, 1].astype(np.int32)
         alpha_bits = np.zeros(len(raw), dtype=np.uint64)
         for k in range(6):
             alpha_bits |= raw[:, 2 + k].astype(np.uint64) << np.uint64(8 * k)
-        codes = ((alpha_bits[:, None] >> (np.uint64(3) * np.arange(16, dtype=np.uint64))) & np.uint64(7)).astype(
-            np.int64
-        )
+        codes = (
+            (alpha_bits[:, None] >> (np.uint64(3) * np.arange(BLOCK_PIXELS, dtype=np.uint64))) & np.uint64(7)
+        ).astype(np.int64)
         i = np.arange(8)[None, :]
         eight = np.where(
             i == 0, a0[:, None], np.where(i == 1, a1[:, None], ((8 - i) * a0[:, None] + (i - 1) * a1[:, None] + 3) // 7)
@@ -439,10 +462,10 @@ def problems(data):
         return [str(error)]
     if fmt == BC1:
         # BC1 blocks with color0 <= color1 have a transparent index; alpha needs BC3.
-        blocks = np.frombuffer(data, dtype=np.uint8, offset=HEADER_SIZE).reshape(-1, 8).astype(np.int64)
+        blocks = np.frombuffer(data, dtype=np.uint8, offset=HEADER_SIZE).reshape(-1, BC1_BLOCK_SIZE).astype(np.int64)
         c0, c1 = blocks[:, 0] | blocks[:, 1] << 8, blocks[:, 2] | blocks[:, 3] << 8
         bits = blocks[:, 4] | blocks[:, 5] << 8 | blocks[:, 6] << 16 | blocks[:, 7] << 24
-        three = (c0 <= c1) & ((bits[:, None] >> (2 * np.arange(16)) & 3) == 3).any(1)
+        three = (c0 <= c1) & ((bits[:, None] >> (2 * np.arange(BLOCK_PIXELS)) & 3) == 3).any(1)
         if three.any():
             return [
                 f"BC1 texture has {int(three.sum())} blocks with transparent pixels; textures with alpha must use BC3"
