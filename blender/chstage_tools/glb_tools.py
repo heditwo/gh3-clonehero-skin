@@ -1,45 +1,21 @@
-"""Small GLB and PNG edits for package export and open. No bpy and no other module of the add-on, so the tests load it alone."""
+"""Small GLB and PNG edits for package export and open (no bpy, so the tests run them without Blender)."""
 
-import json
 import struct
 import zlib
 
-GLB_MAGIC = 0x46546C67
-JSON_CHUNK = 0x4E4F534A
-BIN_CHUNK = 0x004E4942
-PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+from .vendor.package_format.glb import join_glb, split_glb
+from .vendor.package_format.texture import PNG_SIGNATURE
+
 # PNG chunks that Blender writes with the render time and date. They make the preview image different for each export.
 PNG_VOLATILE = {b"tEXt", b"zTXt", b"iTXt", b"tIME"}
 
 
 def read_glb(data):
     """(glTF JSON, binary chunk) of GLB bytes."""
-    magic, version, length = struct.unpack_from("<3I", data)
-    if magic != GLB_MAGIC or version != 2 or length != len(data):
-        raise ValueError("not a glTF 2.0 GLB")
-    size, kind = struct.unpack_from("<2I", data, 12)
-    if kind != JSON_CHUNK:
-        raise ValueError("the first GLB chunk is not JSON")
-    gltf = json.loads(bytes(data[20 : 20 + size]).decode("utf-8"))
-    binary = b""
-    cursor = 20 + size
-    if cursor < len(data):
-        size, kind = struct.unpack_from("<2I", data, cursor)
-        if kind != BIN_CHUNK:
-            raise ValueError("the second GLB chunk is not binary")
-        binary = bytes(data[cursor + 8 : cursor + 8 + size])
-    return gltf, binary
+    return split_glb(data, ValueError)
 
 
-def write_glb(gltf, binary):
-    """GLB bytes. The JSON chunk is padded with spaces and the binary chunk with zeros (glTF 2.0, section 4.4)."""
-    text = json.dumps(gltf, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    text += b" " * (-len(text) % 4)
-    chunks = struct.pack("<2I", len(text), JSON_CHUNK) + text
-    if binary:
-        binary = bytes(binary) + b"\0" * (-len(binary) % 4)
-        chunks += struct.pack("<2I", len(binary), BIN_CHUNK) + binary
-    return struct.pack("<3I", GLB_MAGIC, 2, 12 + len(chunks)) + chunks
+write_glb = join_glb
 
 
 def fill_texcoord_gaps(data):

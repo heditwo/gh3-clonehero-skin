@@ -9,8 +9,9 @@ import json
 from collections import Counter
 from pathlib import Path
 
+from pipeline.package.profiles import LIBRARY_ID
 from pipeline.package.schema import Schemas
-from pipeline.package.validate import LIBRARY_ID, Validator
+from pipeline.package.validate import Validator
 
 PLACEMENT_FIELDS = ("band", "waypoints", "effects", "crowd")
 MANIFEST_FIELDS = {

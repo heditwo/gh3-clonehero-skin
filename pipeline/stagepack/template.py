@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
+from pipeline.package.profiles import LIBRARY_ID
 from pipeline.paths import STAGE_PACKS
 from pipeline.stagepack.gltf import VERTEX, GlbWriter
 from pipeline.stagepack.pack import basic_lighting, write_json
@@ -100,7 +101,7 @@ def create(output):
             "kind": "stage",
             "id": "example.studio",
             "name": "Custom Studio",
-            "library": "gh3-band-v1",
+            "library": LIBRARY_ID,
             "model": "stage.glb",
             "band": band,
             "waypoints": {"guitarist_walk01": pose([4, 0, 0])},

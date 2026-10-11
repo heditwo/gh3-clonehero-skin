@@ -22,7 +22,7 @@ from pathlib import Path
 import numpy as np
 
 from .glb import Glb, decompose
-from .validate import Report, Source
+from .source import Report, Source
 
 # Tolerances: node transforms from docs/PACKAGING-PLAN.md section 9.6; vertex data from the float32 and 8-bit storage.
 # NORMAL (degrees): Blender stores custom normals in its own encoding (measured up to 0.8 degrees on the GH3 venues).

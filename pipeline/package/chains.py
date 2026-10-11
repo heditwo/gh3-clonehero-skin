@@ -14,7 +14,7 @@ import numpy as np
 
 from .character import Rig
 from .glb import Glb
-from .validate import bone_key
+from .profiles import bone_key
 
 NAME = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 # glTF (Y up) to Blender (Z up).

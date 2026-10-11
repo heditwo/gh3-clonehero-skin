@@ -15,6 +15,7 @@ from pipeline.library import (
     scripts,
     tesla,
 )
+from pipeline.package.profiles import LIBRARY_ID
 from pipeline.paths import GH3_DATA, LIBRARY
 from pipeline.stagepack.pack import load_json, write_json
 
@@ -24,7 +25,7 @@ def manifest(output):
         output / "library.json",
         {
             "version": 1,
-            "id": "gh3-band-v1",
+            "id": LIBRARY_ID,
             "files": {
                 str(p.relative_to(output)): sha256(p.read_bytes()).hexdigest()
                 for p in sorted(output.rglob("*"))
@@ -63,7 +64,7 @@ def prepare(data, output):
         output / "catalog.json",
         {
             "version": 1,
-            "library": "gh3-band-v1",
+            "library": LIBRARY_ID,
             "members": {
                 role: {
                     "bones": member["bones"],

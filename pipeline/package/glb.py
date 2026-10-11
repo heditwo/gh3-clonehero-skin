@@ -17,6 +17,35 @@ class GlbError(ValueError):
     pass
 
 
+def split_glb(data, error=GlbError):
+    """(glTF JSON, binary chunk) of GLB bytes; raises `error` when the data is not a glTF 2.0 GLB."""
+    magic, version, length = struct.unpack_from("<3I", data)
+    if magic != GLB_MAGIC or version != 2 or length != len(data):
+        raise error("not a glTF 2.0 GLB")
+    size, kind = struct.unpack_from("<2I", data, 12)
+    if kind != JSON_CHUNK:
+        raise error("the first GLB chunk is not JSON")
+    gltf = json.loads(bytes(data[20 : 20 + size]).decode("utf-8"))
+    binary, cursor = b"", 20 + size
+    if cursor < len(data):
+        size, kind = struct.unpack_from("<2I", data, cursor)
+        if kind != BIN_CHUNK:
+            raise error("the second GLB chunk is not binary")
+        binary = bytes(data[cursor + 8 : cursor + 8 + size])
+    return gltf, binary
+
+
+def join_glb(gltf, binary, allow_nan=True):
+    """GLB bytes. The JSON chunk is padded with spaces and the binary chunk with zeros (glTF 2.0, section 4.4)."""
+    text = json.dumps(gltf, ensure_ascii=False, separators=(",", ":"), allow_nan=allow_nan).encode("utf-8")
+    text += b" " * (-len(text) % 4)
+    chunks = struct.pack("<2I", len(text), JSON_CHUNK) + text
+    if binary:
+        binary = bytes(binary) + b"\0" * (-len(binary) % 4)
+        chunks += struct.pack("<2I", len(binary), BIN_CHUNK) + binary
+    return struct.pack("<3I", GLB_MAGIC, 2, 12 + len(chunks)) + chunks
+
+
 class Glb:
     def __init__(self, data):
         if len(data) < 20:

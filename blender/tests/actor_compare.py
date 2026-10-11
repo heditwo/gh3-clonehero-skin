@@ -20,7 +20,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from pipeline.package import compare, roundtrip  # noqa: E402
-from pipeline.package.validate import Report, Source  # noqa: E402
+from pipeline.package.source import Report, Source  # noqa: E402
 
 
 def accessor(glb, index):

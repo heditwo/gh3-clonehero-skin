@@ -43,9 +43,9 @@ from pipeline.gh3.formats import find_array, find_struct, key
 from pipeline.gh3.havok import Ragdoll
 from pipeline.library import hair as hair_export
 from pipeline.library.direction import flatten, hand_layers, write_clip
+from pipeline.package.profiles import CHARACTER_LIBRARY_ID
 from pipeline.paths import CHARACTER_LIBRARY, GH3_DATA
 
-LIBRARY_ID = "gh3-characters-v1"
 CLIP_RIG = "GH3_Guitarist_Axel"
 # create_guitarist skips ragdoll_setaccessorybones for this character on the PC port (IsWinPort).
 NO_ACCESSORY_PHYSICS = {"Ripper"}
@@ -147,7 +147,7 @@ def build(data_directory, output):
     (output / "clips").mkdir(parents=True)
     library = {
         "version": 1,
-        "library": LIBRARY_ID,
+        "library": CHARACTER_LIBRARY_ID,
         "clipRig": {"profile": CLIP_RIG_PROFILE, **unity_rig(clip_rig)},
         "profiles": {},
         "animations": {},

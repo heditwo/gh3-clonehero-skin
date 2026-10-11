@@ -19,7 +19,8 @@ from pathlib import Path
 from . import container, decisions, texture
 from .character import Rig, keep_primitives, primitive_kinds
 from .glb import Glb
-from .validate import LIBRARY_ID, validate
+from .profiles import LIBRARY_ID
+from .validate import validate
 
 FORMAT = "chinst/1.0"
 MODEL_FILE = "instrument.glb"

@@ -14,6 +14,7 @@ import zlib
 import numpy as np
 
 FORMAT = "chstage/1.0"
+# The same as package_format.profiles.LIBRARY_ID (tests/test_blender_addon.py checks it): the tests load this module alone.
 LIBRARY_ID = "gh3-band-v1"
 ROLES = ("guitarist", "bassist", "singer", "drummer")
 EFFECTS = ("pyro", "sparks", "fireworks", "smoke")

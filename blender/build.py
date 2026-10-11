@@ -21,16 +21,22 @@ VALIDATOR_FILES = (
     "__init__.py",
     "chains.py",
     "character.py",
+    "checks.py",
     "container.py",
     "decisions.py",
     "glb.py",
     "humanoid.py",
+    "profiles.py",
     "q48.py",
     "retarget_check.py",
     "schema.py",
     "skeleton.py",
+    "source.py",
     "texture.py",
     "validate.py",
+    "validate_character.py",
+    "validate_library.py",
+    "validate_stage.py",
 )
 DATE = (2026, 1, 1, 0, 0, 0)
 

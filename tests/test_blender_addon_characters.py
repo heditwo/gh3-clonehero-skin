@@ -6,9 +6,7 @@ import importlib
 import importlib.util
 import json
 import random
-import sys
 import tempfile
-import types
 import unittest
 import zipfile
 from pathlib import Path
@@ -16,23 +14,16 @@ from pathlib import Path
 import numpy as np
 
 from pipeline.package import character, compare, q48
-from pipeline.package.glb import Glb
-from pipeline.package.validate import Validator, gh3_key
+from pipeline.package.glb import Glb, join_glb
+from pipeline.package.profiles import gh3_key
+from pipeline.package.validate import Validator
+from tests.addon import addon_module
 
 ROOT = Path(__file__).resolve().parents[1]
 ADDON = ROOT / "blender" / "chstage_tools"
 LIBRARY = ROOT / "assets" / "packages" / "gh3-band-v1.chlib"
 ROLES = ("guitarist", "bassist", "singer", "drummer")
 ATTACHMENT_PARTS = {"guitarist": [11, 12, 13], "bassist": [1, 2], "singer": [4, 5], "drummer": [1]}
-
-
-def addon_module(name):
-    package = "chstage_tools_nobpy"
-    if package not in sys.modules:
-        module = types.ModuleType(package)
-        module.__path__ = [str(ADDON)]
-        sys.modules[package] = module
-    return importlib.import_module(f"{package}.{name}")
 
 
 brotli_decode = addon_module("brotli_decode")
@@ -295,7 +286,7 @@ class CharacterCompareTests(unittest.TestCase):
                         remap[joints].astype("<u2"), {**gltf["accessors"][index], "componentType": 5123}
                     )
             gltf["buffers"][0]["byteLength"] = len(binary)
-            (folder / "character.glb").write_bytes(character.write_glb(gltf, bytes(binary)))
+            (folder / "character.glb").write_bytes(join_glb(gltf, bytes(binary)))
             manifest = json.loads((folder / "manifest.json").read_text())
             manifest["files"] = {}
             (folder / "manifest.json").write_text(json.dumps(manifest))

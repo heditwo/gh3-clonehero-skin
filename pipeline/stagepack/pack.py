@@ -16,6 +16,7 @@ from PIL import Image
 from pipeline.gh3.formats import key
 from pipeline.gh3.mesh_cutout import alpha_region, trim_mesh
 from pipeline.package import texture as package_texture
+from pipeline.package.profiles import LIBRARY_ID
 from pipeline.stagepack.actor import compile_actor
 from pipeline.stagepack.gltf import SHADING, STATIC_VERTEX, GlbReader, matrix_quaternion
 
@@ -615,7 +616,7 @@ def compile_stage(source, destination):
         type(manifest["version"]) is not int
         or manifest["version"] != 1
         or manifest["kind"] != "stage"
-        or manifest["library"] != "gh3-band-v1"
+        or manifest["library"] != LIBRARY_ID
         or not isinstance(manifest["id"], str)
         or not re.fullmatch(r"[a-z0-9][a-z0-9.-]{0,95}", manifest["id"])
     ):

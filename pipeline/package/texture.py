@@ -11,12 +11,13 @@ min/max alpha with 8 levels. All blocks of a level are encoded together with num
 Relative imports only: the Blender add-on bundles this module (blender/build.py). numpy is the only dependency.
 """
 
-import json
 import math
 import struct
 import zlib
 
 import numpy as np
+
+from . import glb
 
 MAGIC = b"GH3TEX02"
 HEADER = struct.Struct("<8s5i")
@@ -450,36 +451,16 @@ def problems(data):
 
 
 # GLB images (docs/PACKAGE-FORMAT.md section 6.2, GH3_texture_bc).
-GLB_MAGIC, JSON_CHUNK, BIN_CHUNK = 0x46546C67, 0x4E4F534A, 0x004E4942
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
 def split_glb(data):
     """(glTF JSON, binary chunk) of GLB bytes."""
-    magic, version, length = struct.unpack_from("<3I", data)
-    if magic != GLB_MAGIC or version != 2 or length != len(data):
-        raise TextureError("not a glTF 2.0 GLB")
-    size, kind = struct.unpack_from("<2I", data, 12)
-    if kind != JSON_CHUNK:
-        raise TextureError("the first GLB chunk is not JSON")
-    gltf = json.loads(bytes(data[20 : 20 + size]).decode("utf-8"))
-    binary, cursor = b"", 20 + size
-    if cursor < len(data):
-        size, kind = struct.unpack_from("<2I", data, cursor)
-        if kind != BIN_CHUNK:
-            raise TextureError("the second GLB chunk is not binary")
-        binary = bytes(data[cursor + 8 : cursor + 8 + size])
-    return gltf, binary
+    return glb.split_glb(data, TextureError)
 
 
 def join_glb(gltf, binary):
-    text = json.dumps(gltf, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
-    text += b" " * (-len(text) % 4)
-    chunks = struct.pack("<2I", len(text), JSON_CHUNK) + text
-    if binary:
-        binary = bytes(binary) + b"\0" * (-len(binary) % 4)
-        chunks += struct.pack("<2I", len(binary), BIN_CHUNK) + binary
-    return struct.pack("<3I", GLB_MAGIC, 2, 12 + len(chunks)) + chunks
+    return glb.join_glb(gltf, binary, allow_nan=False)
 
 
 def _view_bytes(gltf, binary, index):

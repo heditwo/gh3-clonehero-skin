@@ -1,30 +1,19 @@
 """Tests of the venue tools of the Blender add-on that run without Blender: actors.json, actor GLB edits, rig anchors,
 the script bank index and edits, and the lighting preview values. blender/test.sh tests the Blender parts."""
 
-import importlib
 import json
 import math
-import sys
-import types
 import unittest
 from pathlib import Path
 
 import numpy as np
 
+from tests.addon import addon_module
+
 ROOT = Path(__file__).resolve().parents[1]
 ADDON = ROOT / "blender" / "chstage_tools"
 PACKAGES = ROOT / "assets" / "packages"
 UNPACKED = PACKAGES / "unpacked"
-
-
-def addon_module(name):
-    """A module of the add-on package without its __init__ (which needs bpy)."""
-    package = "chstage_tools_nobpy"
-    if package not in sys.modules:
-        module = types.ModuleType(package)
-        module.__path__ = [str(ADDON)]
-        sys.modules[package] = module
-    return importlib.import_module(f"{package}.{name}")
 
 
 sidecars = addon_module("sidecars")

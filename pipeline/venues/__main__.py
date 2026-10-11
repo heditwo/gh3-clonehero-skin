@@ -29,6 +29,7 @@ from pipeline.gh3.formats import (
 )
 from pipeline.gh3.script_bank import definitions, dependencies, references
 from pipeline.gh3.venue_scripts import literal_positions, script_bytes
+from pipeline.package.profiles import LIBRARY_ID
 from pipeline.paths import GH3_DATA, STAGE_PACKS, STAGES
 from pipeline.stagepack.gltf import GlbWriter, matrix_quaternion, quaternion_matrix
 from pipeline.stagepack.install import install
@@ -693,7 +694,7 @@ def export(source, scripts, global_entries, zone, directory, global_references=N
         "kind": "stage",
         "id": "gh3." + zone[2:],
         "name": VENUES[zone],
-        "library": "gh3-band-v1",
+        "library": LIBRARY_ID,
         "model": "stage.glb",
         "band": band,
         "waypoints": waypoints,

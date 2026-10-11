@@ -14,7 +14,7 @@ import unicodedata
 
 import numpy as np
 
-from .validate import gh3_key
+from .profiles import gh3_key
 
 FACE_SLOTS = ("blink", "a", "i", "u", "e", "o")
 MAX_FOLLOWERS = 128

@@ -13,6 +13,7 @@ import numpy as np
 
 from pipeline.package.validate import Validator
 from pipeline.stagepack import template
+from tests.addon import addon_module
 
 ROOT = Path(__file__).resolve().parents[1]
 ADDON = ROOT / "blender" / "chstage_tools"
@@ -26,9 +27,9 @@ def load(path, name):
     return module
 
 
-sidecars = load(ADDON / "sidecars.py", "chstage_sidecars")
-gltf_io = load(ADDON / "gltf_io.py", "chstage_gltf_io")
-glb_tools = load(ADDON / "glb_tools.py", "chstage_glb_tools")
+sidecars = addon_module("sidecars")
+gltf_io = addon_module("gltf_io")
+glb_tools = addon_module("glb_tools")
 PACKAGES = ROOT / "assets" / "packages"
 build = load(ROOT / "blender" / "build.py", "chstage_build")
 
@@ -92,6 +93,11 @@ def camera(name, location, groups, anchor="world", look_at=None, fov=70.0, degre
 
 
 class CoordinateTests(unittest.TestCase):
+    def test_sidecars_use_the_band_library_id_of_the_package_format(self):
+        from pipeline.package.profiles import LIBRARY_ID
+
+        self.assertEqual(sidecars.LIBRARY_ID, LIBRARY_ID)
+
     def test_blender_vectors_become_runtime_vectors(self):
         frame = sidecars.transform(blender_matrix([1, 2, 3]))
         self.assertEqual(frame, {"position": [1.0, 3.0, 2.0], "rotation": [0.0, 0.0, 0.0, 1.0]})

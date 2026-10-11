@@ -410,7 +410,7 @@ class LibraryBuildTests(unittest.TestCase):
                 3,
             )
             # The validator reads the profile rig from the package for the character check.
-            from pipeline.package.validate import load_profile
+            from pipeline.package.profiles import load_profile
 
             names, parents, _, rotations = load_profile(archive, "singer")
             self.assertEqual((names, parents), (["0000000a", "0000000b"], [-1, 0]))
@@ -423,7 +423,7 @@ class LibraryBuildTests(unittest.TestCase):
         except ImportError:
             self.skipTest("jsonschema is not installed")
         from pipeline.package.schema import SCHEMA_DIR, Schemas
-        from pipeline.package.validate import EFFECT_SCHEMAS, LIBRARY_SCHEMAS
+        from pipeline.package.validate_library import EFFECT_SCHEMAS, LIBRARY_SCHEMAS
 
         documents = [json.loads(p.read_text()) for p in SCHEMA_DIR.glob("*.schema.json")]
         registry = referencing.Registry().with_resources(

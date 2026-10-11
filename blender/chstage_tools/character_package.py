@@ -30,7 +30,8 @@ from . import (
     toon,
 )
 from .vendor.package_format import character, container
-from .vendor.package_format.validate import Report, Source, Validator
+from .vendor.package_format.source import Report, Source
+from .vendor.package_format.validate import Validator
 
 WEIGHT_SUM = 1e-3
 IDENTITY = 1e-4

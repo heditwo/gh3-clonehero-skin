@@ -25,7 +25,7 @@ from mathutils import Matrix, Vector
 
 from . import character_tools
 from .vendor.package_format import chains as chain_format
-from .vendor.package_format.validate import bone_key
+from .vendor.package_format.profiles import bone_key
 
 CATEGORY = "CH Character"
 COLLIDER_SEGMENTS = 12

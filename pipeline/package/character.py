@@ -13,15 +13,15 @@ Usage: python -m pipeline.package.character --library assets/packages/gh3-band-v
 
 import argparse
 import json
-import struct
 import sys
 from pathlib import Path
 
 import numpy as np
 
 from . import container, decisions
-from .glb import Glb
-from .validate import LIBRARY_ID, PROFILES, Report, Source, gh3_key
+from .glb import Glb, join_glb
+from .profiles import LIBRARY_ID, PROFILES, gh3_key
+from .source import Report, Source
 
 FORMAT = "chchar/1.0"
 MODEL_FILE = "character.glb"
@@ -74,7 +74,6 @@ BONE_NAMES = (
     "bone_mic",
 )
 BONE_LABELS = {f"{gh3_key(name):08x}": name for name in BONE_NAMES}
-GLB_MAGIC, JSON_CHUNK, BIN_CHUNK = 0x46546C67, 0x4E4F534A, 0x004E4942
 
 
 def bone_label(joint):
@@ -88,16 +87,6 @@ def joint_name(checksum):
 
 
 # GLB edits.
-def write_glb(gltf, binary):
-    text = json.dumps(gltf, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    text += b" " * (-len(text) % 4)
-    chunks = struct.pack("<2I", len(text), JSON_CHUNK) + text
-    if binary:
-        binary = bytes(binary) + b"\0" * (-len(binary) % 4)
-        chunks += struct.pack("<2I", len(binary), BIN_CHUNK) + binary
-    return struct.pack("<3I", GLB_MAGIC, 2, 12 + len(chunks)) + chunks
-
-
 def texture_reference_names(material):
     """Image names of the '#<name>' texture references of a material (PACKAGE-FORMAT 6.6)."""
     extras = material.get("extras", {}) if isinstance(material.get("extras"), dict) else {}
@@ -390,7 +379,7 @@ def keep_primitives(data, keep, animations=False):
     if not animations:
         gltf.pop("animations", None)
     gltf, binary = compact(gltf, glb.binary)
-    return write_glb(gltf, binary)
+    return join_glb(gltf, binary)
 
 
 class Library:

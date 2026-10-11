@@ -27,6 +27,7 @@ from PIL import Image
 from pipeline.package import decisions, q48, runtime, texture
 from pipeline.package.container import file_list, json_bytes, write_zip
 from pipeline.package.glb import Glb
+from pipeline.package.profiles import CHARACTER_LIBRARY_ID, LIBRARY_ID
 from pipeline.paths import CHARACTER_LIBRARY, CHARACTERS, INSTRUMENTS, LIBRARY, PACKAGES, STAGE_PACKS, STAGES
 from pipeline.stagepack.gltf import GlbWriter
 
@@ -281,7 +282,7 @@ def encode_clip(job):
 def library_manifest(entry):
     return {
         "format": "chlib/1.0",
-        "id": "gh3-band-v1",
+        "id": LIBRARY_ID,
         "version": decisions.LIBRARY_VERSION,
         "name": "GH3 band library",
         "description": "The GH3 band, crowd, animation clips, stage sounds, Video Shoot movies, particle textures, and original song direction.",
@@ -298,7 +299,7 @@ def build_library(library, events, output, jobs=2, textures=None):
         raise ValueError("Only WAV audio and PNG movie frames are implemented")
     library = Path(library)
     textures = textures or TextureEncoder(Path(output) / ".texture-cache", jobs)
-    name = "gh3-band-v1" + decisions.LIBRARY_EXTENSION
+    name = LIBRARY_ID + decisions.LIBRARY_EXTENSION
     writer = PackageWriter(output / "unpacked" / ("." + name + ".tmp"))
     for path in (
         "catalog.json",
@@ -396,7 +397,6 @@ def build_library(library, events, output, jobs=2, textures=None):
 
 
 # GH3 character library (pipeline.character_library).
-CHARACTER_LIBRARY_ID = "gh3-characters-v1"
 
 
 def character_library_manifest():
@@ -410,7 +410,7 @@ def character_library_manifest():
         "license": decisions.GH3_LICENSE,
         "permissions": decisions.GH3_PERMISSIONS,
         "credits": [decisions.CONVERTER_CREDIT],
-        "requires": [{"id": "gh3-band-v1", "version": decisions.LIBRARY_VERSION}],
+        "requires": [{"id": LIBRARY_ID, "version": decisions.LIBRARY_VERSION}],
         "entry": {"characters": "characters.json"},
     }
 
@@ -448,7 +448,7 @@ def profile_rig(profile, library, character_library):
         role = LIBRARY_PROFILES[profile]
         parents, bind, _ = runtime.read_animation((library / "band" / role / "animation.bin").read_bytes())
         return (
-            "gh3-band-v1",
+            LIBRARY_ID,
             json.loads((library / "direction/performance.json").read_text())["members"][role]["bones"],
             (parents, bind),
         )
@@ -505,8 +505,8 @@ def build_character(
     description = f"{info['name']}, as GH3 offers it ({info['unlock']})." + (
         f" Instrument: {info['instrumentName']}." if info["instrumentInModel"] else ""
     )
-    requires = [{"id": "gh3-band-v1", "version": decisions.LIBRARY_VERSION}]
-    if library_id != "gh3-band-v1":
+    requires = [{"id": LIBRARY_ID, "version": decisions.LIBRARY_VERSION}]
+    if library_id != LIBRARY_ID:
         requires.append({"id": library_id, "version": decisions.LIBRARY_VERSION})
     manifest = {
         "format": "chchar/1.0",
@@ -555,7 +555,7 @@ def build_instrument(folder, library, output, textures=None):
     name = info["id"] + ".chinst"
     writer = PackageWriter(output / "unpacked" / ("." + name + ".tmp"))
     writer.add_bytes("instrument.glb", textures.glb(instrument_glb(folder, library, info["profile"])))
-    instrument = {"version": 1, "library": "gh3-band-v1", "profile": info["profile"], "kind": info["kind"]}
+    instrument = {"version": 1, "library": LIBRARY_ID, "profile": info["profile"], "kind": info["kind"]}
     for field in ("brand", "model", "series", "finish"):
         if info[field]:
             instrument[field] = info[field]
@@ -572,7 +572,7 @@ def build_instrument(folder, library, output, textures=None):
         "license": decisions.GH3_LICENSE,
         "permissions": decisions.GH3_PERMISSIONS,
         "credits": [decisions.CONVERTER_CREDIT, f"GH3 instrument {info['descName']} ({info['pak']})."],
-        "requires": [{"id": "gh3-band-v1", "version": decisions.LIBRARY_VERSION}],
+        "requires": [{"id": LIBRARY_ID, "version": decisions.LIBRARY_VERSION}],
         "entry": {"model": "instrument.glb", "instrument": "instrument.json"},
     }
     writer.finish(manifest)
