@@ -325,7 +325,8 @@ internal sealed partial class StageBand : IDisposable
 
     public void Update(double time)
     {
-        if (BindingTrace.Enabled && time >= _traceNext)
+        var trace = BindingTrace.Enabled && time >= _traceNext;
+        if (trace)
         {
             _traceNext = Math.Floor(time * 2 + 1) / 2;
             foreach (var player in _players.Where(p => p.Performance != null && p.Role is "guitarist" or "bassist")) Trace(player, time);
@@ -350,6 +351,7 @@ internal sealed partial class StageBand : IDisposable
             {
                 retarget.ApplySource();
                 retarget.Face?.Update(time, retarget.SourcePose);
+                if (trace) TraceFace(player.Role, retarget, time);
                 if (FrameProfile.Enabled) FrameProfile.Add("band.retarget", (System.Diagnostics.Stopwatch.GetTimestamp() - sampled) * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
             }
         }
@@ -370,6 +372,31 @@ internal sealed partial class StageBand : IDisposable
             FormattableString.Invariant($"set={player.Motion?.SetName ?? "library"} stance={segment.Stance} clip={segment.Clip} clipTime={clipTime:F4} ") +
             FormattableString.Invariant($"scale={player.Root.localScale.x:F3} bones={string.Join(";", values)} hairPeak={player.Hair?.PeakSpeed ?? 0:F2}") +
             (player.Retarget is { } retarget ? FormattableString.Invariant($" retarget handMiss={retarget.Rig.HandMiss * 100:F2}cm move={retarget.Rig.InstrumentMove.Length() * 100:F1}cm") : ""));
+    }
+
+    // GH3_SKIN_TRACE: the face of a character with its own skeleton: the blend shape weights of the face slots and the
+    // turns (degrees, rotation vector in the character frame at rest) of the head from its rest pose and of the eyes from
+    // their rest pose relative to the head.
+    private static void TraceFace(string role, StageRetarget retarget, double time)
+    {
+        var rig = retarget.Rig;
+        static string Degrees(System.Numerics.Vector3 v) => FormattableString.Invariant($"{v.X:F2},{v.Y:F2},{v.Z:F2}");
+        var head = rig.Role("head");
+        var turns = new List<string>();
+        if (head >= 0)
+        {
+            turns.Add("head=" + Degrees(rig.RestTurn(head, -1)));
+            if (rig.MappedSource(head) is var source and >= 0)
+            {
+                var rest = rig.SourceRestRotation(source);
+                turns.Add("gh3HeadRestUp=" + Degrees(System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitX, rest)) +
+                    " gh3HeadRestFront=" + Degrees(System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitY, rest)));
+            }
+            foreach (var eye in new[] { "leftEye", "rightEye" })
+                if (rig.Role(eye) is var bone and >= 0) turns.Add(eye + "=" + Degrees(rig.RestTurn(bone, head)));
+        }
+        MelonLogger.Msg(FormattableString.Invariant($"[trace] face t={time:F3} role={role} ") + string.Join(" ", turns) +
+            (retarget.Face is { } face ? " weights=" + face.Trace : ""));
     }
 
     private static BandPose SamplePose(Performer player, double time, BandPose[] pose)

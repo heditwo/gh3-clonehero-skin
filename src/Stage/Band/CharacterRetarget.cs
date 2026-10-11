@@ -57,6 +57,7 @@ internal sealed class CharacterRetarget
     private readonly Vector3[] _restPosition;
     private readonly Quaternion[] _restRotation;
     private readonly Vector3[] _sourceRestPosition;
+    private readonly Quaternion[] _sourceRestRotation;
     private readonly Vector3[] _sp;
     private readonly Quaternion[] _sq;
     private readonly Vector3[] _wp;
@@ -106,6 +107,7 @@ internal sealed class CharacterRetarget
         int Source(string checksum) => sourceIndex.TryGetValue(checksum, out var index) ? index : -1;
         var (sourceRestP, sourceRestQ) = World(sourceParents, sourceBind, _sourceOrder);
         _sourceRestPosition = sourceRestP;
+        _sourceRestRotation = sourceRestQ;
         var restOrder = Order(target.Parents, null);
         (_restPosition, _restRotation) = World(target.Parents, target.Bind, restOrder);
 
@@ -288,6 +290,22 @@ internal sealed class CharacterRetarget
     }
 
     public int MappedSource(int bone) => _map[bone];
+    public Quaternion SourceRestRotation(int sourceBone) => _sourceRestRotation[sourceBone];
+    public int Role(string role) => _target.Humanoid.TryGetValue(role, out var bone) ? bone : -1;
+
+    // The turn of a bone after the last Apply from its rest pose, relative to `reference` (-1: the performer space), as
+    // a rotation vector in degrees in the rest frame of the performer.
+    public Vector3 RestTurn(int bone, int reference)
+    {
+        var now = reference < 0 ? _wq[bone] : Quaternion.Inverse(_wq[reference]) * _wq[bone];
+        var rest = reference < 0 ? _restRotation[bone] : Quaternion.Inverse(_restRotation[reference]) * _restRotation[bone];
+        var turn = now * Quaternion.Inverse(rest);
+        if (reference >= 0) turn = _restRotation[reference] * turn * Quaternion.Inverse(_restRotation[reference]);
+        if (turn.W < 0) turn = new Quaternion(-turn.X, -turn.Y, -turn.Z, -turn.W);
+        var sin = MathF.Sqrt(turn.X * turn.X + turn.Y * turn.Y + turn.Z * turn.Z);
+        if (sin < MinimumSine) return Vector3.Zero;
+        return new Vector3(turn.X, turn.Y, turn.Z) / sin * (2 * MathF.Atan2(sin, turn.W) * 180 / MathF.PI);
+    }
     public Quaternion Correction(int bone) => _correction[bone];
     public int Count => _target.Bones.Length;
 

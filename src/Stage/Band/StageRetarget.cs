@@ -114,6 +114,10 @@ internal sealed class CharacterFace
 
     public bool LipSync => _lipSync != null;
 
+    // The applied weights of the face slots that the character has (GH3_SKIN_TRACE).
+    public string Trace => string.Join(",", CharacterSkeleton.FaceSlots.Where((slot, i) => _present[i])
+        .Select((slot, i) => FormattableString.Invariant($"{slot}:{Math.Max(0, _applied[Array.IndexOf(CharacterSkeleton.FaceSlots, slot)]):F3}")));
+
     public void Update(double time, BandPose[] gh3Pose)
     {
         Array.Clear(_weights, 0, _weights.Length);
