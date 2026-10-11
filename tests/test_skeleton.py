@@ -2,7 +2,7 @@
 map for MMD, VRoid, Mixamo, and Unreal names, the checks of the map and the rest pose, and the retarget fixture that the
 C# test (tests/RetargetLogicTests.cs) also runs, so that the Blender preview and the game agree.
 
-RETARGET_FIXTURE_WRITE=1 writes tests/fixtures/retarget-case.json again."""
+RETARGET_FIXTURE_WRITE=1 writes tests/fixtures/retarget-case.json and the other retarget fixtures again."""
 
 import json
 import os
@@ -15,11 +15,31 @@ from pipeline.package import humanoid as humanoid_finder, rotations, skeleton
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "retarget-case.json"
 FIXTURE_ANY = Path(__file__).resolve().parent / "fixtures" / "retarget-any-rig.json"
+FIXTURE_GEAR = {
+    role: Path(__file__).resolve().parent / "fixtures" / f"retarget-{role}.json" for role in ("singer", "drummer")
+}
+# The gear of the GH3 singer and drummer rigs (gh3_rig(role)): the microphone stand, the microphone, and the middle lips;
+# the drum kit with the throne and the sticks.
+GEAR_ROWS = {
+    "singer": [
+        ("bone-119f5b6c", "control_root", (0, 0, -0.64)),
+        ("bone_mic", "bone-119f5b6c", (0, 1.49, -0.64)),
+        ("Bone_Lip_Upper_Mid", "bone_head", (0, 1.6, -0.08)),
+        ("Bone_Lip_Lower_Mid", "bone_head", (0, 1.57, -0.08)),
+    ],
+    "drummer": [
+        ("bone-aab8416e", "control_root", (-0.13, 0, 0.47)),
+        ("bone-fdeaebd9", "bone-aab8416e", (0.01, 0, 0.03)),
+        ("Bone_Drum_Stick_L", "bone-aab8416e", (0.45, 1.0, -0.2)),
+        ("Bone_Drum_Stick_R", "bone-aab8416e", (-0.45, 1.0, -0.2)),
+    ],
+}
 SIDES = (("l", "left", 1), ("r", "right", -1))
 
 
-def gh3_rig():
-    """A GH3-like rig (bone checksums as the game names them), local bind rows in runtime coordinates (identity rotations)."""
+def gh3_rig(role="guitarist"):
+    """A GH3-like rig (bone checksums as the game names them), local bind rows in runtime coordinates (identity rotations),
+    with the gear of the role."""
     key = skeleton._key
     rows = [
         ("control_root", None, (0, 0, 0)),
@@ -48,6 +68,7 @@ def gh3_rig():
                 ("bone-" + checksums[0], f"bone_palm_{s}", (sign * 0.53, 0.99, z)),
                 ("bone-" + checksums[1], "bone-" + checksums[0], (sign * 0.56, 0.96, z)),
             ]
+    rows += GEAR_ROWS.get(role, [])
     names = [r[0] for r in rows]
     bones = [n[5:] if n.startswith("bone-") else key(n) for n in names]
     parents = [names.index(r[1]) if r[1] else -1 for r in rows]
@@ -229,8 +250,8 @@ def poses(source_parents, source_bind, frames=6, seed=11):
     return t, q, gains
 
 
-def run_case(rig=target_rig):
-    names, bones, source_parents, source_bind = gh3_rig()
+def run_case(rig=target_rig, role="guitarist"):
+    names, bones, source_parents, source_bind = gh3_rig(role)
     target_names, parents, bind, humanoid, followers = rig()
     index = {n: i for i, n in enumerate(target_names)}
     t, q, gains = poses(source_parents, source_bind)
@@ -243,7 +264,7 @@ def run_case(rig=target_rig):
         bind,
         {r: index[b] for r, b in humanoid.items()},
         [(index[f["bone"]], index[f["source"]], f["weight"]) for f in followers],
-        role="guitarist",
+        role=role,
     )
     out = [retarget.apply(t[f : f + 1], q[f : f + 1], gains[f, 0], gains[f, 1]) for f in range(len(t))]
     case = {
@@ -255,7 +276,7 @@ def run_case(rig=target_rig):
         "bind": bind,
         "humanoid": humanoid,
         "followers": followers,
-        "role": "guitarist",
+        "role": role,
         "frames": [
             {
                 "positions": t[f].tolist(),
@@ -560,6 +581,26 @@ class RetargetFixtureTest(unittest.TestCase):
                 np.abs(np.sum(np.array(ours["targetRotations"]) * theirs["targetRotations"], -1)), 1, atol=1e-6
             )
         self.assertLess(abs(retarget.hip_scale - 0.85), 0.05)
+
+    def test_gear_fixtures(self):
+        """The singer's microphone stand and the drum kit fit the body (CharacterRetarget.cs); the C# test runs the same
+        fixtures."""
+        for role, path in FIXTURE_GEAR.items():
+            case, retarget = run_case(any_rig, role)
+            if os.environ.get("RETARGET_FIXTURE_WRITE") == "1":
+                path.write_text(json.dumps(case, separators=(",", ":")) + "\n")
+            stored = json.loads(path.read_text())
+            for ours, theirs in zip(case["frames"], stored["frames"]):
+                np.testing.assert_allclose(ours["targetPositions"], theirs["targetPositions"], atol=1e-6)
+                np.testing.assert_allclose(ours["sourceOut"], theirs["sourceOut"], atol=1e-6)
+            scaled = dict(retarget.scales)
+            if role == "singer":
+                self.assertGreater(retarget.stand_scale, 1.0)
+                self.assertEqual(scaled[case["sourceBones"].index("119f5b6c")], retarget.stand_scale)
+            else:
+                self.assertEqual(scaled[case["sourceBones"].index("aab8416e")], retarget.instrument_scale)
+                self.assertIn(case["sourceBones"].index("fdeaebd9"), scaled)
+                self.assertLess(max(float(np.max(m)) for m in retarget.stick_tip_miss), 0.05)
 
     def test_any_rig_fixture(self):
         case, retarget = run_case(any_rig)

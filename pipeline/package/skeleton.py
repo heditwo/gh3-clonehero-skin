@@ -58,6 +58,21 @@ REQUIRED = (
     "rightFoot",
 )
 SPINE = ("spine", "chest", "upperChest")
+# The gear of the singer and the drummer (CharacterRetarget.cs). GH3: the throne bone of the drum kit (name not known);
+# measured: the throne mesh of Drum_Set001 is on it and its top is 0.505 m above the bone; the drum stick mesh goes
+# 0.389 m along +X of Bone_Drum_Stick_L and _R; the microphone head is 0.1 m along -Y of Bone_Mic. Tuned: the throne
+# height limits, and the microphone goes to the mouth from 20 cm (fully at 10 cm) between the GH3 microphone head and
+# the GH3 mouth.
+THRONE_BONE = "fdeaebd9"
+THRONE_TOP = 0.505
+STICK_LENGTH = 0.389
+MICROPHONE_LENGTH = 0.1
+THRONE_SCALE = (0.25, 2.0)
+MOUTH_FOLLOW = (0.2, 0.1)
+HAND_FOLLOW = (0.25, 0.15)
+SCALE_LIMITS = (0.5, 1.5)
+# A head height (m) below this is not a usable measure.
+MINIMUM_BODY_LENGTH = 0.05
 TWIST = ("leftUpperArmTwist", "leftLowerArmTwist", "rightUpperArmTwist", "rightLowerArmTwist")
 FINGERS = ("Thumb", "Index", "Middle", "Ring", "Little")
 KNUCKLES = ("Middle", "Ring", "Index", "Little")
@@ -752,6 +767,11 @@ def slerp_identity(q, t):
     return power(q, t)
 
 
+def _smooth(x):
+    x = np.clip(x, 0, 1)
+    return x * x * (3 - 2 * x)
+
+
 def _order(parents, after=()):
     count = len(parents)
     waits, following = [0] * count, [[] for _ in range(count)]
@@ -950,17 +970,77 @@ class Retarget:
             )
             if min(ul, ll, f, sf, su) >= 0 and _above(self.parents, ul, ll) and _above(self.parents, ll, f):
                 lift = tp[f][1] - (tp[ul][1] + (sp[sf][1] - sp[su][1]) * self.hip_scale)
-                self.legs.append((ul, ll, f, sf, su, lift))
+                self.legs.append((ul, ll, f, sf, su, lift, tp[f][1] - sp[sf][1] * self.instrument_scale))
                 self.poles[ul] = (su, s(side + "LowerLeg"), sf)
-        self.attachments = []
-        if role in ("guitarist", "bassist") and source_index.get(_key("bone_guitar_body"), -1) >= 0:
-            self.attachments.append((source_index[_key("bone_guitar_body")], "chest"))
-        if role == "singer" and source_index.get(_key("bone_mic"), -1) >= 0:
-            self.attachments.append((source_index[_key("bone_mic")], "hand"))
-        if self.chest_source < 0 or self.chest_target < 0:
-            self.attachments = []
+        self._gear(role, source_index, sp, tp, tq, t, s)
         self.palms = (s("leftHand"), s("rightHand"))
         self.hands = (t("leftHand"), t("rightHand"))
+
+    def _gear(self, role, source_index, sp, tp, tq, t, s):  # noqa: C901
+        """The attachments (CharacterRetarget.cs): the instrument with the chest, the microphone stand scaled by the head
+        height ratio with the microphone, and the drum kit scaled by the arm length ratio with the throne and the sticks."""
+        self.attachments, self.scales = [], []
+        self.stand = self.mic = self.kit = -1
+        self.sticks, self.stand_scale, self.seat_lift = [], 1.0, 0.0
+        self.mouth_target = self.mouth_source = -1
+        self.lips, self.mouth_offset = None, np.zeros(3)
+        guitar = source_index.get(_key("bone_guitar_body"), -1)
+        if role in ("guitarist", "bassist") and guitar >= 0:
+            self.attachments.append((guitar, "chest"))
+            self.scales.append((guitar, self.instrument_scale))
+        head_t, head_s = t("head"), s("head")
+        mic = source_index.get(_key("bone_mic"), -1)
+        if role == "singer" and mic >= 0:
+            stand = self.source_parents[mic]
+            if (
+                stand >= 0
+                and self.source_parents[stand] >= 0
+                and self.source_parents[self.source_parents[stand]] < 0
+                and min(head_t, head_s) >= 0
+                and sp[head_s][1] > MINIMUM_BODY_LENGTH
+            ):
+                self.stand_scale = float(np.clip(tp[head_t][1] / sp[head_s][1], *SCALE_LIMITS))
+                self.attachments.append((stand, "stand"))
+                self.scales.append((stand, self.stand_scale))
+                self.stand = stand
+            self.attachments.append((mic, "hand"))
+            self.mic = mic
+            if min(head_t, head_s) >= 0:
+                self.mouth_target, self.mouth_source = head_t, head_s
+                upper, lower = (
+                    source_index.get(_key("Bone_Lip_Upper_Mid"), -1),
+                    source_index.get(_key("Bone_Lip_Lower_Mid"), -1),
+                )
+                self.lips = (upper, lower) if min(upper, lower) >= 0 else None
+                gh3_mouth = (sp[upper] + sp[lower]) / 2 if self.lips else sp[head_s]
+                mouth = tp[head_t] + (gh3_mouth - sp[head_s]) * self.stand_scale
+                self.mouth_offset = qrotate(qinv(tq[head_t]), mouth - tp[head_t])
+        left, right = source_index.get(_key("Bone_Drum_Stick_L"), -1), source_index.get(_key("Bone_Drum_Stick_R"), -1)
+        kit = self.source_parents[left] if left >= 0 else -1
+        if (
+            role == "drummer"
+            and min(left, right, kit) >= 0
+            and self.source_parents[right] == kit
+            and min(s("hips"), t("hips")) >= 0
+        ):
+            self.kit, self.sticks, self.hips_target = kit, [left, right], t("hips")
+            self.attachments.append((kit, "kit"))
+            self.scales.append((kit, self.instrument_scale))
+
+            def shoulders(positions, index):
+                return (positions[index("leftUpperArm")][1] + positions[index("rightUpperArm")][1]) / 2
+
+            if min(t("leftUpperArm"), t("rightUpperArm"), s("leftUpperArm"), s("rightUpperArm")) >= 0:
+                self.seat_lift = float(
+                    self.instrument_scale * (shoulders(sp, s) - sp[s("hips")][1])
+                    - (shoulders(tp, t) - tp[t("hips")][1])
+                )
+            throne = source_index.get(THRONE_BONE, -1)
+            if throne >= 0 and self.source_parents[throne] == kit:
+                height = np.clip((self.instrument_scale * THRONE_TOP + self.seat_lift) / THRONE_TOP, *THRONE_SCALE)
+                self.scales.append((throne, float(height / self.instrument_scale)))
+        if self.chest_source < 0 or self.chest_target < 0:
+            self.attachments, self.scales, self.stand, self.mic, self.kit, self.sticks = [], [], -1, -1, -1, []
 
     def arm_gains(self, source_t, source_q):
         """(right, left) arm IK strengths (frames) for a clip without the game's arm events: 1 while the GH3 hand is on
@@ -1016,37 +1096,15 @@ class Retarget:
             if self.source_pelvis >= 0
             else np.zeros((frames, 3))
         )
+        if self.kit >= 0:
+            seat = self._scaled(sp, sp[:, self.source_pelvis], self.kit) + [0, self.seat_lift, 0]
+            move = seat - self.rest_p[self.hips_target]
         self.wp, self.wq = np.zeros((frames, count, 3)), np.zeros((frames, count, 4))
         self._forward(move)
+        if self.mic >= 0 and self._hold_microphone(sp, sq):
+            self._forward(move)
         out_t, out_q = source_t.copy(), source_q.copy()
-        chest_move, instrument = np.zeros((frames, 3)), -1
-        for root, mode in self.attachments:
-            offset = qrotate(sq[:, self.chest_source], np.broadcast_to(self.offset, (frames, 3)))
-            moved = (
-                self.wp[:, self.chest_target]
-                + (sp[:, root] - sp[:, self.chest_source]) * self.torso_scale
-                + offset
-                - sp[:, root]
-            )
-            if mode == "chest":
-                moved = moved + self._reach(sp, root, moved, left, right)
-            if mode == "hand":
-                best, hand = np.full(frames, np.inf), np.zeros((frames, 3))
-                for palm, own in zip(self.palms, self.hands):
-                    if palm < 0 or own < 0:
-                        continue
-                    distance = np.linalg.norm(sp[:, palm] - sp[:, root], axis=-1)
-                    closer = distance < best
-                    best = np.where(closer, distance, best)
-                    hand = np.where(closer[:, None], self.wp[:, own] - sp[:, palm], hand)
-                x = np.clip((0.25 - best) / 0.15, 0, 1)
-                weight = (x * x * (3 - 2 * x))[:, None]
-                moved = moved + (hand - moved) * weight
-            parent = self.source_parents[root]
-            position = sp[:, root] + moved
-            out_t[:, root] = position if parent < 0 else qrotate(qinv(sq[:, parent]), position - sp[:, parent])
-            if mode == "chest":
-                chest_move, instrument = moved, root
+        chest_move, instrument = self._attachments(sp, sq, source_t, out_t, left, right)
 
         def goal_of(bone):
             if instrument < 0:
@@ -1060,10 +1118,15 @@ class Retarget:
                 goal = goal - qrotate(self.desired[:, end], np.broadcast_to(offset, (frames, 3)))
             self._solve(upper, lower, end, goal, gain, self._pole(sp, upper))
             self.goals.append((end, goal, gain, base >= 0, offset))
-        for upper, lower, end, source_end, source_upper, lift in self.legs:
-            goal = self.wp[:, upper] + (sp[:, source_end] - sp[:, source_upper]) * self.hip_scale + [0, lift, 0]
+        for upper, lower, end, source_end, source_upper, lift, kit_lift in self.legs:
+            if self.kit >= 0:
+                goal = self._scaled(sp, sp[:, source_end], self.kit) + [0, kit_lift, 0]
+            else:
+                goal = self.wp[:, upper] + (sp[:, source_end] - sp[:, source_upper]) * self.hip_scale + [0, lift, 0]
             self._solve(upper, lower, end, goal, np.ones(frames), self._pole(sp, upper))
         self._forward(move)
+        if self.kit >= 0:
+            self._sticks(sp, sq, out_t, out_q)
         t, q = np.zeros((frames, count, 3)), np.zeros((frames, count, 4))
         for bone in range(count):
             parent = self.parents[bone]
@@ -1078,6 +1141,110 @@ class Retarget:
             )
             q[:, bone] = qnormalize(qmul(inverse, self.wq[:, bone]))
         return t, q, out_t, out_q
+
+    def _attachments(self, sp, sq, source_t, out_t, left, right):
+        """Move and scale the attachments of the GH3 rig (out_t); return the instrument move (frames, 3) and the
+        instrument root (or -1) for the hand goals."""
+        frames = sp.shape[0]
+        chest_move, instrument = np.zeros((frames, 3)), -1
+        for root, mode in self.attachments:
+            parent = self.source_parents[root]
+            if mode in ("stand", "kit"):
+                out_t[:, root] = source_t[:, root] * (self.instrument_scale if mode == "kit" else self.stand_scale)
+                if mode == "kit":
+                    chest_move, instrument = self._scaled(sp, sp[:, root], root) - sp[:, root], root
+                continue
+            if mode == "hand":
+                best, hand = np.full(frames, np.inf), np.zeros((frames, 3))
+                for palm, own in zip(self.palms, self.hands):
+                    if palm < 0 or own < 0:
+                        continue
+                    distance = np.linalg.norm(sp[:, palm] - sp[:, root], axis=-1)
+                    closer = distance < best
+                    best = np.where(closer, distance, best)
+                    hand = np.where(closer[:, None], self.wp[:, own] - sp[:, palm], hand)
+                weight = _smooth((HAND_FOLLOW[0] - best) / HAND_FOLLOW[1])[:, None]
+                in_stand = self._scaled(sp, sp[:, root], self.stand) if self.stand >= 0 else sp[:, root]
+                world = in_stand + (sp[:, root] + hand - in_stand) * weight
+                frame = self._scaled(sp, sp[:, parent], self.stand) if self.stand >= 0 else sp[:, parent]
+                local = world if parent < 0 else qrotate(qinv(sq[:, parent]), world - frame)
+                out_t[:, root] = local / self.stand_scale if self.stand >= 0 else local
+                continue
+            offset = qrotate(sq[:, self.chest_source], np.broadcast_to(self.offset, (frames, 3)))
+            moved = (
+                self.wp[:, self.chest_target]
+                + (sp[:, root] - sp[:, self.chest_source]) * self.torso_scale
+                + offset
+                - sp[:, root]
+            )
+            moved = moved + self._reach(sp, root, moved, left, right)
+            position = sp[:, root] + moved
+            out_t[:, root] = position if parent < 0 else qrotate(qinv(sq[:, parent]), position - sp[:, parent])
+            chest_move, instrument = moved, root
+        return chest_move, instrument
+
+    def _scaled(self, sp, position, root):
+        """A GH3 position on the scaled microphone stand or drum kit: scaled about the parent of the attachment root."""
+        parent = self.source_parents[root]
+        pivot = sp[:, parent] if parent >= 0 else np.zeros_like(position)
+        return pivot + (position - pivot) * (self.stand_scale if root == self.stand else self.instrument_scale)
+
+    def mouth(self, sp):
+        """The GH3 mouth (frames, 3): between the middle lip bones, else the head."""
+        return (sp[:, self.lips[0]] + sp[:, self.lips[1]]) / 2 if self.lips else sp[:, self.mouth_source]
+
+    def _hold_microphone(self, sp, sq):
+        """The singer's hand brings the microphone to the character's mouth (CharacterRetarget.HoldMicrophone)."""
+        if self.mouth_target < 0:
+            return False
+        frames = sp.shape[0]
+        gh3_mouth = self.mouth(sp)
+        head = sp[:, self.mic] + qrotate(sq[:, self.mic], np.broadcast_to([0, -MICROPHONE_LENGTH, 0], (frames, 3)))
+        near = _smooth((MOUTH_FOLLOW[0] - np.linalg.norm(head - gh3_mouth, axis=-1)) / MOUTH_FOLLOW[1])
+        mouth = self.wp[:, self.mouth_target] + qrotate(
+            self.wq[:, self.mouth_target], np.broadcast_to(self.mouth_offset, (frames, 3))
+        )
+        moved = False
+        for upper, lower, end, source_end, _, _, _, _ in self.arms:
+            hold = _smooth(
+                (HAND_FOLLOW[0] - np.linalg.norm(sp[:, source_end] - sp[:, self.mic], axis=-1)) / HAND_FOLLOW[1]
+            )
+            gain = near * hold
+            if not np.any(gain > 0):
+                continue
+            goal = mouth + (sp[:, self.mic] - gh3_mouth) * self.stand_scale - (sp[:, self.mic] - sp[:, source_end])
+            self._solve(upper, lower, end, goal, gain, self._pole(sp, upper))
+            moved = True
+        return moved
+
+    def _sticks(self, sp, sq, out_t, out_q):
+        """The drum sticks move with the hands and point at the GH3 stick tips on the scaled kit (CharacterRetarget.Sticks)."""
+        frames = sp.shape[0]
+        kit_p, kit_inverse = self._scaled(sp, sp[:, self.kit], self.kit), qinv(sq[:, self.kit])
+        misses = {-1: np.zeros((frames, 3)), 1: np.zeros((frames, 3))}
+        for (end, goal, gain, has_base, offset), arm in zip(self.goals, self.arms):
+            if has_base:
+                goal = (
+                    goal
+                    + qrotate(self.desired[:, end], np.broadcast_to(offset, (frames, 3)))
+                    - qrotate(self.wq[:, end], np.broadcast_to(offset, (frames, 3)))
+                )
+            misses[arm[6]] = (self.wp[:, end] - goal) * np.asarray(gain, dtype=np.float64).reshape(-1, 1)
+        length = STICK_LENGTH * self.instrument_scale
+        self.stick_tip_miss = []
+        for stick, side in zip(self.sticks, (-1, 1)):
+            start = self._scaled(sp, sp[:, stick], self.kit)
+            axis = qrotate(sq[:, stick], np.broadcast_to([1.0, 0, 0], (frames, 3)))
+            tip = start + axis * length
+            end = start + misses[side]
+            rotation = qnormalize(qmul(from_to(axis, tip - end), sq[:, stick]))
+            self.stick_tip_miss.append(
+                np.linalg.norm(
+                    end + qrotate(rotation, np.broadcast_to([1.0, 0, 0], (frames, 3))) * length - tip, axis=-1
+                )
+            )
+            out_t[:, stick] = qrotate(kit_inverse, end - kit_p) / self.instrument_scale
+            out_q[:, stick] = qnormalize(qmul(kit_inverse, rotation))
 
     def _goal(self, sp, bone, instrument, move):
         if instrument < 0:

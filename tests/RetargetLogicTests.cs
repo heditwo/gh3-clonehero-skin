@@ -49,9 +49,11 @@ internal static class RetargetLogicTests
         CheckRootMotionAndIk();
         CheckPythonFixture("retarget-case.json");
         CheckPythonFixture("retarget-any-rig.json");
+        CheckPythonFixture("retarget-singer.json");
+        CheckPythonFixture("retarget-drummer.json");
         var library = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../assets/libraries/gh3-band-v1"));
         if (File.Exists(Path.Combine(library, "catalog.json"))) CheckGh3Rigs(library);
-        Console.WriteLine("Retarget identity, rest-pose correction (T-pose, bone rolls, scale), twist bones, followers, root motion, IK, the two Python fixtures, " +
+        Console.WriteLine("Retarget identity, rest-pose correction (T-pose, bone rolls, scale), twist bones, followers, root motion, IK, the four Python fixtures (with the gear), " +
             "GH3 rigs as skeletons (humanoid map, face bones, scale), and the drum kit, throne, sticks, and microphone stand fit passed.");
     }
 
@@ -333,6 +335,10 @@ internal static class RetargetLogicTests
                 var angle = (float)(4 * Math.Asin(Math.Min(1, (a - b).Length() / 2.0)) * 180 / Math.PI);
                 worstAngle = Math.Max(worstAngle, angle);
             }
+            // The moved and scaled gear of the GH3 rig (instrument, microphone stand, microphone, drum kit, sticks).
+            var sourceOut = frame["sourceOut"]!.AsArray().Select(F).ToArray();
+            for (var i = 0; i < sourceOut.Length; i++)
+                worstPosition = Math.Max(worstPosition, Vector3.Distance(retarget.SourceOut[i].Position, new Vector3(sourceOut[i][0], sourceOut[i][1], sourceOut[i][2])));
         }
         Check(worstPosition < 1e-4f && worstAngle < 0.005f, $"the game and the Python preview agree on {file} ({worstPosition * 1000:0.###} mm, {worstAngle:0.###}°)");
     }

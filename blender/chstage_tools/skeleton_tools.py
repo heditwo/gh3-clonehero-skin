@@ -915,7 +915,9 @@ def _display_attachments(retarget, out_t, scale):
     if abs(scale - 1.0) < 1e-9 or not retarget.attachments:
         return out_t
     display = out_t.copy()
-    for root, _ in retarget.attachments:
+    for root, mode in retarget.attachments:
+        if mode == "hand" and retarget.stand >= 0:
+            continue
         parent = retarget.source_parents[root]
         if parent < 0:
             display[:, root] = out_t[:, root] / scale
@@ -958,10 +960,11 @@ def clip_action(scene, clip):
                 obj, rig_data, display_t * [1, 1, -1], out_q * [-1, -1, 1, 1]
             )
             _keys(action, obj, rig_data.names, locations, rotations, frames)
-            # The instrument takes the size of the character (the arm length ratio), as in the game.
-            for root, mode in retarget.attachments:
-                if mode == "chest":
-                    obj.pose.bones[rig_data.names[root]].scale = (retarget.instrument_scale / scale,) * 3
+            # The instrument, the microphone stand, and the drum kit take the size of the character, as in the game.
+            scaled = {bone for bone, _ in retarget.scales}
+            for bone, value in retarget.scales:
+                parent = retarget.source_parents[bone]
+                obj.pose.bones[rig_data.names[bone]].scale = ((value if parent in scaled else value / scale),) * 3
     scene.render.fps, scene.render.fps_base = character_tools.CLIP_FPS, 1.0
     scene.frame_start, scene.frame_end = 0, max(1, frames - 1)
     scene.frame_set(0)
