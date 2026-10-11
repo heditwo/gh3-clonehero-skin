@@ -172,6 +172,7 @@ internal sealed partial class GameplayStage
             }
             if (_camera != null && _assets != null) ApplyDebugView(_camera, _assets);
             if (_camera != null) SetTemplateGlobals(_camera, time);
+            if (_camera != null) _assets?.ScaleToonOutlines(_camera.fieldOfView);
             if (_camera != null) _crowd?.Face(_camera);
             if (_camera != null) _assets?.FaceBillboards(_camera);
             FrameProfile.Measure("effects", () => _effects.Update(_timeline, time));

@@ -49,6 +49,7 @@ internal sealed class StageActors : IDisposable
             stage.ShadedSurfaces.AddRange(assets.ShadedSurfaces);
             stage.BandMeshes.AddRange(assets.BandMeshes);
             stage.TransparentMeshes.AddRange(assets.TransparentMeshes);
+            stage.ToonOutlines.AddRange(assets.ToonOutlines);
             obj.SetActive(actor.InitiallyVisible);
             _actors.Add(new(obj, bones, animation, actor));
             if (actor.Object.Length > 0 && !actor.Role.StartsWith("stage-diver/"))

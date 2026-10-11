@@ -275,7 +275,7 @@ Anime models look flat with the **Lit**, **Ambient**, or **Unlit** shading. Use 
    - **Shade mask**: red 0 is always shaded, 0.5 follows the light, 1 is always lit (Project SEKAI: the blue channel of the `_H` texture).
    - **Sphere map**: an MMD sphere map (`.sph` multiply, `.spa` add) for shine on hair and cloth.
    - **Rim width** and **Rim color**: a thin light at the silhouette.
-3. **Outline**: set **Width** to about 0.0015 (1.5 mm at 1 m from the camera) and the **Color**. **Textured** multiplies the color by the base texture (a darker line in the color of the part). Do not use an outline on the eyes, the eyelashes, and the eye highlights. The mesh needs smooth normals; split normals give gaps in the line.
+3. **Outline**: set **Width** to about 0.0015 (1.5 mm at 1 m from the camera in a normal GH3 view, about 1.7 pixels at 900 pixels; the line keeps this screen width in close-ups) and the **Color**. **Textured** multiplies the color by the base texture (a darker line in the color of the part). Do not use an outline on the eyes, the eyelashes, and the eye highlights. The mesh needs smooth normals; split normals give gaps in the line.
 4. Click **Preview** to see the toon look in Material Preview (EEVEE). Click **glTF material** to see the Principled BSDF again. Export always writes the glTF material and the toon settings.
 
 **Eyebrows over the hair.** In anime games the eyebrows and the eyelashes show through the bangs. Set **Hair layer** to **Over hair** on the eyebrow (and eyelash) material, and to **Hair** on the hair materials of the same character. The game then draws the hair around the eyebrows. Rules:

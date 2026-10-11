@@ -53,8 +53,22 @@ internal sealed class StageToonOutline
             throw new InvalidDataException("Invalid toon outline");
     }
 
-    // _Gh3ToonOutline: outline color, width (metres at 1 m from the camera).
+    // _Gh3ToonOutline: outline color, width (metres at 1 m from the camera at the reference field of view).
     public Vector4 Parameters => new(Color[0], Color[1], Color[2], Width);
+
+    // Tuned: the outline width is for this vertical field of view (degrees; the GH3 cameras have a median of 44.5°,
+    // measured on gh3.dive in the Miku face check). At another field of view the width changes with the view height, so
+    // the line keeps its screen width: a long lens (GH3 face close-ups use 5-15°) does not make the line thicker.
+    public const float ReferenceFieldOfView = 45;
+    // The tangent is finite in this range.
+    private const float NarrowestFieldOfView = 1, WidestFieldOfView = 170;
+
+    // The width factor for a vertical field of view (degrees): tan(fov / 2) / tan(reference / 2).
+    public static float ScreenScale(float fieldOfView)
+    {
+        var half = Math.Clamp(fieldOfView, NarrowestFieldOfView, WidestFieldOfView) * MathF.PI / 360;
+        return MathF.Tan(half) / MathF.Tan(ReferenceFieldOfView * MathF.PI / 360);
+    }
 }
 
 // Draw order of the hair layers of one character (stage.json `hairLayer`, from gh3HairLayer). An `overHair` feature (eyebrows,

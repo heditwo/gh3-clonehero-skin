@@ -36,6 +36,8 @@ internal sealed partial class StageAssets : IDisposable
     public List<LitBandMesh> BandMeshes { get; } = new();
     public List<ShadedSurface> ShadedSurfaces { get; } = new();
     public List<StageTransparency> TransparentMeshes { get; } = new();
+    // The toon outline materials and their parameters at the reference field of view (StageToonOutline.ScreenScale).
+    public List<(Material Material, System.Numerics.Vector4 Parameters)> ToonOutlines { get; } = new();
     private readonly Dictionary<string, List<Renderer>> _visibility = new();
     public Dictionary<string, Transform> Objects { get; } = new();
     public List<(uint Object, uint Material, Renderer Renderer, StageMaterial Definition)> MaterialSurfaces { get; } = new();
@@ -195,6 +197,7 @@ internal sealed partial class StageAssets : IDisposable
                 outline.name = "GH3 Stage Outline " + key;
                 if (hairLayer == StageHairLayer.Hair) ConfigureHairLayer(outline, hairLayer, hairStencil);
                 outlines.Add(Convert.ToUInt32(key, 16), outline);
+                ToonOutlines.Add((outline, line.Parameters));
             }
             materials.Add(Convert.ToUInt32(key, 16), material);
             SurfaceMaterials.Add(material);
@@ -461,6 +464,7 @@ internal sealed partial class StageAssets : IDisposable
         BandMeshes.Clear();
         ShadedSurfaces.Clear();
         TransparentMeshes.Clear();
+        ToonOutlines.Clear();
         _visibility.Clear();
     }
 }

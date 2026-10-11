@@ -143,6 +143,7 @@ internal sealed partial class StageBand : IDisposable
                         stage.ShadedSurfaces.AddRange(part.ShadedSurfaces);
                         stage.BandMeshes.AddRange(part.BandMeshes);
                         stage.TransparentMeshes.AddRange(part.TransparentMeshes);
+                        stage.ToonOutlines.AddRange(part.ToonOutlines);
                     }
                     if (characterHair != null)
                         try { player2.Hair = new StageHair(characterHair, parentsOwn, (time, pose) => SamplePose(player2, time, pose)); }
@@ -196,6 +197,7 @@ internal sealed partial class StageBand : IDisposable
                 stage.ShadedSurfaces.AddRange(part.ShadedSurfaces);
                 stage.BandMeshes.AddRange(part.BandMeshes);
                 stage.TransparentMeshes.AddRange(part.TransparentMeshes);
+                stage.ToonOutlines.AddRange(part.ToonOutlines);
             }
             var parents = animation.Parents;
             if (extras != null)

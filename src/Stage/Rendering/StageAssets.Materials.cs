@@ -145,6 +145,23 @@ internal sealed partial class StageAssets
         if (toon.SphereTexture.Length > 0) material.SetTexture("_Gh3Tex8", load(toon.SphereTexture));
     }
 
+    private float _outlineScale = 1;
+    private int _outlineCount;
+
+    // The toon outline widths for the field of view of the stage camera, so the lines keep their screen width.
+    public void ScaleToonOutlines(float fieldOfView)
+    {
+        var scale = StageToonOutline.ScreenScale(fieldOfView);
+        if (Math.Abs(scale - _outlineScale) <= OutlineScaleStep * _outlineScale && ToonOutlines.Count == _outlineCount) return;
+        _outlineScale = scale;
+        _outlineCount = ToonOutlines.Count;
+        foreach (var (material, line) in ToonOutlines)
+            material.SetVector(ToonOutlineId, new Vector4 { x = line.X, y = line.Y, z = line.Z, w = line.W * scale });
+    }
+
+    // A width change smaller than this fraction is not visible; the materials keep their value.
+    private const float OutlineScaleStep = 0.005f;
+
     // The inverted hull of a toon outline: a second material on the same renderer draws the back faces, pushed out along the
     // normal (Stage.glsl), opaque, with the alpha test of the base texture.
     private Material MakeOutlineMaterial(Shader shader, StageMaterial source, Material main, StageToonOutline outline)
