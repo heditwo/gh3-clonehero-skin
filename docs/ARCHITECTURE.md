@@ -145,9 +145,9 @@ The GLSL sources have `#ifdef GH3_D3D11` blocks only where Direct3D 11 needs oth
 | Path | Contents |
 | --- | --- |
 | `tests/*.cs`, `tests/SkinLogic.Tests.csproj` | C# logic tests. They link the Unity-free source files. Optional variables (`GH3_PACK_ASSETS`, `GH3_NATIVE_DATA`, `GH3_*_ORACLE`, ...) add checks against real assets and native reference data |
-| `tests/test_*.py` | Python tests: pipeline, package format, Blender add-on without Blender, examples, and the Markdown links, anchors, and diagram size (`test_docs_links.py`) |
+| `tests/test_*.py` | Python tests: pipeline, package format, Blender add-on without Blender (`tests/addon.py` loads the add-on modules), examples, the Markdown links, anchors, and diagram size (`test_docs_links.py`), the unnamed numbers in the format code (`test_magic_numbers.py`), and the `pipeline` names that tools and research scripts import (`test_pipeline_imports.py`). Python code style: [CODE-STYLE.md](CODE-STYLE.md#python) |
 | `schemas/*.schema.json` | JSON Schemas (draft 2020-12) of package format v1: manifest, venue sidecars, `character.json`, GLB extras. See [PACKAGE-FORMAT.md](PACKAGE-FORMAT.md) |
-| `scripts/test.sh` | Runs both suites and shell syntax checks |
+| `scripts/test.sh` | Runs both suites, `ruff check` and `ruff format --check` (`ruff.toml`), and shell syntax checks |
 | `scripts/build-release.sh` | Builds the release zips (Linux, Windows) and the Blender add-on zip from a clean export of a commit ([VERIFICATION.md](VERIFICATION.md#release-build)) |
 | `install.sh`, `install-linux.sh`, `install-windows.ps1` | Development install (builds the mod), and the release installers for Linux and Windows |
 | `tools/Gh3SongTool/` | C# command-line tool: event export, song audit, chart export, QB dumps, one-field camera edit |
@@ -166,4 +166,4 @@ The GLSL sources have `#ifdef GH3_D3D11` blocks only where Direct3D 11 needs oth
 | `tools/hook-slots.py`, `tools/hook-page-sampler.py` | Examine MelonLoader's Dobby hook pages in a core dump or a live run ([STATUS.md](STATUS.md#stability)) |
 | `tools/lipsync-shapes.py` | Measures the singer mouth shapes of the GH3 facial clips for `StageLipSync` |
 | `tools/ClipBench/` | Clip codec measurements of the spike |
-| `tools/research/` | Offline tools of the packaging spike ([docs/spike/](spike/)), kept as history |
+| `tools/research/` | Tools of finished investigations, kept as evidence ([README](../tools/research/README.md), [docs/spike/](spike/)) |

@@ -6,7 +6,7 @@
 MISE_QUIET=1 scripts/test.sh
 ```
 
-The script runs the C# logic tests (`tests/SkinLogic.Tests.csproj`, .NET 10 SDK), the Python tests (`tests/test_*.py`), and a syntax check of the shell scripts. `tests/test_docs_links.py` checks that every relative link and anchor in the Markdown files resolves and that each Mermaid diagram is small (at most 16 nodes). Also build the mod with zero warnings:
+The script runs the C# logic tests (`tests/SkinLogic.Tests.csproj`, .NET 10 SDK), `ruff check` and `ruff format --check` on the Python code ([CODE-STYLE.md](CODE-STYLE.md#python)), the Python tests (`tests/test_*.py`), and a syntax check of the shell scripts. `tests/test_docs_links.py` checks that every relative link and anchor in the Markdown files resolves and that each Mermaid diagram is small (at most 16 nodes). Also build the mod with zero warnings:
 
 ```bash
 MISE_QUIET=1 dotnet build src/Gh3Skin.csproj -c Release --nologo
@@ -63,6 +63,18 @@ To test a cold import, delete `UserData/GH3Skin/Cache/` in the test game.
 ### Package textures
 
 The packages store the model textures pre-encoded ([PACKAGE-FORMAT.md section 7](PACKAGE-FORMAT.md#7-textures)); the validator checks each one. After a change of the encoder (`pipeline/package/texture.py`), check that the output did not change: `tests/test_texture.py` has a fixed digest (equal to the C# encoder of 2026-10-10), and the whole package set can be compared with a cache of `tools/PackageImport` (the mip data after the header of each `.tex` file). After a change of the importer, `pipeline.package.cachecheck` compares the cache with the pipeline output ([PIPELINE.md](PIPELINE.md)).
+
+### Python refactors
+
+A refactor of the Python code must not change an output. Check it against `main`:
+
+1. `scripts/test.sh`, and `blender/test.sh` with Blender 5.2.1 and 4.2 (`blender/test.sh OUT blender-clean <Blender 4.2>`).
+2. Regenerate into the worktree with empty encoder caches (delete `assets/packages/.texture-cache` and `.clip-cache`) and compare the SHA-256 of every file of `assets/libraries`, `assets/characters`, `assets/instruments`, `assets/stages`, `assets/stage-packs`, and `assets/packages` with the outputs of `main` (`build-report.json` without its times). Include `venues` when `pipeline/gh3`, `pipeline/stagepack`, or `pipeline/venues` changed, and `render` when `pipeline/render` or `pipeline/gh3/shader.py` changed.
+3. Encode every unique PNG of the assets with `pipeline.package.texture.encode` of both trees and compare the bytes.
+4. Run the rig corpus (`tools/rig-corpus/run.sh OUT --check --export`) with both add-on builds and compare `results.json` and the exported packages.
+5. Export the test characters with both add-on builds (a private `BLENDER_USER_RESOURCES`) and compare the packages.
+
+Result of the readability branch (2026-10-10): see the commit messages of the branch and the report to the orchestrator.
 
 ### Load times
 
