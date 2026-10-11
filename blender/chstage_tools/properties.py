@@ -850,6 +850,22 @@ class CHSTAGE_PG_character(PropertyGroup):
     face_u: StringProperty(name="U", description="Mouth shape key 'u' (MMD う, VRM U)")
     face_e: StringProperty(name="E", description="Mouth shape key 'e' (MMD え, VRM E)")
     face_o: StringProperty(name="O", description="Mouth shape key 'o' (MMD お, VRM O)")
+    face_pp: StringProperty(name="PP", description="Optional viseme shape key for p, b, m (VRChat vrc.v_pp)")
+    face_ff: StringProperty(name="FF", description="Optional viseme shape key for f, v (VRChat vrc.v_ff)")
+    face_th: StringProperty(name="TH", description="Optional viseme shape key for th (VRChat vrc.v_th)")
+    face_dd: StringProperty(name="DD", description="Optional viseme shape key for t, d (VRChat vrc.v_dd)")
+    face_kk: StringProperty(name="KK", description="Optional viseme shape key for k, g (VRChat vrc.v_kk)")
+    face_ch: StringProperty(name="CH", description="Optional viseme shape key for ch, j, sh (VRChat vrc.v_ch)")
+    face_ss: StringProperty(name="SS", description="Optional viseme shape key for s, z (VRChat vrc.v_ss)")
+    face_nn: StringProperty(name="NN", description="Optional viseme shape key for n, l (VRChat vrc.v_nn)")
+    face_rr: StringProperty(name="RR", description="Optional viseme shape key for r, w (VRChat vrc.v_rr)")
+    face_brow_up: StringProperty(
+        name="Brow up", description="Optional shape key that raises the brows (MMD 上, VRoid Fcl_BRW_Surprised)"
+    )
+    face_brow_down: StringProperty(
+        name="Brow down", description="Optional shape key that lowers the brows (MMD 下, VRoid Fcl_BRW_Angry)"
+    )
+    face_squint: StringProperty(name="Squint", description="Optional shape key that narrows the eyes")
 
 
 class CHSTAGE_PG_scene(PropertyGroup):

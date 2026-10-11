@@ -460,6 +460,23 @@ class AutoMapTest(unittest.TestCase):
             skeleton.auto_face(["Fcl_EYE_Close", "Fcl_MTH_A", "Fcl_MTH_O"]),
             {"blink": "Fcl_EYE_Close", "a": "Fcl_MTH_A", "o": "Fcl_MTH_O"},
         )
+        self.assertEqual(
+            skeleton.auto_face(
+                ["Body.vrc.v_aa", "vrc.v_pp", "vrc.v_ss", "vrc.v_rr", "Face.Fcl_BRW_Surprised", "Fcl_BRW_Angry", "上"]
+            ),
+            {
+                "a": "Body.vrc.v_aa",
+                "pp": "vrc.v_pp",
+                "ss": "vrc.v_ss",
+                "rr": "vrc.v_rr",
+                "browUp": "上",
+                "browDown": "Fcl_BRW_Angry",
+            },
+        )
+        self.assertEqual(
+            skeleton.auto_face(["viseme_aa", "viseme_PP", "viseme_kk", "eyeblow_up", "eyeSquintLeft"]),
+            {"a": "viseme_aa", "pp": "viseme_PP", "kk": "viseme_kk", "browUp": "eyeblow_up"},
+        )
 
 
 class FindTest(unittest.TestCase):

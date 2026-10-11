@@ -25,7 +25,9 @@ from .vendor.package_format import character, humanoid as humanoid_finder, q48, 
 CATEGORY = "CH Character"
 # Blender world (Z up) to runtime (glTF with z negated): (x, y, z) -> (x, z, y). A reflection; it is its own inverse.
 A = np.array([[1.0, 0, 0], [0, 0, 1], [0, 1, 0]])
-FACE_PROPS = {slot: f"face_{slot}" for slot in skeleton.FACE_SLOTS}
+FACE_PROPS = {
+    slot: "face_" + re.sub("([A-Z])", lambda m: "_" + m.group(1).lower(), slot) for slot in skeleton.FACE_SLOTS
+}
 PRESET_FORMAT = "chstage-humanoid-map/1"
 SURE, CHECK = 0.8, 0.5
 # Roles in the order of the map editor: the trunk, then each arm with its fingers, then each leg.
@@ -1579,7 +1581,7 @@ class CHSTAGE_PT_character_skeleton(Panel):
             count = 0
         layout.label(text=f"Followers (MMD append rotation): {count}", icon="CONSTRAINT_BONE")
         box = layout.box()
-        box.label(text="Face shape keys (blink and mouth)")
+        box.label(text="Face shape keys (blink, mouth, visemes, brows)")
         meshes = [o for o in character_tools.character_meshes(scene) if o.data.shape_keys]
         for slot, prop in FACE_PROPS.items():
             if meshes:

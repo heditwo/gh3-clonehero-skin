@@ -53,13 +53,17 @@
       "$ref": "#/$defs/skeleton"
     },
     "face": {
-      "description": "Morph target names (GLB mesh extras targetNames) of the face shapes: blink and the mouth shapes a, i, u, e, o. Needs 'skeleton'.",
+      "description": "Morph target names (GLB mesh extras targetNames) of the face shapes: blink, the mouth shapes a, i, u, e, o, the consonant visemes pp, ff, th, dd, kk, ch, ss, nn, rr (VRChat and Oculus names), and the brow and eye shapes browUp, browDown, squint. All are optional. Needs 'skeleton'.",
       "type": "object",
       "additionalProperties": false,
       "minProperties": 1,
       "properties": {
         "blink": { "$ref": "#/$defs/morphName" }, "a": { "$ref": "#/$defs/morphName" }, "i": { "$ref": "#/$defs/morphName" },
-        "u": { "$ref": "#/$defs/morphName" }, "e": { "$ref": "#/$defs/morphName" }, "o": { "$ref": "#/$defs/morphName" }
+        "u": { "$ref": "#/$defs/morphName" }, "e": { "$ref": "#/$defs/morphName" }, "o": { "$ref": "#/$defs/morphName" },
+        "pp": { "$ref": "#/$defs/morphName" }, "ff": { "$ref": "#/$defs/morphName" }, "th": { "$ref": "#/$defs/morphName" },
+        "dd": { "$ref": "#/$defs/morphName" }, "kk": { "$ref": "#/$defs/morphName" }, "ch": { "$ref": "#/$defs/morphName" },
+        "ss": { "$ref": "#/$defs/morphName" }, "nn": { "$ref": "#/$defs/morphName" }, "rr": { "$ref": "#/$defs/morphName" },
+        "browUp": { "$ref": "#/$defs/morphName" }, "browDown": { "$ref": "#/$defs/morphName" }, "squint": { "$ref": "#/$defs/morphName" }
       }
     },
     "attachments": {

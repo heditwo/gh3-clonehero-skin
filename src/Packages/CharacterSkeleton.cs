@@ -10,7 +10,9 @@ namespace Gh3Skin.Packages;
 // (pipeline/package/skeleton.py), and writes the cache rows that CharacterModel reads.
 internal sealed class CharacterSkeleton
 {
-    public static readonly string[] FaceSlots = { "blink", "a", "i", "u", "e", "o" };
+    // Blink, the vowel mouth shapes, the consonant visemes (VRChat and Oculus names), and the brow and eye shapes of the
+    // lip sync (StageLipSync). The order is the order of the morph slots in the cache (morphs.bin).
+    public static readonly string[] FaceSlots = { "blink", "a", "i", "u", "e", "o", "pp", "ff", "th", "dd", "kk", "ch", "ss", "nn", "rr", "browUp", "browDown", "squint" };
     public const int MaxFollowers = 128;
     public string[] Names { get; private init; } = System.Array.Empty<string>();
     public string[] Keys { get; private init; } = System.Array.Empty<string>();

@@ -17,7 +17,28 @@ import numpy as np
 from .profiles import gh3_key
 from .rotations import matrix_quaternions, qnormalize
 
-FACE_SLOTS = ("blink", "a", "i", "u", "e", "o")
+# The face slots of character.json: blink, the five vowel mouth shapes, the consonant visemes of VRChat and Oculus
+# (pp, ff, th, dd, kk, ch, ss, nn, rr), and the brow and eye shapes of the lip sync face layer.
+FACE_SLOTS = (
+    "blink",
+    "a",
+    "i",
+    "u",
+    "e",
+    "o",
+    "pp",
+    "ff",
+    "th",
+    "dd",
+    "kk",
+    "ch",
+    "ss",
+    "nn",
+    "rr",
+    "browUp",
+    "browDown",
+    "squint",
+)
 MAX_FOLLOWERS = 128
 REQUIRED = (
     "hips",
@@ -559,11 +580,23 @@ def mmd_followers(rows, names, humanoid):
 
 FACE_NAMES = {
     "blink": ("まばたき", "blink", "Blink", "Fcl_EYE_Close", "eyeBlink"),
-    "a": ("あ", "A", "a", "aa", "Fcl_MTH_A", "vrc.v_aa", "mouth_a"),
-    "i": ("い", "I", "i", "ih", "Fcl_MTH_I", "vrc.v_ih", "mouth_i"),
-    "u": ("う", "U", "u", "ou", "Fcl_MTH_U", "vrc.v_ou", "mouth_u"),
-    "e": ("え", "E", "e", "ee", "Fcl_MTH_E", "vrc.v_e", "mouth_e"),
-    "o": ("お", "O", "o", "oh", "Fcl_MTH_O", "vrc.v_oh", "mouth_o"),
+    "a": ("あ", "A", "a", "aa", "Fcl_MTH_A", "vrc.v_aa", "viseme_aa", "mouth_a"),
+    "i": ("い", "I", "i", "ih", "Fcl_MTH_I", "vrc.v_ih", "viseme_I", "mouth_i"),
+    "u": ("う", "U", "u", "ou", "Fcl_MTH_U", "vrc.v_ou", "viseme_U", "mouth_u"),
+    "e": ("え", "E", "e", "ee", "Fcl_MTH_E", "vrc.v_e", "viseme_E", "mouth_e"),
+    "o": ("お", "O", "o", "oh", "Fcl_MTH_O", "vrc.v_oh", "viseme_O", "mouth_o"),
+    "pp": ("vrc.v_pp", "viseme_PP"),
+    "ff": ("vrc.v_ff", "viseme_FF"),
+    "th": ("vrc.v_th", "viseme_TH"),
+    "dd": ("vrc.v_dd", "viseme_DD"),
+    "kk": ("vrc.v_kk", "viseme_kk"),
+    "ch": ("vrc.v_ch", "viseme_CH"),
+    "ss": ("vrc.v_ss", "viseme_SS"),
+    "nn": ("vrc.v_nn", "viseme_nn"),
+    "rr": ("vrc.v_rr", "viseme_RR"),
+    "browUp": ("上", "Fcl_BRW_Surprised", "browInnerUp", "eyeblow_up", "BrowUp", "brow_up"),
+    "browDown": ("下", "Fcl_BRW_Angry", "eyeblow_dw", "BrowDown", "brow_down"),
+    "squint": ("eyeSquint", "Squint", "squint", "eye_squint"),
 }
 
 
@@ -609,6 +642,32 @@ _FACE_FUZZY = {
     "u": ("fcl_mth_u", "mth_u", "mouth_u", "lip_u", "v_ou", "vrc.v_ou", "ou"),
     "e": ("fcl_mth_e", "mth_e", "mouth_e", "lip_e", "v_e", "vrc.v_e", "ee"),
     "o": ("fcl_mth_o", "mth_o", "mouth_o", "lip_o", "v_oh", "vrc.v_oh", "oh"),
+    **{
+        slot: (f"vrc.v_{slot}", f"v_{slot}", f"viseme_{slot}")
+        for slot in ("pp", "ff", "th", "dd", "kk", "ch", "ss", "nn", "rr")
+    },
+    "browUp": (
+        "fcl_brw_surprised",
+        "browinnerup",
+        "eyeblow_up",
+        "eye_brow_up",
+        "eyebrow_up",
+        "brow_up",
+        "browup",
+        "brows_up",
+        "上",
+    ),
+    "browDown": (
+        "fcl_brw_angry",
+        "eyeblow_dw",
+        "eye_brow_down",
+        "eyebrow_down",
+        "brow_down",
+        "browdown",
+        "brows_down",
+        "下",
+    ),
+    "squint": ("eyesquint", "eye_squint", "squint", "eyes_squint"),
 }
 
 

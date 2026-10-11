@@ -385,7 +385,7 @@ internal sealed partial class StageAssets : IDisposable
         {
             result[part] = new();
             var count = reader.ReadInt32();
-            if (count is < 0 or > 6) throw new InvalidDataException("Invalid character blend shapes");
+            if (count < 0 || count > Packages.CharacterSkeleton.FaceSlots.Length) throw new InvalidDataException("Invalid character blend shapes");
             for (var k = 0; k < count; k++)
             {
                 var slot = reader.ReadByte();
