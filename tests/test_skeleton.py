@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from pipeline.package import humanoid as humanoid_finder, skeleton
+from pipeline.package import humanoid as humanoid_finder, rotations, skeleton
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "retarget-case.json"
 FIXTURE_ANY = Path(__file__).resolve().parent / "fixtures" / "retarget-any-rig.json"
@@ -129,7 +129,10 @@ def target_rig(seed=3, scale=0.85):
             continue
         inverse = skeleton.qinv(rotation[p])
         bind.append(
-            [*skeleton.qrotate(inverse, world[i] - world[p]), *skeleton.qnorm(skeleton.qmul(inverse, rotation[i]))]
+            [
+                *skeleton.qrotate(inverse, world[i] - world[p]),
+                *rotations.qnormalize(skeleton.qmul(inverse, rotation[i])),
+            ]
         )
     return names, parents, bind, humanoid, followers
 
@@ -203,7 +206,10 @@ def any_rig(seed=5, scale=1.1):
             continue
         inverse = skeleton.qinv(rotation[p])
         bind.append(
-            [*skeleton.qrotate(inverse, world[i] - world[p]), *skeleton.qnorm(skeleton.qmul(inverse, rotation[i]))]
+            [
+                *skeleton.qrotate(inverse, world[i] - world[p]),
+                *rotations.qnormalize(skeleton.qmul(inverse, rotation[i])),
+            ]
         )
     return names, parents, bind, humanoid, []
 

@@ -20,7 +20,7 @@ from bpy_extras.io_utils import ExportHelper, ImportHelper
 from mathutils import Matrix
 
 from . import character_tools
-from .vendor.package_format import character, humanoid as humanoid_finder, q48, retarget_check, skeleton
+from .vendor.package_format import character, humanoid as humanoid_finder, q48, retarget_check, rotations, skeleton
 
 CATEGORY = "CH Character"
 # Blender world (Z up) to runtime (glTF with z negated): (x, y, z) -> (x, z, y). A reflection; it is its own inverse.
@@ -108,7 +108,7 @@ def rest_rows(rig):
         [world[i] if p < 0 else np.linalg.inv(world[p]) @ world[i] for i, p in enumerate(parents)]
     ).reshape(-1, 4, 4)
     rotation = local[:, :3, :3] / np.linalg.norm(local[:, :3, :3], axis=1, keepdims=True)
-    bind = np.concatenate([local[:, :3, 3], character.matrix_quaternions(rotation)], -1)
+    bind = np.concatenate([local[:, :3, 3], rotations.matrix_quaternions(rotation)], -1)
     return names, parents, bind, rest
 
 
@@ -773,7 +773,7 @@ def _basis(rig, names, world_rt):
         )
         basis[:, exported[bone.name]] = np.linalg.inv(rest) @ relative @ matrices[bone.name]
     rotation = basis[..., :3, :3] / np.linalg.norm(basis[..., :3, :3], axis=-2, keepdims=True)
-    q = np.roll(character.matrix_quaternions(rotation), 1, axis=-1)
+    q = np.roll(rotations.matrix_quaternions(rotation), 1, axis=-1)
     for frame in range(1, len(q)):
         flip = np.sum(q[frame] * q[frame - 1], -1) < 0
         q[frame, flip] *= -1
@@ -809,7 +809,7 @@ def _world(parents, t, q):
     frames, count = t.shape[:2]
     world = np.zeros((frames, count, 4, 4))
     local = np.zeros_like(world)
-    local[..., :3, :3] = skeleton.quaternion_matrices(q / np.linalg.norm(q, axis=-1, keepdims=True))
+    local[..., :3, :3] = rotations.quaternion_matrices(q / np.linalg.norm(q, axis=-1, keepdims=True))
     local[..., :3, 3] = t
     local[..., 3, 3] = 1
     for joint in skeleton._order(parents):
@@ -864,7 +864,7 @@ def retarget_for(scene):
     source_bind = np.concatenate(
         [
             rig_data.local[:, :3, 3] * [1, 1, -1],
-            character.matrix_quaternions(rig_data.local[:, :3, :3]) * [-1, -1, 1, 1],
+            rotations.matrix_quaternions(rig_data.local[:, :3, :3]) * [-1, -1, 1, 1],
         ],
         -1,
     )

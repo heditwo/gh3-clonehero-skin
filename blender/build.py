@@ -29,6 +29,7 @@ VALIDATOR_FILES = (
     "profiles.py",
     "q48.py",
     "retarget_check.py",
+    "rotations.py",
     "schema.py",
     "skeleton.py",
     "source.py",

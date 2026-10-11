@@ -10,7 +10,8 @@ numpy only and relative imports, so the Blender add-on bundles it. Runtime coord
 
 import numpy as np
 
-from .skeleton import qinv, qmul, qnorm, qrotate
+from .rotations import qnormalize
+from .skeleton import qinv, qmul, qrotate
 
 HAND_MISS = 0.03
 FLIP_DEGREES = 50
@@ -151,7 +152,7 @@ def check_clip(retarget, label, source_t, source_q, names, roles, mesh=None):
             )
     # Twist: the hand against the forearm about the forearm axis (from the rest pose).
     for _upper, lower, hand, *_ in retarget.arms:
-        rest = qnorm(qmul(qinv(retarget.rest_q[lower]), retarget.rest_q[hand]))
+        rest = qnormalize(qmul(qinv(retarget.rest_q[lower]), retarget.rest_q[hand]))
         axis = retarget.rest_p[hand] - retarget.rest_p[lower]
         axis = qrotate(qinv(retarget.rest_q[lower]), axis / max(np.linalg.norm(axis), 1e-9))
         twist_bone = next((t for lo, t, h, *_ in retarget.lower_twist if lo == lower and h == hand), -1)
@@ -163,7 +164,7 @@ def check_clip(retarget, label, source_t, source_q, names, roles, mesh=None):
                     _twist(
                         qmul(
                             qmul(qinv(wq[:, lower]), wq[:, twist_bone]),
-                            qinv(qnorm(qmul(qinv(retarget.rest_q[lower]), retarget.rest_q[twist_bone]))),
+                            qinv(qnormalize(qmul(qinv(retarget.rest_q[lower]), retarget.rest_q[twist_bone]))),
                         ),
                         axis,
                     )

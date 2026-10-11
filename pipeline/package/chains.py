@@ -15,6 +15,7 @@ import numpy as np
 from .character import Rig
 from .glb import Glb
 from .profiles import bone_key
+from .rotations import matrix_quaternions
 
 NAME = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 # glTF (Y up) to Blender (Z up).
@@ -126,8 +127,6 @@ def preset_stiffness(preset, position):
 
 def runtime_bind(local):
     """[x, y, z, qx, qy, qz, qw] in runtime coordinates of a glTF local 4 x 4 matrix (unit scale)."""
-    from .character import matrix_quaternions
-
     rotation = local[:3, :3] / np.linalg.norm(local[:3, :3], axis=0)
     q = matrix_quaternions(rotation[None])[0] * [-1, -1, 1, 1]
     return [float(v) for v in (*(local[:3, 3] * FLIP), *q)]

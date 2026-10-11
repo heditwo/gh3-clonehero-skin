@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-from pipeline.package import character, compare, q48
+from pipeline.package import character, compare, q48, rotations
 from pipeline.package.glb import Glb, join_glb
 from pipeline.package.profiles import gh3_key
 from pipeline.package.validate import Validator
@@ -87,7 +87,7 @@ class WeightTests(unittest.TestCase):
         rng = np.random.default_rng(3)
         q = rng.normal(size=(500, 4))
         q /= np.linalg.norm(q, axis=1, keepdims=True)
-        back = character.matrix_quaternions(character.quaternion_matrices(q))
+        back = rotations.matrix_quaternions(rotations.quaternion_matrices(q))
         self.assertLess(np.minimum(np.abs(back - q).max(1), np.abs(back + q).max(1)).max(), 1e-12)
 
     def test_character_json(self):
@@ -225,7 +225,7 @@ class LibraryCharacterTests(unittest.TestCase):
         world = character.world_poses(
             rig,
             translations[:1] * 0 + rig.local[None, :, :3, 3],
-            character.matrix_quaternions(rig.local[None, :, :3, :3]),
+            rotations.matrix_quaternions(rig.local[None, :, :3, :3]),
         )
         np.testing.assert_allclose(world[0], rig.world, rtol=0, atol=1e-6)
 

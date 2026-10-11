@@ -21,6 +21,7 @@ import numpy as np
 from . import container, decisions
 from .glb import Glb, join_glb
 from .profiles import LIBRARY_ID, PROFILES, gh3_key
+from .rotations import matrix_quaternions, qnormalize, quaternion_matrices
 from .source import Report, Source
 
 FORMAT = "chchar/1.0"
@@ -609,6 +610,8 @@ TWIST_CONSTRAINTS = (
 )
 
 
+# skeleton.py has its own qmul (float64 cast) and qrotate (cross-product form). The results differ in the last bits, so
+# each module keeps its own to keep the clip poses of the game IK and of the retarget the same.
 def qmul(a, b):
     ax, ay, az, aw = np.moveaxis(a, -1, 0)
     bx, by, bz, bw = np.moveaxis(b, -1, 0)
@@ -625,10 +628,6 @@ def qmul(a, b):
 
 def qconj(q):
     return q * [-1, -1, -1, 1]
-
-
-def qnormalize(q):
-    return q / np.linalg.norm(q, axis=-1, keepdims=True)
 
 
 def qrotate(q, v):
@@ -817,57 +816,6 @@ class GuitarRig:
             np.broadcast_to(gh3_quaternion(self.bind_q[joint]), driven.shape), qslerp(identity, driven, amount)
         )
         self.q[:, joint] = qnormalize(gh3_quaternion(result))
-
-
-def matrix_quaternions(matrices):
-    """[x, y, z, w] quaternions (w >= 0 where possible) of rotation matrices [..., 3, 3]."""
-    m = np.asarray(matrices, dtype=np.float64)
-    shape = m.shape[:-2]
-    m = m.reshape(-1, 3, 3)
-    q = np.empty((len(m), 4))
-    trace = m[:, 0, 0] + m[:, 1, 1] + m[:, 2, 2]
-    cases = [
-        trace > 0,
-        (m[:, 0, 0] >= m[:, 1, 1]) & (m[:, 0, 0] >= m[:, 2, 2]),
-        m[:, 1, 1] >= m[:, 2, 2],
-        np.ones(len(m), bool),
-    ]
-    done = np.zeros(len(m), bool)
-    for case, select in enumerate(cases):
-        rows = select & ~done
-        done |= rows
-        r = m[rows]
-        if case == 0:
-            s = np.sqrt(trace[rows] + 1) * 2
-            q[rows] = np.stack(
-                [(r[:, 2, 1] - r[:, 1, 2]) / s, (r[:, 0, 2] - r[:, 2, 0]) / s, (r[:, 1, 0] - r[:, 0, 1]) / s, s / 4], -1
-            )
-            continue
-        i = case - 1
-        j = (i + 1) % 3
-        k = (i + 2) % 3
-        s = np.sqrt(np.maximum(0, 1 + r[:, i, i] - r[:, j, j] - r[:, k, k])) * 2
-        values = np.empty((len(r), 4))
-        values[:, i] = s / 4
-        values[:, j] = (r[:, j, i] + r[:, i, j]) / s
-        values[:, k] = (r[:, k, i] + r[:, i, k]) / s
-        values[:, 3] = (r[:, k, j] - r[:, j, k]) / s
-        q[rows] = values
-    q /= np.linalg.norm(q, axis=-1, keepdims=True)
-    return q.reshape(*shape, 4)
-
-
-def quaternion_matrices(q):
-    """3x3 rotation matrices of quaternions [..., 4] ([x, y, z, w])."""
-    x, y, z, w = (q[..., i] for i in range(4))
-    return np.stack(
-        [
-            np.stack([1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)], -1),
-            np.stack([2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)], -1),
-            np.stack([2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)], -1),
-        ],
-        -2,
-    )
 
 
 def world_poses(rig, translations, quaternions):

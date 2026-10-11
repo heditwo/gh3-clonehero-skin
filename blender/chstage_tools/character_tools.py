@@ -19,7 +19,7 @@ from mathutils import Matrix, Vector
 from mathutils.bvhtree import BVHTree
 
 from . import brotli_decode, camera_tools, glb_tools, gltf_io, package_open, textures
-from .vendor.package_format import character, q48, skeleton
+from .vendor.package_format import character, q48, rotations, skeleton
 from .vendor.package_format.glb import Glb
 
 HELPER = "chstage_helper"
@@ -627,7 +627,7 @@ def new_fcurve(action, obj, path, index, group):
 
 def matrix_quaternions(matrices):
     """[w, x, y, z] quaternions of rotation matrices [..., 3, 3]."""
-    return np.roll(character.matrix_quaternions(matrices), 1, axis=-1)
+    return np.roll(rotations.matrix_quaternions(matrices), 1, axis=-1)
 
 
 def clip_basis(rig_object, rig_data, translations, quaternions):

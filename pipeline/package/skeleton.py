@@ -15,6 +15,7 @@ import unicodedata
 import numpy as np
 
 from .profiles import gh3_key
+from .rotations import matrix_quaternions, qnormalize
 
 FACE_SLOTS = ("blink", "a", "i", "u", "e", "o")
 MAX_FOLLOWERS = 128
@@ -203,22 +204,8 @@ def hierarchy():
 
 
 # Rest pose and checks.
-def quaternion_matrices(q):
-    x, y, z, w = (q[..., i] for i in range(4))
-    return np.stack(
-        [
-            np.stack([1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)], -1),
-            np.stack([2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)], -1),
-            np.stack([2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)], -1),
-        ],
-        -2,
-    )
-
-
 def runtime_bind(local):
     """[x, y, z, qx, qy, qz, qw] in runtime coordinates of glTF local matrices (..., 4, 4); the scale is removed."""
-    from .character import matrix_quaternions
-
     local = np.asarray(local, dtype=np.float64)
     rotation = local[..., :3, :3] / np.linalg.norm(local[..., :3, :3], axis=-2, keepdims=True)
     q = matrix_quaternions(rotation) * [-1, -1, 1, 1]
@@ -664,10 +651,6 @@ def qinv(q):
     return np.asarray(q) * [-1, -1, -1, 1] / np.sum(np.asarray(q) ** 2, -1, keepdims=True)
 
 
-def qnorm(q):
-    return q / np.linalg.norm(q, axis=-1, keepdims=True)
-
-
 def qrotate(q, v):
     q = np.asarray(q, dtype=np.float64)
     v = np.asarray(v, dtype=np.float64)
@@ -687,7 +670,7 @@ def from_to(a, b):
         axis = np.cross(other, a)
         axis /= np.maximum(np.linalg.norm(axis, axis=-1, keepdims=True), 1e-12)
         q = np.where(opposite[..., None], np.concatenate([axis, np.zeros(axis.shape[:-1] + (1,))], -1), q)
-    return qnorm(q)
+    return qnormalize(q)
 
 
 def twist_about(q, axis):
@@ -695,7 +678,7 @@ def twist_about(q, axis):
     twist = np.concatenate([projection, q[..., 3:4]], -1)
     small = np.sum(twist**2, -1) < 1e-12
     twist = np.where(small[..., None], [0, 0, 0, 1.0], twist)
-    return qnorm(twist)
+    return qnormalize(twist)
 
 
 def power(q, t):
@@ -817,7 +800,7 @@ class Retarget:
                             break
                         parent = self.parents[parent]
                 aligned[bone] = True
-            self.correction[bone] = qnorm(qmul(qmul(qinv(sq[self.map[bone]]), align[bone]), tq[bone]))
+            self.correction[bone] = qnormalize(qmul(qmul(qinv(sq[self.map[bone]]), align[bone]), tq[bone]))
         group = [b for b in (t("hips"), t("spine"), t("leftUpperLeg"), t("rightUpperLeg")) if b >= 0]
         self.root_motion = -1
         if group:
@@ -872,7 +855,7 @@ class Retarget:
                 self.upper_twist.append((u, ut, lo, _unit(qrotate(qinv(tq[u]), tp[lo] - tp[u]))))
             if lo >= 0 and h >= 0 and _above(self.parents, lo, h):
                 axis = _unit(qrotate(qinv(tq[lo]), tp[h] - tp[lo]))
-                rest = qnorm(qmul(qinv(tq[lo]), tq[h]))
+                rest = qnormalize(qmul(qinv(tq[lo]), tq[h]))
                 twist = lt if lt >= 0 and _above(self.parents, lo, lt) and _above(self.parents, lt, h) else -1
                 self.lower_twist.append((lo, twist, h, axis, rest))
         self.between = {
@@ -881,7 +864,7 @@ class Retarget:
             if self.map[bone] < 0 and self.map[upper] >= 0 and self.map[lower] >= 0
         }
         self.followers = [
-            (b, src, w, qnorm(qmul(qinv(tq[b]), tq[src])))
+            (b, src, w, qnormalize(qmul(qinv(tq[b]), tq[src])))
             for b, src, w in followers
             if 0 <= b < count and 0 <= src < count and self.map[b] < 0 and b != src
         ]
@@ -933,7 +916,7 @@ class Retarget:
                 sp[:, bone], sq[:, bone] = source_t[:, bone], source_q[:, bone]
             else:
                 sp[:, bone] = sp[:, parent] + qrotate(sq[:, parent], source_t[:, bone])
-                sq[:, bone] = qnorm(qmul(sq[:, parent], source_q[:, bone]))
+                sq[:, bone] = qnormalize(qmul(sq[:, parent], source_q[:, bone]))
         roots = [root for root, mode in self.attachments if mode == "chest"]
         instrument = [b for b in range(count) if any(b == r or _above(self.source_parents, r, b) for r in roots)]
         gains = {1: np.ones(frames), -1: np.ones(frames)}
@@ -959,7 +942,7 @@ class Retarget:
                 sp[:, bone], sq[:, bone] = source_t[:, bone], source_q[:, bone]
             else:
                 sp[:, bone] = sp[:, parent] + qrotate(sq[:, parent], source_t[:, bone])
-                sq[:, bone] = qnorm(qmul(sq[:, parent], source_q[:, bone]))
+                sq[:, bone] = qnormalize(qmul(sq[:, parent], source_q[:, bone]))
         self.source_p, self.source_q = sp, sq
         self.goals = []
         count = len(self.parents)
@@ -967,7 +950,7 @@ class Retarget:
         self.driven = np.zeros((frames, count), bool)
         for bone, source in enumerate(self.map):
             if source >= 0:
-                self.desired[:, bone] = qnorm(qmul(sq[:, source], self.correction[bone]))
+                self.desired[:, bone] = qnormalize(qmul(sq[:, source], self.correction[bone]))
                 self.driven[:, bone] = True
         move = (
             (sp[:, self.source_pelvis] - self.source_rest_p[self.source_pelvis]) * self.hip_scale
@@ -1034,7 +1017,7 @@ class Retarget:
                 if bone == self.root_motion
                 else self.bind[bone, :3]
             )
-            q[:, bone] = qnorm(qmul(inverse, self.wq[:, bone]))
+            q[:, bone] = qnormalize(qmul(inverse, self.wq[:, bone]))
         return t, q, out_t, out_q
 
     def _goal(self, sp, bone, instrument, move):
@@ -1070,14 +1053,14 @@ class Retarget:
                 if bone == self.root_motion
                 else parent_p + qrotate(parent_q, np.broadcast_to(rest_p, (frames, 3)))
             )
-            carried = qnorm(qmul(parent_q, rest_q))
+            carried = qnormalize(qmul(parent_q, rest_q))
             rotation = np.where(self.driven[:, bone, None], self.desired[:, bone], carried)
             if bone in self.between:
                 upper, lower, fraction = self.between[bone]
                 turn_u = qmul(self.desired[:, upper], qinv(self.rest_q[upper]))
                 turn_l = qmul(self.desired[:, lower], qinv(self.rest_q[lower]))
                 turn = qmul(turn_u, power(qmul(qinv(turn_u), turn_l), fraction))
-                rotation = qnorm(qmul(turn, self.rest_q[bone]))
+                rotation = qnormalize(qmul(turn, self.rest_q[bone]))
             if bone in self.follower_of:
                 _, source, weight, frame = self.follower_of[bone]
                 source_parent = self.parents[source]
@@ -1087,29 +1070,29 @@ class Retarget:
                     else qmul(qinv(self.wq[:, source_parent]), self.wq[:, source])
                 )
                 delta = qmul(qinv(self.bind[source, 3:]), local)
-                rotation = qnorm(qmul(carried, qmul(qmul(frame, power(delta, weight)), qinv(frame))))
+                rotation = qnormalize(qmul(carried, qmul(qmul(frame, power(delta, weight)), qinv(frame))))
             for upper, twist, _, axis in self.upper_twist:
                 if bone == upper:
                     local = qmul(qinv(carried), rotation)
                     swing = qmul(local, qinv(twist_about(local, axis)))
-                    rotation = np.where(self.driven[:, bone, None], qnorm(qmul(carried, swing)), rotation)
+                    rotation = np.where(self.driven[:, bone, None], qnormalize(qmul(carried, swing)), rotation)
                 elif bone == twist:
                     rotation = np.where(
-                        self.driven[:, upper, None], qnorm(qmul(self.desired[:, upper], rest_q)), rotation
+                        self.driven[:, upper, None], qnormalize(qmul(self.desired[:, upper], rest_q)), rotation
                     )
             for lower, twist, hand, axis, hand_rest in self.lower_twist:
                 if bone == lower and twist < 0:
                     turn = twist_about(qmul(qmul(qinv(rotation), self.desired[:, hand]), qinv(hand_rest)), axis)
                     rotation = np.where(
                         (self.driven[:, bone] & self.driven[:, hand])[:, None],
-                        qnorm(qmul(rotation, power(turn, 0.5))),
+                        qnormalize(qmul(rotation, power(turn, 0.5))),
                         rotation,
                     )
                 elif bone == twist:
                     turn = twist_about(
                         qmul(qmul(qinv(self.wq[:, lower]), self.desired[:, hand]), qinv(hand_rest)), axis
                     )
-                    turned = qnorm(qmul(qmul(qmul(self.wq[:, lower], turn), qinv(self.wq[:, lower])), rotation))
+                    turned = qnormalize(qmul(qmul(qmul(self.wq[:, lower], turn), qinv(self.wq[:, lower])), rotation))
                     rotation = np.where(self.driven[:, hand, None], turned, rotation)
             self.wq[:, bone] = rotation
 
@@ -1152,9 +1135,9 @@ class Retarget:
         active = (gain > 0) & (upper_length > 1e-4) & (lower_length > 1e-4)
         base_u = np.where(self.driven[:, upper, None], self.desired[:, upper], self.wq[:, upper])
         base_l = np.where(self.driven[:, lower, None], self.desired[:, lower], self.wq[:, lower])
-        self.desired[:, upper] = np.where(active[:, None], qnorm(qmul(first, base_u)), self.desired[:, upper])
+        self.desired[:, upper] = np.where(active[:, None], qnormalize(qmul(first, base_u)), self.desired[:, upper])
         self.desired[:, lower] = np.where(
-            active[:, None], qnorm(qmul(qmul(second, first), base_l)), self.desired[:, lower]
+            active[:, None], qnormalize(qmul(qmul(second, first), base_l)), self.desired[:, lower]
         )
         self.driven[:, upper] |= active
         self.driven[:, lower] |= active
@@ -1172,4 +1155,4 @@ def _frame_turn(a, a2, b, b2):
     y = b2 - axis * np.dot(b2, axis)
     if np.dot(x, x) < 1e-10 or np.dot(y, y) < 1e-10:
         return first
-    return qnorm(qmul(from_to(x, y), first))
+    return qnormalize(qmul(from_to(x, y), first))
