@@ -97,6 +97,10 @@ PIXEL_ENGINE = {
     191: "gh3_c191",
 }
 LIGHT_REGISTERS = {176, 177, 178, 179, 188, 189, 190, 191}
+# A template that reads the key light or the SH registers is lit; one that reads only the ambient is ambient.
+KEY_LIGHT_REGISTERS = {177, 178, 188, 189, 190, 191}
+WIBBLE_DIRECTION_REGISTER = 119
+SHADOW_REGISTERS = {156, 157, 158, 159}
 
 
 class UnsupportedShaderError(ValueError):
@@ -286,12 +290,7 @@ def _varying(usage, index):
     return None
 
 
-def translate(checksum):
-    """Return the GLSL functions and resource needs of one template."""
-    name, vs_code, ps_code = library()[checksum]
-    vs = Program(vs_code, "vs")
-    ps = Program(ps_code, "ps")
-    function = f"t{checksum}"
+def _vertex_function(name, function, vs):
     lines = [f"// {name}", f"void gh3_vs_{function}()", "{"]
     lines += [f"    const vec4 d{i} = {v};" for i, v in sorted(vs.defs.items())]
     for index in sorted(vs.constants):
@@ -321,12 +320,12 @@ def translate(checksum):
         elif usage not in ("position", "fog", "psize"):
             raise UnsupportedShaderError(f"Unsupported vertex output {usage}{usage_index}")
     lines.append("}")
-    vertex = "\n".join(lines)
+    return "\n".join(lines)
 
-    color = gh3_materials.classify(ps_code)["diffuseConstant"]
+
+def _fragment_function(name, function, ps, color):
     lines = [f"// {name}", f"vec4 gh3_ps_{function}()", "{"]
     lines += [f"    const vec4 d{i} = {v};" for i, v in sorted(ps.defs.items())]
-    lights = sorted(ps.constants & LIGHT_REGISTERS)
     for index in sorted(ps.constants):
         if index in PIXEL_ENGINE:
             lines.append(f"    vec4 c{index} = {PIXEL_ENGINE[index]}();")
@@ -345,15 +344,27 @@ def translate(checksum):
     lines.append("    vec4 oC0 = vec4(0.0);")
     lines += ps.body
     lines += ["    return oC0;", "}"]
-    fragment = "\n".join(lines)
+    return "\n".join(lines)
+
+
+def translate(checksum):
+    """Return the GLSL functions and resource needs of one template."""
+    name, vs_code, ps_code = library()[checksum]
+    vs = Program(vs_code, "vs")
+    ps = Program(ps_code, "ps")
+    function = f"t{checksum}"
+    vertex = _vertex_function(name, function, vs)
+    color = gh3_materials.classify(ps_code)["diffuseConstant"]
+    lights = sorted(ps.constants & LIGHT_REGISTERS)
+    fragment = _fragment_function(name, function, ps, color)
     vertex_written = {_varying(*usage) for usage in vs.outputs.values()}
     missing = [_varying(*usage) for usage in ps.inputs.values() if _varying(*usage) not in vertex_written]
     if missing:
         raise UnsupportedShaderError(f"Pixel inputs not written by the vertex shader: {missing}")
     approximations = []
-    if 119 in vs.constants:
+    if WIBBLE_DIRECTION_REGISTER in vs.constants:
         approximations.append("c119 wibble direction is GH3's default (zero)")
-    if vs.constants & {156, 157, 158, 159} or any(i >= len(SAMPLER_NAMES) for i in ps.samplers):
+    if vs.constants & SHADOW_REGISTERS or any(i >= len(SAMPLER_NAMES) for i in ps.samplers):
         approximations.append("engine shadow projection and render-target samplers are unshadowed")
     inputs = {f"{u}{i}" for u, i in vs.inputs.values()}
     extra = "position1" if "position1" in inputs else "binormal1" if "binormal1" in inputs else ""
@@ -366,7 +377,7 @@ def translate(checksum):
         "fragment": fragment,
         "samplers": {index: kind for index, kind in ps.samplers.items()},
         "lighting": bool(lights),
-        "shading": "lit" if set(lights) & {177, 178, 188, 189, 190, 191} else "ambient" if lights else "unlit",
+        "shading": "lit" if set(lights) & KEY_LIGHT_REGISTERS else "ambient" if lights else "unlit",
         "vertexConstants": sorted(i for i in vs.constants if i < VERTEX_CONSTANTS),
         "pixelConstants": sorted(i for i in ps.constants if i < PIXEL_CONSTANTS),
         "colorConstant": color,

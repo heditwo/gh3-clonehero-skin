@@ -7,14 +7,28 @@ from pathlib import Path
 from PIL import Image
 
 from pipeline.gh3.formats import key
+from pipeline.gh3.scene import SKINNED_BASE_STRIDE, SKINNED_STRIDE, VERTEX_UV
+
+HAIR_TEMPLATE = "6f3f03f3"
+# GH3 material blend mode of the hair cards.
+HAIR_BLEND = 3
+# UV set 1 of the extended skinned vertex (SKIN_STREAMS starts with UV sets 0–3).
+SKINNED_UV_SET_1 = SKINNED_BASE_STRIDE + 8
+MAX_ATLAS_TILES = 16
+# Border of each atlas tile, filled with the wrapped texture so that filtering at the tile edge matches the original.
+ATLAS_PADDING = 16
+MAX_VERTICES = 65535
 
 
 def combine_hair(meshes, materials, texture_directory):
-    selected = [m for m in meshes if materials[m[0]]["template"] == "6f3f03f3" and materials[m[0]]["blend"] == 3]
+    """Merge the hair card meshes into one mesh (one atlas texture when the cards use several) for depth sorting."""
+    selected = [
+        m for m in meshes if materials[m[0]]["template"] == HAIR_TEMPLATE and materials[m[0]]["blend"] == HAIR_BLEND
+    ]
     if not selected:
         return meshes
     stride = len(selected[0][2]) // selected[0][1]
-    if stride not in (56, 128):
+    if stride not in (SKINNED_BASE_STRIDE, SKINNED_STRIDE):
         raise ValueError("Invalid hair vertex layout")
     names = sorted({materials[m[0]]["texture"] for m in selected})
     transforms = {}
@@ -25,7 +39,7 @@ def combine_hair(meshes, materials, texture_directory):
         tiles = []
         for name in names:
             uv = [
-                struct.unpack_from("<2f", data, i * stride + 24)
+                struct.unpack_from("<2f", data, i * stride + VERTEX_UV)
                 for key, count, data, _ in selected
                 if materials[key]["texture"] == name
                 for i in range(count)
@@ -35,9 +49,9 @@ def combine_hair(meshes, materials, texture_directory):
             with Image.open(directory / f"{name}.png") as source:
                 image = source.convert("RGBA")
             width, height = image.size
-            if (high[0] - low[0]) * (high[1] - low[1]) > 16:
+            if (high[0] - low[0]) * (high[1] - low[1]) > MAX_ATLAS_TILES:
                 raise ValueError("Hair atlas UV range is too large")
-            pad = 16
+            pad = ATLAS_PADDING
             tile = Image.new("RGBA", ((high[0] - low[0]) * width + pad * 2, (high[1] - low[1]) * height + pad * 2))
             for y in range(-1, high[1] - low[1] + 1):
                 for x in range(-1, high[0] - low[0] + 1):
@@ -71,16 +85,16 @@ def combine_hair(meshes, materials, texture_directory):
         if name in transforms:
             sx, sy, ox, oy = transforms[name]
             for i in range(size):
-                u, v = struct.unpack_from("<2f", packed, i * stride + 24)
-                struct.pack_into("<2f", packed, i * stride + 24, u * sx + ox, v * sy + oy)
-                if stride == 128:
+                u, v = struct.unpack_from("<2f", packed, i * stride + VERTEX_UV)
+                struct.pack_into("<2f", packed, i * stride + VERTEX_UV, u * sx + ox, v * sy + oy)
+                if stride == SKINNED_STRIDE:
                     # HairShader samples its diffuse (s1) with UV set 1, stored with D3D's top-down V.
-                    u, v = struct.unpack_from("<2f", packed, i * stride + 64)
-                    struct.pack_into("<2f", packed, i * stride + 64, u * sx + ox, 1 - ((1 - v) * sy + oy))
+                    u, v = struct.unpack_from("<2f", packed, i * stride + SKINNED_UV_SET_1)
+                    struct.pack_into("<2f", packed, i * stride + SKINNED_UV_SET_1, u * sx + ox, 1 - ((1 - v) * sy + oy))
         vertices.extend(packed)
         faces.extend(tuple(v + count for v in face) for face in triangles)
         count += size
-    if count > 65535:
+    if count > MAX_VERTICES:
         raise ValueError("Combined hair exceeds the vertex limit")
     material["texture"] = texture
     if "gh3" in material and len(material["gh3"]["textures"]) > 1:

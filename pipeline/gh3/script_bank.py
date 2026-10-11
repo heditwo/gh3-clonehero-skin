@@ -1,4 +1,4 @@
-"""Convert typed QB data into the public script library format."""
+"""Typed QB data and script references from tools/Gh3SongTool (the C# QB reader of the mod), for the script library."""
 
 import json
 import subprocess
@@ -9,6 +9,7 @@ from pipeline import songtool
 
 
 def definitions(files, command="qb-data"):
+    """The JSON output of a Gh3SongTool command for these QB files."""
     executable = songtool.path()
     with tempfile.TemporaryDirectory(prefix="gh3-scripts-", dir="/tmp/opencode") as temporary:
         paths = []
@@ -24,6 +25,7 @@ def definitions(files, command="qb-data"):
 
 
 def references(files):
+    """{script checksum: [checksums it refers to]}."""
     return {
         int(name, 16): [int(reference, 16) for reference in items]
         for name, items in definitions(files, "qb-references").items()
@@ -31,6 +33,7 @@ def references(files):
 
 
 def dependencies(graph, roots):
+    """All names reachable from the roots in a reference graph."""
     pending = list(roots)
     found = set()
     while pending:
