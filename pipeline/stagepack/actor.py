@@ -21,7 +21,7 @@ SKIN_VERTEX = np.dtype(VERTEX.descr + [("joints", "u1", 4), ("weights", "<f4", 4
 UNIT_SCALE = 1e-4
 
 
-def compile_actor(path, folder, material_import, mesh_write, mesh_split, root=None):
+def compile_actor(path, folder, material_import, mesh_write, mesh_split, root=None):  # noqa: C901
     glb = GlbReader(path, root)
     nodes = list(glb.nodes())
     if len(glb.data.get("skins", [])) != 1:

@@ -25,7 +25,7 @@ def light_rotation(xyzw):
     return [v / math.sqrt(2) for v in (w - x, z - y, z + y, w + x)]
 
 
-def export(directory, destination, venue="z_budokan"):
+def export(directory, destination, venue="z_budokan"):  # noqa: C901
     source = Source(directory)
     entries = source.load(f"ZONES/{venue}.pak.xen")
     qbs = [b for k, n, b in entries if k in (key(".qb"), key(".nqb"))]

@@ -353,7 +353,7 @@ def inverse_binds(glb):
     return dict(zip(skin_names(glb), matrices))
 
 
-def compare_glb(glb_a, source_a, glb_b, source_b):
+def compare_glb(glb_a, source_a, glb_b, source_b):  # noqa: C901
     images_a, images_b = Images(glb_a, source_a), Images(glb_b, source_b)
     report = {"nodes": {}, "materials": {}, "primitives": {}, "max": {}, "failures": []}
     nodes_a, nodes_b = node_names(glb_a), node_names(glb_b)

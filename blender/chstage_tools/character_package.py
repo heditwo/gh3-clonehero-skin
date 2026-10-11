@@ -92,7 +92,7 @@ def unsupported_surface(material):
     return None if node.type in GLTF_SURFACES else node
 
 
-def check_scene(scene, issues):
+def check_scene(scene, issues):  # noqa: C901
     """The add-on checks of a character scene. Returns (rig, meshes); rig is None after a blocking error."""
     p = scene.chstage.character
     rig = p.rig
@@ -445,7 +445,7 @@ def record_kept(scene):
     keeper.store()
 
 
-def open_package(path, library=None):
+def open_package(path, library=None):  # noqa: C901
     """Make a new scene from a .chchar zip or development folder. Returns (scene, issues).
     library: the library for the helpers and the clips (None: the preference or next to the package; "": none)."""
     path = Path(path)

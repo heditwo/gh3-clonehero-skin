@@ -60,7 +60,7 @@ class LibraryChecks:
                 if glb is not None and glb.list("skins"):
                     self.check_skin(name, glb)
 
-    def check_character_library(self, name):
+    def check_character_library(self, name):  # noqa: C901
         """characters.json (PACKAGE-FORMAT.md section 10.1): references between profiles, sets, hair, IK, and clip files."""
         library = self.json_entry("characters", "characters.schema.json")
         if library is None:
@@ -126,7 +126,7 @@ class LibraryChecks:
             if any(abs(math.sqrt(sum(v * v for v in joint[field])) - 1) > 0.01 for field in frames):
                 self.report.error(where, f"hair joint {joint['bone']}: a limit axis must have unit length")
 
-    def check_library_files(self, entry, data):
+    def check_library_files(self, entry, data):  # noqa: C901
         """The fixed-path files of a library (PACKAGE-FORMAT.md section 10) that its JSON files refer to."""
 
         def need(where, name, what):

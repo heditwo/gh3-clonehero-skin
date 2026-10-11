@@ -114,7 +114,7 @@ def d3d11_templates(windows_game):
     return (entries[1][:32], entries[3][:32]), shader_pass["m_EditorDataHash"][shader_pass["m_Platforms"].index(4)]
 
 
-def convert(game, output, kind="screen-color", windows_game=WINDOWS_GAME):
+def convert(game, output, kind="screen-color", windows_game=WINDOWS_GAME):  # noqa: C901
     (vertex_template, pixel_template), d3d11_hash = d3d11_templates(windows_game)
     asset, shader = blit_shader(game / "clonehero_Data/Resources/unity_builtin_extra")
     tree = shader.read_typetree()

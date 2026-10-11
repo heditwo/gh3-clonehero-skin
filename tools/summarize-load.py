@@ -37,7 +37,7 @@ def peak_rss(folder):
     return max(values) if values else None
 
 
-def metrics(folder):
+def metrics(folder):  # noqa: C901
     log = (folder / "Latest.log").read_text(errors="replace")
     rows = marks(log)
     result = {}

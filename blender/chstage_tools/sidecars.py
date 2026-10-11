@@ -417,7 +417,7 @@ def anchor_frame(anchor, band, anchors=None):
     return origin + frame @ values[:3], frame @ values[3:12].reshape(3, 3), True
 
 
-def build_cameras(shots, notes, markers, issues, keeper=None, groups_owner=None, anchors=None):
+def build_cameras(shots, notes, markers, issues, keeper=None, groups_owner=None, anchors=None):  # noqa: C901
     """A point is relative to its anchor. A bone anchor (head, hands, bone) uses the bone of the proxy rig (anchors);
     without a rig, Blender shows the point relative to the performer root (the same rule as open_cameras)."""
     keeper = keeper or Keeper("compute")

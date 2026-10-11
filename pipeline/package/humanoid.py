@@ -508,7 +508,7 @@ def _score_pair(sk, legs, arms, normal, midline, names, hint_roles):
     return score, up, floor, height
 
 
-def find(names, parents, heads, tails=None, weights=None, points=None):
+def find(names, parents, heads, tails=None, weights=None, points=None):  # noqa: C901
     """The humanoid map of a skeleton. names, parents (indices, -1 for a root), heads (bone positions); tails: the
     tail of each bone (Blender), else the next joint gives the direction; weights: weighted vertex count of each bone
     (bones without weights and without weighted children are helpers); points: mesh vertex positions (optional, for

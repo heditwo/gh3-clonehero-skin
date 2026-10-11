@@ -29,7 +29,7 @@ HIGHWAY_SIZE = (512, 1024)
 class CharacterChecks:
     """Character and instrument checks of the Validator; they use its report, source, and GLB helpers."""
 
-    def check_character(self):
+    def check_character(self):  # noqa: C901
         entry = self.manifest["entry"]
         character = self.json_entry("character", "character.schema.json")
         glb = self.check_glb(entry["model"], skinned=True)
@@ -168,7 +168,7 @@ class CharacterChecks:
             where, character, (keys, parents, translations, rotations), chain_bones={bone_key(n) for n in chain_bones}
         )
 
-    def check_chains(self, where, character, profile, chain_bones=None):
+    def check_chains(self, where, character, profile, chain_bones=None):  # noqa: C901
         """character.json bones, colliders, and chains (PACKAGE-FORMAT.md section 9.5). Returns the profile rig with the
         added bones (load_profile layout), or None after an error. Without profile parents (no library), only the
         references are checked."""

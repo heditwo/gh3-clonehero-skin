@@ -236,7 +236,7 @@ def world_positions(parents, bind):
     return position, rotation
 
 
-def check_map(names, parents, bind, humanoid, followers=(), instrument=None):
+def check_map(names, parents, bind, humanoid, followers=(), instrument=None):  # noqa: C901
     """The checks of character.json skeleton on a skeleton (joint names, parent indices, runtime bind rows). humanoid:
     {role: joint name}; followers: [{bone, source, weight}]; instrument: {bone, offset} or None. Returns
     (errors, warnings, chain_bones): the joint names that can be chain joints."""
@@ -450,7 +450,7 @@ _FINGER_NAMES = {
 _DEFORM_VARIANTS = {"UpperLeg": ("足d", "legd"), "LowerLeg": ("ひざd", "kneed"), "Foot": ("足首d", "ankled")}
 
 
-def auto_map(names, parents, deform=None, spine_hint=None):
+def auto_map(names, parents, deform=None, spine_hint=None):  # noqa: C901
     """A humanoid map {role: bone name} from the bone names of a skeleton (MMD Japanese and English, VRM and VRoid,
     Mixamo, Unreal mannequin). deform: the bones that have vertex weights (MMD 'D' leg bones win over the IK chain
     bones when they have the weights). The result can miss roles; check it with check_map."""
@@ -730,7 +730,7 @@ class Retarget:
     bone checksums, parents, bind rows; target: joint names, parents, bind rows, humanoid {role: joint index},
     followers [(bone, source, weight)], the instrument bone (or -1) and offset, and the band role."""
 
-    def __init__(
+    def __init__(  # noqa: C901
         self,
         source_bones,
         source_parents,

@@ -123,7 +123,7 @@ def _renumber_textures(value, mapping):
             _renumber_textures(item, mapping)
 
 
-def compact(gltf, binary):
+def compact(gltf, binary):  # noqa: C901
     """Remove the materials, textures, images, samplers, accessors, and buffer views that nothing uses, and rewrite the
     binary chunk with the used buffer views only. Returns (glTF JSON, binary)."""
     meshes = gltf.get("meshes", [])

@@ -136,7 +136,7 @@ class GlbWriter:
         """Texture reference for extras: '#<image name>' of the embedded image."""
         return "#" + self.data["images"][self.texture(image, name)]["name"]
 
-    def material(self, name, definition, textures, layered=True, streams=None):
+    def material(self, name, definition, textures, layered=True, streams=None):  # noqa: C901
         if name in self.materials:
             return self.materials[name]
         gh3 = definition.get("gh3")

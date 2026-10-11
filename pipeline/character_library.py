@@ -122,7 +122,7 @@ def pak_name(directory, path):
     return found[0]
 
 
-def build(data_directory, output):
+def build(data_directory, output):  # noqa: C901
     source = Source(data_directory)
     scripts = source.scripts()
     entries = source.load("ZONES/global.pak.xen")

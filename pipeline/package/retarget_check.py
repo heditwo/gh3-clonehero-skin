@@ -43,7 +43,7 @@ def _twist(q, axis):
     return np.degrees(2 * np.arctan2(np.sum(q[..., :3] * axis, -1), q[..., 3]))
 
 
-def check_clip(retarget, label, source_t, source_q, names, roles, mesh=None):
+def check_clip(retarget, label, source_t, source_q, names, roles, mesh=None):  # noqa: C901
     """Findings for one clip: dicts with kind, severity ('ERROR' or 'WARNING'), role, value, message, and fix. The arm
     IK strengths come from the GH3 hands (Retarget.arm_gains)."""
     right, left = retarget.arm_gains(source_t, source_q)

@@ -85,7 +85,7 @@ def encode(positions, rotations, tracks, bones, duration, bits=BITS):
     )
 
 
-def decode(data):
+def decode(data):  # noqa: C901
     """Return (header dict, positions (frames, tracks, 3), rotations (frames, tracks, 4)). Raises ValueError on a
     malformed clip. Channels absent from a track mask decode as zero position and identity rotation."""
     if len(data) < HEADER.size:

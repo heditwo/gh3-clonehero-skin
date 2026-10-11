@@ -1056,7 +1056,7 @@ class Prefix:
         return symbol
 
 
-def read_prefix(reader, alphabet):
+def read_prefix(reader, alphabet):  # noqa: C901
     width = max(1, (alphabet - 1).bit_length())
     skip = reader.bits(2)
     lengths = [0] * alphabet
@@ -1220,7 +1220,7 @@ def transform_word(word, index):
     return prefix + bytes(word) + suffix
 
 
-def decompress(data):
+def decompress(data):  # noqa: C901
     """The decompressed bytes of a Brotli stream. Raises BrotliError for a malformed stream."""
     reader = BitReader(bytes(data))
     if not reader.bits(1):

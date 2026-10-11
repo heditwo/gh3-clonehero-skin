@@ -132,7 +132,7 @@ class Schemas:
         self._check(value, schema, base, path, errors)
         return not errors
 
-    def _check(self, value, schema, base, path, errors):
+    def _check(self, value, schema, base, path, errors):  # noqa: C901
         if schema is True:
             return
         if schema is False:

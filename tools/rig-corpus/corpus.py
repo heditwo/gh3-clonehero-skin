@@ -179,7 +179,7 @@ def delete_bones(rig, scene, meshes, names, keep_weights_on):
     bpy.ops.object.mode_set(mode="OBJECT")
 
 
-def apply_ops(model, rig, meshes, scene, truth):
+def apply_ops(model, rig, meshes, scene, truth):  # noqa: C901
     """Change the base model as the variant says and return its hand-made map."""
     truth = dict(truth)
     for op in model.get("ops", []):
@@ -436,7 +436,7 @@ def render(scene, path, clip_frame):
     bpy.ops.render.render(write_still=True)
 
 
-def run(model):
+def run(model):  # noqa: C901
     started = time.time()
     bpy.ops.wm.read_homefile(use_empty=True)
     profile = model.get("profile", "gh3-guitarist-midori-v1")

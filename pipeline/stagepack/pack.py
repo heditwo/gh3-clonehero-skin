@@ -124,7 +124,7 @@ def camera_array(group):
     )
 
 
-def compile_cameras(data, band, waypoints):
+def compile_cameras(data, band, waypoints):  # noqa: C901
     fields(data, {"version", "shots", "groups", "notes"}, {"version", "shots", "groups"})
     if type(data["version"]) is not int or data["version"] != 1 or not data["groups"].get("wide"):
         raise ValueError("A stage needs a wide camera group")
@@ -481,7 +481,7 @@ def gh3_shader_material(glb, data, texture_dir, images):
     }
 
 
-def import_materials(glb, folder):
+def import_materials(glb, folder):  # noqa: C901
     texture_dir = folder / "textures"
     texture_dir.mkdir(parents=True)
     materials = {}

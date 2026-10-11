@@ -63,7 +63,7 @@ def rest_error(body, bone):
     return float(np.linalg.norm(body[:3, 3] - bone[:3, 3])), float(np.arccos(np.clip((np.trace(turn) - 1) / 2, -1, 1)))
 
 
-def ragdoll_member(rag, rig, accessories, all_chains=False):
+def ragdoll_member(rag, rig, accessories, all_chains=False):  # noqa: C901
     """Hair joints and head capsule of one ragdoll on its skeleton (runtime coordinates).
 
     Without `all_chains` (the library band members): ragdoll joints in the chains below the head only. With it (the

@@ -464,7 +464,7 @@ def export_actors(source, scripts, global_entries, entries, nodes, directory, zo
     return actors
 
 
-def export(source, scripts, global_entries, zone, directory, global_references=None):
+def export(source, scripts, global_entries, zone, directory, global_references=None):  # noqa: C901
     directory.mkdir(parents=True, exist_ok=True)
     entries = source.load(f"ZONES/{zone}.pak.xen")
     qbs = [b for k, n, b in entries if k in (key(".qb"), key(".nqb"))]
