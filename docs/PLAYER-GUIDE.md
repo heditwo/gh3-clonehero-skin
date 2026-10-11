@@ -119,15 +119,17 @@ The mod has all the characters that GH3 lets you play, with all their outfits an
 
 All characters are available. You do not unlock them as in GH3. A guitarist character can play the guitarist or the bassist.
 
+Bret Michaels and the female singer also move as in GH3: with their own skeletons, animations, and hair, and with the facial animations of GH3 songs. The female singer is smaller than the male singer, as in GH3.
+
 Each GH3 guitarist character moves as in GH3: with its own skeleton, its own animations (stances, idles, strums, finger and fret movements, solos, intro, win, and lose), its own hair and accessory physics, and its own size (Judy Nails is smaller, as in GH3). As the bassist, a guitarist character keeps its own animations and plays the bass, as in a GH3 co-op game.
 
-A character for one member can also play another member when the two GH3 skeletons have the same bones. In GH3, the guitarist and the bassist have the same bones; thus a guitarist character can play the bassist, and the reverse. The picker shows such a character with its original member in parentheses, for example "Midori: Puffball (Aqua) (a guitarist)". Other characters (for example the two singers, and characters made with the Blender add-on) play with the animations of the member that they replace. A character that keeps the skeleton of its model (made with **Use my model's skeleton** in the Blender add-on) can play every member: the mod moves its skeleton with the GH3 animations of that member, and it blinks; as the singer it also moves its mouth with the song's vocals.
+A character for one member can also play another member when the two GH3 skeletons have the same bones. In GH3, the guitarist and the bassist have the same bones; thus a guitarist character can play the bassist, and the reverse. The picker shows such a character with its original member in parentheses, for example "Midori: Puffball (Aqua) (a guitarist)". The two singers play only the singer. Other characters (for example characters made with the Blender add-on) play with the animations of the member that they replace. A character that keeps the skeleton of its model (made with **Use my model's skeleton** in the Blender add-on) can play every member: the mod moves its skeleton with the GH3 animations of that member, and it blinks; as the singer it also moves its mouth with the song's vocals.
 
 Differences from GH3:
 
 - The hair moves with the GH3 joint limits, but it is not the GH3 physics engine. It collides only with the head.
-- Bret Michaels and the female singer move with the animations and the hair joints of the male singer.
-- To play the GH3 guitarist characters, the mod needs the character library `gh3-characters-v1.chlib` in `Mods/GH3Skin/Packages/` (the release installs it). A character that cannot load is not in the picker; the log tells you why.
+- GH3 selects the singer from the song (for example the female singer in "Hit Me With Your Best Shot"). In the mod, you select the singer.
+- To play the GH3 guitarist characters and the two singers, the mod needs the character library `gh3-characters-v1.chlib` in `Mods/GH3Skin/Packages/` (the release installs it). A character that cannot load is not in the picker; the log tells you why.
 
 If a character cannot load, the venue default plays, and the log tells you why.
 
