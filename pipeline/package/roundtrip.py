@@ -25,7 +25,7 @@ from PIL import Image
 from pipeline.package import q48, runtime, texture
 from pipeline.package.build import EFFECT_FILES, EVENTS, OUTPUT, encode_texture, json_bytes
 from pipeline.package.glb import COLUMNS, COMPONENTS, Glb
-from pipeline.package.source import Report, Source
+from pipeline.package.package_files import Report, Source
 from pipeline.paths import LIBRARY, STAGES
 from pipeline.stagepack.gltf import SKINNED_GH3_VERTEX
 from pipeline.stagepack.pack import compile_stage, write_json

@@ -20,9 +20,9 @@ import numpy as np
 
 from . import container, decisions
 from .glb import Glb, join_glb
+from .package_files import Report, Source
 from .profiles import LIBRARY_ID, PROFILES, gh3_key
 from .rotations import matrix_quaternions, qnormalize, quaternion_matrices
-from .source import Report, Source
 
 FORMAT = "chchar/1.0"
 MODEL_FILE = "character.glb"

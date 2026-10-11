@@ -17,9 +17,9 @@ import numpy as np
 from . import texture
 from .checks import INVERSE_BIND, UNIT_SCALE, WEIGHT_SUM, check_schema, png_problem, png_size, unit_quaternions
 from .glb import Glb, GlbError
+from .package_files import MappedSource, Report, Source, load_json
 from .profiles import LIBRARY_ID
 from .schema import Schemas
-from .source import MappedSource, Report, Source, load_json
 from .validate_character import CharacterChecks
 from .validate_library import LibraryChecks
 from .validate_stage import StageChecks

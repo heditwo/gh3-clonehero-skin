@@ -11,7 +11,7 @@ import bpy
 from mathutils import Matrix
 
 from . import actor_tools, blobs, camera_tools, collect, glb_tools, gltf_io, sidecars, template, textures
-from .vendor.package_format.source import Report, Source
+from .vendor.package_format.package_files import Report, Source
 from .vendor.package_format.validate import Validator
 
 ADDON_FILES = ("model", "placements", "cameras", "lighting", "actors")

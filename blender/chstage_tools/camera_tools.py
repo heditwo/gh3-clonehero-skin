@@ -13,7 +13,7 @@ import bpy
 from mathutils import Matrix
 
 from . import actor_tools, collect, glb_tools, gltf_io, rig, sidecars, textures
-from .vendor.package_format.source import Report, Source
+from .vendor.package_format.package_files import Report, Source
 
 LIBRARY_NAME = "gh3-band-v1.chlib"
 CHARACTER_LIBRARY_NAME = "gh3-characters-v1.chlib"

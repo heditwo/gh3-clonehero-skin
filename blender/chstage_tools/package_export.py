@@ -11,7 +11,7 @@ import bpy
 
 from . import actor_tools, blobs, collect, glb_tools, materials, sidecars, textures
 from .vendor.package_format import container
-from .vendor.package_format.source import Report, Source
+from .vendor.package_format.package_files import Report, Source
 from .vendor.package_format.validate import Validator
 
 PREVIEW_SIZE = (512, 288)

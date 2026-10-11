@@ -5,8 +5,8 @@ import re
 
 from . import q48
 from .checks import HAIR_FRAME_FIELDS, check_schema
+from .package_files import load_json
 from .profiles import CHARACTER_LIBRARY_ID, LIBRARY_ID, PROFILE_ID, PROFILES
-from .source import load_json
 
 LIBRARY_SCHEMAS = {
     "catalog": "catalog.schema.json",

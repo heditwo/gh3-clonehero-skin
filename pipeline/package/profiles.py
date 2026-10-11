@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 
 from .glb import Glb, decompose
-from .source import Report, Source
+from .package_files import Report, Source
 
 PROFILE_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 PROFILES = {

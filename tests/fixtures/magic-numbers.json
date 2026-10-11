@@ -33,7 +33,7 @@
  "pipeline/package/runtime.py": 17,
  "pipeline/package/schema.py": 3,
  "pipeline/package/skeleton.py": 46,
- "pipeline/package/source.py": 3,
+ "pipeline/package/package_files.py": 3,
  "pipeline/package/texture.py": 58,
  "pipeline/package/validate.py": 5,
  "pipeline/package/validate_character.py": 7,

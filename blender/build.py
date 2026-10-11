@@ -32,7 +32,7 @@ VALIDATOR_FILES = (
     "rotations.py",
     "schema.py",
     "skeleton.py",
-    "source.py",
+    "package_files.py",
     "texture.py",
     "validate.py",
     "validate_character.py",
