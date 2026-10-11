@@ -1,6 +1,3 @@
-using System.Globalization;
-using System.Text.RegularExpressions;
-
 namespace Gh3Skin;
 
 internal sealed record Gh3ScriptWait(double Seconds, uint[]? Events = null, uint? Target = null, Gh3ScriptContext? Context = null, Gh3ComponentWait? ComponentWait = null);

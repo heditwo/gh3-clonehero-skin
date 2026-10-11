@@ -1,6 +1,3 @@
-using System.Globalization;
-using System.Text.RegularExpressions;
-
 namespace Gh3Skin;
 
 // The interpreter of one script call: statements, conditions, loops, switches, and expressions over the token list.

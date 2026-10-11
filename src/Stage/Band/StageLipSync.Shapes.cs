@@ -1,5 +1,3 @@
-using System.Numerics;
-
 namespace Gh3Skin;
 
 // Measured: the mouth shapes of the GH3 singer facial clips (tools/lipsync-shapes.py over the 570 clips).

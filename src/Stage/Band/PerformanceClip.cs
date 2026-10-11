@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Numerics;
-using System.Text.Json;
 
 namespace Gh3Skin;
 

@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace Gh3Skin;
 
 // stage.json of a compiled stage or model folder: the camera, the materials, and the light and object groups.

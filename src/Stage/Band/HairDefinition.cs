@@ -1,4 +1,3 @@
-using System.Numerics;
 using System.Text.Json;
 
 namespace Gh3Skin;
