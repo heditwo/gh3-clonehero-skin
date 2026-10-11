@@ -12,7 +12,8 @@ from pipeline.gh3.band_formats import (
     sample_animation,
     skeleton,
 )
-from pipeline.gh3.direction import Source, cameras, name, scalar, script
+from pipeline.gh3.data import Source, scalar, script
+from pipeline.gh3.direction import cameras, name
 from pipeline.gh3.formats import find_array, find_struct, is_qb_file, key, values
 
 # The last column lists extra paks with clips: Axel's model pak holds his intro and win animations.

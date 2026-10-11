@@ -10,7 +10,7 @@ from zlib import crc32
 from PIL import Image, ImageChops, ImageFilter
 
 from pipeline.gh3 import scene
-from pipeline.gh3.direction import Source
+from pipeline.gh3.data import Source
 from pipeline.gh3.formats import key
 from pipeline.hud.highway_overlay import warp as warp_rails
 from pipeline.paths import (

@@ -1,11 +1,9 @@
-"""Read original GH3 camera definitions and performance commands."""
+"""Read the GH3 venue cameras (guitar_cameras.qb, <venue>_cameras.qb) and the band performance commands of the songs."""
 
 import math
-import struct
-from hashlib import sha256
-from pathlib import Path
 
-from pipeline.gh3.formats import find_array, key, pak_entries, values
+from pipeline.gh3.data import script
+from pipeline.gh3.formats import find_array, key
 
 ROLES = {
     key(name): role
@@ -27,41 +25,72 @@ guitar_closeup special01 special02 special03 special04 normal demonik none""".sp
 WORDS = {key(name): name for name in WORDS}
 
 
+# Camera field defaults of the GH3 camera scripts.
+DEFAULT_FIELD_OF_VIEW = 72
+DEFAULT_STEP_TIME = 6
+DEFAULT_STEP_COUNT = 6
+# The camera control scripts CameraCuts_<name> that the stage camera supports.
+CAMERA_CONTROLS = [
+    "TwoCam",
+    "HandCam",
+    "Orbit",
+    "OrbitAndMorphTwoCam",
+    "Pan",
+    "ThreePos",
+    "FourPos",
+    "SpecialStepMove",
+    "QuickZoom",
+    "HandCamZoom2",
+    "SplineMorph",
+    "NewIntro",
+]
+# Camera arrays that every venue can have, in addition to the prefixes of CameraCuts_NoteMapping.
+CAMERA_PREFIXES = {
+    "cameras",
+    "cameras_intro",
+    "cameras_fastintro",
+    "cameras_win",
+    "cameras_pan",
+    "cameras_dolly",
+    "cameras_zoom_slow",
+    "cameras_zoom_fast",
+    "cameras_zoom_out",
+}
+# Keyframes for the controls that move by script, not by their camera points (from the first venue export, ee94b4e;
+# no GH3 citation): QuickZoom, the lens steps of HandCamZoom2, and the five NewIntro poses (position, quaternion xyz, FOV).
+QUICK_ZOOM_TIMES = [0, 2, 2.75]
+HAND_CAM_ZOOM_LENSES = [50, 50, 53, 53, 51]
+HAND_CAM_ZOOM_TIMES = [0, 2, 2.6, 2.7, 2.95, 2.98, 3.28]
+NEW_INTRO_POSES = [
+    ([6.6424026, 2.254917, 24.026098], [0.006744, -0.99366295, 0.092284], 72),
+    ([6.38234, 1.9634129, 22.308147], [0.017372, -0.979427, 0.17970501], 72),
+    ([6.38239, 1.9634119, 22.308136], [0.009489, -0.99132794, 0.09404301], 72),
+    ([6.38239, 1.9634119, 22.308136], [0.0077960007, -0.99213994, 0.064734], 36),
+    ([6.38239, 1.9634119, 22.308136], [0.0077960007, -0.99213994, 0.064734], 38),
+]
+NEW_INTRO_SEQUENCE = [0, 0, 1, 1, 2, 2, 3, 3, 4]
+NEW_INTRO_TIMES = [0, 0.3, 3.1, 3.45, 4.15, 4.95, 5.45, 5.55, 5.85]
+SPLINE_POINT_COUNTS = (3, 4)
+# Song performance commands: QB script, command type, parameter name, and default value.
+PERFORMANCE_COMMANDS = [
+    ("Band_ChangeStance", "stance", "stance", "stance_a"),
+    ("Band_PlayAnim", "perform", "anim", "idle"),
+    ("Band_PlayIdle", "perform", "anim", "idle"),
+    ("Band_PlayFacialAnim", "face", "anim", "none"),
+    ("Band_PlaySimpleAnim", "clip", "anim", "none"),
+    ("Band_WalkToNode", "walk", "node", "guitarist_start"),
+    ("Band_SetStrumStyle", "strum-style", "style", "normal"),
+    ("Band_StopStrumming", "strum-style", "style", "none"),
+    ("Band_DisableArms", "arms", "disable_arms", "2"),
+    ("Band_EnableArms", "arms", "disable_arms", "0"),
+]
+# disableArms values of a performance command.
+ARMS_AUTOMATIC, ARMS_NO_AUTO_STRUM, ARMS_NO_AUTO_ARMS = 0, 1, 2
+
+
 def name(value):
+    """The text of a checksum when it is a known direction word, else its hex form."""
     return WORDS.get(value, f"{value:08x}") if isinstance(value, int) else str(value).lower()
-
-
-class Source:
-    def __init__(self, directory):
-        self.directory = Path(directory)
-        self.hashes = {}
-
-    def load(self, relative):
-        path = self.directory / relative
-        data = path.read_bytes()
-        self.hashes[relative] = sha256(data).hexdigest()
-        pab = path.with_name(path.name.replace(".pak.", ".pab."))
-        if pab.exists():
-            extra = pab.read_bytes()
-            self.hashes[str(pab.relative_to(self.directory))] = sha256(extra).hexdigest()
-            data += extra
-        return list(pak_entries(data))
-
-    def scripts(self):
-        return {n: data for kind, n, data in self.load("PAK/qb.pak.xen") if kind == key(".qb")}
-
-
-def script(scripts, filename):
-    return scripts[key(f"scripts\\guitar\\{filename}.qb")]
-
-
-def scalar(data, name, default):
-    for kind, fmt in [(0x00200100, "i"), (0x00200200, "f")]:
-        marker = struct.pack(">II", kind, key(name))
-        offset = data.find(marker, 28)
-        if offset >= 0 and offset % 4 == 0:
-            return values(data, offset + 12, fmt)[0]
-    return default
 
 
 def vector(value):
@@ -76,7 +105,7 @@ def camera_point(data):
     return {
         "position": vector(data.get(key("Pos"), (0, 0, 0))),
         "rotation": [-z, w, -x, y],
-        "fieldOfView": data.get(key("FOV"), 72),
+        "fieldOfView": data.get(key("FOV"), DEFAULT_FIELD_OF_VIEW),
         "lockTo": ROLES.get(data.get(key("LockTo")), "world"),
         "lockBone": f"{data.get(key('LockToBone'), 0):08x}",
         "lookAt": ROLES.get(data.get(key("LookAt")), ""),
@@ -88,67 +117,40 @@ def camera_point(data):
 def camera_motion(control, points, params):
     if control == "SplineMorph":
         points = [camera_point(p) for p in params[key("keyframes")]]
-        if len(points) not in (3, 4):
+        if len(points) not in SPLINE_POINT_COUNTS:
             raise ValueError("Unsupported source camera spline length")
         return ("ThreePos" if len(points) == 3 else "FourPos"), points, {}
     if control == "QuickZoom":
-        return "Keyframes", [points[0], points[0], points[1]], {"times": [0, 2, 2.75], "interpolation": "smooth"}
+        return "Keyframes", [points[0], points[0], points[1]], {"times": QUICK_ZOOM_TIMES, "interpolation": "smooth"}
     if control == "HandCamZoom2":
-        lens = [points[0]["fieldOfView"]] * 2 + [50, 50, 53, 53, 51]
+        lens = [points[0]["fieldOfView"]] * 2 + HAND_CAM_ZOOM_LENSES
         return (
             "Keyframes",
             [{**points[0], "fieldOfView": fov} for fov in lens],
-            {"times": [0, 2, 2.6, 2.7, 2.95, 2.98, 3.28], "interpolation": "smooth"},
+            {"times": HAND_CAM_ZOOM_TIMES, "interpolation": "smooth"},
         )
     if control == "NewIntro":
-        poses = [
-            camera_point({key("Pos"): p, key("Quat"): q, key("FOV"): fov})
-            for p, q, fov in [
-                ([6.6424026, 2.254917, 24.026098], [0.006744, -0.99366295, 0.092284], 72),
-                ([6.38234, 1.9634129, 22.308147], [0.017372, -0.979427, 0.17970501], 72),
-                ([6.38239, 1.9634119, 22.308136], [0.009489, -0.99132794, 0.09404301], 72),
-                ([6.38239, 1.9634119, 22.308136], [0.0077960007, -0.99213994, 0.064734], 36),
-                ([6.38239, 1.9634119, 22.308136], [0.0077960007, -0.99213994, 0.064734], 38),
-            ]
-        ]
+        poses = [camera_point({key("Pos"): p, key("Quat"): q, key("FOV"): fov}) for p, q, fov in NEW_INTRO_POSES]
         return (
             "Keyframes",
-            [poses[i] for i in [0, 0, 1, 1, 2, 2, 3, 3, 4]],
-            {"times": [0, 0.3, 3.1, 3.45, 4.15, 4.95, 5.45, 5.55, 5.85], "interpolation": "smooth"},
+            [poses[i] for i in NEW_INTRO_SEQUENCE],
+            {"times": NEW_INTRO_TIMES, "interpolation": "smooth"},
         )
     return control, points, {}
 
 
+def _signed(value):
+    """A QB integer (stored as an unsigned word) as a signed 32-bit value."""
+    return value - 0x100000000 if value > 0x7FFFFFFF else value
+
+
 def cameras(source, scripts, venue="z_budokan"):
+    """The camera arrays and the note selectors of a venue, in the stage-pack cameras.json form."""
     entries = source.load(f"ZONES/{venue}.pak.xen")
     data = next(b for k, n, b in entries if k == key(".qb") and n == key(f"zones\\{venue}\\{venue}_cameras.qb"))
-    controls = [
-        "TwoCam",
-        "HandCam",
-        "Orbit",
-        "OrbitAndMorphTwoCam",
-        "Pan",
-        "ThreePos",
-        "FourPos",
-        "SpecialStepMove",
-        "QuickZoom",
-        "HandCamZoom2",
-        "SplineMorph",
-        "NewIntro",
-    ]
     mapping = find_array(script(scripts, "guitar_cameras"), "CameraCuts_NoteMapping")
     selectors = {}
-    prefixes = {
-        "cameras",
-        "cameras_intro",
-        "cameras_fastintro",
-        "cameras_win",
-        "cameras_pan",
-        "cameras_dolly",
-        "cameras_zoom_slow",
-        "cameras_zoom_fast",
-        "cameras_zoom_out",
-    }
+    prefixes = set(CAMERA_PREFIXES)
     for row in mapping:
         params = row[key("params")]
         note = row[key("MidiNote")]
@@ -176,15 +178,13 @@ def cameras(source, scripts, venue="z_budokan"):
         shots = []
         for row in rows:
             params = row.get(key("params"), row)
-            control = next((c for c in controls if row.get(key("controlscript")) == key("CameraCuts_" + c)), "")
+            control = next((c for c in CAMERA_CONTROLS if row.get(key("controlscript")) == key("CameraCuts_" + c)), "")
             if not control:
                 unsupported.append(f"{row.get(key('controlscript'), 0):08x}")
                 continue
             points = [camera_point(params[key(f"Cam{i}")]) for i in range(1, 5) if key(f"Cam{i}") in params]
             control, points, motion = camera_motion(control, points or [camera_point(params)], params)
-            angle = params.get(key("orbitangle"), 0)
-            if angle > 0x7FFFFFFF:
-                angle -= 0x100000000
+            angle = _signed(params.get(key("orbitangle"), 0))
             nodes = row.get(key("includenodes"), params.get(key("includenodes"), []))
             shots.append(
                 {
@@ -194,8 +194,8 @@ def cameras(source, scripts, venue="z_budokan"):
                     "points": points or [camera_point(params)],
                     "nodes": [f"{node:08x}" for node in nodes],
                     "orbitAngle": angle,
-                    "stepTime": params.get(key("StepTime"), 6),
-                    "stepCount": params.get(key("StepNum"), 6),
+                    "stepTime": params.get(key("StepTime"), DEFAULT_STEP_TIME),
+                    "stepCount": params.get(key("StepNum"), DEFAULT_STEP_COUNT),
                     "stepDirection": vector(params.get(key("StepDir"), (0, 0, 0))),
                     "handCam": control == "HandCam" or key("UseHandCam") in params.get(0, []),
                     "disableOrbit1": key("DisableOrbit1") in params.get(0, []),
@@ -215,24 +215,11 @@ def cameras(source, scripts, venue="z_budokan"):
 
 
 def performance_command(row):
+    """A song performance command row as a direction event, or None when the mod does not use it."""
     params = row.get(key("params"), {})
     command = row.get(key("scr"))
     role = ROLES.get(params.get(key("Name"), key("guitarist")))
-    kinds = {
-        key(s): (kind, parameter, default)
-        for s, kind, parameter, default in [
-            ("Band_ChangeStance", "stance", "stance", "stance_a"),
-            ("Band_PlayAnim", "perform", "anim", "idle"),
-            ("Band_PlayIdle", "perform", "anim", "idle"),
-            ("Band_PlayFacialAnim", "face", "anim", "none"),
-            ("Band_PlaySimpleAnim", "clip", "anim", "none"),
-            ("Band_WalkToNode", "walk", "node", "guitarist_start"),
-            ("Band_SetStrumStyle", "strum-style", "style", "normal"),
-            ("Band_StopStrumming", "strum-style", "style", "none"),
-            ("Band_DisableArms", "arms", "disable_arms", "2"),
-            ("Band_EnableArms", "arms", "disable_arms", "0"),
-        ]
-    }
+    kinds = {key(s): (kind, parameter, default) for s, kind, parameter, default in PERFORMANCE_COMMANDS}
     if command not in kinds or role is None:
         return None
     kind, parameter, default = kinds[command]
@@ -251,9 +238,9 @@ def performance_command(row):
         "immediate": key("no_wait") in params.get(0, []),
         "loop": key("cycle") in params.get(0, []) or command == key("Band_PlayIdle"),
         "count": params.get(key("repeat_count"), 1),
-        "disableArms": 2
+        "disableArms": ARMS_NO_AUTO_ARMS
         if key("disable_auto_arms") in params.get(0, [])
-        else 1
+        else ARMS_NO_AUTO_STRUM
         if key("disable_auto_strum") in params.get(0, [])
-        else 0,
+        else ARMS_AUTOMATIC,
     }

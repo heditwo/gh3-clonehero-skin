@@ -3,7 +3,8 @@
 import json
 import math
 
-from pipeline.gh3.direction import Source, vector
+from pipeline.gh3.data import Source
+from pipeline.gh3.direction import vector
 from pipeline.gh3.formats import find_array, find_struct, key
 from pipeline.stagepack.gltf import matrix_quaternion
 from pipeline.venues.transforms import angles_matrix

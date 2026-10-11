@@ -6,7 +6,7 @@ from io import BytesIO
 from PIL import Image
 
 from pipeline.gh3 import scene
-from pipeline.gh3.direction import Source
+from pipeline.gh3.data import Source
 from pipeline.gh3.formats import key, values, word
 from pipeline.stagepack.pack import load_json, write_json
 

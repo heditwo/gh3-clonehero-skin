@@ -8,7 +8,7 @@ import numpy as np
 
 from pipeline.gh3 import scene
 from pipeline.gh3.band_formats import animation, sample_animation, skeleton
-from pipeline.gh3.direction import Source, scalar, script
+from pipeline.gh3.data import Source, scalar, script
 from pipeline.gh3.formats import find_struct, key, pak_entries
 from pipeline.library import direction
 

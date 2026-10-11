@@ -38,7 +38,7 @@ import numpy as np
 
 from pipeline.characters import CLIP_RIG_PROFILE, outfits, profile_id, qb_items, slug
 from pipeline.gh3.band_formats import skeleton
-from pipeline.gh3.direction import Source, script
+from pipeline.gh3.data import Source, script
 from pipeline.gh3.formats import find_array, find_struct, key, values
 from pipeline.gh3.havok import Ragdoll
 from pipeline.library import hair as hair_export

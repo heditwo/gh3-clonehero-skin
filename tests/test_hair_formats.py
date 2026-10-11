@@ -3,7 +3,7 @@ import struct
 import unittest
 from pathlib import Path
 
-from pipeline.gh3.direction import Source
+from pipeline.gh3.data import Source
 from pipeline.gh3.formats import key
 from pipeline.gh3.havok import Ragdoll
 

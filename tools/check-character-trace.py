@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pipeline.character_library import pak_name  # noqa: E402
 from pipeline.characters import qb_items  # noqa: E402
 from pipeline.gh3.band_formats import animation, sample_animation, skeleton  # noqa: E402
-from pipeline.gh3.direction import Source, script  # noqa: E402
+from pipeline.gh3.data import Source, script  # noqa: E402
 from pipeline.gh3.formats import key  # noqa: E402
 from pipeline.paths import CHARACTER_LIBRARY, GH3_DATA  # noqa: E402
 

@@ -32,7 +32,7 @@ import numpy as np
 
 from pipeline.characters import SLUGS, load_models, pak_file, qb_items, text
 from pipeline.gh3 import scene
-from pipeline.gh3.direction import Source, script
+from pipeline.gh3.data import Source, script
 from pipeline.gh3.formats import find_array, key, values
 from pipeline.paths import GH3_DATA, INSTRUMENTS
 from pipeline.stagepack.gltf import SKINNED_GH3_VERTEX

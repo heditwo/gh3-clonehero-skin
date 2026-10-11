@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from pipeline.gh3.direction import Source
+from pipeline.gh3.data import Source
 from pipeline.gh3.formats import key
 from pipeline.paths import FONTS as FONT_FOLDER, GH3_DATA, MESSAGES, YOU_ROCK
 

@@ -10,7 +10,7 @@ from io import BytesIO
 from pathlib import Path
 
 from pipeline import songtool
-from pipeline.gh3.direction import Source, scalar
+from pipeline.gh3.data import Source, scalar
 from pipeline.gh3.formats import find_struct, key
 from pipeline.stagepack.pack import write_json
 

@@ -4,7 +4,7 @@ import argparse
 from hashlib import sha256
 from pathlib import Path
 
-from pipeline.gh3.direction import Source
+from pipeline.gh3.data import Source
 from pipeline.library import (
     audio,
     band,

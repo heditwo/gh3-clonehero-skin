@@ -11,7 +11,7 @@ from struct import unpack_from
 
 from PIL import Image
 
-from pipeline.gh3.direction import Source
+from pipeline.gh3.data import Source
 from pipeline.gh3.formats import key, values, word
 from pipeline.paths import GH3_DATA, HIT_EFFECTS
 

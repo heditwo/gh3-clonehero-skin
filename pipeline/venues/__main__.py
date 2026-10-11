@@ -16,7 +16,8 @@ from pipeline.gh3.band_formats import (
     sample_animation,
     skeleton,
 )
-from pipeline.gh3.direction import Source, camera_point, cameras, vector
+from pipeline.gh3.data import Source
+from pipeline.gh3.direction import camera_point, cameras, vector
 from pipeline.gh3.formats import (
     find_array,
     find_struct,

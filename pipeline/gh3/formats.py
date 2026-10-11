@@ -16,6 +16,8 @@ PAK_END_TYPE = ".last"
 # QB file: a 28-byte header whose third word is this tag, then the sections.
 QB_HEADER_SIZE = 28
 QB_FILE_TAG = bytes.fromhex("1c080204")
+QB_SECTION_INTEGER = 0x00200100
+QB_SECTION_FLOAT = 0x00200200
 QB_SECTION_ARRAY = 0x00200C00
 QB_SECTION_STRUCT = 0x00200A00
 

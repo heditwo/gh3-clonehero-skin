@@ -19,7 +19,7 @@ DATA = __import__("os").environ.get(
 
 def ragdolls():
     """The GH3 ragdolls (.rag of ZONES/global.pak.xen) by checksum."""
-    from pipeline.gh3.direction import Source
+    from pipeline.gh3.data import Source
 
     return {n: b for k, n, b in Source(DATA).load("ZONES/global.pak.xen") if k == key(".rag")}
 

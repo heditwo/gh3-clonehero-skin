@@ -20,7 +20,7 @@ import zstandard
 
 import pipeline.library.direction as direction
 from pipeline.gh3.band_formats import animation, multiply_quaternions, sample_animation
-from pipeline.gh3.direction import Source
+from pipeline.gh3.data import Source
 from pipeline.gh3.formats import key
 
 BINS = np.logspace(-7, 2, 1801)

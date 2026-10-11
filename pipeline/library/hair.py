@@ -5,7 +5,7 @@ import json
 import numpy as np
 
 from pipeline.gh3.band_formats import quaternion, rotation, skeleton
-from pipeline.gh3.direction import Source
+from pipeline.gh3.data import Source
 from pipeline.gh3.formats import find_array, key
 from pipeline.gh3.havok import Ragdoll
 

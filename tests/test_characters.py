@@ -425,7 +425,7 @@ class CharacterLibraryTests(unittest.TestCase):
     def test_a_set_clip_with_the_profile_offset_is_the_gh3_clip_on_the_gh3_skeleton(self):
         """Judy's clips are stored on the clip rig (Axel); with the offset of section 10.1 they equal the GH3 clip on Judy's skeleton."""
         from pipeline.gh3.band_formats import animation, sample_animation, skeleton
-        from pipeline.gh3.direction import Source
+        from pipeline.gh3.data import Source
 
         data = json.loads((CHARACTER_LIBRARY / "characters.json").read_text())
         profile = data["profiles"]["gh3-guitarist-judy-v1"]
@@ -459,7 +459,7 @@ class CharacterLibraryTests(unittest.TestCase):
         """GH3 gives the God of Rock Axel's skeleton; his ragdoll fits GH3_Guitarist_RockGod, so his rig takes its accessory bones."""
         from pipeline.character_library import unity_rig
         from pipeline.gh3.band_formats import skeleton
-        from pipeline.gh3.direction import Source
+        from pipeline.gh3.data import Source
         from pipeline.gh3.havok import Ragdoll
         from pipeline.library import hair
 
