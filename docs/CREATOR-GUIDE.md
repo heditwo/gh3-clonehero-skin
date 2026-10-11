@@ -248,7 +248,7 @@ What the game does with your skeleton:
 | Wrists and upper arms | The twist goes to the twist bones and the followers (MMD `手捩`, `腕捩`); without a twist bone, the forearm takes half of the hand twist |
 | Helper bones | A weighted helper bone that starts where a mapped sibling bone starts (VRM aim and roll bones, clothing helpers) follows that bone. Other bones without a role keep their rest pose relative to their parent |
 | Face | Blink and lip sync with the shape keys (visemes from the lyrics, opening from the vocal stem loudness, brows on long and high notes); the head nods at phrase starts and the eyes look around. In songs with GH3 facial clips, the jaw opening gives `a` and the eyelids give blink |
-| Roles | A character on its own skeleton plays every role. In the role of its profile it has the animations of the profile; in another role, the animations of that role |
+| Roles | Every character plays every role. In the role of its profile it has the animations of the profile; in another role, the animations of that role. The drum kit and the microphone stand take the size of the character ([PACKAGE-FORMAT.md section 9.7](PACKAGE-FORMAT.md#97-character-model-and-band-roles)) |
 
 Measured (2026-10-10): the automatic map gave the hand-made map with no change for 27 of the 28 humanoid test models of the rig corpus (Mixamo, Ready Player Me, VRM 0 and 1, VRoid, Unity-chan, 3ds Max Biped, Rigify, Unreal-like, KayKit, Khronos samples, MMD, Project SEKAI, and synthetic variants with other names, turns, units, rest poses, and missing bones; [STATUS.md](STATUS.md#characters-on-their-own-skeleton)). The own skeleton keeps the proportions of the source model. In the game, the hands miss their places on the guitar by at most 0.2 mm.
 
@@ -325,7 +325,7 @@ To use the character:
 
 1. Start Clone Hero, and push **F6** in the menus.
 2. In **Band**, click **<** or **>** on the line of the band member (for example **Guitarist**) until your character shows.
-3. Start a song. A guitarist character can also play the bassist (the two rigs have the same bones). A character with its own skeleton can play every role.
+3. Start a song. Every character can play every role: in the role of its profile with the animations of the profile (a guitarist profile also as the bassist), in the other roles with the animations of that role on its own rig.
 
 ![The example guitarist in the example club](images/creator/game-example.png)
 

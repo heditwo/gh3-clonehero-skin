@@ -123,7 +123,12 @@ Bret Michaels and the female singer also move as in GH3: with their own skeleton
 
 Each GH3 guitarist character moves as in GH3: with its own skeleton, its own animations (stances, idles, strums, finger and fret movements, solos, intro, win, and lose), its own hair and accessory physics, and its own size (Judy Nails is smaller, as in GH3). As the bassist, a guitarist character keeps its own animations and plays the bass, as in a GH3 co-op game.
 
-A character for one member can also play another member when the two GH3 skeletons have the same bones. In GH3, the guitarist and the bassist have the same bones; thus a guitarist character can play the bassist, and the reverse. The picker shows such a character with its original member in parentheses, for example "Midori: Puffball (Aqua) (a guitarist)". The two singers play only the singer. Other characters (for example characters made with the Blender add-on) play with the animations of the member that they replace. A character that keeps the skeleton of its model (made with **Use my model's skeleton** in the Blender add-on) can play every member: the mod moves its skeleton with the GH3 animations of that member, and it blinks; as the singer it also moves its mouth with the song's vocals.
+Every character can play every member: the guitarist, the bassist, the singer, and the drummer. The picker shows all characters for each member. The characters of that member come first; the others show their original member in parentheses, for example "Midori: Puffball (Aqua) (a guitarist)".
+
+- In its own member, a GH3 character plays its own GH3 animations, as in GH3. A guitarist character that plays the bassist also keeps its own animations, as in GH3 co-op.
+- In another member, the character plays the GH3 animations of that member on its own body. For example, Judy Nails as the singer sings with her own face (the GH3 facial animations and the lip sync of the song's vocals), and Lars Umlaut as the drummer plays the drums.
+- The drum kit and the microphone stand take the size of the character: a small character gets a smaller kit and a lower stand, a tall character a larger kit and a higher stand. The sticks stay in the hands, and the singer brings the microphone to its own mouth.
+- A character that keeps the skeleton of its model (made with **Use my model's skeleton** in the Blender add-on) also plays every member, and it blinks; as the singer it moves its mouth with the song's vocals when it has face shapes.
 
 Differences from GH3:
 
@@ -137,7 +142,7 @@ If a character cannot load, the venue default plays, and the log tells you why.
 
 Each GH3 guitarist character plays its GH3 guitar when it is the guitarist, for example the white Explorer for Axel Steel and Lars Umlaut, the worn red SG for Judy Nails, Johnny Napalm, and Midori, and the black Les Paul for Casey Lynch, Izzy Sparks, and Xavier Stone. The female singer has her GH3 microphone.
 
-When a character plays another member, it plays the instrument of that member: a guitarist character that plays the bassist has the bass of the GH3 bassist. A character without an instrument in its model gets the instrument of the member that it plays (the guitarist plays the guitar, the bassist the bass, the drummer the drum kit, and the singer has the microphone and stand). The log line `GH3 band <member>: character <id> ... with <instrument>` tells you which instrument plays.
+When a character plays another member, it plays the instrument of that member: a guitarist character that plays the bassist has the bass of the GH3 bassist, and as the drummer it has the drum kit. A character without an instrument in its model gets the instrument of the member that it plays (the guitarist plays the guitar, the bassist the bass, the drummer the drum kit, and the singer has the microphone and stand). The log line `GH3 band <member>: character <id> ... with <instrument>` tells you which instrument plays.
 
 To select an instrument, use the **Guitar** line below the guitarist and the **Bass** line below the bassist:
 
