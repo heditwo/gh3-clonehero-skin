@@ -7,6 +7,8 @@ project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_dir"
 
 dotnet run --project tests/SkinLogic.Tests.csproj -c Release --nologo
+# The research and measuring tools link source files of the mod; build them so that a refactor cannot break them unnoticed.
+for tool in tools/ClipBench tools/PackageImport; do dotnet build "$tool" -c Release --nologo -v quiet; done
 uvx ruff@0.17.0 check --quiet .
 uvx ruff@0.17.0 format --check --quiet .
 uvx --python 3.11 --with numpy mypy@2.4.0 --no-error-summary

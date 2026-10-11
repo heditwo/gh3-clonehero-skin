@@ -14,6 +14,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../../src/Native/*.cs" Link="Native/%(Filename)%(Extension)" />
+    <Compile Include="../../src/Packages/*.cs" Exclude="../../src/Packages/PackageRuntime.cs" Link="Packages/%(Filename)%(Extension)" />
     <Compile Include="../../src/Stage/Direction/StageTimeline.cs" Link="StageTimeline.cs" />
     <Compile Include="../../src/Stage/Direction/StageCue.cs" Link="StageCue.cs" />
     <Compile Include="../../src/Stage/Direction/StageGh3Events.cs" Link="StageGh3Events.cs" />
@@ -22,5 +23,17 @@
     <Compile Include="../../src/Stage/Band/StageDrummer.cs" Link="StageDrummer.cs" />
     <Compile Include="../../src/Stage/Band/StageGuitarArms.cs" Link="StageGuitarArms.cs" />
     <Compile Include="../../src/Stage/Band/StagePerformance.cs" Link="StagePerformance.cs" />
+    <Compile Include="../../src/Stage/StageTolerance.cs" Link="StageTolerance.cs" />
+    <Compile Include="../../src/Stage/Direction/StageRockBandVenue.cs" Link="StageRockBandVenue.cs" />
+    <Compile Include="../../src/Stage/StageLimits.cs" Link="StageLimits.cs" />
+    <Compile Include="../../src/Stage/Band/StageHair.cs" Link="StageHair.cs" />
+    <Compile Include="../../src/Stage/Band/StageHair.Collision.cs" Link="StageHair.Collision.cs" />
+    <Compile Include="../../src/SkinEnvironment.cs" Link="SkinEnvironment.cs" />
+    <Compile Include="../../src/Stage/Direction/Gh3NoteConstants.cs" Link="Gh3NoteConstants.cs" />
+    <Compile Include="../../src/Stage/Band/HairDefinition.cs" Link="HairDefinition.cs" />
+    <Compile Include="../../src/Stage/Band/StageLipSync.cs" Link="StageLipSync.cs" />
+    <Compile Include="../../src/Stage/Band/StageLipSync.Shapes.cs" Link="StageLipSync.Shapes.cs" />
+    <Compile Include="../../src/Stage/Band/PerformanceClip.cs" Link="PerformanceClip.cs" />
+    <Compile Include="../../src/Stage/Band/CharacterMotion.cs" Link="CharacterMotion.cs" />
   </ItemGroup>
 </Project>
