@@ -147,6 +147,24 @@ The numbers come from a probe that runs the old and the new `StageLipSync` on th
 
 Limits: the stem gives the loudness only; the phoneme times inside a note come from rules, so a fast consonant cluster can be early or late by some 50 ms. Lyrics in other languages than English use the spelling rules. The GH3 rig poses are means of GH3 frames, so the extreme shapes (a wide "ee", a tight "oo") are softer than an animator's key poses. The brows and the eyes do not react to the meaning of the words. Windows was not tested in this change (the BASS decode uses the same `bass.dll` and its Opus plugin that Clone Hero loads; the path is passed as UTF-16 on Windows).
 
+## Neutral faces
+
+On 2026-10-11 the owner asked why Project SEKAI Miku smiles at rest and Tda Miku looks distressed. Measured causes and fixes (game copy `~/games/clonehero-gh3-neutral-face`, gh3.dive, a head-locked camera 3 m in front of the GH3 head frame with a 9° field of view, My Curse with GH3 facial clips and "Yr Not Going Anywhere" with lyrics and a vocal stem):
+
+| Stage | Result |
+| --- | --- |
+| Source and export | The face geometry of the export is the source geometry (eye distance 0.07866 m in both for Tda Miku). 98.2 % (Tda) and 99.75 % (SEKAI) of the face skin weight is on the head and its child joints, so the face of the posed export at rest is the bind pose |
+| Weights at rest | `[trace] face`: all face slots 0.000 and eye turns 0.00° at rest in both songs, as singer and as guitarist. The model data was not the cause |
+| Outline (cause 1, all songs, all toon characters) | The width was in metres per metre of distance at every field of view. GH3 face close-ups use a long lens (5–15°): at 9° the line was 8.6 pixels wide and lay over the eyelids and the mouth corners (Tda: dark notches at the mouth, heavy lids; SEKAI: the lip line read as an open red mouth). Now the width is for a 45° view and changes with the field of view, so the line keeps its screen width: chin line 9 → 1 pixel, dark pixels around the mouth 541 → 163 (Tda) and 1,418 → 254 (SEKAI) |
+| GH3 facial clips (cause 2) | Blink was `(lid turn − 5°) / 35°`. GH3 holds the singer's upper lids at 10–20° for seconds as an expression (570 clips: median 9.3°, blinks peak at 26°, held closed eyes 31.5°), which gave half-closed eyes (blink 0.42 at 60 s). Now blink starts at 20° and is full at 26°: blink above 0.2 in 32 % → 11 % of the samples of the singing part; the rest are blinks and GH3's closed-eye screams |
+| Brows | The idle brow motion went down as well as up; with a `browDown` shape that was a small frown at rest (0.07–0.11). It now only lifts (0.000 at rest) |
+| SEKAI smile | Not a bug: the untouched game mesh smiles with all 85 blend shapes at 0. In 80 Project SEKAI 3D MV face clips (`tools/research/neutral-face/sekai_face_rest.py`), the rest frames (no vowel shape, eyes open) have all shapes at 0 except `eye_wink_L`/`R` 4.9 and `look_down` 2.4 (median of the clip medians); half of the MVs add `mouth_happy`. Her real neutral is the base mesh, so no rest expression is applied |
+| GH3 band | Default band against `main` at 3 song times: mean difference 0.7–3.9 (0–255); two runs of `main` differ by 1.0–3.4 |
+
+Evidence: `~/.cache/neutral-face/sheets/` (a sheet for each Miku: source, export, and in-game rest and singing, before and after), `ev/before`, `ev/after` (captures with `[trace] face` logs), `video/neutral-face-after.mp4`, `sekai/` (the MV face clips). The packages were made again with the add-on of `main` (`browUp` and `browDown` found for both).
+
+Limits: the outline still has one width for each material; the per-vertex edge scale of MMD (0 on the nose and the cheeks of Tda Miku) is not used. A GH3 eyelid turn between 10° and 20° (a narrowed GH3 look) shows no change on a character's face. Windows was not run: the change is C# only (no shader change).
+
 ## Known differences from GH3
 
 | Area | Difference |
