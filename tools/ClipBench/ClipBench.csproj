@@ -23,6 +23,10 @@
     <Compile Include="../../src/Stage/Band/StageDrummer.cs" Link="StageDrummer.cs" />
     <Compile Include="../../src/Stage/Band/StageGuitarArms.cs" Link="StageGuitarArms.cs" />
     <Compile Include="../../src/Stage/Band/StagePerformance.cs" Link="StagePerformance.cs" />
+    <Compile Include="../../src/Stage/Band/LyricPhonemes.cs" Link="LyricPhonemes.cs" />
+    <Compile Include="../../src/Stage/Band/VocalEnvelope.cs" Link="VocalEnvelope.cs" />
+    <Compile Include="../../src/Stage/Band/StageLipSync.Life.cs" Link="StageLipSync.Life.cs" />
+    <Compile Include="../../src/Stage/Band/StageLipSync.Track.cs" Link="StageLipSync.Track.cs" />
     <Compile Include="../../src/Stage/StageTolerance.cs" Link="StageTolerance.cs" />
     <Compile Include="../../src/Stage/Direction/StageRockBandVenue.cs" Link="StageRockBandVenue.cs" />
     <Compile Include="../../src/Stage/StageLimits.cs" Link="StageLimits.cs" />
@@ -35,5 +39,8 @@
     <Compile Include="../../src/Stage/Band/StageLipSync.Shapes.cs" Link="StageLipSync.Shapes.cs" />
     <Compile Include="../../src/Stage/Band/PerformanceClip.cs" Link="PerformanceClip.cs" />
     <Compile Include="../../src/Stage/Band/CharacterMotion.cs" Link="CharacterMotion.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../src/Resources/cmudict.br" LogicalName="Gh3Skin.cmudict.br" />
   </ItemGroup>
 </Project>
