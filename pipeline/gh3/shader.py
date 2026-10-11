@@ -9,55 +9,36 @@ import struct
 from functools import lru_cache
 from pathlib import Path
 
-from pipeline.gh3 import materials as gh3_materials
+from pipeline.gh3 import d3d9, materials as gh3_materials
 
-OPCODES = {
-    1: "mov",
-    2: "add",
-    3: "sub",
-    4: "mad",
-    5: "mul",
-    6: "rcp",
-    7: "rsq",
-    8: "dp3",
-    9: "dp4",
-    10: "min",
-    11: "max",
-    12: "slt",
-    13: "sge",
-    14: "exp",
-    15: "log",
-    18: "lrp",
-    19: "frc",
-    32: "pow",
-    33: "crs",
-    35: "abs",
-    36: "nrm",
-    37: "sincos",
-    41: "ifc",
-    42: "else",
-    43: "endif",
-    65: "texkill",
-    66: "texld",
-    88: "cmp",
-    90: "dp2add",
-}
-USAGES = {
-    0: "position",
-    1: "blendweight",
-    2: "blendindices",
-    3: "normal",
-    4: "psize",
-    5: "texcoord",
-    6: "tangent",
-    7: "binormal",
-    8: "tessfactor",
-    10: "color",
-    11: "fog",
-    12: "depth",
-}
 SCALAR = {"rcp", "rsq", "exp", "log", "pow"}
-SAMPLER_TYPES = {2: "2d", 3: "cube", 4: "volume"}
+# GLSL for each instruction; {0}, {1}, {2} are the source operands.
+EXPRESSIONS = {
+    "mov": "{0}",
+    "add": "({0} + {1})",
+    "sub": "({0} - {1})",
+    "mul": "({0} * {1})",
+    "mad": "({0} * {1} + {2})",
+    "dp3": "vec4(dot({0}.xyz, {1}.xyz))",
+    "dp4": "vec4(dot({0}, {1}))",
+    "dp2add": "vec4(dot({0}.xy, {1}.xy) + {2}.x)",
+    "min": "min({0}, {1})",
+    "max": "max({0}, {1})",
+    "slt": "vec4(lessThan({0}, {1}))",
+    "sge": "vec4(greaterThanEqual({0}, {1}))",
+    "frc": "fract({0})",
+    "abs": "abs({0})",
+    "lrp": "mix({2}, {1}, {0})",
+    "cmp": "mix({2}, {1}, vec4(greaterThanEqual({0}, vec4(0.0))))",
+    "nrm": "vec4({0}.xyz * gh3_rsq(dot({0}.xyz, {0}.xyz)), 0.0)",
+    "crs": "vec4(cross({0}.xyz, {1}.xyz), 0.0)",
+    "rcp": "vec4(gh3_rcp({0}.x))",
+    "rsq": "vec4(gh3_rsq(abs({0}.x)))",
+    "exp": "vec4(exp2({0}.x))",
+    "log": "vec4(gh3_log(abs({0}.x)))",
+    "pow": "vec4(gh3_pow(abs({0}.x), {1}.x))",
+    "sincos": "vec4(cos({0}.x), sin({0}.x), 0.0, 0.0)",
+}
 # Unity texture properties for samplers s0..s9. s1–s5 reuse the legacy stage shader's sampler names.
 SAMPLER_NAMES = (
     "_MainTex",
@@ -122,30 +103,11 @@ class UnsupportedShaderError(ValueError):
     pass
 
 
-def _records(data):
-    if data[:8] != b"MATL\0\0\0\x02":
-        raise ValueError("Unsupported material library")
-    count = struct.unpack_from(">I", data, 8)[0]
-    base = (20 + count * 4 + 15) & ~15
-    shader_base = base + struct.unpack_from(">I", data, 16)[0]
-    for index in range(count):
-        record = base + struct.unpack_from(">I", data, 20 + index * 4)[0]
-        row = struct.unpack_from(">10I", data, record)
-        name = data[base + row[1] : data.index(b"\0", base + row[1])].decode()
-        descriptor = base + row[7]
-        programs = []
-        # Variant 0 is the normal scene pass: vertex shader size and offset at +0x50/+0x58, pixel shader at +0x60/+0x68.
-        for size_at, offset_at in ((0x50, 0x58), (0x60, 0x68)):
-            size = struct.unpack_from(">I", data, descriptor + size_at)[0]
-            start = shader_base + struct.unpack_from(">I", data, descriptor + offset_at)[0]
-            programs.append(data[start : start + size])
-        yield f"{row[2]:08x}", name, programs[0], programs[1]
-
-
 @lru_cache(maxsize=1)
 def library(path=gh3_materials.MATERIAL_LIBRARY):
     """Map each template checksum to (name, vertex bytecode, pixel bytecode)."""
-    return {checksum: (name, vs, ps) for checksum, name, vs, ps in _records(Path(path).read_bytes())}
+    records = gh3_materials.library_records(Path(path).read_bytes())
+    return {f"{checksum:08x}": (name, vs, ps) for checksum, name, vs, ps in records}
 
 
 def _float(token):
@@ -161,10 +123,10 @@ def _literal(value):
 
 class Program:
     def __init__(self, code, stage):
-        if len(code) < 8 or code[-4:] != b"\xff\xff\0\0":
+        if len(code) < 8 or code[-4:] != d3d9.END_TOKEN:
             raise UnsupportedShaderError("Missing shader program")
         version = struct.unpack_from("<I", code)[0]
-        if version != (0xFFFE0300 if stage == "vs" else 0xFFFF0300):
+        if version != (d3d9.VERSION_VS_3_0 if stage == "vs" else d3d9.VERSION_PS_3_0):
             raise UnsupportedShaderError(f"Unsupported {stage} version {version:08x}")
         self.stage = stage
         self.inputs = {}  # v index -> (usage, usage index)
@@ -174,17 +136,17 @@ class Program:
         self.constants = set()
         self.body = []
         self.temps = 0
-        instructions = list(gh3_materials._instructions(code))
+        instructions = list(d3d9.instructions(code))
         for opcode, arguments in instructions:
-            if opcode == 31:
+            if opcode == d3d9.OPCODE_DCL:
                 self._declare(arguments)
-            elif opcode == 81:
-                index = gh3_materials._register(arguments[0])[1]
+            elif opcode == d3d9.OPCODE_DEF:
+                index = d3d9.register(arguments[0])[1]
                 self.defs[index] = "vec4(" + ", ".join(_literal(_float(t)) for t in arguments[1:5]) + ")"
         for opcode, arguments in instructions:
-            if opcode in (31, 81):
+            if opcode in (d3d9.OPCODE_DCL, d3d9.OPCODE_DEF):
                 continue
-            name = OPCODES.get(opcode)
+            name = d3d9.OPCODES.get(opcode)
             if name is None:
                 raise UnsupportedShaderError(f"Unsupported {stage} opcode {opcode}")
             self.body.append("    " + self._instruction(name, arguments))
@@ -192,58 +154,58 @@ class Program:
     def _declare(self, arguments):
         usage = arguments[0] & 31
         usage_index = (arguments[0] >> 16) & 15
-        kind, index = gh3_materials._register(arguments[1])
-        if kind == 10:
-            sampler = SAMPLER_TYPES.get((arguments[0] >> 27) & 15)
+        kind, index = d3d9.register(arguments[1])
+        if kind == d3d9.REGISTER_SAMPLER:
+            sampler = d3d9.SAMPLER_TYPES.get((arguments[0] >> 27) & 15)
             if sampler is None:
                 raise UnsupportedShaderError("Unknown sampler type")
             self.samplers[index] = sampler
-        elif kind == 1:
-            self.inputs[index] = (USAGES.get(usage, f"usage{usage}"), usage_index)
-        elif kind == 6:
-            self.outputs[index] = (USAGES.get(usage, f"usage{usage}"), usage_index)
-        elif kind != 17:
+        elif kind == d3d9.REGISTER_INPUT:
+            self.inputs[index] = (d3d9.USAGES.get(usage, f"usage{usage}"), usage_index)
+        elif kind == d3d9.REGISTER_OUTPUT:
+            self.outputs[index] = (d3d9.USAGES.get(usage, f"usage{usage}"), usage_index)
+        elif kind != d3d9.REGISTER_MISC:
             raise UnsupportedShaderError(f"Unsupported declaration register type {kind}")
 
     def register(self, token):
-        kind, index = gh3_materials._register(token)
-        if token & (1 << 13):
+        kind, index = d3d9.register(token)
+        if token & d3d9.RELATIVE_ADDRESSING:
             raise UnsupportedShaderError("Relative addressing is not supported")
-        if kind == 0:
+        if kind == d3d9.REGISTER_TEMP:
             self.temps = max(self.temps, index + 1)
             return f"r{index}"
-        if kind == 1:
+        if kind == d3d9.REGISTER_INPUT:
             usage = self.inputs.get(index)
             if usage is None:
                 raise UnsupportedShaderError(f"Undeclared input v{index}")
             return f"v{index}"
-        if kind == 2:
+        if kind == d3d9.REGISTER_CONST:
             if index in self.defs:
                 return f"d{index}"
             self.constants.add(index)
             return f"c{index}"
-        if kind == 6:
+        if kind == d3d9.REGISTER_OUTPUT:
             return f"o{index}"
-        if kind == 8:
+        if kind == d3d9.REGISTER_COLOR_OUT:
             if index != 0:
                 raise UnsupportedShaderError("Multiple render targets are not supported")
             return "oC0"
-        if kind == 17:
+        if kind == d3d9.REGISTER_MISC:
             return "vPos" if index == 0 else "vFace"
         raise UnsupportedShaderError(f"Unsupported register type {kind}")
 
     def source(self, token):
         name = self.register(token)
-        swizzle = "".join("xyzw"[(token >> (16 + 2 * i)) & 3] for i in range(4))
+        swizzle = "".join("xyzw"[component] for component in d3d9.swizzle(token))
         value = name if swizzle == "xyzw" else f"{name}.{swizzle}"
-        modifier = (token >> 24) & 15
-        if modifier == 0:
+        modifier = d3d9.source_modifier(token)
+        if modifier == d3d9.SOURCE_MODIFIER_NONE:
             return value
-        if modifier == 1:
+        if modifier == d3d9.SOURCE_MODIFIER_NEGATE:
             return f"(-{value})"
-        if modifier == 11:
+        if modifier == d3d9.SOURCE_MODIFIER_ABS:
             return f"abs({value})"
-        if modifier == 12:
+        if modifier == d3d9.SOURCE_MODIFIER_ABS_NEGATE:
             return f"(-abs({value}))"
         raise UnsupportedShaderError(f"Unsupported source modifier {modifier}")
 
@@ -262,7 +224,7 @@ class Program:
         target, mask, saturate = self.destination(arguments[0])
         s = [self.source(token) for token in arguments[1 : 2 if name == "texld" else None]]
         if name == "texld":
-            sampler = gh3_materials._register(arguments[2])[1]
+            sampler = d3d9.register(arguments[2])[1]
             kind = self.samplers.get(sampler)
             if kind == "volume":
                 raise UnsupportedShaderError("Volume textures are not supported")
@@ -274,54 +236,8 @@ class Program:
                 value = f"gh3_cube({SAMPLER_NAMES[sampler]}, {s[0]}.xyz)"
             else:
                 value = f"texture({SAMPLER_NAMES[sampler]}, gh3_uv({s[0]}))"
-        elif name == "mov":
-            value = s[0]
-        elif name == "add":
-            value = f"({s[0]} + {s[1]})"
-        elif name == "sub":
-            value = f"({s[0]} - {s[1]})"
-        elif name == "mul":
-            value = f"({s[0]} * {s[1]})"
-        elif name == "mad":
-            value = f"({s[0]} * {s[1]} + {s[2]})"
-        elif name == "dp3":
-            value = f"vec4(dot({s[0]}.xyz, {s[1]}.xyz))"
-        elif name == "dp4":
-            value = f"vec4(dot({s[0]}, {s[1]}))"
-        elif name == "dp2add":
-            value = f"vec4(dot({s[0]}.xy, {s[1]}.xy) + {s[2]}.x)"
-        elif name == "min":
-            value = f"min({s[0]}, {s[1]})"
-        elif name == "max":
-            value = f"max({s[0]}, {s[1]})"
-        elif name == "slt":
-            value = f"vec4(lessThan({s[0]}, {s[1]}))"
-        elif name == "sge":
-            value = f"vec4(greaterThanEqual({s[0]}, {s[1]}))"
-        elif name == "frc":
-            value = f"fract({s[0]})"
-        elif name == "abs":
-            value = f"abs({s[0]})"
-        elif name == "lrp":
-            value = f"mix({s[2]}, {s[1]}, {s[0]})"
-        elif name == "cmp":
-            value = f"mix({s[2]}, {s[1]}, vec4(greaterThanEqual({s[0]}, vec4(0.0))))"
-        elif name == "nrm":
-            value = f"vec4({s[0]}.xyz * gh3_rsq(dot({s[0]}.xyz, {s[0]}.xyz)), 0.0)"
-        elif name == "crs":
-            value = f"vec4(cross({s[0]}.xyz, {s[1]}.xyz), 0.0)"
-        elif name == "rcp":
-            value = f"vec4(gh3_rcp({s[0]}.x))"
-        elif name == "rsq":
-            value = f"vec4(gh3_rsq(abs({s[0]}.x)))"
-        elif name == "exp":
-            value = f"vec4(exp2({s[0]}.x))"
-        elif name == "log":
-            value = f"vec4(gh3_log(abs({s[0]}.x)))"
-        elif name == "pow":
-            value = f"vec4(gh3_pow(abs({s[0]}.x), {s[1]}.x))"
-        elif name == "sincos":
-            value = f"vec4(cos({s[0]}.x), sin({s[0]}.x), 0.0, 0.0)"
+        elif name in EXPRESSIONS:
+            value = EXPRESSIONS[name].format(*s)
         else:
             raise UnsupportedShaderError(f"Unsupported instruction {name}")
         if saturate:
