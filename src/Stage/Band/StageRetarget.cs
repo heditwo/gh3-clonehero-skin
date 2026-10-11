@@ -75,10 +75,14 @@ internal sealed class CharacterFace
     // Blink times cover the song plus 30 s, at least 10 minutes.
     private const int MinimumBlinkSeconds = 600;
     private const int BlinkTail = 30;
-    // Tuned: the GH3 jaw turn (degrees) of a fully open mouth, and the eyelid turn range of a blink.
+    // Tuned: the GH3 jaw turn (degrees) of a fully open mouth.
     private const int OpenJawDegrees = 24;
-    private const int LidStartDegrees = 5;
-    private const int LidRangeDegrees = 35;
+    // Measured (570 GH3 singer facial clips, the upper eyelid turn from the bind pose): the open lid is at 9.3° (median)
+    // and GH3 holds it at 10-20° for seconds as an expression; the blinks start above 20° (80th percentile) and reach
+    // 26° (median peak of the blinks); held closed eyes are at 31.5° (median). A blink shape closes the eyes fully, so
+    // only the turn past 20° closes it: a lowered GH3 lid does not give half-closed eyes.
+    private const int LidStartDegrees = 20;
+    private const int LidRangeDegrees = 6;
     // Blend shape weights that change less than this are not set again.
     private const float WeightChange = 0.002f;
     private readonly List<(SkinnedMeshRenderer Renderer, int[] Slots)> _shapes;
