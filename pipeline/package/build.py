@@ -405,7 +405,7 @@ def character_library_manifest():
         "id": CHARACTER_LIBRARY_ID,
         "version": decisions.LIBRARY_VERSION,
         "name": "GH3 character library",
-        "description": "The rig profiles, animation sets, hair physics, and IK of the playable GH3 guitarists.",
+        "description": "The rig profiles, animation sets, hair physics, and IK of the playable GH3 guitarists and singers.",
         "authors": decisions.GH3_CHARACTER_LIBRARY_AUTHORS,
         "license": decisions.GH3_LICENSE,
         "permissions": decisions.GH3_PERMISSIONS,

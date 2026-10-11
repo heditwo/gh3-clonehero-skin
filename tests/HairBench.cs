@@ -115,9 +115,9 @@ internal static class HairBench
                 Profile = profile, SetName = profile.Animations, Hair = definition,
                 Member = new PerformanceMember { Bones = profile.Bones, Groups = set.Groups, Layers = set.Layers, Clips = set.Clips },
                 ClipDirectory = Path.Combine(folder, "clips"),
-                Offsets = CharacterMotion.RestOffsets(profile.Bones, profile.Bind, library.ClipRig.Bones, library.ClipRig.Bind),
+                Offsets = CharacterMotion.RestOffsets(profile.Bones, profile.Bind, library.SetClipRigs[profile.Animations].Bones, library.SetClipRigs[profile.Animations].Bind),
             };
-            var player = new PerformancePlayer("guitarist", "", motion.Member, animation.BindPose, timeline, parents, performance.Constants, motion);
+            var player = new PerformancePlayer(profile.Role, "", motion.Member, animation.BindPose, timeline, parents, performance.Constants, motion);
             player.Prepare();
             sample = (time, pose) => { player.Sample(time); Array.Copy(player.Pose, pose, pose.Length); return new(Vector3.Zero, Quaternion.Identity); };
         }
@@ -263,9 +263,9 @@ internal static class HairBench
             Profile = profile, SetName = profile.Animations, Hair = definition,
             Member = new PerformanceMember { Bones = profile.Bones, Groups = set.Groups, Layers = set.Layers, Clips = set.Clips },
             ClipDirectory = Path.Combine(folder, "clips"),
-            Offsets = CharacterMotion.RestOffsets(profile.Bones, profile.Bind, library.ClipRig.Bones, library.ClipRig.Bind),
+            Offsets = CharacterMotion.RestOffsets(profile.Bones, profile.Bind, library.SetClipRigs[profile.Animations].Bones, library.SetClipRigs[profile.Animations].Bind),
         };
-        var player = new PerformancePlayer("guitarist", "", motion.Member, animation.BindPose, timeline, animation.Parents, performance.Constants, motion);
+        var player = new PerformancePlayer(profile.Role, "", motion.Member, animation.BindPose, timeline, animation.Parents, performance.Constants, motion);
         player.Prepare();
         var profileHead = Array.IndexOf(profile.Bones, Gh3Skin.Packages.CharacterRig.Head);
         var headBone = skeleton != null ? skeleton.Humanoid["head"] : profileHead;

@@ -898,7 +898,10 @@ def source_poses(scene, clip, rig_data):
     role = character_tools.role_of(p.profile)
     clib, profile = character_tools.library_profile(scene)
     if clib is not None:
-        decoded, offsets = q48.decode(character_tools.decompress(clib.clip(clip))), clib.clip_offsets(profile)
+        decoded, offsets = (
+            q48.decode(character_tools.decompress(clib.clip(clip))),
+            clib.clip_offsets(profile, p.animations),
+        )
     else:
         lib = character_tools.library(character_tools.library_path(scene))
         decoded, offsets = q48.decode(character_tools.decompress(lib.clip(role, clip))), None

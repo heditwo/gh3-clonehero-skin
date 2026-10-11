@@ -21,7 +21,7 @@ import numpy as np
 from . import container, decisions
 from .glb import Glb, join_glb
 from .package_files import Report, Source
-from .profiles import LIBRARY_ID, PROFILES, gh3_key
+from .profiles import LIBRARY_ID, PROFILES, gh3_key, set_clip_rig
 from .rotations import matrix_quaternions, qnormalize, quaternion_matrices
 
 FORMAT = "chchar/1.0"
@@ -474,10 +474,12 @@ class CharacterLibrary:
     def has_clip(self, clip):
         return f"clips/{clip}.q48.br" in self.source.set
 
-    def clip_offsets(self, profile):
+    def clip_offsets(self, profile, animations=""):
         """The position offset of each bone for the clips (PACKAGE-FORMAT 10.1): the profile rest position minus the
-        clipRig rest position of the bone with the same name (zero without one), runtime coordinates (CharacterMotion.RestOffsets)."""
-        row, clip_rig = self.profiles[profile], self.data["clipRig"]
+        rest position of the bone with the same name in the clip rig of the animation set (zero without one), runtime
+        coordinates (CharacterMotion.RestOffsets)."""
+        row = self.profiles[profile]
+        clip_rig = set_clip_rig(self.data, animations or row["animations"])
         index = {}
         for i, bone in enumerate(clip_rig["bones"]):
             index.setdefault(bone, i)

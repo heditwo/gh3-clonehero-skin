@@ -39,8 +39,8 @@ fi
 for step in "${steps[@]}"; do
   case "$step" in
     library) run "${stage_python[@]}" -m pipeline.library --data "$data" ;;
-    # The character library gh3-characters-v1 (the GH3 guitarist rigs, animation sets, hair, and IK), then the playable
-    # GH3 characters (all outfits and styles) on their profiles; the singers read band/hair.json of the library.
+    # The character library gh3-characters-v1 (the GH3 guitarist and singer rigs, animation sets, hair, and IK), then the
+    # playable GH3 characters (all outfits and styles) on their profiles.
     characters)
       run "${stage_python[@]}" -m pipeline.character_library --data "$data"
       run "${stage_python[@]}" -m pipeline.characters --data "$data"

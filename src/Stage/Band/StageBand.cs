@@ -84,12 +84,13 @@ internal sealed partial class StageBand : IDisposable
             var character = characters != null && characters.TryGetValue(member.Role, out var chosen) ? chosen : null;
             var instrument = instruments != null && instruments.TryGetValue(member.Role, out var picked) ? picked : null;
             CharacterMotion? motion = null;
-            if (character != null && character.Library.Length > 0 && member.Role is not ("guitarist" or "bassist") && character.Skeleton == null)
+            var profilePlays = character != null && Packages.CharacterLibrary.Plays(character.Role, member.Role);
+            if (character != null && character.Library.Length > 0 && !profilePlays && character.Skeleton == null)
             {
-                MelonLogger.Warning($"GH3 band {member.Role}: character {character.Id} has a guitarist profile of {character.Library}; the venue default plays");
+                MelonLogger.Warning($"GH3 band {member.Role}: character {character.Id} has a {character.Role} profile of {character.Library}; the venue default plays");
                 character = null;
             }
-            if (character != null && character.Library.Length > 0 && member.Role is "guitarist" or "bassist")
+            if (character != null && character.Library.Length > 0 && profilePlays)
                 try { motion = CharacterMotion.Create(character); }
                 catch (Exception error) when (error is IOException or InvalidDataException or Packages.PackageException or System.Text.Json.JsonException or UnauthorizedAccessException)
                 {
@@ -331,7 +332,7 @@ internal sealed partial class StageBand : IDisposable
         if (trace)
         {
             _traceNext = Math.Floor(time * 2 + 1) / 2;
-            foreach (var player in _players.Where(p => p.Performance != null && p.Role is "guitarist" or "bassist")) Trace(player, time);
+            foreach (var player in _players.Where(p => p.Performance != null && (p.Role is "guitarist" or "bassist" || p.Motion != null))) Trace(player, time);
         }
         foreach (var player in _players)
         {
@@ -361,18 +362,23 @@ internal sealed partial class StageBand : IDisposable
 
     private double _traceNext = double.NegativeInfinity;
     private static readonly string[] TraceBones = { "bone_pelvis", "bone_head", "Bone_IK_Hand_Guitar_R", "Bone_IK_Hand_Guitar_L" };
+    private static readonly string[] TraceFaceBones = { "Bone_Jaw", "Bone_Eyelid_Upper_L", "Bone_Lip_Lower_Mid", "Bone_Brow_L" };
 
-    // GH3_SKIN_TRACE: the body clip and its local pose of a few bones, to compare with the GH3 clip on the GH3 skeleton.
+    // GH3_SKIN_TRACE: the body clip and its local pose of a few bones, to compare with the GH3 clip on the GH3 skeleton; for
+    // the singer also the song facial clip and the local pose of a few face bones.
     private static void Trace(Performer player, double time)
     {
         var raw = new BandPose[(player.Retarget?.Source ?? player.Animation).Parents.Length];
         var (segment, clipTime) = player.Performance!.SampleClip(time, raw);
         var bones = player.Definition!.Bones;
-        var values = TraceBones.Select(name => Array.IndexOf(bones, Gh3Checksum.Of(name))).Where(i => i >= 0).Select(i =>
-            FormattableString.Invariant($"{i}:{raw[i].Position.X:F6},{raw[i].Position.Y:F6},{raw[i].Position.Z:F6},{raw[i].Rotation.X:F6},{raw[i].Rotation.Y:F6},{raw[i].Rotation.Z:F6},{raw[i].Rotation.W:F6}"));
+        string Values(string[] names, BandPose[] pose) => string.Join(";", names.Select(name => Array.IndexOf(bones, Gh3Checksum.Of(name))).Where(i => i >= 0).Select(i =>
+            FormattableString.Invariant($"{i}:{pose[i].Position.X:F6},{pose[i].Position.Y:F6},{pose[i].Position.Z:F6},{pose[i].Rotation.X:F6},{pose[i].Rotation.Y:F6},{pose[i].Rotation.Z:F6},{pose[i].Rotation.W:F6}")));
+        var values = Values(TraceBones, raw);
+        var face = player.Role == "singer" ? player.Performance.SampleFace(time, raw) : null;
         MelonLogger.Msg(FormattableString.Invariant($"[trace] band t={time:F3} role={player.Role} profile={player.Motion?.Profile.Id ?? "library"} ") +
             FormattableString.Invariant($"set={player.Motion?.SetName ?? "library"} stance={segment.Stance} clip={segment.Clip} clipTime={clipTime:F4} ") +
-            FormattableString.Invariant($"scale={player.Root.localScale.x:F3} bones={string.Join(";", values)} hairPeak={player.Hair?.PeakSpeed ?? 0:F2}") +
+            FormattableString.Invariant($"scale={player.Root.localScale.x:F3} bones={values} hairPeak={player.Hair?.PeakSpeed ?? 0:F2}") +
+            (face is { } facial ? FormattableString.Invariant($" face={facial.Clip} faceTime={facial.ClipTime:F4} faceBones={Values(TraceFaceBones, raw)}") : "") +
             (player.Retarget is { } retarget ? FormattableString.Invariant($" retarget handMiss={retarget.Rig.HandMiss * 100:F2}cm move={retarget.Rig.InstrumentMove.Length() * 100:F1}cm") : ""));
     }
 

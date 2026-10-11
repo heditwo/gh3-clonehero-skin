@@ -7,20 +7,15 @@ outfits, styles, skeletons, and default instruments; `musician_body` and `musici
 exported.
 
 Each variant keeps the GH3 meshes, materials (GH3 templates and constants), textures, and hair cards as the library band
-does (pipeline/library/band.py). A guitarist keeps its own GH3 skeleton: the rig profile of its GH3 profile and outfit
-in the character library gh3-characters-v1 (pipeline.character_library; Axel's first outfit uses the library profile
-gh3-guitarist-axel-v1). The two singers use the fixed library profile gh3-singer-male-v1 (package format v1.0), so their
-mesh moves from their own GH3 skeleton to the profile rig:
-
-- body and instrument bones: each vertex keeps its place in the frame of its bone (the bone moves to the profile rest pose);
-- face bones (below `bone_head`): the vertices move with the head, so that the face keeps its shape;
-- accessory bones (`Bone_ACC_*`): the vertices move with their body parent; hair joints below the head go to the nearest
-  joint of the profile hair chain (library band/hair.json), or stay on the head.
+does (pipeline/library/band.py), on its own GH3 skeleton: the rig profile of its GH3 profile and outfit in the character
+library gh3-characters-v1 (pipeline.character_library). Axel's first outfit uses the library profile
+gh3-guitarist-axel-v1. The two singers use gh3-singer-female-v1 and gh3-singer-bret-v1: the skeleton, animation set,
+and ragdoll of their GH3 vocalist profile.
 
 Output: assets/characters/<id>/ (meshes.bin GH3BND02, stage.json, textures/*.png, character.json) and
 assets/characters/inventory.json. The packages step (pipeline.package.build) writes them as .chchar packages.
 
-Usage: python -m pipeline.characters [--data DATA] [--library LIBRARY] [--output DIR] [--only ID ...]
+Usage: python -m pipeline.characters [--data DATA] [--output DIR] [--only ID ...]
 """
 
 import argparse
@@ -30,26 +25,21 @@ import shutil
 import struct
 from pathlib import Path
 
-import numpy as np
-
-from pipeline.gh3.band_formats import rotation, skeleton
 from pipeline.gh3.data import Source, script
 from pipeline.gh3.formats import find_array, key
 from pipeline.gh3.hair_mesh import combine_hair
 from pipeline.gh3.mesh_cutout import trim_prop_cutouts
 from pipeline.library.models import read_models
 from pipeline.package import runtime
-from pipeline.paths import CHARACTERS, GH3_DATA, LIBRARY
-from pipeline.stagepack.gltf import SKINNED_GH3_VERTEX
+from pipeline.paths import CHARACTERS, GH3_DATA
 
-SINGER_PROFILE = "gh3-singer-male-v1"
-SINGER_RIG = "GH3_Singer_Male"
 CLIP_RIG_PROFILE = "gh3-guitarist-axel-v1"
-# The GH3 vocalist profiles that have their own model. Singer_Alt and the *_Alt profiles only change the microphone.
-SINGERS = ("Singer_Female", "Singer_Bret")
-# Hair joints of a character that are farther than this from every joint of the profile hair chain stay on the head.
-HAIR_DISTANCE = 0.12
-ACCESSORY_BONES = {key(f"Bone_ACC_{i:02d}") for i in range(1, 16)}
+# The GH3 vocalist profiles that have their own model, with their rig profile in the character library and their name.
+# Singer_Alt and the *_Alt profiles only change the microphone.
+SINGERS = {
+    "Singer_Female": ("gh3-singer-female-v1", "Female singer"),
+    "Singer_Bret": ("gh3-singer-bret-v1", "Bret Michaels"),
+}
 RIG_NAMES = [
     f"GH3_Guitarist_{n}{s}"
     for n in (
@@ -161,7 +151,7 @@ def inventory(data_directory):
             else f"{name}: {outfit_name}" + (f" ({style_name})" if styled else "")
         )
         if role == "singer":
-            label = {"Singer_Female": "Female singer", "Singer_Bret": "Bret Michaels"}[text(profile[key("name")])]
+            label = SINGERS[text(profile[key("name")])][1]
         identifier = (
             f"gh3.{slug(text(profile[key('name')]))}"
             + (f".outfit{outfit}" if outfit_name else "")
@@ -279,7 +269,7 @@ def inventory(data_directory):
                 "",
                 "",
                 instrument,
-                SINGER_PROFILE,
+                SINGERS[name][0],
             )
         else:
             skipped.append(
@@ -291,119 +281,6 @@ def inventory(data_directory):
                 }
             )
     return variants, skipped
-
-
-# Rigs.
-def world_matrices(rig):
-    names, parents, positions, rotations = rig
-    world = [None] * len(names)
-    for i in range(len(names)):
-        local = np.eye(4)
-        local[:3, :3] = rotation(rotations[i] * [-1, -1, -1, 1])
-        local[:3, 3] = positions[i]
-        world[i] = local if parents[i] < 0 else world[parents[i]] @ local
-    return np.array(world)
-
-
-def ancestors(parents, bone):
-    while bone >= 0:
-        yield bone
-        bone = parents[bone]
-
-
-def chains(parents, joints, root):
-    """The joint chains below `root` that use only `joints`: lists from the chain root (a child of `root`) to the tip.
-    A joint with two children starts a new chain for each child after the first."""
-    result = []
-    for start in sorted(j for j in joints if parents[j] == root):
-        stack = [[start]]
-        while stack:
-            chain = stack.pop()
-            children = sorted(j for j in joints if parents[j] == chain[-1])
-            if not children:
-                result.append(chain)
-                continue
-            stack.append(chain + [children[0]])
-            stack.extend([[child] for child in children[1:]])
-    return result
-
-
-def retarget_plan(source, target, hair_chain):
-    """For each source bone: (target bone for the weights, 4x4 rest transform in GH3 space), and the hair mapping report.
-    A hair chain of the character takes the profile hair chain with the nearest root; joint n goes to joint n of that
-    chain (the tip when the profile chain is shorter). A chain whose root is farther than HAIR_DISTANCE stays on the head."""
-    names, parents = source[0], source[1]
-    if list(names) != list(target[0]):
-        raise ValueError("the character skeleton has other bones than the profile")
-    source_world, target_world = world_matrices(source), world_matrices(target)
-    head = names.index(key("bone_head"))
-    under_head = {i for i in range(len(names)) if head in ancestors(parents, parents[i])}
-    moved = [target_world[i] @ np.linalg.inv(source_world[i]) for i in range(len(names))]
-    accessory = {i for i in range(len(names)) if names[i] in ACCESSORY_BONES}
-    target_chains = chains(target[1], set(hair_chain), head)
-    hair_target, hair = {}, []
-    for chain in chains(parents, accessory, head):
-        place = (moved[head] @ source_world[chain[0]])[:3, 3]
-        distance = [np.linalg.norm(target_world[c[0]][:3, 3] - place) for c in target_chains]
-        best = int(np.argmin(distance)) if distance else -1
-        mapped = target_chains[best] if best >= 0 and distance[best] <= HAIR_DISTANCE else []
-        for depth, bone in enumerate(chain):
-            hair_target[bone] = mapped[min(depth, len(mapped) - 1)] if mapped else head
-        hair.append({"chain": chain, "to": mapped, "distance": round(float(distance[best]), 4) if best >= 0 else None})
-    plan = []
-    for bone in range(len(names)):
-        same = parents[bone] == target[1][bone] and np.allclose(
-            source_world[bone], target_world[bone], rtol=0, atol=1e-6
-        )
-        if bone in accessory and not (same and bone not in hair_target):
-            body = next(b for b in ancestors(parents, bone) if b not in accessory)
-            plan.append((hair_target.get(bone, body), moved[body]))
-        elif bone in under_head:
-            plan.append((bone, moved[head]))
-        else:
-            plan.append((bone, moved[bone]))
-    return plan, hair
-
-
-def retarget(meshes, plan):
-    """Move GH3BND02 parts (Unity space) by the plan and give their weights to the plan bones. Vertices that the plan
-    does not change keep their bytes (Axel on his own rig is byte-equal to the library member)."""
-    flip = np.array([1, 1, -1])
-    transforms = np.array([t for _, t in plan])
-    targets = np.array([b for b, _ in plan])
-    result = []
-    for material, count, data, faces in meshes:
-        source = np.frombuffer(bytes(data), dtype=SKINNED_GH3_VERTEX)
-        vertices = source.copy()
-        joints = vertices["joints"].astype(int)
-        weights = vertices["weights"].astype(np.float64)
-        matrix = (
-            np.einsum("vk,vkij->vij", weights, transforms[joints]) / np.maximum(weights.sum(1), 1e-12)[:, None, None]
-        )
-        mapped = targets[joints]
-        changed = ~np.isclose(matrix, np.eye(4), rtol=0, atol=1e-9).all((1, 2)) | (
-            (mapped != joints) & (weights > 0)
-        ).any(1)
-        position = vertices["position"] * flip
-        vertices["position"] = (np.einsum("vij,vj->vi", matrix[:, :3, :3], position) + matrix[:, :3, 3]) * flip
-        for field in ("normal", "gh3binormal", "gh3tangent"):
-            direction = np.einsum("vij,vj->vi", matrix[:, :3, :3], vertices[field] * flip)
-            length = np.linalg.norm(direction, axis=1, keepdims=True)
-            vertices[field] = np.where(length > 1e-12, direction / np.maximum(length, 1e-12), 0) * flip
-        for v in np.flatnonzero(changed):
-            slots = {}
-            for bone, weight in zip(mapped[v], weights[v]):
-                if weight > 0:
-                    slots[bone] = slots.get(bone, 0.0) + weight
-            row = sorted(slots.items(), key=lambda item: -item[1])
-            vertices["joints"][v] = [bone for bone, _ in row] + [0] * (4 - len(row))
-            total = sum(weight for _, weight in row)
-            vertices["weights"][v] = [weight / total for _, weight in row] + [0] * (4 - len(row))
-        vertices[~changed] = source[~changed]
-        if not np.isfinite(vertices["position"]).all():
-            raise ValueError("non-finite retargeted vertex")
-        result.append((material, count, vertices.tobytes(), faces))
-    return result
 
 
 def load_models(source, files, directory, role):
@@ -420,7 +297,7 @@ def load_models(source, files, directory, role):
     return materials, meshes
 
 
-def export(variant, source, rigs, hair, output):
+def export(variant, source, output):
     role = variant["role"]
     directory = output / variant["id"]
     if directory.exists():
@@ -432,18 +309,12 @@ def export(variant, source, rigs, hair, output):
         variant["instrumentModel"] if role == "guitarist" or variant["instrument"].lower().endswith("_fem") else ""
     )
     materials, meshes = load_models(source, [variant["model"], instrument], directory, role)
-    hair_map = []
-    if role == "singer":
-        chain = [joint["bone"] for joint in hair["members"][role]["joints"]]
-        plan, hair_map = retarget_plan(skeleton(rigs[key(variant["skeleton"])]), skeleton(rigs[key(SINGER_RIG)]), chain)
-        meshes = retarget(meshes, plan)
     runtime.write_model(directory, variant["id"], materials, meshes)
     info = {
         **variant,
         "instrumentInModel": bool(instrument),
         "vertices": sum(m[1] for m in meshes),
         "parts": len(meshes),
-        "hairJoints": hair_map,
         "templates": sorted({m["gh3"]["template"] for m in materials.values() if "gh3" in m}),
     }
     (directory / "character.json").write_text(json.dumps(info, indent=2) + "\n")
@@ -453,20 +324,17 @@ def export(variant, source, rigs, hair, output):
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="python -m pipeline.characters", description=__doc__.splitlines()[0])
     parser.add_argument("--data", type=Path, default=GH3_DATA)
-    parser.add_argument("--library", type=Path, default=LIBRARY)
     parser.add_argument("--output", type=Path, default=CHARACTERS)
     parser.add_argument("--only", action="append", help="Export only this character ID (repeatable)")
     args = parser.parse_args(argv)
     source = Source(args.data)
     variants, skipped = inventory(args.data)
-    rigs = {name: data for kind, name, data in source.load("ZONES/global.pak.xen") if kind == key(".ske")}
-    hair = json.loads((args.library / "band/hair.json").read_text())
     args.output.mkdir(parents=True, exist_ok=True)
     exported = []
     for variant in variants:
         if args.only and variant["id"] not in args.only:
             continue
-        info = export(variant, source, rigs, hair, args.output)
+        info = export(variant, source, args.output)
         exported.append(info["id"])
         print(
             f"{info['id']}: {info['name']}, {info['vertices']} vertices, {info['parts']} parts, instrument {info['instrument'] or '-'}"

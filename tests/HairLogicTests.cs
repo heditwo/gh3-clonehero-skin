@@ -356,7 +356,7 @@ internal static class HairLogicTests
         Console.WriteLine($"Validated {bank.Members.Values.Sum(m => m.Joints.Length)} original hair joints during My Curse.");
     }
 
-    // Every profile of the character library plays My Curse as the guitarist with its own animation set; its hair must
+    // Every profile of the character library plays My Curse in the role of its profile with its own animation set; its hair must
     // stay below StageHair.WarningSpeed (the runtime warning of StageBand).
     private static void CheckCharacterAssets(string assets)
     {
@@ -374,10 +374,10 @@ internal static class HairLogicTests
                 Profile = profile, SetName = profile.Animations, Hair = bank.Hair[profile.Hair],
                 Member = new PerformanceMember { Bones = profile.Bones, Groups = set.Groups, Layers = set.Layers, Clips = set.Clips },
                 ClipDirectory = Path.Combine(folder, "clips"),
-                Offsets = CharacterMotion.RestOffsets(profile.Bones, profile.Bind, library.ClipRig.Bones, library.ClipRig.Bind),
+                Offsets = CharacterMotion.RestOffsets(profile.Bones, profile.Bind, library.SetClipRigs[profile.Animations].Bones, library.SetClipRigs[profile.Animations].Bind),
             };
             var animation = BandAnimation.FromRig(profile.Parents, profile.Bind);
-            var player = new PerformancePlayer("guitarist", "", motion.Member, animation.BindPose, timeline, animation.Parents, performance.Constants, motion);
+            var player = new PerformancePlayer(profile.Role, "", motion.Member, animation.BindPose, timeline, animation.Parents, performance.Constants, motion);
             player.Prepare();
             var hair = new StageHair(motion.Hair, animation.Parents, (time, output) =>
             {

@@ -59,6 +59,7 @@ internal sealed class CharacterMotion
         var bank = CharacterMotionBank.Load(character.LibraryFolder);
         var setName = character.Animations.Length > 0 ? character.Animations : profile.Animations;
         var set = bank.Animations.TryGetValue(setName, out var animations) ? animations : throw new InvalidDataException($"no animation set {setName}");
+        if (!library.SetClipRigs[setName].Bones.SequenceEqual(profile.Bones)) throw new InvalidDataException($"animation set {setName} is for another rig than profile {profile.Id}");
         HairDefinition? hair = null;
         if (profile.Hair.Length > 0 && !bank.Hair.TryGetValue(profile.Hair, out hair)) throw new InvalidDataException($"no hair {profile.Hair}");
         return new CharacterMotion
@@ -67,7 +68,7 @@ internal sealed class CharacterMotion
             // The sets are shared by the profiles; each performer gets its own member with the bone names of its rig.
             Member = new PerformanceMember { Bones = profile.Bones, Groups = set.Groups, Layers = set.Layers, Clips = set.Clips },
             ClipDirectory = Path.Combine(character.LibraryFolder, "clips"),
-            Offsets = RestOffsets(profile.Bones, profile.Bind, library.ClipRig.Bones, library.ClipRig.Bind),
+            Offsets = RestOffsets(profile.Bones, profile.Bind, library.SetClipRigs[setName].Bones, library.SetClipRigs[setName].Bind),
             Hair = hair, Ik = bank.Ik.TryGetValue(profile.Ik, out var ik) ? ik : null,
         };
     }

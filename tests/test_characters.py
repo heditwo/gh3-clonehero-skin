@@ -11,7 +11,6 @@ from pipeline.gh3.formats import key
 from pipeline.package import build, runtime
 from pipeline.package.validate import Validator
 from pipeline.paths import CHARACTER_LIBRARY, CHARACTERS, GH3_DATA, LIBRARY
-from pipeline.stagepack.gltf import SKINNED_GH3_VERTEX
 from tests.test_package_build import clip_bytes, library, skinned_model, write
 
 DATA = Path(os.environ.get("GH3_DATA", GH3_DATA))
@@ -22,62 +21,6 @@ def rig(names, parents, positions):
     """A GH3 skeleton tuple (names, parents, positions, rotations) without rotations."""
     rotations = np.tile([0.0, 0.0, 0.0, 1.0], (len(names), 1))
     return list(names), list(parents), np.array(positions, dtype=float), rotations
-
-
-class RetargetTests(unittest.TestCase):
-    # 0 root, 1 head, 2 face bone, 3 and 4 a hair chain, 5 an arm, 6 an accessory on the arm.
-    NAMES = [1, HEAD, 2, key("Bone_ACC_01"), key("Bone_ACC_02"), 3, key("Bone_ACC_03")]
-    PARENTS = [-1, 0, 1, 1, 3, 0, 5]
-
-    def test_chains(self):
-        parents = [-1, 0, 1, 1, 3, 4, 4]
-        self.assertEqual(sorted(characters.chains(parents, {2, 3, 4, 5, 6}, 1)), [[2], [3, 4, 5], [6]])
-
-    def test_plan(self):
-        source = rig(
-            self.NAMES,
-            self.PARENTS,
-            [[0, 0, 0], [0, 1.5, 0], [0, 0.1, 0.1], [0, 0.2, -0.05], [0, -0.1, 0], [0.3, 1.2, 0], [0, 0.1, 0]],
-        )
-        # The profile has the head 5 cm higher and the arm 10 cm farther out; its hair chain has three joints.
-        target = rig(
-            self.NAMES,
-            self.PARENTS,
-            [[0, 0, 0], [0, 1.55, 0], [0, 0.12, 0.08], [0, 0.18, -0.06], [0, -0.1, 0], [0.4, 1.2, 0], [0, 0.2, 0]],
-        )
-        plan, hair = characters.retarget_plan(source, target, [3, 4])
-        self.assertEqual([bone for bone, _ in plan], [0, 1, 2, 3, 4, 5, 5])
-        for bone in (1, 2, 3, 4):
-            np.testing.assert_allclose(
-                plan[bone][1][:3, 3], [0, 0.05, 0], atol=1e-12, err_msg="head, face, and hair move with the head"
-            )
-        np.testing.assert_allclose(plan[5][1][:3, 3], [0.1, 0, 0], atol=1e-12)
-        np.testing.assert_allclose(plan[6][1], plan[5][1], err_msg="an accessory moves with its body parent")
-        self.assertEqual(hair, [{"chain": [3, 4], "to": [3, 4], "distance": 0.0224}])
-        far = rig(
-            self.NAMES,
-            self.PARENTS,
-            [[0, 0, 0], [0, 1.5, 0], [0, 0.1, 0.1], [0, 0.2, 0.5], [0, -0.1, 0], [0.3, 1.2, 0], [0, 0.1, 0]],
-        )
-        plan, hair = characters.retarget_plan(far, target, [3, 4])
-        self.assertEqual([plan[3][0], plan[4][0], hair[0]["to"]], [1, 1, []], "a far hair chain stays on the head")
-
-    def test_retarget_moves_and_merges_weights(self):
-        moved = np.eye(4)
-        moved[:3, 3] = [0.1, 0, 0]
-        plan = [(0, np.eye(4)), (0, moved), (2, np.eye(4))]
-        vertices = np.zeros(2, dtype=SKINNED_GH3_VERTEX)
-        vertices["position"] = [[1, 2, 3], [4, 5, 6]]
-        vertices["normal"] = [0, 0, 1]
-        vertices["joints"] = [[0, 1, 0, 0], [2, 0, 0, 0]]
-        vertices["weights"] = [[0.5, 0.5, 0, 0], [1, 0, 0, 0]]
-        ((_, _, data, _),) = characters.retarget([("0000abcd", 2, vertices.tobytes(), [(0, 1, 1)])], plan)
-        result = np.frombuffer(data, dtype=SKINNED_GH3_VERTEX)
-        np.testing.assert_allclose(result["position"][0], [1.05, 2, 3])
-        self.assertEqual((result["joints"][0].tolist(), result["weights"][0].tolist()), ([0, 0, 0, 0], [1, 0, 0, 0]))
-        self.assertEqual(
-            result[1].tobytes(), vertices[1].tobytes(), "a vertex that the plan does not change keeps its bytes"
-        )
 
 
 class CharacterPackageTests(unittest.TestCase):
@@ -246,11 +189,12 @@ class CharacterLibraryPackageTests(unittest.TestCase):
             data = json.loads((folder / "characters.json").read_text())
             data["profiles"]["gh3-guitarist-test-v1"].update({"animations": "missing", "hair": "00000000"})
             data["animations"]["test"]["groups"]["walk"] = ["d2d2d2d2"]
+            data["animations"]["other"] = {**data["animations"]["test"], "groups": {}, "clipRig": "none"}
             write(folder / "characters.json", data)
             (root / "out").mkdir()
             (_, chlib), _ = build.build_character_library(folder, root / "out", jobs=1)
             errors = "\n".join(Validator(chlib).run().errors)
-            for text in ("no animation set missing", "no hair 00000000", "names clip d2d2d2d2"):
+            for text in ("no animation set missing", "no hair 00000000", "names clip d2d2d2d2", "no clip rig none"):
                 self.assertIn(text, errors)
 
     def test_band_library_profiles_reject_the_character_library_fields(self):
@@ -359,7 +303,7 @@ class InventoryTests(unittest.TestCase):
                 "gh3-guitarist-lou-v1",
                 "gh3-guitarist-god-of-rock-v1",
                 "gh3-guitarist-grim-ripper-v1",
-                "gh3-singer-male-v1",
+                "gh3-singer-female-v1",
             ],
         )
 
@@ -383,7 +327,7 @@ class AccessorySkeletonTests(unittest.TestCase):
 class CharacterLibraryTests(unittest.TestCase):
     def test_profiles_and_sets(self):
         data = json.loads((CHARACTER_LIBRARY / "characters.json").read_text())
-        self.assertEqual(len(data["profiles"]), 20)
+        self.assertEqual(len(data["profiles"]), 22)
         self.assertEqual(
             sorted(data["animations"]),
             [
@@ -397,11 +341,24 @@ class CharacterLibraryTests(unittest.TestCase):
                 "lou",
                 "midori",
                 "morello",
+                "singer-female",
+                "singer-male",
                 "slash",
                 "xavier",
             ],
         )
         profiles = data["profiles"]
+        self.assertEqual(
+            [
+                (profiles[p]["role"], profiles[p]["animations"], profiles[p]["hair"], profiles[p]["ik"])
+                for p in ("gh3-singer-female-v1", "gh3-singer-bret-v1")
+            ],
+            [("singer", "singer-female", "cd277aa1", "singer"), ("singer", "singer-male", "8efb7275", "singer")],
+        )
+        self.assertEqual(
+            {name: row.get("clipRig") for name, row in data["animations"].items() if name.startswith("singer")},
+            {"singer-female": "singer", "singer-male": "singer"},
+        )
         self.assertEqual(
             (
                 profiles["gh3-guitarist-judy-v1"]["scale"],
@@ -454,6 +411,50 @@ class CharacterLibraryTests(unittest.TestCase):
                     np.abs((poses[:, track, 3:] * q[:, bone] * [1, 1, -1, 1]).sum(1)), 1, atol=1e-5
                 )
         self.assertLess(worst, 1e-5)
+
+    def test_singer_clips_with_the_profile_offset_are_the_gh3_clips_on_her_skeleton(self):
+        """The female singer's set clips (on the singer clip rig) and a song facial clip of Barracuda (on the band library
+        singer rig) with the offsets of section 10.1 equal the GH3 clips on GH3_Singer_Female."""
+        import gzip
+
+        from pipeline.gh3.band_formats import animation, sample_animation, skeleton
+        from pipeline.gh3.data import Source
+
+        data = json.loads((CHARACTER_LIBRARY / "characters.json").read_text())
+        profile = data["profiles"]["gh3-singer-female-v1"]
+        clip_rig = data["clipRigs"][data["animations"]["singer-female"]["clipRig"]]
+        offset = np.array(profile["bind"])[:, :3] - np.array(clip_rig["bind"])[:, :3]
+        source = Source(DATA)
+        female = skeleton(
+            next(
+                b
+                for k, n, b in source.load("ZONES/global.pak.xen")
+                if k == key(".ske") and n == int(profile["skeleton"], 16)
+            )
+        )
+
+        def worst(stored, gh3):
+            bones, duration, tracks, poses = runtime.read_clip(gzip.decompress(stored.read_bytes()))
+            times = np.linspace(0, duration, len(poses))
+            p, q = sample_animation(animation(gh3, len(female[0])), female[2], female[3], times)
+            result = 0.0
+            for track, (bone, mask) in enumerate(tracks):
+                if mask & 1:
+                    result = max(
+                        result, float(np.abs(poses[:, track, :3] + offset[bone] - p[:, bone] * [1, 1, -1]).max())
+                    )
+                if mask & 2:
+                    np.testing.assert_allclose(
+                        np.abs((poses[:, track, 3:] * q[:, bone] * [1, 1, -1, 1]).sum(1)), 1, atol=1e-5
+                    )
+            return result
+
+        bank = {n: b for k, n, b in source.load("PAK/Singer_Female_anims.pak.xen") if k == key(".ska")}
+        clip = data["animations"]["singer-female"]["groups"]["stance_a/idle/normal/med"][0]
+        self.assertLess(worst(CHARACTER_LIBRARY / "clips" / f"{clip}.bin.gz", bank[int(clip, 16)]), 1e-5)
+        song = {n: b for k, n, b in source.load("SONGS/barracuda_song.pak.xen") if k == key(".ska")}
+        face = min(song)
+        self.assertLess(worst(LIBRARY / "direction/singer" / f"{face:08x}.bin.gz", song[face]), 1e-5)
 
     def test_god_of_rock_hair_fits_his_ragdoll(self):
         """GH3 gives the God of Rock Axel's skeleton; his ragdoll fits GH3_Guitarist_RockGod, so his rig takes its accessory bones."""

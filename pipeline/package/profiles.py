@@ -99,6 +99,12 @@ def load_character_library(path) -> dict:
     return json.loads((path / "characters.json").read_text())
 
 
+def set_clip_rig(library: dict, animations: str) -> dict:
+    """The clip rig of an animation set of characters.json: the rig of clipRigs that the set names, else clipRig."""
+    rig_id = library["animations"][animations].get("clipRig")
+    return library["clipRigs"][rig_id] if rig_id else library["clipRig"]
+
+
 def character_profile(library, profile):
     """A character library profile as load_profile returns it: names, parents, glTF-space translations and rotations."""
     row = library["profiles"][profile]

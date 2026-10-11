@@ -960,7 +960,7 @@ class CHSTAGE_AP_preferences(AddonPreferences):
     character_library: StringProperty(
         name="GH3 character library (.chlib)",
         subtype="FILE_PATH",
-        description="gh3-characters-v1.chlib: the rigs of the playable GH3 guitarists. The character "
+        description="gh3-characters-v1.chlib: the rigs of the playable GH3 guitarists and singers. The character "
         "tools take their bodies from the GH3 character packages in the same folder. Empty: look next "
         "to the GH3 library",
     )

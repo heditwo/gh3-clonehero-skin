@@ -65,10 +65,15 @@ class LibraryChecks:
         library = self.json_entry("characters", "characters.schema.json")
         if library is None:
             return
-        rig = library["clipRig"]
-        if not len(rig["bones"]) == len(rig["parents"]) == len(rig["bind"]):
-            self.report.error(name, "clipRig: bones, parents, and bind differ in length")
+        rigs = {None: library["clipRig"], **library.get("clipRigs", {})}
+        for rig_id, rig in rigs.items():
+            if not len(rig["bones"]) == len(rig["parents"]) == len(rig["bind"]):
+                self.report.error(
+                    name, f"{'clipRigs ' + rig_id if rig_id else 'clipRig'}: bones, parents, and bind differ in length"
+                )
         for set_name, animations in library["animations"].items():
+            if animations.get("clipRig") not in rigs:
+                self.report.error(name, f"animation set {set_name}: no clip rig {animations['clipRig']} in clipRigs")
             for table in ("groups", "layers"):
                 for field, clips in animations[table].items():
                     for clip in clips:
@@ -92,8 +97,10 @@ class LibraryChecks:
                 self.report.error(where, f"no hair {profile['hair']}")
             if profile["ik"] not in library["ik"]:
                 self.report.error(where, f"no IK chains {profile['ik']}")
-            if profile["bones"] != rig["bones"]:
-                self.report.error(where, "the bones differ from clipRig (names and order)")
+            animations = library["animations"].get(profile["animations"], {})
+            rig = rigs.get(animations.get("clipRig"))
+            if rig is not None and profile["bones"] != rig["bones"]:
+                self.report.error(where, "the bones differ from the clip rig of its animation set (names and order)")
             if not len(profile["bones"]) == len(profile["parents"]) == len(profile["bind"]):
                 self.report.error(where, "bones, parents, and bind differ in length")
             elif any(p >= len(profile["bones"]) or p == i for i, p in enumerate(profile["parents"])):

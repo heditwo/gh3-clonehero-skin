@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.gh3skin.invalid/v1/characters.schema.json",
   "title": "Character library (characters.json)",
-  "description": "Rig profiles, animation sets, hair, and IK chains of a character library. Clip files: clips/<clip>.q48.br, local transforms on clipRig.",
+  "description": "Rig profiles, animation sets, hair, and IK chains of a character library. Clip files: clips/<clip>.q48.br, local transforms on the clip rig of their animation set (clipRig, or a rig of clipRigs).",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "library", "clipRig", "profiles", "animations", "hair", "ik"],
@@ -10,16 +10,15 @@
     "version": { "const": 1 },
     "library": { "$ref": "common.schema.json#/$defs/packageId" },
     "clipRig": {
-      "description": "The rig of the clip files. A profile plays a clip with the offset (profile rest position - clip rig rest position) on each position track.",
+      "description": "The rig of the clip files of the animation sets without clipRig. A profile plays a clip with the offset (profile rest position - clip rig rest position) on each position track.",
+      "$ref": "#/$defs/clipRig"
+    },
+    "clipRigs": {
+      "description": "Other clip rigs, by ID. An animation set with clipRig has its clips on that rig.",
       "type": "object",
-      "additionalProperties": false,
-      "required": ["profile", "bones", "parents", "bind"],
-      "properties": {
-        "profile": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
-        "bones": { "$ref": "library-common.schema.json#/$defs/bones" },
-        "parents": { "$ref": "#/$defs/parents" },
-        "bind": { "$ref": "#/$defs/bind" }
-      }
+      "maxProperties": 16,
+      "propertyNames": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+      "additionalProperties": { "$ref": "#/$defs/clipRig" }
     },
     "profiles": {
       "type": "object",
@@ -56,6 +55,17 @@
     "sources": { "$ref": "library-common.schema.json#/$defs/sources" }
   },
   "$defs": {
+    "clipRig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "bones", "parents", "bind"],
+      "properties": {
+        "profile": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+        "bones": { "$ref": "library-common.schema.json#/$defs/bones" },
+        "parents": { "$ref": "#/$defs/parents" },
+        "bind": { "$ref": "#/$defs/bind" }
+      }
+    },
     "parents": {
       "type": "array",
       "minItems": 1,
@@ -74,7 +84,7 @@
       "additionalProperties": false,
       "required": ["role", "name", "outfit", "skeleton", "scale", "animations", "hair", "ik", "bones", "parents", "bind"],
       "properties": {
-        "role": { "enum": ["guitarist"] },
+        "role": { "enum": ["guitarist", "singer"] },
         "name": { "$ref": "common.schema.json#/$defs/name" },
         "outfit": { "type": "integer", "minimum": 1, "maximum": 99 },
         "skeleton": { "$ref": "library-common.schema.json#/$defs/checksum" },
@@ -93,6 +103,11 @@
       "required": ["animSet", "groups", "layers", "clips"],
       "properties": {
         "animSet": { "$ref": "library-common.schema.json#/$defs/checksum" },
+        "clipRig": {
+          "description": "The ID of the clip rig in clipRigs. Absent: clipRig.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+        },
         "groups": { "$ref": "library-common.schema.json#/$defs/clipTable" },
         "layers": { "$ref": "library-common.schema.json#/$defs/clipTable" },
         "clips": { "$ref": "library-common.schema.json#/$defs/clips" },

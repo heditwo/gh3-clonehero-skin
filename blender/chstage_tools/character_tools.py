@@ -682,7 +682,7 @@ def clip_action(scene, clip):
         decoded, rig_data, offsets = (
             q48.decode(decompress(clib.clip(clip))),
             clib.rig(profile),
-            clib.clip_offsets(profile),
+            clib.clip_offsets(profile, props(scene).animations),
         )
     else:
         lib = library(library_path(scene))

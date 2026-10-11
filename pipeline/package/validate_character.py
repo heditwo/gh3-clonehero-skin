@@ -16,6 +16,7 @@ from .profiles import (
     library_instruments,
     load_character_library,
     load_profile,
+    set_clip_rig,
 )
 
 # Custom chains of a character (PACKAGE-FORMAT.md section 9.5): the runtime solver steps every joint 120 times a second.
@@ -64,6 +65,15 @@ class CharacterChecks:
                         self.report.error(
                             entry["character"],
                             f"library {character['library']} has no animation set '{character['animations']}'",
+                        )
+                    elif (
+                        "animations" in character
+                        and set_clip_rig(library, character["animations"])["bones"]
+                        != (library["profiles"][character["profile"]]["bones"])
+                    ):
+                        self.report.error(
+                            entry["character"],
+                            f"animation set '{character['animations']}' is for another rig than profile '{character['profile']}'",
                         )
         if "highway" in character:
             self.check_highway(entry["character"], character["highway"])

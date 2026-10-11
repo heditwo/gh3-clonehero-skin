@@ -403,6 +403,14 @@ class CharacterLibraryTests(unittest.TestCase):
         self.assertLess(np.abs(np.linalg.norm(moved[:, knee], axis=-1) - np.linalg.norm(rest)).max(), 1e-3)
         self.assertGreater(np.abs(np.linalg.norm(plain[:, knee], axis=-1) - np.linalg.norm(rest)).max(), 0.02)
 
+    def test_singer_clips_use_the_clip_rig_of_their_set(self):
+        if "gh3-singer-female-v1" not in self.library.profiles:
+            self.skipTest("the character library has no singer profiles")
+        offsets = self.library.clip_offsets("gh3-singer-female-v1")
+        head = self.library.rig("gh3-singer-female-v1").index(bone("bone_head"))
+        # GH3_Singer_Female: the head bone is 5.1 cm nearer to the neck than on GH3_Singer_Male (the singer clip rig).
+        self.assertAlmostEqual(float(np.linalg.norm(offsets[head])), 0.0506, delta=0.001)
+
 
 class BuildTests(unittest.TestCase):
     def test_add_on_bundles_the_character_module_and_the_decoder(self):

@@ -45,7 +45,7 @@ def profile_items(self, context):
 
 
 class CHSTAGE_OT_new_character(Operator):
-    """Make a new character scene on a GH3 rig: the rig of the profile (a fixed profile from the library, or a GH3 guitarist of the character library), the GH3 body as a reference, and the attachment preview"""
+    """Make a new character scene on a GH3 rig: the rig of the profile (a fixed profile from the library, or a GH3 guitarist or singer of the character library), the GH3 body as a reference, and the attachment preview"""
 
     bl_idname = "chstage.new_character"
     bl_label = "New Character from GH3 Rig"
@@ -58,7 +58,7 @@ class CHSTAGE_OT_new_character(Operator):
     character_library: StringProperty(
         name="GH3 character library",
         subtype="FILE_PATH",
-        description="gh3-characters-v1.chlib, for the profiles of the GH3 guitarists. Empty: the add-on preference, "
+        description="gh3-characters-v1.chlib, for the profiles of the GH3 guitarists and singers. Empty: the add-on preference, "
         "or the file next to the GH3 library",
     )
     use_gh3_body: BoolProperty(

@@ -11,10 +11,11 @@ internal static class CharacterMotionLogicTests
     public static void Run()
     {
         CheckLibrary();
+        CheckSingerClipRig();
         CheckClipOffsets();
         CheckHingeAndPrismatic();
         CheckIkFromData();
-        Console.WriteLine("Character library profiles, set clip offsets, hinge and prismatic hair joints, and IK data checks passed.");
+        Console.WriteLine("Character library profiles, singer profiles on their own clip rig, set clip offsets, hinge and prismatic hair joints, and IK data checks passed.");
     }
 
     private static void CheckLibrary()
@@ -45,6 +46,43 @@ internal static class CharacterMotionLogicTests
             Directory.CreateDirectory(broken);
             File.WriteAllText(Path.Combine(broken, "characters.json"), File.ReadAllText(Path.Combine(folder, "characters.json")).Replace("\"animations\": \"test\"", "\"animations\": \"none\""));
             try { CharacterLibrary.Load(broken); Check(false, "a profile with an unknown animation set is rejected"); }
+            catch (PackageException) { }
+        }
+        finally { Directory.Delete(folder, true); }
+    }
+
+    // A singer profile whose set is on another clip rig (clipRigs): the offsets use the rig of the set, the profile plays
+    // only the singer role, and a set on another rig than the profile is rejected.
+    private static void CheckSingerClipRig()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "gh3-character-library-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var json = """
+            {"version": 1, "library": "gh3-characters-v1",
+             "clipRig": {"profile": "gh3-guitarist-axel-v1", "bones": ["0000000a", "0000000c"], "parents": [-1, 0], "bind": [[0, 1, 0, 0, 0, 0, 1], [0, 0.5, 0.25, 0, 0, 0, 1]]},
+             "clipRigs": {"singer": {"profile": "gh3-singer-male-v1", "bones": ["0000000a", "0000000b"], "parents": [-1, 0], "bind": [[0, 1, 0, 0, 0, 0, 1], [0, 0.31, 0, 0, 0, 0, 1]]}},
+             "profiles": {"gh3-singer-test-v1": {"role": "singer", "name": "Test", "outfit": 1, "skeleton": "12345678", "scale": 1, "animations": "singer-test",
+               "hair": null, "ik": "singer", "bones": ["0000000a", "0000000b"], "parents": [-1, 0], "bind": [[0, 1, 0, 0, 0, 0, 1], [0, 0.21, 0, 0, 0, 0, 1]]}},
+             "animations": {"singer-test": {"animSet": "11111111", "clipRig": "singer", "groups": {"stance_a/idle/normal/med": ["c1c1c1c1"]}, "layers": {},
+               "clips": {"c1c1c1c1": {"duration": 1.0, "frames": 31, "rootDistance": 0.0}}}},
+             "hair": {}, "ik": {"singer": [{"bones": ["0000000a", "0000000b", "0000000b"], "target": "0000000a", "hinge": [0, 0, 1], "cosMax": -0.99, "cosMin": 0.97}]}}
+            """;
+            File.WriteAllText(Path.Combine(folder, "characters.json"), json);
+            var library = CharacterLibrary.Load(folder);
+            Check(library.SetClipRigs["singer-test"].Bones[1] == "0000000b" && library.Profiles["gh3-singer-test-v1"].Role == "singer", "a set names its clip rig");
+            var motion = CharacterMotion.Create(CharacterModelFor(folder, "gh3-singer-test-v1"));
+            Check(Vector3.Distance(motion.Offsets[1], new Vector3(0, -0.1f, 0)) < 1e-6, "the offsets use the clip rig of the set");
+            Check(CharacterLibrary.Plays("singer", "singer") && !CharacterLibrary.Plays("singer", "guitarist") && CharacterLibrary.Plays("guitarist", "bassist") &&
+                !CharacterLibrary.Plays("guitarist", "singer"), "a singer profile plays the singer only; a guitarist profile plays the guitarist and the bassist");
+            var broken = Path.Combine(folder, "broken");
+            Directory.CreateDirectory(broken);
+            File.WriteAllText(Path.Combine(broken, "characters.json"), json.Replace("\"clipRig\": \"singer\", ", ""));
+            try { CharacterLibrary.Load(broken); Check(false, "a profile on another rig than its set is rejected"); }
+            catch (PackageException) { }
+            File.WriteAllText(Path.Combine(broken, "characters.json"), json.Replace("\"clipRig\": \"singer\"", "\"clipRig\": \"none\""));
+            try { CharacterLibrary.Load(broken); Check(false, "a set with an unknown clip rig is rejected"); }
             catch (PackageException) { }
         }
         finally { Directory.Delete(folder, true); }

@@ -69,6 +69,8 @@ internal sealed class CharacterImporter
             animations = Text(character["animations"]) ?? "";
             if (character["animations"] != null && !library.Animations.Contains(animations))
                 throw new PackageException($"library {libraryId} has no animation set '{animations}'");
+            if (character["animations"] != null && !library.SetClipRigs[animations].Bones.SequenceEqual(own.Bones))
+                throw new PackageException($"animation set '{animations}' is for another rig than profile '{profile}'");
             (role, rigBones, rigParents, rigBind) = (own.Role, own.Bones, own.Parents, own.Bind);
         }
         var hair = (character["hairMaterials"] as JsonArray ?? new JsonArray()).Select(n => Text(n) ?? throw new PackageException("invalid hair material")).ToHashSet();

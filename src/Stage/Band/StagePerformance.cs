@@ -213,6 +213,16 @@ internal sealed class PerformancePlayer
         return (segment, clipTime);
     }
 
+    // Verification (GH3_SKIN_TRACE): the song facial clip at `time` without the blend in, or null when none plays.
+    public (string Clip, double ClipTime)? SampleFace(double time, BandPose[] output)
+    {
+        var face = Last(_timeline.Track("face", _role), time);
+        if (face == null || !_faceMember.Clips.TryGetValue(face.Value, out var info) || time >= face.Time + info.Duration) return null;
+        Array.Copy(_bind, output, output.Length);
+        _faceClips.Get(face.Value).Apply(output, _bind, time - face.Time);
+        return (face.Value, time - face.Time);
+    }
+
     private void AddSegment()
     {
         var start = _segments.Count == 0 ? _timeline.Start : _segments[^1].End;

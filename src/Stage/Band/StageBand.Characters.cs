@@ -76,9 +76,10 @@ internal sealed partial class StageBand
     }
 
     // A character on a character library profile: its mesh on its own rig, with the GLB inverse bind matrices.
-    // Its own instrument plays in the role of its profile. In another role (GH3 co-op: a guitarist character plays the
-    // bass with its own animation set), the role's library instrument hangs on the bones with the same names, bound
-    // with the role rig's rest pose, so that it follows the character's instrument bones.
+    // Its own instrument plays in the role of its profile (the female singer's own microphone on her stand bones). Else
+    // (GH3 co-op: a guitarist character plays the bass with its own animation set; a singer profile without its own
+    // microphone), the role's library instrument hangs on the bones with the same names, bound with the role rig's rest
+    // pose, so that it follows the character's instrument bones.
     private static List<StageAssets>? LoadOwnCharacter(Packages.CharacterModel character, CharacterMotion motion, string directory, BandMember member,
         GameObject performer, int layer, Transform[] bones, BandAnimation roleRig, bool lighting, Shader? surfaceShader, Packages.InstrumentModel? instrument,
         BandAnimation profileRig, out CharacterExtras? extras)
@@ -139,8 +140,8 @@ internal sealed partial class StageBand
     }
 
     // A character with its own skeleton (PACKAGE-FORMAT.md section 9.6): its mesh on its own bones, the GH3 rig of the
-    // performance without a mesh (the profile rig and animation set of a character library profile as a guitarist or
-    // bassist, else the rig of the role), the retarget between them, the instrument of the role on the GH3 rig, its
+    // performance without a mesh (the profile rig and animation set of a character library profile in a role that the
+    // profile plays, else the rig of the role), the retarget between them, the instrument of the role on the GH3 rig, its
     // chains on its own bones, and its face blend shapes. Null: the venue default plays.
     private static (List<StageAssets> Assets, StageRetarget Retarget, BandAnimation Rig, Transform[] Bones, HairDefinition? Hair)? LoadRetargeted(
         Packages.CharacterModel character, CharacterMotion? motion, string directory, BandMember member, GameObject performer, int layer,
