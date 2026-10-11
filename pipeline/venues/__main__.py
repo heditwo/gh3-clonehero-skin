@@ -30,8 +30,9 @@ from pipeline.gh3.formats import (
 from pipeline.gh3.script_bank import definitions, dependencies, references
 from pipeline.gh3.venue_scripts import literal_positions, script_bytes
 from pipeline.package.profiles import LIBRARY_ID
+from pipeline.package.rotations import quaternion_matrix
 from pipeline.paths import GH3_DATA, STAGE_PACKS, STAGES
-from pipeline.stagepack.gltf import GlbWriter, matrix_quaternion, quaternion_matrix
+from pipeline.stagepack.gltf import GlbWriter, matrix_quaternion
 from pipeline.stagepack.install import install
 from pipeline.stagepack.pack import load_json, write_json
 from pipeline.venues import lighting

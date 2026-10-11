@@ -30,6 +30,7 @@ from bpy.props import (
 from bpy.types import AddonPreferences, PropertyGroup
 
 from . import sidecars
+from .vendor.package_format.profiles import LIBRARY_ID
 
 ROLES = [(r, r.title(), "") for r in sidecars.ROLES]
 CROWD_ROLES = [(f"crowd{i}", f"Crowd {i}", "") for i in range(1, 9)]
@@ -127,7 +128,7 @@ class CHSTAGE_PG_author(PropertyGroup):
 
 
 class CHSTAGE_PG_requirement(PropertyGroup):
-    package_id: StringProperty(name="Package ID", default=sidecars.LIBRARY_ID)
+    package_id: StringProperty(name="Package ID", default=LIBRARY_ID)
     version: StringProperty(name="Version", default="1.0.0", description="Lowest compatible version")
 
 

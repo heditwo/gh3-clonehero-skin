@@ -57,3 +57,15 @@ def quaternion_matrices(q):
 
 def qnormalize(q):
     return q / np.linalg.norm(q, axis=-1, keepdims=True)
+
+
+def quaternion_matrix(q):
+    """The rotation matrix of one quaternion [x, y, z, w] (normalized first)."""
+    x, y, z, w = np.asarray(q, dtype=float) / np.linalg.norm(q)
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )

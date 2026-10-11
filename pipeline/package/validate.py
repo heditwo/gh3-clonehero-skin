@@ -211,6 +211,17 @@ class Validator(StageChecks, CharacterChecks, LibraryChecks):
         glb = self.glb(name)
         if glb is None:
             return None
+        self._check_glb_header(name, glb)
+        image_names = self._check_glb_images(name, glb)
+        for index, node in enumerate(glb.list("nodes")):
+            if "extras" in node:
+                for message in self.schemas_validate(node["extras"], "node"):
+                    self.report.error(name, f"node {index} ({node.get('name', '')}) extras{message}")
+        self._check_glb_materials(name, glb, image_names)
+        self._check_glb_meshes(name, glb, skinned)
+        return glb
+
+    def _check_glb_header(self, name, glb):
         data = glb.json
         if data.get("asset", {}).get("version") != "2.0":
             self.report.error(name, "asset.version must be '2.0'")
@@ -227,6 +238,10 @@ class Validator(StageChecks, CharacterChecks, LibraryChecks):
             or (buffers and buffers[0].get("byteLength", 0) > len(glb.binary))
         ):
             self.report.error(name, "a package GLB has one embedded buffer")
+
+    def _check_glb_images(self, name, glb):
+        """Images are embedded GH3TEX02 textures with unique names; returns the names."""
+        data = glb.json
         image_names = set()
         linear = texture.linear_images(data)
         for index, image in enumerate(glb.list("images")):
@@ -254,10 +269,9 @@ class Validator(StageChecks, CharacterChecks, LibraryChecks):
                 if image["name"] in image_names:
                     self.report.error(name, f"image name '{image['name']}' is not unique")
                 image_names.add(image["name"])
-        for index, node in enumerate(glb.list("nodes")):
-            if "extras" in node:
-                for message in self.schemas_validate(node["extras"], "node"):
-                    self.report.error(name, f"node {index} ({node.get('name', '')}) extras{message}")
+        return image_names
+
+    def _check_glb_materials(self, name, glb, image_names):
         names = set()
         for index, material in enumerate(glb.list("materials")):
             label = f"material {index} ({material.get('name', '')})"
@@ -302,6 +316,8 @@ class Validator(StageChecks, CharacterChecks, LibraryChecks):
                         self.report.error(name, f"{label}: texture file {ref} is PNG; {EXPORT_AGAIN}")
                     elif ref not in self.source.set:
                         self.report.error(name, f"{label}: texture file is missing: {ref}")
+
+    def _check_glb_meshes(self, name, glb, skinned):
         allowed = SKINNED_ATTRIBUTES if skinned else STATIC_ATTRIBUTES
         for mesh_index, mesh in enumerate(glb.list("meshes")):
             for primitive in mesh.get("primitives", []):
@@ -321,7 +337,6 @@ class Validator(StageChecks, CharacterChecks, LibraryChecks):
         for index, accessor in enumerate(glb.list("accessors")):
             if "sparse" in accessor:
                 self.report.error(name, f"accessor {index}: sparse accessors are not allowed")
-        return glb
 
     def schemas_validate(self, value, definition):
         return self.schemas.validate_definition(value, "glb-extras.schema.json", definition)

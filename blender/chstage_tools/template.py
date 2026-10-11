@@ -6,6 +6,7 @@ import bpy
 from mathutils import Matrix, Quaternion, Vector
 
 from . import sidecars
+from .vendor.package_format.profiles import LIBRARY_ID
 
 # A new stage has no scripts.json: with a script bank, the mod lights the stage through the GH3 script light scene,
 # and a bank without light nodes leaves the stage and the band dark.
@@ -178,7 +179,7 @@ def create(name="CH Stage"):
     package.package_id, package.name, package.version = "author.my-stage", "My Stage", "1.0.0"
     package.authors.add().name = "Your name"
     requirement = package.requires.add()
-    requirement.package_id, requirement.version = sidecars.LIBRARY_ID, "1.0.0"
+    requirement.package_id, requirement.version = LIBRARY_ID, "1.0.0"
 
     for item, center, size, color in SCENERY:
         obj = link(scene, bpy.data.objects.new(item, box_mesh(item, (size[0], size[2], size[1]))))

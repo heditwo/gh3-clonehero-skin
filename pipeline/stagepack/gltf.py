@@ -9,6 +9,7 @@ import numpy as np
 from PIL import Image
 
 from pipeline.package import texture as package_texture
+from pipeline.package.rotations import quaternion_matrix
 
 REFLECTION = np.diag([1, 1, -1, 1])
 VERTEX = np.dtype([("position", "<f4", 3), ("normal", "<f4", 3), ("uv", "<f4", 2), ("color", "u1", 4)])
@@ -33,17 +34,6 @@ SKINNED_GH3_VERTEX = np.dtype(
     SKINNED_VERTEX.descr + [("gh3uv", "<f4", (6, 2)), ("gh3binormal", "<f4", 3), ("gh3tangent", "<f4", 3)]
 )
 SHADING = ("lit", "ambient", "unlit")
-
-
-def quaternion_matrix(q):
-    x, y, z, w = np.asarray(q, dtype=float) / np.linalg.norm(q)
-    return np.array(
-        [
-            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
-        ]
-    )
 
 
 def matrix_quaternion(m):

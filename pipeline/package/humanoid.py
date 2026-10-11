@@ -450,6 +450,64 @@ def _finger_roles(side, finger, joints, sk, wrist_knuckle):
     return {side + finger + part: bone for part, bone in zip(parts, joints)}
 
 
+def _score_pair(sk, legs, arms, normal, midline, names, hint_roles):
+    """(score, up, floor, height) of the hypothesis that `legs` are the legs and `arms` the arms; None when the two
+    limb pairs cannot be legs and arms. The score adds evidence: the legs reach the floor and go down, the arms hang
+    from the top of the trunk, the lengths and the heights are in human proportions, and the bone names agree."""
+    if any(sk.above(x, legs["lca"]) or x == legs["lca"] for c in arms["chains"] for x in c):
+        return None
+    if any(sk.above(x, arms["lca"]) or x == arms["lca"] for c in legs["chains"] for x in c):
+        return None
+    attach_l = (sk.heads[legs["roots"][0]] + sk.heads[legs["roots"][1]]) / 2
+    attach_a = (sk.heads[arms["roots"][0]] + sk.heads[arms["roots"][1]]) / 2
+    up = attach_a - attach_l
+    up = up - normal * np.dot(up, normal)
+    if np.linalg.norm(up) < 0.02 * sk.size:
+        return None
+    up = _unit(up)
+    h = sk.points @ up
+    floor, top = float(h.min()), float(h.max())
+    height = max(top - floor, 1e-6)
+    score = 0.0
+    ends = [min(np.dot(sk.heads[c[-1]], up), np.dot(sk.end(c[-1]), up)) for c in legs["chains"]]
+    score += 2 * (1 - np.clip((max(ends) - floor) / height / 0.15, 0, 1))
+    downs = []
+    for c in legs["chains"]:
+        for x, y in zip(c, c[1:]):
+            step = sk.heads[y] - sk.heads[x]
+            if np.linalg.norm(step) > 1e-6:
+                downs.append(np.dot(_unit(step), -up) * np.linalg.norm(step))
+    score += float(np.clip(np.sum(downs) / max(legs["length"] * 2, 1e-6), -1, 1)) * 1.5
+    rel_a, rel_l = (np.dot(attach_a, up) - floor) / height, (np.dot(attach_l, up) - floor) / height
+    score += 1 if 0.45 <= rel_a <= 0.97 else -1
+    score += 1 if 0.12 <= rel_l <= 0.7 else -1
+    ratio = arms["length"] / max(legs["length"], 1e-6)
+    score += 1 if 0.35 <= ratio <= 1.35 else -1
+    mid_top = max(midline, key=lambda i: np.dot(sk.heads[i], up), default=-1)
+    if mid_top >= 0 and (arms["lca"] == mid_top or sk.above(arms["lca"], mid_top)):
+        score += 1.5
+    else:
+        score -= 1.5
+    if mid_top >= 0 and np.dot(sk.heads[mid_top], up) > np.dot(attach_a, up) + 0.03 * height:
+        score += 0.5
+    if any(len(sk.kids[c[-1]]) >= 2 for c in arms["chains"]):
+        score += 0.5
+    text = " ".join(_normalized(names[x]) for c in legs["chains"] for x in c)
+    if _LEG_WORDS.search(text):
+        score += 0.5
+    text = " ".join(_normalized(names[x]) for c in arms["chains"] for x in c)
+    if _ARM_WORDS.search(text):
+        score += 0.5
+    hinted = sum(
+        1 for c in legs["chains"] for x in c if hint_roles.get(x, "").endswith(("UpperLeg", "LowerLeg", "Foot"))
+    )
+    hinted += sum(
+        1 for c in arms["chains"] for x in c if hint_roles.get(x, "").endswith(("UpperArm", "LowerArm", "Hand"))
+    )
+    score += min(hinted, 6) * 0.1
+    return score, up, floor, height
+
+
 def find(names, parents, heads, tails=None, weights=None, points=None):
     """The humanoid map of a skeleton. names, parents (indices, -1 for a root), heads (bone positions); tails: the
     tail of each bone (Blender), else the next joint gives the direction; weights: weighted vertex count of each bone
@@ -495,58 +553,10 @@ def find(names, parents, heads, tails=None, weights=None, points=None):
         for arms in limbs:
             if legs is arms:
                 continue
-            if any(sk.above(x, legs["lca"]) or x == legs["lca"] for c in arms["chains"] for x in c):
-                continue
-            if any(sk.above(x, arms["lca"]) or x == arms["lca"] for c in legs["chains"] for x in c):
-                continue
-            attach_l = (sk.heads[legs["roots"][0]] + sk.heads[legs["roots"][1]]) / 2
-            attach_a = (sk.heads[arms["roots"][0]] + sk.heads[arms["roots"][1]]) / 2
-            up = attach_a - attach_l
-            up = up - normal * np.dot(up, normal)
-            if np.linalg.norm(up) < 0.02 * sk.size:
-                continue
-            up = _unit(up)
-            h = sk.points @ up
-            floor, top = float(h.min()), float(h.max())
-            height = max(top - floor, 1e-6)
-            score = 0.0
-            ends = [min(np.dot(sk.heads[c[-1]], up), np.dot(sk.end(c[-1]), up)) for c in legs["chains"]]
-            score += 2 * (1 - np.clip((max(ends) - floor) / height / 0.15, 0, 1))
-            downs = []
-            for c in legs["chains"]:
-                for x, y in zip(c, c[1:]):
-                    step = sk.heads[y] - sk.heads[x]
-                    if np.linalg.norm(step) > 1e-6:
-                        downs.append(np.dot(_unit(step), -up) * np.linalg.norm(step))
-            score += float(np.clip(np.sum(downs) / max(legs["length"] * 2, 1e-6), -1, 1)) * 1.5
-            rel_a, rel_l = (np.dot(attach_a, up) - floor) / height, (np.dot(attach_l, up) - floor) / height
-            score += 1 if 0.45 <= rel_a <= 0.97 else -1
-            score += 1 if 0.12 <= rel_l <= 0.7 else -1
-            ratio = arms["length"] / max(legs["length"], 1e-6)
-            score += 1 if 0.35 <= ratio <= 1.35 else -1
-            mid_top = max(midline, key=lambda i: np.dot(sk.heads[i], up), default=-1)
-            if mid_top >= 0 and (arms["lca"] == mid_top or sk.above(arms["lca"], mid_top)):
-                score += 1.5
-            else:
-                score -= 1.5
-            if mid_top >= 0 and np.dot(sk.heads[mid_top], up) > np.dot(attach_a, up) + 0.03 * height:
-                score += 0.5
-            if any(len(sk.kids[c[-1]]) >= 2 for c in arms["chains"]):
-                score += 0.5
-            text = " ".join(_normalized(names[x]) for c in legs["chains"] for x in c)
-            if _LEG_WORDS.search(text):
-                score += 0.5
-            text = " ".join(_normalized(names[x]) for c in arms["chains"] for x in c)
-            if _ARM_WORDS.search(text):
-                score += 0.5
-            hinted = sum(
-                1 for c in legs["chains"] for x in c if hint_roles.get(x, "").endswith(("UpperLeg", "LowerLeg", "Foot"))
-            )
-            hinted += sum(
-                1 for c in arms["chains"] for x in c if hint_roles.get(x, "").endswith(("UpperArm", "LowerArm", "Hand"))
-            )
-            score += min(hinted, 6) * 0.1
-            hypotheses.append((score, id(legs), id(arms), legs, arms, up, floor, height))
+            scored = _score_pair(sk, legs, arms, normal, midline, names, hint_roles)
+            if scored is not None:
+                score, up, floor, height = scored
+                hypotheses.append((score, id(legs), id(arms), legs, arms, up, floor, height))
     if not hypotheses:
         notes.append("no pair of legs and arms was found")
         return result

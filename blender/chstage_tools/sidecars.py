@@ -13,9 +13,9 @@ import zlib
 
 import numpy as np
 
+from .vendor.package_format.rotations import quaternion_matrix
+
 FORMAT = "chstage/1.0"
-# The same as package_format.profiles.LIBRARY_ID (tests/test_blender_addon.py checks it): the tests load this module alone.
-LIBRARY_ID = "gh3-band-v1"
 ROLES = ("guitarist", "bassist", "singer", "drummer")
 EFFECTS = ("pyro", "sparks", "fireworks", "smoke")
 ANCHOR_PARTS = ("root", "head", "hand_left", "hand_right", "bone")
@@ -174,18 +174,6 @@ def quaternion(r):
         q = [(r[0, 2] + r[2, 0]) / s, (r[1, 2] + r[2, 1]) / s, s / 4, (r[1, 0] - r[0, 1]) / s]
     q = np.asarray(q) / np.linalg.norm(q)
     return q if q[3] >= 0 else -q
-
-
-def quaternion_matrix(q):
-    """Rotation matrix of [x, y, z, w]."""
-    x, y, z, w = np.asarray(q, dtype=float) / np.linalg.norm(q)
-    return np.array(
-        [
-            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
-        ]
-    )
 
 
 def runtime_position(vector):

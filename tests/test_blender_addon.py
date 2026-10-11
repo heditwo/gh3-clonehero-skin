@@ -93,11 +93,6 @@ def camera(name, location, groups, anchor="world", look_at=None, fov=70.0, degre
 
 
 class CoordinateTests(unittest.TestCase):
-    def test_sidecars_use_the_band_library_id_of_the_package_format(self):
-        from pipeline.package.profiles import LIBRARY_ID
-
-        self.assertEqual(sidecars.LIBRARY_ID, LIBRARY_ID)
-
     def test_blender_vectors_become_runtime_vectors(self):
         frame = sidecars.transform(blender_matrix([1, 2, 3]))
         self.assertEqual(frame, {"position": [1.0, 3.0, 2.0], "rotation": [0.0, 0.0, 0.0, 1.0]})
