@@ -84,7 +84,9 @@ internal sealed partial class StageBand : IDisposable
             var roleAnimation = new BandAnimation(reader);
             var character = characters != null && characters.TryGetValue(member.Role, out var chosen) ? chosen : null;
             var instrument = instruments != null && instruments.TryGetValue(member.Role, out var picked) ? picked : null;
-            var roleMotion = LibraryMotion(library, member.Role, roleAnimation, hair, names: character != null);
+            // The rig bone names are needed when the role's set drives a retarget or a fixed profile plays.
+            var roleMotion = LibraryMotion(library, member.Role, roleAnimation, hair, names: character != null &&
+                (character.Library.Length == 0 || !Packages.CharacterLibrary.UsesOwnSet(character.Role, member.Role)));
             CharacterMotion? own = null;
             if (character != null)
                 try { own = OwnMotion(character, roleMotion, directory, library, hair); }

@@ -544,12 +544,18 @@ internal sealed class CharacterImporter
         return (vertices, count, streams);
     }
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Dictionary<string, string[]>> Catalogs = new(StringComparer.Ordinal);
+
     // The profile rig of a band role in the library cache: bone checksums (catalog.json), parents and bind pose (animation.bin).
+    // A stage load asks for several roles; catalog.json is read one time for each file version.
     public static (string[] Bones, int[] Parents, float[][] Bind) Rig(string libraryCache, string role)
     {
-        var catalog = Object(File.ReadAllBytes(Path.Combine(libraryCache, "catalog.json")));
-        var bones = (catalog["members"]?[role]?["bones"] as JsonArray ?? throw new PackageException($"the library has no {role} rig"))
-            .Select(b => Text(b) ?? throw new PackageException("invalid library bone")).ToArray();
+        var path = Path.GetFullPath(Path.Combine(libraryCache, "catalog.json"));
+        var catalog = Catalogs.GetOrAdd(path + "|" + File.GetLastWriteTimeUtc(path).Ticks, _ =>
+            (Object(File.ReadAllBytes(path))["members"] as JsonObject ?? new JsonObject()).ToDictionary(p => p.Key,
+                p => (p.Value?["bones"] as JsonArray ?? new JsonArray()).Select(b => Text(b) ?? throw new PackageException("invalid library bone")).ToArray(),
+                StringComparer.Ordinal));
+        var bones = catalog.TryGetValue(role, out var found) && found.Length > 0 ? found : throw new PackageException($"the library has no {role} rig");
         using var reader = new BinaryReader(File.OpenRead(Path.Combine(libraryCache, "band", role, "animation.bin")));
         if (System.Text.Encoding.ASCII.GetString(reader.ReadBytes(8)) != "GH3ANM01") throw new PackageException("invalid library rig");
         var count = reader.ReadInt32();
