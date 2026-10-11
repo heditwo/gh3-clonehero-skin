@@ -68,8 +68,8 @@ internal sealed class StageRetarget
 }
 
 // Face blend shapes of a character with its own skeleton (character.json face): blink with the GH3 blink timing, the
-// mouth shapes a, i, u, e, o from the sung syllables of the chart (lip sync of the singer), or the mouth and the eyelids
-// of the GH3 facial clips when the song has them.
+// mouth, viseme, brow, and squint shapes of the lip sync of the singer (StageLipSync), or the mouth and the eyelids of
+// the GH3 facial clips when the song has them.
 internal sealed class CharacterFace
 {
     // Blink times cover the song plus 30 s, at least 10 minutes.
@@ -84,7 +84,7 @@ internal sealed class CharacterFace
     private readonly List<(SkinnedMeshRenderer Renderer, int[] Slots)> _shapes;
     private readonly float[] _weights = new float[CharacterSkeleton.FaceSlots.Length];
     private readonly float[] _applied;
-    private readonly float[] _visemes = new float[5];
+    private readonly bool[] _present;
     private readonly int _jaw;
     private readonly int[] _lids;
     private readonly BandPose[] _bind;
@@ -100,7 +100,8 @@ internal sealed class CharacterFace
         _bind = gh3Bind;
         _jaw = Array.IndexOf(gh3Bones, Gh3Checksum.Of("Bone_Jaw"));
         _lids = new[] { "Bone_Eyelid_Upper_L", "Bone_Eyelid_Upper_R" }.Select(n => Array.IndexOf(gh3Bones, Gh3Checksum.Of(n))).Where(i => i >= 0).ToArray();
-        Summary = string.Join(", ", CharacterSkeleton.FaceSlots.Where((slot, i) => i < faceNames.Length && faceNames[i].Length > 0 && shapes.Any(s => s.Item2[i] >= 0)));
+        _present = CharacterSkeleton.FaceSlots.Select((slot, i) => i < faceNames.Length && faceNames[i].Length > 0 && shapes.Any(s => s.Item2[i] >= 0)).ToArray();
+        Summary = string.Join(", ", CharacterSkeleton.FaceSlots.Where((slot, i) => _present[i]));
     }
 
     public void Prepare(StageTimeline timeline, string role)
@@ -125,11 +126,7 @@ internal sealed class CharacterFace
         else
         {
             _weights[0] = StageLipSync.BlinkAt(_blinks, time);
-            if (_lipSync != null)
-            {
-                _lipSync.Visemes(time, _visemes);
-                for (var i = 0; i < _visemes.Length; i++) _weights[i + 1] = _visemes[i];
-            }
+            _lipSync?.Face(time, _weights, _present);
         }
         for (var slot = 0; slot < _weights.Length; slot++)
         {

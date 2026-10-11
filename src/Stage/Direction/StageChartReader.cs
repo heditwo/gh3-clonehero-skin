@@ -392,7 +392,7 @@ internal static class StageChartReader
             return ChartLyrics(lyrics.Select(cue => (cue.Tick, "lyric " + cue.Text)).Concat(phrases).ToList(), resolution);
         }
         var text = lyrics.GroupBy(cue => cue.Tick).ToDictionary(group => group.Key, group => group.First().Text.Trim());
-        return notes.Select(note => new TickCue(note.Tick, text.GetValueOrDefault(note.Tick, "+"), 0, "sing", "singer", Math.Max(1, note.Length)));
+        return notes.Select(note => new TickCue(note.Tick, text.GetValueOrDefault(note.Tick, "+"), note.Note, "sing", "singer", Math.Max(1, note.Length)));
     }
 
     // .chart lyrics have no length: a syllable lasts until the next lyric or the phrase end, at most two beats.
@@ -458,7 +458,7 @@ internal static class StageChartReader
             var time = seconds + (cue.Tick - lastTick) * rate / (resolution * Midi.MicrosecondsPerSecond);
             if (cue.Type == "sing")
             {
-                sung.Add(new StageCue(time, "sing", cue.Text, Seconds(checked(cue.Tick + cue.Length)) - time, "singer"));
+                sung.Add(new StageCue(time, "sing", cue.Text, Seconds(checked(cue.Tick + cue.Length)) - time, "singer", Pitch: cue.Note > 0 ? cue.Note : null));
                 continue;
             }
             var converted = cue.Type.Length > 0 && cue.Note >= 0 ? new StageCue(time, cue.Type, cue.Note.ToString(CultureInfo.InvariantCulture),

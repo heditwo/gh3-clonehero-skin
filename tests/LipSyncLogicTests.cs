@@ -11,9 +11,11 @@ internal static class LipSyncLogicTests
     {
         CheckMidiVocals();
         CheckChartLyrics();
+        CheckPhonemes();
+        CheckEnvelope();
         CheckCurve();
         CheckApply();
-        Console.WriteLine("Lip sync (vocal notes, lyrics, mouth curve, blinks, GH3 facial clip priority) checks passed.");
+        Console.WriteLine("Lip sync (vocal notes, lyrics, phonemes, visemes, coarticulation, stem loudness, face life, blinks, GH3 facial clip priority) checks passed.");
     }
 
     // 120 BPM, 480 ticks per beat: 480 ticks = 0.5 s.
@@ -28,7 +30,7 @@ internal static class LipSyncLogicTests
             ("HARM1", new[] { Lyric(3000, "harmony"), Note(3000, 60, 240) }));
         var sung = StageChartReader.ReadMidi(midi).Track("sing", "singer");
         Check(sung.Length == 5, $"PART VOCALS gives one cue per pitched note (got {sung.Length})");
-        Check(sung[0].Value == "Drunk" && Near(sung[0].Time, 0.5) && Near(sung[0].Duration, 0.25), "vocal note time, length, and lyric");
+        Check(sung[0].Value == "Drunk" && Near(sung[0].Time, 0.5) && Near(sung[0].Duration, 0.25) && sung[0].Pitch == 52, "vocal note time, length, pitch, and lyric");
         Check(sung[3].Value == "+" && sung[4].Value == "+" && Near(sung[4].Time, 1700 / 960.0), "a note without a lyric continues the syllable");
         Check(sung.All(c => c.Value != "harmony" && c.Value != "[idle]"), "PART VOCALS wins over HARM1; text events are not lyrics");
         var harmony = StageChartReader.ReadMidi(Midi(("HARM1", new[] { Lyric(0, "la"), Note(0, 60, 480) }))).Track("sing", "singer");
@@ -50,38 +52,89 @@ internal static class LipSyncLogicTests
         Check(Near(sung[2].Duration, 1), ".chart lyric lasts at most two beats");
     }
 
+    private static void CheckPhonemes()
+    {
+        string Text(byte[] phonemes) => string.Join(" ", phonemes.Select(p => LyricPhonemes.Phonemes[p]));
+        Check(Text(LyricPhonemes.Word("love")) == "L AH V", $"dictionary word (got {Text(LyricPhonemes.Word("love"))})");
+        Check(LyricPhonemes.IsKnown("rockin'") && Text(LyricPhonemes.Word("rockin'")) == Text(LyricPhonemes.Word("rocking")), "a dropped g reads as -ing");
+        var losing = LyricPhonemes.Divide(new[] { "los-", "ing" });
+        Check(Text(losing[0]) == "L UW" && Text(losing[1]) == "Z IH NG", $"one consonant starts the next syllable (got {Text(losing[0])} | {Text(losing[1])})");
+        var yeah = LyricPhonemes.Divide(new[] { "yeah-", "eah" });
+        Check(yeah[1].Length == 1 && LyricPhonemes.IsVowel(yeah[1][0]) && yeah[1][0] == yeah[0].Last(LyricPhonemes.IsVowel), "a held vowel written as two syllables");
+        var unknown = LyricPhonemes.Word("zarbleflop");
+        Check(unknown.Length > 4 && unknown.Any(LyricPhonemes.IsVowel), "spelling rules for unknown words");
+        Check(LyricPhonemes.Clean("Drunk#") == "drunk" && LyricPhonemes.JoinsNext("los-") && LyricPhonemes.JoinsNext("hyph=") && !LyricPhonemes.JoinsNext("go"), "lyric marks");
+    }
+
     private static void CheckCurve()
     {
         var cues = new[]
         {
             new StageCue(1, "sing", "Drunk", 0.4, "singer"), new StageCue(1.4, "sing", "and", 0.2, "singer"),
-            new StageCue(1.6, "sing", "go", 1.5, "singer"), new StageCue(3.1, "sing", "+", 0.5, "singer"), new StageCue(5, "sing", "see#", 0.3, "singer")
+            new StageCue(1.6, "sing", "go", 1.5, "singer"), new StageCue(3.1, "sing", "+", 0.5, "singer"), new StageCue(5, "sing", "see#", 0.3, "singer"),
+            new StageCue(6, "sing", "go", 0.5, "singer"), new StageCue(6.5, "sing", "on", 0.5, "singer"), new StageCue(7, "sing", "may-", 0.4, "singer"),
+            new StageCue(7.4, "sing", "be", 0.6, "singer"), new StageCue(9, "sing", "I", 1, "singer"),
         };
-        var syllables = StageLipSync.Build(cues);
-        Check(syllables.Length == 4, "a slide (+) extends the previous syllable");
-        Check(Near(syllables[2].Off, 3.6), "the slid syllable holds to the end of the slide");
-        Check(syllables.All(s => s.Jaw is > 0 and <= 30), "jaw stays inside the GH3 facial clip range (p95 29.1 degrees)");
-        Check(syllables[3].Jaw < syllables[0].Jaw, "spoken notes open less");
-        Check(syllables[2].Round > 0.5f && syllables[3].Round < -0.3f, "o rounds the mouth; e widens it");
-        Check(StageLipSync.Vowel("bad").Jaw > StageLipSync.Vowel("me").Jaw && StageLipSync.Vowel("you").Round > StageLipSync.Vowel("bad").Round &&
-            StageLipSync.Vowel("me").Round < 0 && StageLipSync.Vowel("hmm").Jaw < StageLipSync.Vowel("me").Jaw, "vowel classes");
+        VocalEnvelope.Current = null;
+        var notes = StageLipSync.Notes(cues);
+        Check(notes.Length == 9 && Near(notes[2].End, 3.6), "a slide (+) extends the previous note");
         var sync = Sync(cues);
-        Check(sync.Mouth(0.9).Jaw == 0, "closed before the first syllable");
-        Check(sync.Mouth(0.98).Jaw > 0, "opens a little before the note (anticipation)");
-        var peak = sync.Mouth(1.2).Jaw;
-        Check(peak > 0.9 * syllables[0].Jaw, "open on the note");
-        Check(sync.Mouth(1.4 - 0.05).Jaw < 0.85f * peak, "consonant between consecutive syllables");
-        Check(sync.Mouth(3.4).Jaw < 0.8f * sync.Mouth(1.8).Jaw && sync.Mouth(3.4).Jaw > 0.65f * syllables[2].Jaw, "a sustained vowel relaxes and stays open");
-        Check(sync.Mouth(3.6 + 0.13).Jaw == 0 && sync.Mouth(4.5).Jaw == 0, "closes between phrases");
-        Check(Sync(cues).Mouth(2.345) == sync.Mouth(2.345), "deterministic");
+        var weights = new float[16];
+        Check(sync.Jaw(0.5) == 0, "closed before the first syllable");
+        Check(sync.Jaw(0.99) > 0, "opens a little before the note (anticipation)");
+        var peak = sync.Jaw(1.2);
+        Check(peak is > 10 and < 40, $"open on the note ({peak:0.0} degrees)");
+        Check(sync.Jaw(2.4) > 0.5f * peak && sync.Jaw(3.4) > 0.4f * peak, "a held vowel stays open");
+        Check(sync.Jaw(4.3) < 1, "closed between phrases");
+        var legato = Enumerable.Range(0, 20).Select(i => sync.Jaw(6.3 + i * 0.02)).Min();
+        Check(legato > 0.4f * sync.Jaw(6.25), $"vowel to vowel legato stays open ({legato:0.0} degrees)");
+        var m = 7.4 - 0.04 - 0.035;
+        Check(sync.Weights(m, weights) > 0.95f && Math.Abs(sync.Jaw(m)) < 5, $"m closes the lips (jaw {sync.Jaw(m):0.0})");
+        sync.Weights(9.2, weights);
+        var start = weights.ToArray();
+        sync.Weights(9.9, weights);
+        Check(start[(int)StageLipSync.Viseme.AA] > 0.6f && weights[(int)StageLipSync.Viseme.IY] > 0.5f, "the diphthong of I glides from ah to ee");
+        var shapes = new float[Gh3Skin.Packages.CharacterSkeleton.FaceSlots.Length];
+        var vowelsOnly = Gh3Skin.Packages.CharacterSkeleton.FaceSlots.Select(slot => slot is "blink" or "a" or "i" or "u" or "e" or "o").ToArray();
+        sync.Face(5.1, shapes, vowelsOnly);
+        Check(shapes[2] == shapes[1..6].Max() && shapes[2] > 0.2f, "see shows the i shape");
+        sync.Face(2.2, shapes, vowelsOnly);
+        Check(shapes[5] == shapes[1..6].Max() && shapes[5] > 0.4f, "go shows the o shape");
+        sync.Face(m, shapes, vowelsOnly);
+        Check(shapes[1..6].Max() < 0.05f, "m closes the blend shapes");
+        var visemes = Gh3Skin.Packages.CharacterSkeleton.FaceSlots.Select(slot => slot is not ("browUp" or "browDown" or "squint")).ToArray();
+        sync.Face(m, shapes, visemes);
+        Check(shapes[Array.IndexOf(Gh3Skin.Packages.CharacterSkeleton.FaceSlots, "pp")] > 0.95f, "m uses the pp viseme of a VRChat face");
+        sync.Face(3.3, shapes, vowelsOnly);
+        Check(shapes[Array.IndexOf(Gh3Skin.Packages.CharacterSkeleton.FaceSlots, "browUp")] > 0.5f, "the brow shape rises on a long note");
+        Check(Sync(cues).Jaw(2.345) == sync.Jaw(2.345), "deterministic");
         var blinks = Enumerable.Range(0, 1000).Select(i => sync.Blink(i * 0.01)).ToArray();
         Check(blinks.Max() == 1 && blinks.Count(b => b > 0) is > 10 and < 100, "blinks while the singer sings");
         Check(sync.Blink(-5) == 0 && sync.Blink(100) == 0, "no blinks outside the vocal part");
+        Check(sync.BrowAt(3.3) > 0.5f && Math.Abs(sync.BrowAt(5.15)) < 0.3f, "the brows rise on a long note");
+
+        var levels = Enumerable.Range(0, 1200).Select(i => i is > 600 and < 700 ? 1f : i is > 900 and < 1000 ? 0.3f : 0.01f).ToArray();
+        VocalEnvelope.Current = Task.FromResult<VocalEnvelope?>(VocalEnvelope.FromLevels(levels));
+        var loud = Sync(cues);
+        Check(loud.Loudness(6.5) > 0.9f && loud.Loudness(9.5) is > 0.2f and < 0.4f, "stem loudness normalized to the loud singing");
+        VocalEnvelope.Current = Task.FromResult<VocalEnvelope?>(VocalEnvelope.FromLevels(levels.Select((level, i) => i is > 900 and < 1000 ? 1f : level).ToArray()));
+        Check(Sync(cues).Jaw(9.4) > 1.3f * loud.Jaw(9.4), "a loud note opens more than a quiet one");
+        Check(loud.SquintAt(6.5) > 0 && loud.SquintAt(9.5) == 0, "loud singing narrows the eyes");
+        VocalEnvelope.Current = null;
+    }
+
+    private static void CheckEnvelope()
+    {
+        var smooth = VocalEnvelope.Smooth(Enumerable.Range(0, 100).Select(i => i is >= 10 and < 50 ? 1f : 0f).ToArray());
+        Check(smooth[12] > 0.7f && smooth[55] is > 0.2f and < 0.8f && smooth[99] < 0.05f, "fast rise, slow fall");
+        var envelope = VocalEnvelope.FromLevels(new[] { 0f, 0.5f, 1f, 1f, 0.02f });
+        Check(Math.Abs(envelope.At(0.02) - 1) < 0.05f && envelope.At(0.04) == 0 && envelope.At(-1) == 0 && envelope.At(10) == 0, "normalized levels and the noise gate");
+        Check(VocalEnvelope.Stems("/nonexistent").Length == 0, "no stems in a missing folder");
     }
 
     private static void CheckApply()
     {
-        var names = new[] { "Bone_Root", "Bone_Jaw", "Bone_Lip_Lower_Mid", "Bone_Eyelid_Upper_L", "Bone_Brow_L" }.Select(Gh3Checksum.Of).ToArray();
+        var names = new[] { "Bone_Root", "Bone_Jaw", "Bone_Lip_Lower_Mid", "Bone_Eyelid_Upper_L", "Bone_Brow_L", "Bone_Head", "Bone_Eye_L" }.Select(Gh3Checksum.Of).ToArray();
         var cues = new[] { new StageCue(1, "sing", "Drunk", 0.5, "singer"), new StageCue(0, "beat") };
         var timeline = new StageTimeline(cues, "test");
         var sync = StageLipSync.Create(timeline, "singer", names)!;
@@ -95,14 +148,18 @@ internal static class LipSyncLogicTests
         StageLipSync.Enabled = true;
         var bind = Enumerable.Range(0, names.Length).Select(i => new BandPose(new(i, 0, 0), Quaternion.CreateFromAxisAngle(Vector3.UnitX, 0.3f))).ToArray();
         var pose = (BandPose[])bind.Clone();
-        sync!.Apply(pose, 0.5);
-        Check(pose.SequenceEqual(bind), "no change while closed");
+        sync!.Apply(pose, -20);
+        Check(pose.SequenceEqual(bind), "no change long before the singing");
+        pose = (BandPose[])bind.Clone();
         sync.Apply(pose, 1.25);
-        var jaw = sync.Mouth(1.25).Jaw;
+        var jaw = sync.Jaw(1.25);
         var delta = Quaternion.Inverse(bind[1].Rotation) * pose[1].Rotation;
         var angle = 2 * MathF.Acos(Math.Clamp(delta.W, -1, 1)) * 180 / MathF.PI;
-        Check(Math.Abs(angle - jaw) < 0.5f && delta.Z > 0, $"jaw turns about its own Z axis by the curve value ({angle:0.0} for {jaw:0.0})");
-        Check(pose[2] != bind[2] && pose[0] == bind[0] && pose[4] == bind[4], "the lips move; root and brows do not");
+        Check(Math.Abs(angle - jaw) < 1.5f && delta.Z > 0, $"jaw turns about its own Z axis by the viseme value ({angle:0.0} for {jaw:0.0})");
+        Check(pose[2] != bind[2] && pose[0] == bind[0], "the lips move; the root does not");
+        pose = (BandPose[])bind.Clone();
+        sync.Apply(pose, 1 - 0.05 + 0.1);
+        Check(pose[5] != bind[5], "the head nods at the phrase start");
     }
 
     private static StageLipSync Sync(StageCue[] cues) =>

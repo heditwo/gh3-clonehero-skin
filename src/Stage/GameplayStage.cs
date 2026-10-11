@@ -38,6 +38,7 @@ internal sealed partial class GameplayStage
     private StageHandFire? _handFire;
     private StageHighwayMask? _highwayMask;
     private StageTimeline? _timeline;
+    private System.Diagnostics.Stopwatch? _vocalClock;
     private StageBand? _band;
     private StageCrowd? _crowd;
     private StageFixtures? _fixtures;
@@ -143,6 +144,7 @@ internal sealed partial class GameplayStage
     {
         if (!_attempted) Create(player);
         if (_effects == null || _timeline == null) return;
+        ReportVocalEnvelope();
         ExtendLeadIn(player.gameManager);
         var time = player.gameManager.songTime;
         if (!double.IsFinite(time)) return;
@@ -298,6 +300,37 @@ internal sealed partial class GameplayStage
         StageModelPrefetch.StartAll(Path.Combine(_library, "crowd", "hands"), skinned: true);
     }
 
+    // The vocal stem loudness for the lip sync, decoded on a worker thread while the stage loads (VocalEnvelope).
+    private void StartVocalEnvelope(string? folder)
+    {
+        VocalEnvelope.Current = null;
+        _vocalClock = null;
+        if (!StageLipSync.Enabled || folder == null || _timeline == null || _timeline.Track("face", "singer").Length > 0 || _timeline.Track("sing", "singer").Length == 0) return;
+        try
+        {
+            if (!StageAudioBackend.Available) return;
+        }
+        catch (Exception error) when (error is TypeInitializationException or FileNotFoundException or DllNotFoundException)
+        {
+            MelonLogger.Warning($"GH3 lip sync: no vocal stem loudness ({error.GetBaseException().Message})");
+            return;
+        }
+        var cache = Path.Combine(MelonLoader.Utils.MelonEnvironment.UserDataDirectory, "GH3Skin", "Cache", "vocals");
+        VocalEnvelope.Current = VocalEnvelope.Start(folder, cache, StageAudioBackend.DecodeMono);
+        _vocalClock = VocalEnvelope.Current == null ? null : System.Diagnostics.Stopwatch.StartNew();
+        if (VocalEnvelope.Current == null) MelonLogger.Msg("GH3 lip sync: no vocal stem in the chart folder; the mouth follows the notes only");
+    }
+
+    private void ReportVocalEnvelope()
+    {
+        if (_vocalClock == null || VocalEnvelope.Current is not { IsCompleted: true } task) return;
+        var elapsed = _vocalClock.Elapsed.TotalMilliseconds;
+        _vocalClock = null;
+        if (task.IsCompletedSuccessfully && task.Result is { } envelope)
+            MelonLogger.Msg($"GH3 lip sync: vocal stem loudness from {envelope.Source} ({envelope.Seconds:0.0} s) ready {elapsed:0} ms after the chart was read");
+        else MelonLogger.Warning($"GH3 lip sync: the vocal stem could not be decoded ({task.Exception?.GetBaseException().Message ?? "no audio"}); the mouth follows the notes only");
+    }
+
     private void Create(BasePlayer player)
     {
         var state = ResolveSources();
@@ -318,6 +351,7 @@ internal sealed partial class GameplayStage
         {
             scriptBank = StageScripts.ReadBank(_directory, _library);
             PrefetchModels();
+            if (StageLipSync.Enabled) Task.Run(LyricPhonemes.Preload);
             var pack = StagePack.Load(_directory);
             var library = _library;
             _root = new GameObject("GH3 Stage") { layer = Layer };
@@ -389,6 +423,7 @@ internal sealed partial class GameplayStage
                 MelonLogger.Warning($"GH3 stage cues could not load: {error.Message}");
             }
             steps.Step("chart and cues");
+            StartVocalEnvelope(entry?.folderPath);
             if (GlobalVariables.instance?.isPracticeEnabled != true)
             {
                 var lastNote = LastNoteEnd(player);

@@ -56,6 +56,8 @@ for platform in linux windows; do
   for file in "$work/source/"{CREDITS,LICENSE,COPYING}*; do
     [[ -f "$file" ]] && cp "$file" "$stage/"
   done
+  # The CMU Pronouncing Dictionary in the DLL: its license asks for the notice in the documentation of a binary.
+  cp "$work/source/src/Resources/cmudict-LICENSE" "$stage/LICENSE-cmudict.txt"
   cat > "$stage/release.json" << JSON
 {
   "name": "GH3 Gameplay Skin",

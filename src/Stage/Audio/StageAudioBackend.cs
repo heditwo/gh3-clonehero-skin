@@ -51,6 +51,67 @@ internal static class StageAudioBackend
     public static extern uint State(uint handle);
     [DllImport(Library, EntryPoint = "BASS_ErrorGetCode")]
     private static extern int Error();
+    [DllImport(Library, EntryPoint = "BASS_ChannelGetInfo")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool Info(uint handle, out ChannelInfo info);
+    [DllImport(Library, EntryPoint = "BASS_ChannelGetData")]
+    private static extern int Data(uint handle, float[] buffer, uint length);
+
+    // BASS_CHANNELINFO.
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ChannelInfo
+    {
+        public uint Frequency, Channels, Flags, Type, OriginalResolution, Plugin, Sample;
+        public IntPtr FileName;
+    }
+
+    // bass.h: BASS_SAMPLE_FLOAT, BASS_STREAM_DECODE, BASS_UNICODE, BASS_DATA_FLOAT.
+    private const uint SampleFloat = 0x100;
+    private const uint StreamDecode = 0x200000;
+    private const uint Unicode = 0x80000000;
+    private const uint DataFloat = 0x40000000;
+    private const int DecodeBlockFrames = 8192;
+    private const int MaximumChannels = 32;
+
+    // Ensures that the static constructor (which reads Unity's data path) has run on the main thread.
+    public static bool Available => Handle != IntPtr.Zero;
+
+    // Decodes an audio file (any format that Clone Hero's BASS and its loaded plugins read: Ogg Vorbis, Opus, MP3, WAV)
+    // to mono float samples. Safe on a worker thread: a decoding channel does not play.
+    public static void DecodeMono(string path, Func<int, Action<float[], int>> sink)
+    {
+        var name = OperatingSystem.IsWindows() ? Marshal.StringToHGlobalUni(path) : Marshal.StringToCoTaskMemUTF8(path);
+        uint handle;
+        try { handle = CreateFile(false, name, 0, 0, StreamDecode | SampleFloat | (OperatingSystem.IsWindows() ? Unicode : 0)); }
+        finally
+        {
+            if (OperatingSystem.IsWindows()) Marshal.FreeHGlobal(name);
+            else Marshal.FreeCoTaskMem(name);
+        }
+        if (handle == 0) throw new InvalidDataException($"Could not decode {Path.GetFileName(path)} (BASS {Error()})");
+        try
+        {
+            if (!Info(handle, out var info) || info.Channels is 0 or > MaximumChannels || info.Frequency == 0) throw new InvalidDataException($"Could not read {Path.GetFileName(path)} (BASS {Error()})");
+            var channels = (int)info.Channels;
+            var add = sink((int)info.Frequency);
+            var buffer = new float[DecodeBlockFrames * channels];
+            var mono = new float[DecodeBlockFrames];
+            while (true)
+            {
+                var bytes = Data(handle, buffer, (uint)(buffer.Length * sizeof(float)) | DataFloat);
+                if (bytes <= 0) break;
+                var frames = bytes / sizeof(float) / channels;
+                for (var frame = 0; frame < frames; frame++)
+                {
+                    float sum = 0;
+                    for (var channel = 0; channel < channels; channel++) sum += buffer[frame * channels + channel];
+                    mono[frame] = sum / channels;
+                }
+                add(mono, frames);
+            }
+        }
+        finally { FreeStream(handle); }
+    }
 
     public static uint Create(IntPtr data, int length, bool loop)
     {

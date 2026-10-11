@@ -69,4 +69,7 @@
       <Private>false</Private>
     </Reference>
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Resources/cmudict.br" LogicalName="Gh3Skin.cmudict.br" />
+  </ItemGroup>
 </Project>

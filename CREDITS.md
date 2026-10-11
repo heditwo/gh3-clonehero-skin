@@ -35,6 +35,7 @@ The GH3 `DATA` folder on the development machine is the BetterGH3 full package v
 
 | Item | Source | Notes |
 | --- | --- | --- |
+| CMU Pronouncing Dictionary (`src/Resources/cmudict.br`, embedded in the mod DLL) | [github.com/cmusphinx/cmudict](https://github.com/cmusphinx/cmudict), commit 74790861f652b15e4ac49015a90074ad62a27690, Copyright (C) 1993-2015 Carnegie Mellon University | BSD-style license; the full text is in `src/Resources/cmudict-LICENSE` and, in the release zips, `LICENSE-cmudict.txt`. `tools/lipsync-dictionary.py` keeps the first pronunciation of each word without stress marks. The lip sync uses it for the phonemes of the lyrics |
 | Brotli decoder in Python (`blender/chstage_tools/brotli_decode.py`) | Written for this project from [RFC 7932](https://www.rfc-editor.org/rfc/rfc7932) | `brotli_dictionary.bin` is the static dictionary of RFC 7932 (Appendix A), zlib-compressed. The tests compare the decoder with the Python `brotli` module |
 | BC1 and BC3 texture encoder (`src/Packages`) | Written for this project | No third-party code |
 | GLB reader and writer, q48 clip codec, package validator | Written for this project | `pipeline/package`, `src/Packages` |

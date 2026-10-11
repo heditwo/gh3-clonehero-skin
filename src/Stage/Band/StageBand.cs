@@ -298,7 +298,8 @@ internal sealed partial class StageBand : IDisposable
     {
         var sung = timeline.Track("sing", "singer").Length;
         var lipSync = _players.FirstOrDefault(p => p.Role == "singer")?.Performance?.LipSync;
-        if (lipSync != null) return $"lip sync from {sung} sung notes ({lipSync.Syllables.Length} syllables)";
+        if (lipSync != null) return $"lip sync from {sung} sung notes ({lipSync.NoteCount} syllables, {lipSync.KeyCount} viseme keys; " +
+            $"{lipSync.DictionaryWords} words from the pronouncing dictionary, {lipSync.RuleWords} from spelling rules)";
         return sung == 0 ? "no sung notes" : $"lip sync off ({sung} sung notes; {(StageLipSync.Enabled ? "GH3 facial clips or no singer jaw" : "GH3_SKIN_LIPSYNC=off")})";
     }
 

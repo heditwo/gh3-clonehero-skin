@@ -91,6 +91,11 @@
     <Compile Include="../src/Stage/Band/StageGuitarArms.cs" Link="StageGuitarArms.cs" />
     <Compile Include="../src/Stage/Band/StageLipSync.cs" Link="StageLipSync.cs" />
     <Compile Include="../src/Stage/Band/StageLipSync.Shapes.cs" Link="StageLipSync.Shapes.cs" />
+    <Compile Include="../src/Stage/Band/StageLipSync.Track.cs" Link="StageLipSync.Track.cs" />
+    <Compile Include="../src/Stage/Band/StageLipSync.Life.cs" Link="StageLipSync.Life.cs" />
+    <Compile Include="../src/Stage/Band/LyricPhonemes.cs" Link="LyricPhonemes.cs" />
+    <Compile Include="../src/Stage/Band/VocalEnvelope.cs" Link="VocalEnvelope.cs" />
+    <EmbeddedResource Include="../src/Resources/cmudict.br" LogicalName="Gh3Skin.cmudict.br" />
     <Compile Include="../src/Stage/Lighting/StageLighting.cs" Link="StageLighting.cs" />
     <Compile Include="../src/Stage/Lighting/StageLightShowState.cs" Link="StageLightShowState.cs" />
     <Compile Include="../src/Stage/Lighting/StageBeamMotion.cs" Link="StageBeamMotion.cs" />
