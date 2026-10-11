@@ -158,7 +158,8 @@ internal sealed partial class StageLipSync
             {
                 var index = (int)position;
                 raise = _brow[index] + (_brow[index + 1] - _brow[index]) * (float)(position - index);
-                raise += BrowIdle * (float)(Math.Sin(time * BrowIdleFrequencyA * 2 * Math.PI) * Math.Sin(time * BrowIdleFrequencyB * 2 * Math.PI));
+                // The idle motion only lifts the brows: a lowered brow reads as a frown on a face at rest.
+                raise += BrowIdle * (float)Math.Max(0, Math.Sin(time * BrowIdleFrequencyA * 2 * Math.PI) * Math.Sin(time * BrowIdleFrequencyB * 2 * Math.PI));
             }
             return raise - BeltFrown * Belt(loudness);
         }
