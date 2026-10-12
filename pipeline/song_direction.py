@@ -69,10 +69,10 @@ CANDIDATE_COUNT_RATIO = 0.2
 # give the band library singer, so the sidecar suggests nothing.
 SINGER_PROFILES = {key("female"): "Singer_Female", key("bret"): "Singer_Bret"}
 DEFAULT_COUNTOFF = "sticks_normal"
-# The GH3 fretbars: the chart's tempo map always gives the timing (StageSongDirection), so the sidecar leaves them out.
-# The strums stay: GH3 selects the strum clip by the GH3 note length (short_strum_max_gem_length), and pack charts
-# give a non-sustained note a length of one tick. A co-op chart has other guitar notes, so its strums come from the chart.
-TIMING_CUES = ("beat",)
+# The sidecar keeps the GH3 fretbars (`beat`): they set the band's tempo as in GH3 (the chart's tempo map gives the other
+# timing; StageSongDirection). The strums stay too: GH3 selects the strum clip by the GH3 note length
+# (short_strum_max_gem_length), and pack charts give a non-sustained note a length of one tick. A co-op chart has other
+# guitar notes, so its strums come from the chart.
 GESTURE_CUES = ("strum",)
 SOLO_PART = "song_expert"
 EVENT_DEFAULTS = {"duration": 0, "role": "", "immediate": False, "loop": False, "count": 1, "disableArms": 0}
@@ -341,7 +341,7 @@ def sidecar(direction, offset, data, part=SOLO_PART):
         result["characters"] = {"singer": singer}
     # The GH3 times are on the GH3 note clock; the file offset moves them to the pack chart (offset = pack - GH3).
     result["offsetSeconds"] = offset
-    left_out = TIMING_CUES + (() if part == SOLO_PART else GESTURE_CUES)
+    left_out = () if part == SOLO_PART else GESTURE_CUES
     result["events"] = [_event(cue, 0) for cue in direction["events"] if cue["type"] not in left_out]
     return result
 

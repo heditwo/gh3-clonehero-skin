@@ -106,6 +106,11 @@ internal static class SongDirectionLogicTests
 
         Write(""" "events":[{"time":0,"type":"tempo","value":"200"}] """);
         Check(Load().TempoAt(0.2) == 120, "file timing cannot override the playable tempo map");
+        Write(""" "events":[{"time":0,"type":"beat"},{"time":0.75,"type":"beat"},{"time":1.5,"type":"beat"}] """);
+        var beats = Load();
+        Check(beats.Beats.Length == 3 && beats.TempoAt(0.2) == 80 && beats.Track("tempo").Length == 2 && beats.ChannelSources["beats"] == "stage-events.json" &&
+            beats.ChannelSources["timing"] == "notes.chart tempo map", "file beats (GH3 fretbars) set the band tempo beside the chart's tempo map");
+        Write(""" "events":[{"time":0,"type":"tempo","value":"200"}] """);
         File.WriteAllText(chartPath, "[SyncTrack]\n192 = B 60000");
         Check(Load().TempoAt(0) == 120 && Load().TempoAt(0.5) == 60, "chart timing retains the implicit 120 BPM before a later first tempo event");
         File.WriteAllText(chartPath, "[ExpertSingle]\n0 = N 0 0");
@@ -212,8 +217,8 @@ internal static class SongDirectionLogicTests
         {
             File.Copy(pack, Path.Combine(directory, "stage-events.json"), true);
             var sidecar = StageChartReader.Load(directory, "", performance);
-            Check(sidecar.Cues.SequenceEqual(original.Cues.Where(c => c.Type != "beat")),
-                "the pack sidecar of My Curse has every direction cue and strum of the GH3 song at the same time");
+            Check(sidecar.Cues.SequenceEqual(original.Cues) && sidecar.Beats.SequenceEqual(original.Beats),
+                "the pack sidecar of My Curse has every direction cue, strum, and fretbar of the GH3 song at the same time");
         }
         File.WriteAllText(Path.Combine(directory, "stage-events.json"), JsonSerializer.Serialize(new
         {

@@ -31,6 +31,8 @@ internal sealed class StageDrummer
         var lead = Constant("drum_anim_lead_time", 150) / 1000;
         var blendOut = Constant("drummer_arm_blend_out_delay", 0.25);
         var clearTwist = Constant("drummer_clear_arm_twist_value_delay", 0);
+        // GH3: Drum_iterator (GH3.exe 0x42dada-0x42db3e) plays Test_Drum_HitHat_R for note 70 when the song's countoff is
+        // HiHat01, HiHat02, or HiHat03, else sticktap_l and sticktap_r.
         var hihatCountoff = timeline.Countoff.StartsWith("hihat", StringComparison.OrdinalIgnoreCase);
         var arms = new[] { new List<Hit>(), new List<Hit>() };
         var twistNotes = new List<(double Time, int Arm, int Note)>();

@@ -31,13 +31,13 @@ Since 2026-10-12 (PACKAGING-PLAN decision 16) the GH3 direction of a GH3 song is
 
 | Check | Result |
 | --- | --- |
-| My Curse: `main` (title and artist match) against the sidecar | `[trace] direction` equal for every channel except `timing` (camera 55, lighting 1,261, face/singer 5, face/guitarist 2, drum 2,916, body, fret, crowd, pyro 18, strum 1,399 and 941); camera cut times equal (0.000, 12.453, 20.721, …). `timing`: 740 GH3 fretbars on `main`, 373 tempo changes of the chart now (equal beat times within 1e-12 s). `[trace] pose`: singer equal; guitarist, bassist, and drummer different. With the GH3 fretbars as the timing (an experiment build) the guitarist and the bassist are equal to `main`: the tempo values differ in the last bits and the clip choices then diverge. The drummer also counts off on the hi-hat now: the song's `HiHat01` count-off was only in the audio before |
+| My Curse and Talk Dirty to Me: `main` (title and artist match) against the sidecar (gh3.dive, the same singer) | `[trace] direction` equal for every channel (My Curse: camera 55, lighting 1,261, face/singer 5, face/guitarist 2, drum 2,916, strum 1,399 and 941, fretbars 740 as `beats`); camera cut times equal. The chart's tempo map adds `timing` (373 tempo changes). `[trace] pose` (song times 5, 10, 20, 30, 45 s): singer, guitarist, and bassist equal to `main` in both songs. Drummer: different, because the drummer now counts off on the hi-hat for a `HiHat0n` count-off as GH3 does (GH3.exe 0x42dada); `main` played the hi-hat sound with stick taps. With the count-off removed from the file the drummer hash is equal to `main` too. Frames at 5–60 s: equal shots and poses (PSNR 25–44 dB, the spread of two runs of one build) |
 | My Curse, the same pack chart without the file | Generated direction (`notes.mid + generated (camera, lighting)`, 19 cameras, no GH3 cue): no hidden match by title |
 | Hit Me With Your Best Shot (the player keeps the default singer and Song's choice) | `GH3 stage choice: gh3.party (the song's stage-events.json stage …)`, `GH3 band singer: gh3.singer-female (the song's stage-events.json)`; she sings in Backyard Bash with her 3 GH3 facial clips |
 | Talk Dirty to Me | gh3.party and `gh3.singer-bret` from the file |
 | All Nightmare Long (DLC pack, offset +0.140 s) | Camera cuts at the GH3 times + 0.140 s (0.140, 12.009, 19.977, …); the pack's first notes are 139.6 ms after the GH3 notes (all 3,041 within 4 ms) |
 | A chart without GH3 direction (GH3 Stage Preview) | `[trace] pose` hashes and direction equal to `main` |
-| Size | `gh3-band-v1.chlib` 644,122,982 to 637,589,612 bytes; its contents (and the cache) 169 MB smaller. Direction zips 2,301,515 bytes (main pack: 75 files, 34.6 MB unpacked) and 2,837,577 bytes (DLC pack: 76 files, 41.9 MB) |
+| Size | `gh3-band-v1.chlib` 644,122,982 to 637,589,612 bytes; its contents (and the cache) 169 MB smaller. Direction zips 2,473,644 bytes (main pack: 75 files, 36.4 MB unpacked) and 3,077,328 bytes (DLC pack: 76 files, 44.4 MB) |
 
 Evidence: `~/.cache/gh3-song-pack/cap/` (logs and frames of each run), `~/.cache/gh3-song-pack/SOURCE.md` (pack sources and hashes).
 

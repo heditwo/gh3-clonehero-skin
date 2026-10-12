@@ -153,7 +153,7 @@ Events are stored in one array. The loader groups them by type and role to choos
 | `events` | Yes | Timed cues; an empty list supplies no overrides |
 | `stage` | No | Suggested stage: a stage package ID (for example `gh3.party`). The stage selection uses it after `venue.chstage` and `gh3_stage` in `song.ini` ([PLAYER-GUIDE.md](PLAYER-GUIDE.md)) |
 | `characters` | No | Suggested band: `{"<role>": "<character package ID>"}` for the roles `guitarist`, `bassist`, `drummer`, `singer`. The mod uses a suggestion only for a role that the player left at the default, and only when "Songs can select their stage and band" is on |
-| `countoff` | No | The GH3 count-off sound set of the song (`sticks_normal`, `HiHat01`, and others of `audio.json`); default `sticks_normal`. A count-off that starts with `hihat` also makes the drummer count off on the hi-hat |
+| `countoff` | No | The GH3 count-off sound set of the song (`sticks_normal`, `HiHat01`, and others of `audio.json`); default `sticks_normal`. A count-off that starts with `hihat` also makes the drummer count off on the hi-hat (GH3.exe `Drum_iterator`, 0x42dada) |
 | `sourceSong` | No | The GH3 song ID of the direction (metadata) |
 
 The stage, the band, and the count-off come only from the song folder: the mod does not find a song by its title or artist (PACKAGING-PLAN decision 16).
@@ -218,13 +218,14 @@ A source with events for a channel replaces that channel for the whole song. It 
 | `drum` | `drum` |
 | `lighting` | All lightshow state cues, including lighting `gh3-note` values |
 | `pyro`, `sparks`, `fireworks`, `smoke`, `flash` | The matching effect; GH3 note 56 belongs to `pyro` |
-| `timing` | `tempo`, `beat` |
+| `timing` | `tempo` |
+| `beats` | `beat`: the beat times that set the band's tempo (GH3 fretbars) |
 | `crowd-control` | `crowd-lighters`, `crowd-animation`, `crowd-hand`, and handled original crowd commands |
 
 Two channels have source rules that preserve the playable chart:
 
 - **Strums:** explicit song-file cues, then explicit chart direction cues, then gestures derived from the chart's Expert guitar/bass notes. A camera-only file therefore keeps note-driven playing gestures.
-- **Timing:** use the playable chart's tempo map when available. File timing is a fallback for charts without timing data, followed by the shared default tempo. `timing` cannot appear in `clearChannels`.
+- **Timing:** use the playable chart's tempo map when available. File timing is a fallback for charts without timing data, followed by the shared default tempo. `timing` cannot appear in `clearChannels`. `beat` cues are their own channel `beats`: when a file has them, the band plays at the tempo of these beats (as GH3 plays at the tempo of its fretbars), and the chart's tempo map gives the other timing.
 
 Missing body cues use GH3 idle groups at the song tempo. Missing camera cues use automatic selection from the stage's camera bank. Missing lighting cues keep the initial lighting state (the venue's `intro` mood). Missing effects produce no bursts. Missing drum direction adds no drum-hit layers. Missing face direction adds no GH3 facial clips; the singer then gets lip sync from the chart's vocals, if the chart has them. Clearing a channel selects these same defaults, without the cues of steps 3 and 4; it does not hide the performer or disable the stage.
 
@@ -556,7 +557,7 @@ A text event can hold `gh3 ` followed by the JSON of `Gh3ScriptEvent.Encode`: a 
 
 The GH3 direction of a GH3 song is a version 2 file in the song folder. The release has one direction zip for each chart pack of GH3 songs that the players use ([PLAYER-GUIDE.md](PLAYER-GUIDE.md#gh3-direction-for-gh3-songs)). The zip contains only these files, in the folder layout of the pack; it changes no chart, audio, or `song.ini` file. A file has:
 
-- All GH3 direction cues of the song: the cameras, the light show, the band performance (stances, actions, gestures), the singer's and the guitarist's facial clips, the drummer, the crowd, the script calls, and the GH3 strums (GH3 selects the strum clip by the GH3 note length). It does not have the GH3 fretbars: the chart's tempo map gives the timing. A co-op chart has other guitar notes, so its file has no strums.
+- All GH3 direction cues of the song: the cameras, the light show, the band performance (stances, actions, gestures), the singer's and the guitarist's facial clips, the drummer, the crowd, the script calls, the GH3 strums (GH3 selects the strum clip by the GH3 note length), and the GH3 fretbars (`beat`, the band's tempo, so that the band performance is the GH3 one bit for bit). The chart's tempo map gives the other timing. A co-op chart has other guitar notes, so its file has no strums.
 - `offsetSeconds`: the time from the GH3 notes to the notes of the pack's chart. `pipeline.song_direction measure` compares the Expert guitar notes of each chart with all GH3 songs; a chart is matched when 99 % of its notes and lanes are on the notes of one GH3 song (within 4 ms) at one offset. Other charts are flagged and get no file.
 - `countoff`, `stage` (the GH3 career venue of the song, from `GH3_Career_Songs`), and `characters.singer` (`gh3.singer-female` or `gh3.singer-bret` from the `singer` field of the GH3 song list; `create_band`). GH3 removes the singer of two instrumental songs (`singer` `none`: Cliffs of Dover, Impulse); the mod has no rule for that and keeps the singer.
 

@@ -30,7 +30,9 @@ internal static class StageSongDirection
         "gh3-note" when int.TryParse(cue.Value, out var note) && StageTimeline.FromGh3Note(cue.Time, note) is { } mapped => Channel(mapped),
         "gh3-note" => "lighting",
         "pyro" or "sparks" or "fireworks" or "smoke" or "flash" => cue.Type,
-        "tempo" or "beat" => "timing",
+        "tempo" => "timing",
+        // The beats of a direction file (GH3 fretbars) set the band's tempo even when the chart's tempo map gives the timing.
+        "beat" => "beats",
         _ => null
     };
 
