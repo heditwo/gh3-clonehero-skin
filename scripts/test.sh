@@ -14,4 +14,5 @@ uvx ruff@0.17.0 format --check --quiet .
 uvx --python 3.11 --with numpy mypy@2.4.0 --no-error-summary
 uv run --with pillow --with numpy --with 'shapely>=2.1' --with jsonschema --with brotli python -m unittest discover -s tests -p 'test_*.py'
 for script in install.sh install-linux.sh run-gh3-skin.sh scripts/*.sh blender/*.sh tools/windows/*.sh; do bash -n "$script"; done
+sh -n tools/direction-install/install-direction.sh
 printf 'All checks passed\n'

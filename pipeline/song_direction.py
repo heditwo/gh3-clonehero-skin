@@ -28,6 +28,9 @@ OUTPUT = SONG_DIRECTION
 SIDECAR = "stage-events.json"
 README = "README-GH3-DIRECTION.md"
 PACK_RECORD = "gh3-direction-pack.json"
+# The chart SHA-256 of each sidecar in sha256sum format; the install scripts of the direction zip read it.
+CHART_INDEX = "gh3-direction-charts.sha256"
+INSTALL_SCRIPT = "install-direction"
 LIBRARY_ID = "gh3-band-v1"
 
 # MIDI (Standard MIDI File 1.0): header and track chunks, meta events, and the Expert guitar notes of a Rock Band /
@@ -365,17 +368,40 @@ def readme(pack, written, flagged):
         f"- Pack: {source['index']}.",
         f"- Folder: {source['folder']} (Drive folder ID `{source['driveFolderId']}`), listed on {source.get('listed', '?')}.",
         f"- Chart dates in the pack (M/D/YY, as Google Drive shows them): {', '.join(dates)}." if dates else None,
-        f"- `{PACK_RECORD}` gives the SHA-256 of each chart that the files fit, and the time offset of each song.",
+        f"- `{PACK_RECORD}` gives the SHA-256 of each chart that the files fit (`chartSha256`), and the time offset of "
+        f"each song. `{CHART_INDEX}` gives the same SHA-256 values in the format of `sha256sum`.",
         "",
-        "## Install",
+        "## Install with the script",
         "",
-        "1. Find the folder of the chart pack in your Clone Hero songs folder. It contains one folder for each song, for "
-        "example `Killswitch Engage - My Curse`.",
-        "2. Extract this archive into that folder. Each `stage-events.json` must go into the song folder with the same name. "
-        "Your system can ask to merge the folders: accept.",
-        "3. In Clone Hero, scan the songs again. Play a song of the pack.",
+        "Each `stage-events.json` must go into the folder that has the matching chart (`notes.mid`). The script finds "
+        "these folders for you: it calculates the SHA-256 of each `notes.mid` in your songs folder and in all its "
+        "subfolders, and it compares them with the SHA-256 values of this archive. The folder names and the folder "
+        "depth do not matter.",
         "",
-        "If you renamed a song folder, put its `stage-events.json` into it by hand.",
+        "1. Extract this archive into a new folder. Do not extract it into your songs folder.",
+        f"2. On Windows: double-click `{INSTALL_SCRIPT}.bat` and type your Clone Hero songs folder, or drag the songs "
+        f"folder onto `{INSTALL_SCRIPT}.bat`. On Linux or macOS: open a terminal in the extracted folder and type "
+        f'`sh {INSTALL_SCRIPT}.sh "<songs folder>"`.',
+        "3. The script shows the list of the files that it will copy, and the files that are already there. Then it "
+        "asks you to confirm. Type `y` to copy the files.",
+        "4. In Clone Hero, scan the songs again. Play a song of the pack.",
+        "",
+        "The script never replaces a file. To see the list only, add `--dry-run` (Linux, macOS) or `-DryRun` "
+        "(Windows). To copy without the question, add `--yes` or `-Yes`. The Linux script needs only `sh`, `find`, "
+        "and `sha256sum` (or `shasum` on macOS).",
+        "",
+        "## Install by hand",
+        "",
+        "1. Find the song folders of the chart pack in your Clone Hero songs folder. Each song has one folder, for "
+        "example `Killswitch Engage - My Curse`. The song folders can be in subfolders, for example "
+        "`Guitar Hero III/Quickplay/<song>` and `Guitar Hero III/Bonus/<song>`, or in two folders with the same "
+        "name, for example `gh3dlc/gh3dlc/<song>`.",
+        "2. For each song folder of this archive, copy its `stage-events.json` into your song folder with the same "
+        "name. If all song folders are in one folder, you can extract the archive into that folder and accept to "
+        "merge the folders.",
+        "3. In Clone Hero, scan the songs again.",
+        "",
+        f"If you renamed a song folder, use the script, or compare the SHA-256 of its `notes.mid` with `{PACK_RECORD}`.",
         "",
         "## Remove",
         "",
@@ -390,6 +416,12 @@ def readme(pack, written, flagged):
     if flagged:
         lines.append(f"- These song folders have no file, because their notes do not match GH3: {', '.join(flagged)}.")
     return "\n".join(line for line in lines if line is not None) + "\n"
+
+
+def chart_index(pack):
+    """`<chart SHA-256>  <song folder>/<chart>` for each matched song, sorted by folder (the sha256sum format)."""
+    entries = sorted((entry for entry in pack["songs"] if entry["status"] == "matched"), key=lambda e: e["folder"])
+    return "".join(f"{entry['chartSha256']}  {entry['folder']}/{entry['chart']}\n" for entry in entries)
 
 
 def export(pack_path, events, data_directory, output):
@@ -413,6 +445,7 @@ def export(pack_path, events, data_directory, output):
     flagged = [entry["folder"] for entry in pack["songs"] if entry["status"] != "matched"]
     (destination / README).write_text(readme(pack, written, flagged))
     (destination / PACK_RECORD).write_text(json.dumps(pack, indent=2, ensure_ascii=False) + "\n")
+    (destination / CHART_INDEX).write_text(chart_index(pack))
     print(f"Wrote {written} sidecars to {destination}")
     if flagged:
         print(f"{len(flagged)} flagged songs have no sidecar: {', '.join(flagged)}")
