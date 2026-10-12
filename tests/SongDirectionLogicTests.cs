@@ -20,7 +20,7 @@ internal static class SongDirectionLogicTests
 
     private static void CheckFiles(string directory)
     {
-        // The GH3 direction of a song as a chart pack sidecar has (pipeline.song_direction): no strums, beats, or tempo.
+        // The GH3 direction of a song as a chart pack sidecar has it (pipeline.song_direction), here without strums and timing.
         var direction = new[] {
             new StageCue(0, "gh3-camera", "85", 8), new StageCue(40, "camera", "drummer"),
             new StageCue(0, "gh3-note", "39"), new StageCue(1, "gh3-note", "75"), new StageCue(5, "gh3-note", "58"),
@@ -212,8 +212,8 @@ internal static class SongDirectionLogicTests
         {
             File.Copy(pack, Path.Combine(directory, "stage-events.json"), true);
             var sidecar = StageChartReader.Load(directory, "", performance);
-            Check(sidecar.Cues.Where(c => c.Type is not ("strum" or "beat")).SequenceEqual(original.Cues.Where(c => c.Type is not ("strum" or "beat"))),
-                "the pack sidecar of My Curse has every direction cue of the GH3 song at the same time");
+            Check(sidecar.Cues.SequenceEqual(original.Cues.Where(c => c.Type != "beat")),
+                "the pack sidecar of My Curse has every direction cue and strum of the GH3 song at the same time");
         }
         File.WriteAllText(Path.Combine(directory, "stage-events.json"), JsonSerializer.Serialize(new
         {

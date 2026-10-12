@@ -1,10 +1,13 @@
+using System.Globalization;
+using MelonLoader;
 using UnityEngine;
 
 namespace Gh3Skin;
 
-// Capture aids: fixed debug views of the stage camera (GH3_SKIN_DEBUG_VIEW and its head views).
+// Capture aids: fixed debug views of the stage camera (GH3_SKIN_DEBUG_VIEW and its head views) and the direction trace.
 internal sealed partial class GameplayStage
 {
+    private const int TraceCameraCuts = 8;
     // Capture aid: GH3_SKIN_DEBUG_VIEW="x,y,z,targetX,targetY,targetZ,fov[;...]" fixes the stage camera (cycling through the
     // views every GH3_SKIN_DEBUG_VIEW_SECONDS of song time) and hides the highway; GH3_SKIN_DEBUG_SHOW="id,id" keeps those GH3 objects created.
     private static readonly float[][] DebugViews = (SkinEnvironment.Get(SkinEnvironment.DebugView) ?? "")
@@ -54,5 +57,14 @@ internal sealed partial class GameplayStage
         camera.fieldOfView = view[6];
         foreach (var (other, _) in _cameras) other.cullingMask = 0;
         if (_playerCamera != null) _playerCamera.cullingMask = 0;
+    }
+
+    // The cue count of each direction channel and the first camera cuts, to compare two direction sources of one song.
+    private void TraceDirection()
+    {
+        var channels = _timeline!.Cues.GroupBy(cue => StageSongDirection.Channel(cue) ?? cue.Type).OrderBy(group => group.Key, StringComparer.Ordinal)
+            .Select(group => $"{group.Key}={group.Count()}");
+        var cameras = _timeline.Cameras.Take(TraceCameraCuts).Select(cue => $"{cue.Time.ToString("0.000", CultureInfo.InvariantCulture)}:{cue.Value}");
+        MelonLogger.Msg($"[trace] direction {string.Join(" ", channels)} cameras {string.Join(",", cameras)}");
     }
 }

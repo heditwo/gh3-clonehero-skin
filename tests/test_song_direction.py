@@ -50,7 +50,7 @@ class SongDirectionTests(unittest.TestCase):
         self.assertGreaterEqual(matched, song_direction.MATCHED_SHARE)
         self.assertLess(same, song_direction.MATCHED_SHARE)
 
-    def test_sidecar_leaves_chart_timing_and_strums_to_the_chart(self):
+    def test_sidecar_leaves_timing_and_co_op_strums_to_the_chart(self):
         direction = {
             "sourceSong": "song",
             "events": [
@@ -85,9 +85,13 @@ class SongDirectionTests(unittest.TestCase):
             result["events"],
             [
                 {"time": 1, "type": "gh3-camera", "value": "85", "duration": 2},
+                {"time": 1, "type": "strum", "value": "1", "role": "guitarist"},
                 {"time": 2, "type": "drum", "value": "36", "velocity": 90},
             ],
         )
+        co_op = song_direction.sidecar(direction, 0, (None, "sticks_normal", None), "song_guitarcoop_expert")
+        self.assertEqual([event["type"] for event in co_op["events"]], ["gh3-camera", "drum"])
+        self.assertNotIn("characters", co_op)
 
 
 if __name__ == "__main__":

@@ -493,6 +493,7 @@ internal sealed partial class GameplayStage
                 $"({StageAssets.TexturesUploaded - texturesBefore.Item1} cache textures in {StageAssets.TextureMilliseconds - texturesBefore.Item2:0} ms; " +
                 $"{clips} band clips decoded in {clipWorker:0} ms on worker threads while the main thread waited {clipWait:0} ms; managed heap {GC.GetTotalMemory(false) / BytesPerMegabyte:0} MB)");
             MelonLogger.Msg($"GH3 stage cues: {_timeline.CueCount} from {_timeline.Source}; {_timeline.Effects.Length} effects");
+            if (BindingTrace.Enabled) TraceDirection();
             foreach (var diagnostic in _timeline.Diagnostics) MelonLogger.Msg(diagnostic);
         }
         catch (StageShaderUnsupportedException error)
