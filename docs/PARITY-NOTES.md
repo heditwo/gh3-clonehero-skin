@@ -237,7 +237,8 @@ Mod (since 2026-10-11):
 - The singer clips are stored on `GH3_Singer_Male` (the clip rig `singer`); a profile adds (its rest position − the male rest position) to the position tracks. The song facial clips of the band library singer play on the profile with the same offsets and their rotations unchanged: this is the GH3 result on her skeleton (the in-game trace matches the song `.ska` on `GH3_Singer_Female` within 0.011 mm and 0.011°).
 - The mod's lip sync (charts without facial clips) adds its viseme, brow, squint, and blink turns to the bones of her rig, as for the male singer (the deltas are in the frame of each bone).
 - The female singer keeps her own microphone, skinned to the stand bones of her skeleton (the stand is at her height). Bret Michaels gets the library microphone, bound with the male rest pose (his stand bones are equal to the male ones).
-- Not done: the mod does not choose the singer from the song (the player chooses it), it does not use the `*_Alt` microphones, it does not play `facial_anim_loop` for any singer, and it does not run `singer_IK_Params` (the band library singer does not either).
+- Since 2026-10-12 the GH3 direction file of a song (`stage-events.json`, `characters.singer`, written by `pipeline.song_direction` from the `singer` field) selects `gh3.singer-female` or `gh3.singer-bret` when the player keeps the default singer. Checked in Hit Me With Your Best Shot (the female singer in Backyard Bash) and Talk Dirty to Me (Bret Michaels).
+- Not done: `none` (Cliffs of Dover, Impulse) does not remove the singer, the mod does not use the `*_Alt` microphones, it does not play `facial_anim_loop` for any singer, and it does not run `singer_IK_Params` (the band library singer does not either).
 
 ### Instruments and highways
 
@@ -378,7 +379,9 @@ A song PAK holds `<song>.mid.qb`, optional scripts, and song assets. The directi
 
 The original install has 159 song archives, 6,297 song script calls with 33 distinct commands, 3,569 global and venue script definitions, and five named note-map tables.
 
-Only the pipeline reads the song PAKs (`pipeline.events` with `tools/Gh3SongTool`). It writes the direction of each song into the original song library of the band library package. The mod does not read song PAKs; it finds the original direction of a song by its title and artist in that library.
+Only the pipeline reads the song PAKs (`pipeline.events` with `tools/Gh3SongTool`). `pipeline.song_direction` writes the direction of each song, with its count-off, career venue, and singer, as `stage-events.json` for each song folder of a GH3 chart pack (PACKAGING-PLAN decision 16). The mod does not read song PAKs and does not find a song by its title or artist.
+
+GH3 chart packs (measured 2026-10-12, `pipeline/song_packs/`): the Expert guitar notes of every chart of "Guitar Hero III - Legends of Rock" (75 folders, 73 songs and 2 co-op charts) are on the GH3 notes at offset 0 (all notes and lanes within 4 ms; the co-op charts on `song_guitarcoop_expert`). "Guitar Hero III DLC": 76 of 77 at offset 0, except "All Nightmare Long" at +0.140 s; the co-op chart of "The Devil Went Down to Georgia" matches no GH3 part (96 % of the notes). All `song.ini` files have `delay = 0`. The pack charts give a note without a sustain a length of one tick; GH3 notes have their own lengths (57–86 ms in My Curse), which select the strum clip, so the direction files keep the GH3 strums. The chart's tempo map and the GH3 fretbars of My Curse agree within 1e-12 s.
 
 ## Performance
 

@@ -149,9 +149,14 @@ Events are stored in one array. The loader groups them by type and role to choos
 | `version` | Yes | `2` |
 | `library` | Yes | `gh3-band-v1` |
 | `offsetSeconds` | No | Offset applied to events in this file only; default `0` |
-| `originalSongLookup` | No | `auto` or `off`; default `auto` |
 | `clearChannels` | No | Channels whose inherited cues are removed; default `[]` |
 | `events` | Yes | Timed cues; an empty list supplies no overrides |
+| `stage` | No | Suggested stage: a stage package ID (for example `gh3.party`). The stage selection uses it after `venue.chstage` and `gh3_stage` in `song.ini` ([PLAYER-GUIDE.md](PLAYER-GUIDE.md)) |
+| `characters` | No | Suggested band: `{"<role>": "<character package ID>"}` for the roles `guitarist`, `bassist`, `drummer`, `singer`. The mod uses a suggestion only for a role that the player left at the default, and only when "Songs can select their stage and band" is on |
+| `countoff` | No | The GH3 count-off sound set of the song (`sticks_normal`, `HiHat01`, and others of `audio.json`); default `sticks_normal`. A count-off that starts with `hihat` also makes the drummer count off on the hi-hat |
+| `sourceSong` | No | The GH3 song ID of the direction (metadata) |
+
+The stage, the band, and the count-off come only from the song folder: the mod does not find a song by its title or artist (PACKAGING-PLAN decision 16).
 
 Times and durations are seconds on the song clock. Chart and MIDI ticks are converted with the tempo map and chart offset. The file offset applies after that conversion and does not shift inherited cues. Negative event times are permitted for setup before the first note. Cue times after the offset range from -86,400 to 86,400 seconds; durations range from zero to 86,400 seconds. An event file has at most 100,000 cues. Events at the same time retain their order within the source.
 
@@ -192,10 +197,9 @@ Version 2 chooses each channel separately. The source order is:
 
 1. Cues in the song's version 2 file, or a matching `clearChannels` entry.
 2. Explicit direction cues in the chart or MIDI (GH tracks such as `CAMERAS` and `LIGHTSHOW`, and `stage ...` or `gh3 ...` text events).
-3. Original song cues matched by title and artist, when `originalSongLookup` is `auto`.
-4. The Rock Band `VENUE` track of the MIDI file ([section 10](#rock-band-venue-track)).
-5. Cues that the mod makes from the chart's sections ([section 10](#generated-direction)).
-6. Shared default behavior.
+3. The Rock Band `VENUE` track of the MIDI file ([section 10](#rock-band-venue-track)).
+4. Cues that the mod makes from the chart's sections ([section 10](#generated-direction)).
+5. Shared default behavior.
 
 Without a song file, the same order applies from step 2.
 
@@ -219,10 +223,10 @@ A source with events for a channel replaces that channel for the whole song. It 
 
 Two channels have source rules that preserve the playable chart:
 
-- **Strums:** explicit song-file cues, then explicit chart direction cues, then gestures derived from the chart's Expert guitar/bass notes, then the original-song library. A camera-only file therefore keeps note-driven playing gestures.
-- **Timing:** use the playable chart's tempo map when available. File timing is a fallback for charts without timing data, followed by original-song timing and the shared default tempo. `timing` cannot appear in `clearChannels`.
+- **Strums:** explicit song-file cues, then explicit chart direction cues, then gestures derived from the chart's Expert guitar/bass notes. A camera-only file therefore keeps note-driven playing gestures.
+- **Timing:** use the playable chart's tempo map when available. File timing is a fallback for charts without timing data, followed by the shared default tempo. `timing` cannot appear in `clearChannels`.
 
-Missing body cues use GH3 idle groups at the song tempo. Missing camera cues use automatic selection from the stage's camera bank. Missing lighting cues keep the initial lighting state (the venue's `intro` mood). Missing effects produce no bursts. Missing drum direction adds no drum-hit layers. Missing face direction adds no GH3 facial clips; the singer then gets lip sync from the chart's vocals, if the chart has them. Clearing a channel selects these same defaults, without the cues of steps 4 and 5; it does not hide the performer or disable the stage.
+Missing body cues use GH3 idle groups at the song tempo. Missing camera cues use automatic selection from the stage's camera bank. Missing lighting cues keep the initial lighting state (the venue's `intro` mood). Missing effects produce no bursts. Missing drum direction adds no drum-hit layers. Missing face direction adds no GH3 facial clips; the singer then gets lip sync from the chart's vocals, if the chart has them. Clearing a channel selects these same defaults, without the cues of steps 3 and 4; it does not hide the performer or disable the stage.
 
 Version 1 files keep their complete-timeline replacement behavior. Migrating a full original export to version 2 must check the new channel boundaries, especially the combined body and lighting channels. Raw legacy `vocal` and `crowd` note tracks remain import metadata until a playback rule is implemented; they are not advertised as version 2 authored features.
 
@@ -497,7 +501,7 @@ Results:
 
 ### Generated direction
 
-A chart with no camera or lighting source (no GH track, no VENUE track, no song file, and no original song) gets small cues from its sections (`[Events]` `section NAME`, or MIDI `EVENTS` `[section NAME]` and `[prc_NAME]`):
+A chart with no camera or lighting source (no GH track, no VENUE track, and no song file) gets small cues from its sections (`[Events]` `section NAME`, or MIDI `EVENTS` `[section NAME]` and `[prc_NAME]`):
 
 - At each section: a lighting mood from the name (`solo` if the name contains "solo", `chorus` if it contains "chorus" but not "pre-chorus", `intro` if it starts with "intro", else `verse`) and a camera cut (GH3 note 81, `cameras_solo`, for a solo; else note 79).
 - On each bar (four beats) from the first section to the last chart event: lightshow note 58 (next snapshot). GH3's random camera cuts then also end on bar lines, as in GH3 (`CameraCuts_CalcTime` extends a cut to the next note 58).
@@ -538,7 +542,7 @@ On the GH3 rigs, each viseme is a pose of the 18 jaw, lip, cheek, and tongue bon
 
 A character on its own skeleton uses its blend shapes (`face` in `character.json`, [PACKAGE-FORMAT.md section 9.6](PACKAGE-FORMAT.md#96-own-skeleton)): a viseme uses its own shape when the character has it (the VRChat and Oculus visemes `pp`, `ff`, `th`, `dd`, `kk`, `ch`, `ss`, `nn`, `rr`), else a mix of the vowel shapes `a`, `i`, `u`, `e`, `o`. `browUp`, `browDown`, and `squint` show the brows and the eyes. The head and the eyes of the character follow the GH3 rig.
 
-GH3 facial clips always have priority: an original song from the library or a `face` cue keeps the GH3 face exactly; the mod then does not decode the stem. The guitarist does not get lip sync. Set `GH3_SKIN_LIPSYNC=off` to keep the face still. The F6 picker has no lip-sync option. The game log tells the source: `lip sync from 253 sung notes (197 syllables, 552 viseme keys; 149 words from the pronouncing dictionary, 0 from spelling rules)` and `vocal stem loudness from vocals.opus (221.5 s) ready 665 ms after the chart was read`.
+GH3 facial clips always have priority: the GH3 direction file of a song or a `face` cue keeps the GH3 face exactly; the mod then does not decode the stem. The guitarist does not get lip sync. Set `GH3_SKIN_LIPSYNC=off` to keep the face still. The F6 picker has no lip-sync option. The game log tells the source: `lip sync from 253 sung notes (197 syllables, 552 viseme keys; 149 words from the pronouncing dictionary, 0 from spelling rules)` and `vocal stem loudness from vocals.opus (221.5 s) ready 665 ms after the chart was read`.
 
 ### GH3 script calls in charts
 
@@ -546,14 +550,25 @@ A text event can hold `gh3 ` followed by the JSON of `Gh3ScriptEvent.Encode`: a 
 
 ### Song event file
 
-`stage-events.json` beside the chart can replace channels (version 2) or the whole direction (version 1). See [section 6](#6-song-direction-version-2). To start from the original direction of one song:
+`stage-events.json` beside the chart can replace channels (version 2) or the whole direction (version 1). See [section 6](#6-song-direction-version-2). The mod does not read a GH3 song PAK (`<song>_song.pak.xen`) in a song folder, and it does not find GH3 direction by the title and artist of a chart.
+
+### GH3 direction for GH3 charts
+
+The GH3 direction of a GH3 song is a version 2 file in the song folder. The release has one direction zip for each chart pack of GH3 songs that the players use ([PLAYER-GUIDE.md](PLAYER-GUIDE.md#gh3-direction-for-gh3-songs)). The zip contains only these files, in the folder layout of the pack; it changes no chart, audio, or `song.ini` file. A file has:
+
+- All GH3 direction cues of the song: the cameras, the light show, the band performance (stances, actions, gestures), the singer's and the guitarist's facial clips, the drummer, the crowd, the script calls, and the GH3 strums (GH3 selects the strum clip by the GH3 note length). It does not have the GH3 fretbars: the chart's tempo map gives the timing. A co-op chart has other guitar notes, so its file has no strums.
+- `offsetSeconds`: the time from the GH3 notes to the notes of the pack's chart. `pipeline.song_direction measure` compares the Expert guitar notes of each chart with all GH3 songs; a chart is matched when 99 % of its notes and lanes are on the notes of one GH3 song (within 4 ms) at one offset. Other charts are flagged and get no file.
+- `countoff`, `stage` (the GH3 career venue of the song, from `GH3_Career_Songs`), and `characters.singer` (`gh3.singer-female` or `gh3.singer-bret` from the `singer` field of the GH3 song list; `create_band`). GH3 removes the singer of two instrumental songs (`singer` `none`: Cliffs of Dover, Impulse); the mod has no rule for that and keeps the singer.
+
+The clips stay in the band library; the file names them by their IDs. To make the file of one GH3 song for another chart folder (for example a chart that you converted yourself), give the offset in seconds from the GH3 notes to the chart notes:
 
 ```bash
-MISE_QUIET=1 python3 -m pipeline.events "$HOME/games/gh3-test-tools/game/DATA/SONGS/mycurse_song.pak.xen" \
-  --output "/path/to/song/stage-events.json"
+MISE_QUIET=1 python3 -m pipeline.events "$HOME/games/gh3-test-tools/game/DATA" --library --output assets/stages/events
+MISE_QUIET=1 uv run --with numpy --with pillow python -m pipeline.song_direction song --song mycurse --offset 0 \
+  --data "$HOME/games/gh3-test-tools/game/DATA" --output "/path/to/song/stage-events.json"
 ```
 
-The command does not replace an existing file. `offsetSeconds` shifts all cues of the file; a positive value runs them later. The mod does not read a GH3 song PAK (`<song>_song.pak.xen`) in a song folder; use this command to get its direction.
+The command does not replace an existing file. `offsetSeconds` shifts all cues of the file; a positive value runs them later.
 
 ## 11. Moonscraper
 

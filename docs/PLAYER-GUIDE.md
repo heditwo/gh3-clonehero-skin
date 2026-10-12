@@ -90,9 +90,11 @@ A song can select its stage in three ways. The mod looks for them in this order:
 
 1. A stage package with the name `venue.chstage` in the song folder (a zip file or a folder). The mod imports it when you start the song. The first start of the song can take some seconds longer.
 2. The key `gh3_stage` in the `[song]` section of `song.ini`, for example `gh3_stage = gh3.dive`. The value is the ID of an installed stage. Clone Hero does not use this key.
-3. The original GH3 venue of a GH3 career song: a chart with the title and artist of a GH3 career song. GH3 bonus songs have no venue.
+3. The key `stage` in the GH3 direction file `stage-events.json` of the song folder. The GH3 direction zip gives each GH3 career song its GH3 venue ([GH3 direction for GH3 songs](#gh3-direction-for-gh3-songs)). GH3 bonus songs have no venue.
 
-**Songs can select their stage** (on by default) controls items 1 to 3 when you select a stage name or **Random**:
+The mod does not find a stage by the title or the artist of a song.
+
+**Songs can select their stage and band** (on by default) controls items 1 to 3 when you select a stage name or **Random**:
 
 - On: the song's stage plays. If the song has no stage, your choice plays.
 - Off: your choice always plays.
@@ -107,7 +109,9 @@ The **Band** section has one line for each band member: guitarist, bassist, drum
 
 1. Click **<** or **>** to go through the characters for this member, one outfit at a time.
 2. Click **<<** or **>>** to go to the previous or next character (the first outfit of that character).
-3. **Default (venue)** is the band member of the GH3 venue.
+3. **Default (venue)** is the band member of the GH3 venue, or the band member that the song selects.
+
+A song can select a band member with the key `characters` in its `stage-events.json`. The GH3 direction zip selects the GH3 singer of each GH3 song: the female singer for Barracuda, Closer, Down 'N Dirty, Hit Me With Your Best Shot, In Love, Kool Thing, and Radio Song, and Bret Michaels for Go That Far and Talk Dirty to Me. The song's member plays only when you keep **Default (venue)** for that member and **Songs can select their stage and band** is on. If the character is not installed, the venue default plays.
 
 ### GH3 characters
 
@@ -133,7 +137,7 @@ Every character can play every member: the guitarist, the bassist, the singer, a
 Differences from GH3:
 
 - The hair moves with the GH3 joint limits, but it is not the GH3 physics engine. It collides only with the head.
-- GH3 selects the singer from the song (for example the female singer in "Hit Me With Your Best Shot"). In the mod, you select the singer.
+- GH3 selects the singer from the song (for example the female singer in "Hit Me With Your Best Shot"). In the mod, the song's direction file selects the singer if you keep **Default (venue)** for the singer. GH3 removes the singer in two instrumental songs (Cliffs of Dover, Impulse); the mod keeps the singer.
 - To play the GH3 guitarist characters and the two singers, the mod needs the character library `gh3-characters-v1.chlib` in `Mods/GH3Skin/Packages/` (the release installs it). A character that cannot load is not in the picker; the log tells you why.
 
 If a character cannot load, the venue default plays, and the log tells you why.
@@ -165,6 +169,21 @@ Three check boxes at the bottom of the picker control the camera and light direc
 | **Use Rock Band VENUE tracks** | A chart with a Rock Band `VENUE` track gets camera cuts, lights, and effects from that track | The mod ignores `VENUE` tracks |
 | **Generate direction for charts without it** | A chart without camera or light direction gets camera cuts and light changes from its sections | Such a chart keeps one light mood and the automatic cameras |
 | **Reduce flashing** | Rock Band light flashes are weak and come at most once each second; strobes change at most five times each second | Light flashes follow the chart, at most about three each second |
+
+### GH3 direction for GH3 songs
+
+GH3 songs have their GH3 camera cuts, light show, band performance, facial animations, venue, and singer only with their GH3 direction file. The release has a direction zip for the GH3 chart packs that most players use:
+
+| Zip | Chart pack | Songs |
+| --- | --- | --- |
+| `gh3-legends-of-rock-direction-<version>.zip` | "Guitar Hero III - Legends of Rock" (Chorus Encore, enchor.us; Google Drive folder "Guitar Hero III (Individual Songs)") | 75 of 75 |
+| `gh3-dlc-direction-<version>.zip` | "Guitar Hero III DLC" (Chorus Encore) | 76 of 77 |
+
+1. Find the folder of the chart pack in your songs folder. It contains one folder for each song, for example `Killswitch Engage - My Curse`.
+2. Extract the zip into that folder and accept to merge the folders. Each song folder gets one new file, `stage-events.json`.
+3. Scan the songs again in Clone Hero.
+
+The zip does not change your charts, your audio, or `song.ini`. To remove the direction, delete `stage-events.json` from the song folders. The README in the zip tells which version of the pack it fits. A song with another chart (another version, or a chart that you converted yourself) gets the generated direction; the mod does not find GH3 direction by the title of a song.
 
 ## 6. Add stages, characters, and instruments
 
