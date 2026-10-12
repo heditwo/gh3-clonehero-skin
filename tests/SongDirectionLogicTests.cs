@@ -119,7 +119,7 @@ internal static class SongDirectionLogicTests
         Check(Load().TempoAt(0) == 115 && Load().Track("strum", "guitarist").Single().Value == "1", "without file timing the default tempo applies");
 
         var member = new PerformanceMember { Groups = new() { ["stance_a/idle/normal/med"] = new[] { "00000001" },
-            ["stance_a/jump/normal/med"] = new[] { "00000001" }, ["walk/cycle_anim/med"] = new[] { "00000001" } }, Clips = new() { ["00000001"] = new() },
+            ["stance_a/jump/normal/med"] = new[] { "00000001" }, ["walk/forward/cycle_anim/med"] = new[] { "00000001" } }, Clips = new() { ["00000001"] = new() },
             Layers = new() { ["strum/normal/short"] = new[] { "00000001" } } };
         var performance = new StagePerformance { Members = new() { ["guitarist"] = member,
             ["drummer"] = new() { Groups = new() { ["stance_a/idle/normal/med"] = new[] { "00000001" } } } } };

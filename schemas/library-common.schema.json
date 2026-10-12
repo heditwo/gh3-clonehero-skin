@@ -151,6 +151,36 @@
           "items": {
             "$ref": "#/$defs/checksum"
           }
+        },
+        "walking": {
+          "$ref": "#/$defs/walking"
+        }
+      }
+    },
+    "walking": {
+      "description": "The scalars of the GH3 walking struct of the set (degrees and degrees per second; min_turn: the angle from the back within which the performer walks backward). Absent: the set has no own walk.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "min_turn": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 180
+        },
+        "max_turn": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 360
+        },
+        "turn_speed": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 3600
+        },
+        "face_audience_speed": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 3600
         }
       }
     },

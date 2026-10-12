@@ -3,9 +3,10 @@
 Run the game with GH3_SKIN_TRACE=1 and a GH3 character on a character library profile (docs/VERIFICATION.md, GH3
 characters), then:
     MISE_QUIET=1 uv run --with numpy --with pillow python tools/check-character-trace.py <game>/MelonLoader/Latest.log
-It prints the largest position and rotation difference over all logged bones of the body clips, and of the song facial
-clips of a singer (`face=`, the clip of the song PAK on the singer's skeleton). Lines of the band library members
-(`profile=library`) are skipped."""
+It prints the largest position and rotation difference over all logged bones of the body clips, of the song facial
+clips of a singer (`face=`, the clip of the song PAK on the singer's skeleton), and of the walk cycle clips (`walk=`).
+Lines of the band library members (`profile=library`) compare with the clips of the member's GH3 skeleton
+(pipeline.library.direction.MEMBERS)."""
 
 import json
 import re
@@ -20,12 +21,17 @@ from pipeline.characters import qb_items  # noqa: E402
 from pipeline.gh3.band_formats import animation, sample_animation, skeleton  # noqa: E402
 from pipeline.gh3.data import Source, script  # noqa: E402
 from pipeline.gh3.formats import key  # noqa: E402
+from pipeline.library.direction import MEMBERS  # noqa: E402
 from pipeline.paths import CHARACTER_LIBRARY, GH3_DATA  # noqa: E402
 
 LINE = re.compile(
     r"\[trace\] band t=(\S+) role=(\S+) profile=(\S+) set=(\S+) stance=(\S+) clip=(\S+) clipTime=(\S+) scale=(\S+) bones=(\S+)"
     r"(?:.*? face=(\S+) faceTime=(\S+) faceBones=(\S+))?"
+    r"(?:.*? walk=(\S+) walkTime=(\S+) walkBones=(\S+))?"
 )
+# The clips that every member can play: the hand clips, and the clips of normal_walk_data (Judy's PAK), the walk of a
+# member without its own walk (the bassist).
+SHARED_PAKS = ("perm_anims.pak", "Judy_1_anims.pak")
 
 
 class Clips:
@@ -53,13 +59,23 @@ class Clips:
             anim_set = self.library["animations"][set_name]["animSet"]
             name, profile = next((n, p) for n, p in self.profiles.items() if f"{p[key('anim_set')]:08x}" == anim_set)
             body = self.body(name, profile)
-            clips = {}
-            for path in (body[key("anims_pak")], body[key("pak")], "perm_anims.pak", "Judy_1_anims.pak"):
-                for kind, clip, data in self.source.load(f"PAK/{pak_name(self.source.directory, path)}"):
-                    if kind == key(".ska"):
-                        clips.setdefault(clip, data)
-            self.banks[set_name] = clips
+            self.banks[set_name] = self.load(body[key("anims_pak")], body[key("pak")])
         return self.banks[set_name]
+
+    def member_bank(self, role):
+        """The clips of a band library member: its anim PAK and extra PAKs (MEMBERS)."""
+        if role not in self.banks:
+            _, _, pak, _, _, extra = next(m for m in MEMBERS if m[0] == role)
+            self.banks[role] = self.load(pak, *extra)
+        return self.banks[role]
+
+    def load(self, *paths):
+        clips = {}
+        for path in (*paths, *SHARED_PAKS):
+            for kind, clip, data in self.source.load(f"PAK/{pak_name(self.source.directory, path)}"):
+                if kind == key(".ska"):
+                    clips.setdefault(clip, data)
+        return clips
 
     def face(self, clip):
         if self.songs is None:
@@ -92,16 +108,23 @@ def main():
     source = Source(GH3_DATA)
     rigs = {n: b for k, n, b in source.load("ZONES/global.pak.xen") if k == key(".ske")}
     clips = Clips(source, library)
-    body, face = [0.0, 0.0], [0.0, 0.0]
-    samples = face_samples = lines = 0
+    member_rigs = {role: key(rig_name) for role, rig_name, *_ in MEMBERS}
+    body, face, walk = [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]
+    samples = face_samples = walk_samples = lines = 0
     for match in LINE.finditer(log):
-        _, _, profile, set_name, _, clip, clip_time, _, bones, face_clip, face_time, face_bones = match.groups()
+        _, role, profile, set_name, _, clip, clip_time, _, bones, face_clip, face_time, face_bones, *walking = (
+            match.groups()
+        )
         if profile == "library":
-            continue
-        rig = skeleton(rigs[int(library["profiles"][profile]["skeleton"], 16)])
-        samples += compare(clips.bank(set_name)[int(clip, 16)], float(clip_time), rig, bones, body)
+            rig, bank = skeleton(rigs[member_rigs[role]]), clips.member_bank(role)
+        else:
+            rig, bank = skeleton(rigs[int(library["profiles"][profile]["skeleton"], 16)]), clips.bank(set_name)
+        samples += compare(bank[int(clip, 16)], float(clip_time), rig, bones, body)
         if face_clip:
             face_samples += compare(clips.face(int(face_clip, 16)), float(face_time), rig, face_bones, face)
+        walk_clip, walk_time, walk_bones = walking
+        if walk_clip:
+            walk_samples += compare(bank[int(walk_clip, 16)], float(walk_time), rig, walk_bones, walk)
         lines += 1
     print(
         f"{lines} trace lines, {samples} bone samples: largest difference {body[0] * 1000:.3f} mm, {body[1]:.4f} degrees"
@@ -109,6 +132,10 @@ def main():
     if face_samples:
         print(
             f"song facial clips: {face_samples} bone samples: largest difference {face[0] * 1000:.3f} mm, {face[1]:.4f} degrees"
+        )
+    if walk_samples:
+        print(
+            f"walk clips: {walk_samples} bone samples: largest difference {walk[0] * 1000:.3f} mm, {walk[1]:.4f} degrees"
         )
     return 0 if lines else 1
 

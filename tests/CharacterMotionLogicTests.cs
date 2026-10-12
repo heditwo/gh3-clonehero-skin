@@ -15,7 +15,19 @@ internal static class CharacterMotionLogicTests
         CheckClipOffsets();
         CheckHingeAndPrismatic();
         CheckIkFromData();
-        Console.WriteLine("Character library profiles, singer profiles on their own clip rig, set clip offsets, hinge and prismatic hair joints, and IK data checks passed.");
+        CheckWalkDirection();
+        Console.WriteLine("Character library profiles, singer profiles on their own clip rig, set clip offsets, hinge and prismatic hair joints, IK data, and walk direction checks passed.");
+    }
+
+    // GH3 walk_to_pos: backward to a target within min_turn of the back, else forward (after a turn when it is sideways).
+    private static void CheckWalkDirection()
+    {
+        var member = new PerformanceMember { Groups = new() { [PerformanceMember.WalkCycle(true)] = new[] { "00000001" } }, Walking = new() { ["min_turn"] = 45 } };
+        Check(member.WalksBackward(0, -1, 0, 1) && member.WalksBackward(0, -1, 0.9f, 1), "a target behind or within min_turn of the back is walked to backward");
+        Check(!member.WalksBackward(0, -1, 0, -1) && !member.WalksBackward(0, -1, 1, 0) && !member.WalksBackward(0, -1, 1.1f, 1), "a target in front or to the side is walked to forward");
+        Check(!member.WalksBackward(0, -1, 0, 0), "no move walks forward");
+        Check(!new PerformanceMember { Groups = member.Groups }.WalksBackward(0, -1, 0, 1), "a set without min_turn walks forward");
+        Check(!new PerformanceMember { Walking = member.Walking }.WalksBackward(0, -1, 0, 1), "a set without a backward walk walks forward");
     }
 
     private static void CheckLibrary()
@@ -29,8 +41,8 @@ internal static class CharacterMotionLogicTests
              "clipRig": {"profile": "gh3-guitarist-axel-v1", "bones": ["0000000a", "0000000b"], "parents": [-1, 0], "bind": [[0, 1, 0, 0, 0, 0, 1], [0, 0.5, 0.25, 0, 0, 0, 1]]},
              "profiles": {"gh3-guitarist-test-v1": {"role": "guitarist", "name": "Test", "outfit": 1, "skeleton": "12345678", "scale": 0.9, "animations": "test",
                "hair": null, "ik": "hero", "bones": ["0000000a", "0000000b"], "parents": [-1, 0], "bind": [[0, 0.9, 0, 0, 0, 0, 1], [0.1, 0.5, 0.25, 0, 0, 0, 1]]}},
-             "animations": {"test": {"animSet": "11111111", "groups": {"stance_a/idle/normal/med": ["c1c1c1c1"]}, "layers": {},
-               "clips": {"c1c1c1c1": {"duration": 1.0, "frames": 31, "rootDistance": 0.0}}}},
+             "animations": {"test": {"animSet": "11111111", "groups": {"stance_a/idle/normal/med": ["c1c1c1c1"], "walk/backward/cycle_anim/med": ["c1c1c1c1"]}, "layers": {},
+               "clips": {"c1c1c1c1": {"duration": 1.0, "frames": 31, "rootDistance": 0.0}}, "walking": {"min_turn": 45}}},
              "hair": {}, "ik": {"hero": [{"bones": ["0000000a", "0000000b", "0000000b"], "target": "0000000a", "hinge": [0, 0, -1], "cosMax": -0.97, "cosMin": 0.97}]}}
             """);
             var library = CharacterLibrary.Load(folder);
@@ -39,6 +51,7 @@ internal static class CharacterMotionLogicTests
             var model = CharacterModelFor(folder, "gh3-guitarist-test-v1");
             var motion = CharacterMotion.Create(model);
             Check(motion.Member.Bones.SequenceEqual(profile.Bones) && motion.Member.Groups.ContainsKey("stance_a/idle/normal/med"), "the set gets the bones of the profile");
+            Check(motion.Member.Walking.TryGetValue("min_turn", out var minTurn) && minTurn == 45, "the set gets its walking scalars");
             Check(motion.Offsets != null && Vector3.Distance(motion.Offsets[0], new Vector3(0, -0.1f, 0)) < 1e-6 && Vector3.Distance(motion.Offsets[1], new Vector3(0.1f, 0, 0)) < 1e-6,
                 "clip offsets are the profile rest positions minus the clip rig rest positions");
             Check(motion.Hair == null && motion.Ik?.Length == 1, "a profile without hair has no hair physics; the IK chains come from the library");

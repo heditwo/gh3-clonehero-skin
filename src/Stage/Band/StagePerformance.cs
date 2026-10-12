@@ -16,6 +16,27 @@ internal sealed class PerformanceMember
     public Dictionary<string, string[]> Groups { get; set; } = new();
     public Dictionary<string, string[]> Layers { get; set; } = new();
     public Dictionary<string, PerformanceClipInfo> Clips { get; set; } = new();
+    // The scalars of the GH3 `walking` struct of the set (min_turn); empty for a set without its own walk.
+    public Dictionary<string, float> Walking { get; set; } = new();
+
+    public bool HasValidWalking => Walking.Values.All(float.IsFinite);
+
+    private const string WalkMinTurn = "min_turn";
+    private const float HalfTurn = 180;
+
+    // The cycle clip group of the walk (`walking.forward` or `walking.backward`; pipeline.library.direction.walk_groups).
+    public static string WalkCycle(bool backward) => backward ? "walk/backward/cycle_anim/med" : "walk/forward/cycle_anim/med";
+
+    // GH3 walk_to_pos (guitar_walking.qb): the performer keeps its facing and walks backward to a target within min_turn
+    // degrees of its back (IsFacing is then false); it turns to any other target and walks forward. `front` and `toward`
+    // are horizontal directions (x, z). A set without min_turn or a backward walk walks forward.
+    public bool WalksBackward(float frontX, float frontZ, float towardX, float towardZ)
+    {
+        var lengths = MathF.Sqrt((frontX * frontX + frontZ * frontZ) * (towardX * towardX + towardZ * towardZ));
+        if (!Walking.TryGetValue(WalkMinTurn, out var minTurn) || !Groups.ContainsKey(WalkCycle(true)) || lengths <= 0) return false;
+        var angle = MathF.Acos(Math.Clamp((frontX * towardX + frontZ * towardZ) / lengths, -1, 1)) * HalfTurn / MathF.PI;
+        return angle >= HalfTurn - minTurn;
+    }
 }
 
 // The band library's performance bank (band/performance.json): members, clip groups and layers, and GH3's constants.
@@ -40,7 +61,7 @@ internal sealed class StagePerformance
             if (member.Bones.Length is < 1 or > MaximumBones || member.Clips.Count > MaximumClips ||
                 member.Clips.Any(c => c.Key.Length != 8 || c.Key.Any(x => !Uri.IsHexDigit(x)) ||
                     !float.IsFinite(c.Value.Duration) || c.Value.Duration is <= 0 or > PerformanceClip.MaximumSeconds || c.Value.Frames is < 2 or > PerformanceClip.MaximumFrames) ||
-                member.Groups.Values.Concat(member.Layers.Values).SelectMany(c => c).Any(c => !member.Clips.ContainsKey(c)))
+                member.Groups.Values.Concat(member.Layers.Values).SelectMany(c => c).Any(c => !member.Clips.ContainsKey(c)) || !member.HasValidWalking)
                 throw new InvalidDataException("Invalid original performance clips");
         }
         return bank;
@@ -156,7 +177,7 @@ internal sealed class PerformancePlayer
     public PerformanceClipCache? FaceClips => _faceClips == _clips ? null : _faceClips;
     public StageLipSync? LipSync => _lipSync;
 
-    public void Sample(double time, double walkAge = -1, float walkWeight = 1)
+    public void Sample(double time, double walkAge = -1, float walkWeight = 1, bool walkBackward = false)
     {
         time = Math.Max(_timeline.Start, time);
         var segment = At(time);
@@ -175,7 +196,7 @@ internal sealed class PerformancePlayer
         }
         if (walkAge >= 0)
         {
-            var walk = Group("walk/cycle_anim/med");
+            var walk = Group(PerformanceMember.WalkCycle(walkBackward));
             if (walk.Length > 0)
             {
                 Array.Copy(_bind, _previous, Pose.Length);
@@ -220,6 +241,19 @@ internal sealed class PerformancePlayer
         Array.Copy(_bind, output, output.Length);
         _faceClips.Get(face.Value).Apply(output, _bind, time - face.Time);
         return (face.Value, time - face.Time);
+    }
+
+    // Verification (GH3_SKIN_TRACE): the walk cycle clip `walkAge` seconds into a walk, without the blend and the root
+    // lock, or null when the member has no walk cycle.
+    public (string Clip, double ClipTime)? SampleWalk(double walkAge, bool backward, BandPose[] output)
+    {
+        var walk = Group(PerformanceMember.WalkCycle(backward));
+        if (walk.Length == 0) return null;
+        var clip = Clip(walk[0]);
+        var clipTime = walkAge % clip.Duration;
+        Array.Copy(_bind, output, output.Length);
+        clip.Apply(output, _bind, clipTime);
+        return (walk[0], clipTime);
     }
 
     private void AddSegment()

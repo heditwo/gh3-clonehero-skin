@@ -24,7 +24,7 @@ internal sealed class CharacterMotionBank
             if (member.Clips.Count is < 1 or > StagePerformance.MaximumClips ||
                 member.Clips.Any(c => c.Key.Length != 8 || c.Key.Any(x => !Uri.IsHexDigit(x)) ||
                     !float.IsFinite(c.Value.Duration) || c.Value.Duration is <= 0 or > PerformanceClip.MaximumSeconds || c.Value.Frames is < 2 or > PerformanceClip.MaximumFrames) ||
-                member.Groups.Values.Concat(member.Layers.Values).SelectMany(c => c).Any(c => !member.Clips.ContainsKey(c)))
+                member.Groups.Values.Concat(member.Layers.Values).SelectMany(c => c).Any(c => !member.Clips.ContainsKey(c)) || !member.HasValidWalking)
                 throw new InvalidDataException($"Invalid animation set {name}");
         foreach (var (name, chains) in bank.Ik)
             if (chains.Length < 1 || !IkChainDefinition.ValidChains(chains)) throw new InvalidDataException($"Invalid IK chains {name}");
@@ -93,7 +93,7 @@ internal sealed class CharacterMotion
         {
             Profile = profile, SetName = setName, Rig = BandAnimation.FromRig(profile.Parents, profile.Bind),
             // The sets are shared by the profiles; each performer gets its own member with the bone names of its rig.
-            Member = new PerformanceMember { Bones = profile.Bones, Groups = set.Groups, Layers = set.Layers, Clips = set.Clips },
+            Member = new PerformanceMember { Bones = profile.Bones, Groups = set.Groups, Layers = set.Layers, Clips = set.Clips, Walking = set.Walking },
             ClipDirectory = Path.Combine(character.LibraryFolder, "clips"),
             Offsets = RestOffsets(profile.Bones, profile.Bind, library.SetClipRigs[setName].Bones, library.SetClipRigs[setName].Bind),
             Hair = hair, Ik = bank.Ik.TryGetValue(profile.Ik, out var ik) ? ik : Array.Empty<IkChainDefinition>(), Constraints = bank.Constraints,

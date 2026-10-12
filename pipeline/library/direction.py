@@ -44,6 +44,13 @@ FRET_PITCHES = range(101, 128)
 FRET_COLORS = ["green", "red", "yellow", "blue", "orange"]
 CHORD_MASKS = 1 << len(FRET_COLORS)
 MAX_CHORD_COLORS = 4
+# The walk struct of a guitarist animation set (`<name>_animations.walking`, guitar_animation_data_<name>.qb): the clips
+# of the forward and backward walks, the turn clips (play_turn_anim), and the turn scalars of walk_to_pos and
+# turn_to_face (guitar_walking.qb; min_turn selects the backward walk).
+WALKING = "walking"
+WALK_DIRECTIONS = ("forward", "backward")
+WALK_TURN_CLIPS = ("turn_left", "turn_idle", "turn_right")
+WALK_SCALARS = ("min_turn", "max_turn", "turn_speed", "face_audience_speed")
 
 # The last column lists extra paks with clips: Axel's model pak holds his intro and win animations.
 MEMBERS = [
@@ -74,6 +81,33 @@ def flatten(data, prefix=""):
         elif isinstance(value, int):
             result[path] = [f"{value:08x}"]
     return result
+
+
+def without_walking(anim_set):
+    """An animation set struct without its `walking` struct (walk_groups gives the walk groups)."""
+    return {field: value for field, value in anim_set.items() if field != key(WALKING)}
+
+
+def walk_groups(anim_set, common):
+    """({`walk/<direction>/<clip>/<speed>`: refs}, {walking scalar: value}) of an animation set.
+
+    GH3 walk_to_pos plays `walking.forward` or `walking.backward` of the performer's own set: it reads `anim_set` from the
+    performer's info struct, not the `normal_walk_data` of the Band_WalkToNode event (PARITY-NOTES.md, Walk clips). A set
+    without `walking` (the bassist) gets normal_walk_data as its forward walk.
+    """
+    walking = anim_set.get(key(WALKING))
+    if walking is None:
+        return flatten(find_struct(common, "normal_walk_data"), "walk/forward/"), {}
+    known = {key(field) for field in (*WALK_DIRECTIONS, *WALK_TURN_CLIPS, *WALK_SCALARS)}
+    if not set(walking) - {0} <= known:
+        raise ValueError("unknown field in an animation set walking struct")
+    groups = {}
+    for direction in WALK_DIRECTIONS:
+        groups.update(flatten(walking[key(direction)], f"walk/{direction}/"))
+    for field in WALK_TURN_CLIPS:
+        if key(field) in walking:
+            groups[f"walk/{field}"] = [f"{walking[key(field)]:08x}"]
+    return groups, {field: walking[key(field)] for field in WALK_SCALARS if key(field) in walking}
 
 
 def hand_layers(data, common, profile, profiles):
@@ -187,15 +221,20 @@ def _drummer_layers(common):
     return layers
 
 
-def _member_clips(output, role, rig, groups, layers, bank, walking, walking_rig):
-    """Write the clips of a member's groups and layers; returns (clips, missing references)."""
+def _member_clips(output, role, rig, groups, layers, bank, walking):
+    """Write the clips of a member's groups and layers; returns (clips, missing references).
+
+    `walking`: the clips of normal_walk_data (made on Judy's skeleton) for a member without its own walk. GH3 plays a clip
+    on another skeleton with the rotations as keyed and the translations relative to that skeleton's rest pose
+    (PARITY-NOTES.md, Walk clips), as write_clip samples it on `rig`.
+    """
     missing = []
     needed = {ref for refs in [*groups.values(), *layers.values()] for ref in refs}
     walk_refs = {r for k, refs in groups.items() if k.startswith("walk/") for r in refs}
     clips = {}
     for ref in sorted(needed):
         if int(ref, 16) not in bank and ref in walk_refs and int(ref, 16) in walking:
-            clips[ref] = write_clip(output / role / f"{ref}.bin.gz", walking[int(ref, 16)], rig, walking_rig)
+            clips[ref] = write_clip(output / role / f"{ref}.bin.gz", walking[int(ref, 16)], rig)
         elif int(ref, 16) not in bank:
             missing.append(ref)
         else:
@@ -250,7 +289,6 @@ def convert(data_directory, output, shared=False):
     del global_entries
     hands = {n: b for k, n, b in source.load("PAK/perm_anims.pak.xen") if k == key(".ska")}
     walking = {n: b for k, n, b in source.load("PAK/Judy_1_anims.pak.xen") if k == key(".ska")}
-    walking_rig = skeleton(rigs[key("GH3_guitarist_judy")])
     common = script(scripts, "guitar_animation_data")
     definition = {"version": 1, "members": {}, "constants": _animation_constants(common)}
     for _kind, _, data in [] if shared else source.load("ZONES/z_budokan.pak.xen"):
@@ -262,12 +300,17 @@ def convert(data_directory, output, shared=False):
     member_rigs = {}
     profiles = find_array(script(scripts, "guitar_band_profile"), "Musician_Profiles")
     for role, rig_name, pak, qb, group, extra in MEMBERS:
+        # Clips of an earlier build that the tables no longer name must not stay in the library file list.
+        for old_clip in (output / role).glob("*.bin.gz"):
+            old_clip.unlink()
         rig = skeleton(rigs[key(rig_name)])
         member_rigs[role] = rig
-        groups = flatten(find_struct(script(scripts, qb), group))
-        layers = {}
+        anim_set = find_struct(script(scripts, qb), group)
+        groups = flatten(without_walking(anim_set))
+        layers, walking_scalars = {}, {}
         if role in ("guitarist", "bassist"):
-            groups.update(flatten(find_struct(common, "normal_walk_data"), "walk/"))
+            walk, walking_scalars = walk_groups(anim_set, common)
+            groups.update(walk)
             profile = next(
                 p for p in profiles if p.get(key("Skeleton")) == key(rig_name) and p.get(key("Type")) == key(role)
             )
@@ -278,7 +321,7 @@ def convert(data_directory, output, shared=False):
         for extra_pak in extra:
             bank.update({n: b for k, n, b in source.load(f"PAK/{extra_pak}.pak.xen") if k == key(".ska")})
         bank.update({n: b for n, b in hands.items() if clip_bone_count(b) == len(rig[0])})
-        clips, missing = _member_clips(output, role, rig, groups, layers, bank, walking, walking_rig)
+        clips, missing = _member_clips(output, role, rig, groups, layers, bank, walking)
         for table in [groups, layers]:
             for field in list(table):
                 table[field] = [ref for ref in table[field] if ref in clips]
@@ -290,6 +333,7 @@ def convert(data_directory, output, shared=False):
             "layers": layers,
             "clips": clips,
             "missingClips": missing,
+            **({"walking": walking_scalars} if walking_scalars else {}),
         }
         print(
             f"{role}: {len(clips)} original clips, {len(groups)} state groups, {len(layers)} layers; {len(missing)} unavailable references"

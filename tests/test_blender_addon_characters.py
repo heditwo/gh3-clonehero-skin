@@ -203,7 +203,7 @@ class LibraryCharacterTests(unittest.TestCase):
         items = character.clip_items(
             self.library.json("catalog.json"), self.library.json("band/band.json"), "guitarist"
         )
-        self.assertEqual(len(items), 356)
+        self.assertEqual(len(items), 352)
         self.assertEqual([i[1] for i in items[:2]], ["gh3_guit_axel_a_fst_idle1", "gh3_guit_axel_a_med_idle2"])
         self.assertTrue(all(self.library.has_clip("guitarist", clip) for clip, *_ in items))
 

@@ -117,7 +117,8 @@
           "type": "array",
           "maxItems": 4096,
           "items": { "$ref": "library-common.schema.json#/$defs/checksum" }
-        }
+        },
+        "walking": { "$ref": "library-common.schema.json#/$defs/walking" }
       }
     },
     "hair": {
