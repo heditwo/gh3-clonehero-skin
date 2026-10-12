@@ -43,8 +43,10 @@ internal sealed partial class Gh3ScriptRuntime : IDisposable
     private const int RandomValueResolution = 1000;
     // Tolerance of a component task's resume time against the clock, for rounding of the frame times.
     private const double ResumeTolerance = .000000001;
-    // Seed of the script random generators. Source not documented (commit 44b355a); GH3's boot seed is Gh3Random.BootSeed.
-    internal const int ScriptRandomSeed = 0x6e624eb7;
+    // Tuned: the mod's own seed for the script random generators. GH3 seeds one shared generator at boot and every script
+    // draws from it, so GH3's script choices depend on everything that ran before and cannot be reproduced. A fixed seed
+    // gives the same show each time a song plays.
+    internal const int ScriptRandomSeed = 1;
     // Expression binding strength. Member and Unary bind the operand of '.', '[', ':', '$', '-' and 'not'.
     private const int OrPrecedence = 10;
     private const int AndPrecedence = 20;
