@@ -222,6 +222,17 @@ internal sealed class PerformanceClip
         }
     }
 
+    // The position of the root bone (bone 0) at a clip time, or zero when the clip has no position track for it.
+    public Vector3 RootPosition(double time)
+    {
+        var track = Array.IndexOf(_bones, 0);
+        if (track < 0 || (_masks[track] & PositionBit) == 0) return Vector3.Zero;
+        var frame = Math.Clamp(time / Duration * (_frames - 1), 0, _frames - 1);
+        var a = (int)frame;
+        var b = Math.Min(a + 1, _frames - 1);
+        return Vector3.Lerp(_poses[a * _bones.Length + track].Position, _poses[b * _bones.Length + track].Position, (float)(frame - a));
+    }
+
     // additive is GH3's applydifference (GH3.exe 0x4a3550): current * difference, so the difference turns about the bone's own axes.
     public void Apply(BandPose[] output, BandPose[] bind, double time, bool additive = false, float weight = 1)
     {

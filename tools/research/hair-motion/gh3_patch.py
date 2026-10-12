@@ -334,5 +334,13 @@ if SONGNAME:
                     o2 = nx2
             o = nxt
         p[s0 : s0 + size] = qq
+if os.environ.get("PERFORMANCE") == "1":
+    # Cheat_PerformanceMode (guitar.qb global, -1): 1 hides the highway and the HUD.
+    at = 333588
+    assert (
+        word(p, at) == 0x00200100 and word(p, at + 4) == key("Cheat_PerformanceMode") and word(p, at + 12) == 0xFFFFFFFF
+    )
+    struct.pack_into(">I", p, at + 12, 1)
+    stats["performance"] = 1
 open(os.environ.get("OUT", G + "PAK/qb.pab.xen"), "wb").write(p)
 print(stats)

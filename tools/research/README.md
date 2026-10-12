@@ -8,6 +8,7 @@ step 6. `tests/test_pipeline_imports.py` checks that their `pipeline` imports st
 | Tool | Purpose |
 | --- | --- |
 | [`hair-motion/`](hair-motion/README.md) | Hair motion against the original GH3: GH3 sessions with Havok sampling, the hair bench comparisons, and the custom chain naturalness measures |
+| [`walk-sequence/`](walk-sequence/README.md) | The GH3 walk sequence against the mod: the GH3 object root and the walk clips from the Havok bodies, and the path, timing, and joints of each walk phase |
 | `neutral-face/sekai_face_rest.py` | The resting face of the Project SEKAI 3D MV face clips (blend shape weights with the mouth closed and the eyes open) |
 | `neutral-face/gh3_eyelid_turns.py` | The upper eyelid turns of the GH3 singer facial clips (the blink constants of `CharacterFace`) |
 | `spike-blender/run.sh`, `roundtrip.py` | Round trip of GH3 rig GLBs through Blender with each import and export variant ([docs/spike/blender.md](../../docs/spike/blender.md)) |

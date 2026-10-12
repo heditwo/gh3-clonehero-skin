@@ -22,10 +22,6 @@ internal sealed class BandMember
 
 internal sealed partial class StageBand : IDisposable
 {
-    // Walk speed (m/s) and duration (s) floors, and the blend into and out of a walk (Tuned).
-    private const double MinimumWalkSpeed = 0.1;
-    private const double MinimumWalk = 0.01;
-    private const double WalkBlend = 0.2;
     private sealed class Performer
     {
         public string Role = "";
@@ -48,10 +44,9 @@ internal sealed partial class StageBand : IDisposable
         public StageRetarget? Retarget;
         public Vector3 Start;
         public Quaternion Rotation;
-        public List<Walk> Walks = new();
+        // GH3 walk_to_waypoint of each walk cue (StageWalk), in time order.
+        public List<StageWalk> Walks = new();
     }
-    // Backward: GH3 walks backward to the target, facing away from it (PerformanceMember.WalksBackward).
-    private sealed record Walk(double Time, double Duration, Vector3 From, Vector3 To, Quaternion Rotation, bool Backward);
     private readonly List<StageAssets> _assets = new();
     private readonly List<Performer> _players = new();
     private StagePerformance? _performance;
@@ -206,32 +201,13 @@ internal sealed partial class StageBand : IDisposable
             var driver = player.Retarget?.Source ?? player.Animation;
             player.Performance = new PerformancePlayer(player.Role, directory, definition, driver.BindPose, timeline,
                 driver.Parents, _performance.Constants, motion);
+            PlanWalks(player, definition, timeline, waypoints);
             player.Performance.Prepare();
+            LogWalks(player);
             if (player.Retarget?.Face is { } face)
             {
                 face.Prepare(timeline, player.Role);
                 MelonLogger.Msg($"GH3 band {player.Role}: face blend shapes with {(face.LipSync ? "lip sync from the sung notes" : "blinks")}");
-            }
-            var position = player.Start;
-            var facing = player.Rotation;
-            foreach (var cue in timeline.Track("walk", player.Role))
-            {
-                if (waypoints == null || !waypoints.TryGetValue(cue.Value, out var waypoint)) continue;
-                var target = StageAssets.Vector(waypoint.Position);
-                var q = waypoint.Rotation;
-                // The performer looks along -Z of its root (the GH3 `at` axis).
-                var front = facing * Vector3.back;
-                var backward = definition.WalksBackward(front.x, front.z, target.x - position.x, target.z - position.z);
-                var speed = 1.0;
-                if (definition.Groups.TryGetValue(PerformanceMember.WalkCycle(backward), out var cycle))
-                {
-                    var clip = definition.Clips[cycle[0]];
-                    speed = Math.Max(MinimumWalkSpeed, clip.RootDistance / clip.Duration);
-                }
-                var rotation = new Quaternion(q[0], q[1], q[2], q[3]);
-                player.Walks.Add(new Walk(cue.Time, Math.Max(MinimumWalk, Vector3.Distance(position, target) / speed), position, target, rotation, backward));
-                position = target;
-                facing = rotation;
             }
         }
         MelonLogger.Msg($"GH3 original performance: {timeline.Track("stance", "guitarist").Length} guitar stance cues; " +
@@ -239,6 +215,51 @@ internal sealed partial class StageBand : IDisposable
             LipSyncSummary(timeline));
         if (BindingTrace.Enabled) TracePoses();
         _drumHits = timeline.Track("drum").Where(c => c.Value != "0").Select(c => c.Time).ToArray();
+    }
+
+    // Band_WalkToNode: each walk cue to a waypoint of the stage starts GH3's walk_to_waypoint (StageWalk) from the root
+    // state at its start; a cue to a waypoint that the stage does not have does nothing (DoesWayPointExist). The
+    // performance player plans the walks in time order when it makes its segments (stance transition, cues during a walk).
+    private void PlanWalks(Performer player, PerformanceMember definition, StageTimeline timeline, IReadOnlyDictionary<string, StagePlacement>? waypoints)
+    {
+        if (waypoints == null) return;
+        System.Numerics.Vector2 Floor(Vector3 point) => new(point.x, point.z);
+        var cues = timeline.Track("walk", player.Role).Where(cue => waypoints.ContainsKey(cue.Value))
+            .Select(cue => (cue.Time, Floor(StageAssets.Vector(waypoints[cue.Value].Position)))).ToArray();
+        if (cues.Length == 0) return;
+        var performance = player.Performance!;
+        performance.Clips.Prefetch(definition.WalkClips());
+        var data = new StageWalk.Data(definition, _performance!.Constants, performance.RootAt, player.Root.localScale.x);
+        performance.SetWalkCues(cues, (time, target) =>
+        {
+            var (position, yaw) = RootState(player, time);
+            var walk = StageWalk.Plan(data, time, position, yaw, target);
+            player.Walks.Add(walk);
+            return walk;
+        });
+    }
+
+    private static void LogWalks(Performer player)
+    {
+        foreach (var walk in player.Walks)
+        {
+            var (end, endYaw) = walk.Root(walk.TurnEnd);
+            MelonLogger.Msg(FormattableString.Invariant($"GH3 band {player.Role}: walk at {walk.Start:F3} s, ") + (walk.Walks
+                ? FormattableString.Invariant($"{(walk.Backward ? "backward" : "forward")}, {walk.Cycles:0.#} cycles, {(walk.RightFoot ? "right" : "left")} foot, clips ") +
+                    string.Join(" ", walk.Branches.Select(b => FormattableString.Invariant($"{b.Clip}@{b.Time:F3}"))) + FormattableString.Invariant($", stop at {walk.End:F3} s")
+                : "no walk (nearer than min_walk_dist)") +
+                FormattableString.Invariant($", turn end {walk.TurnEnd:F3} s at ({end.X:F3}, {end.Y:F3}) yaw {endYaw:F1}"));
+        }
+    }
+
+    // The root position (x, z) and yaw (degrees) of a performer at a song time: the start placement, or the state of the
+    // last walk that started before.
+    private static (System.Numerics.Vector2 Position, float Yaw) RootState(Performer player, double time)
+    {
+        var index = StageTimeline.UpperBound(player.Walks, time, w => w.Start) - 1;
+        if (index >= 0) return player.Walks[index].Root(time);
+        var front = player.Rotation * Vector3.back;
+        return (new(player.Start.x, player.Start.z), StageWalk.Yaw(new(front.x, front.z)));
     }
 
     // GH3_SKIN_TRACE: a hash of the local poses (bits of each float) of each performer at fixed times, before the hair
@@ -322,6 +343,7 @@ internal sealed partial class StageBand : IDisposable
             }
             var sampled = FrameProfile.Enabled && player.Retarget != null ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
             var root = SamplePose(player, time, player.Pose);
+            if (BindingTrace.Enabled) TraceWalk(player, time, root);
             Apply(player.Root, root);
             player.Hair?.Apply(player.Pose);
             for (var i = 0; i < player.Bones.Length; i++) Apply(player.Bones[i], player.Pose[i]);
@@ -352,11 +374,11 @@ internal sealed partial class StageBand : IDisposable
     private static readonly string[] TraceFaceBones = Packages.HumanoidRoles.Gh3TraceFace.Select(Gh3Checksum.Of).ToArray();
 
     // GH3_SKIN_TRACE: the body clip and its local pose of a few bones, to compare with the GH3 clip on the GH3 skeleton; for
-    // the singer also the song facial clip and the local pose of a few face bones; during a walk also the walk cycle clip.
+    // the singer also the song facial clip and the local pose of a few face bones; during a walk also the walk clip.
     private static void Trace(Performer player, double time)
     {
         var raw = new BandPose[(player.Retarget?.Source ?? player.Animation).Parents.Length];
-        var (segment, clipTime) = player.Performance!.SampleClip(time, raw);
+        var (segment, clip, clipTime) = player.Performance!.SampleClip(time, raw);
         var bones = player.Definition!.Bones;
         string Values(IEnumerable<string> checksums, BandPose[] pose) => string.Join(";", checksums.Select(checksum => Array.IndexOf(bones, checksum)).Where(i => i >= 0).Select(i =>
             FormattableString.Invariant($"{i}:{pose[i].Position.X:F6},{pose[i].Position.Y:F6},{pose[i].Position.Z:F6},{pose[i].Rotation.X:F6},{pose[i].Rotation.Y:F6},{pose[i].Rotation.Z:F6},{pose[i].Rotation.W:F6}")));
@@ -364,19 +386,45 @@ internal sealed partial class StageBand : IDisposable
         var traced = new[] { Packages.HumanoidRoles.Gh3["hips"], Packages.HumanoidRoles.Gh3["head"] }
             .Concat(new[] { "right", "left" }.Select(hand => player.Motion.Ik.FirstOrDefault(chain => chain.Hand == hand)?.Target ?? ""));
         var values = Values(traced, raw);
-        var walkIndex = StageTimeline.UpperBound(player.Walks, time, w => w.Time) - 1;
-        var walkAge = walkIndex >= 0 ? time - player.Walks[walkIndex].Time : -1;
         var walkPose = new BandPose[raw.Length];
-        var walk = walkAge >= 0 && walkAge < player.Walks[walkIndex].Duration ? player.Performance.SampleWalk(walkAge, player.Walks[walkIndex].Backward, walkPose) : null;
+        var walk = player.Performance.SampleWalk(time, walkPose);
         var walkValues = walk is { } walking ? FormattableString.Invariant($" walk={walking.Clip} walkTime={walking.ClipTime:F4} walkBones={Values(traced, walkPose)}") : "";
         var face = player.Role == "singer" ? player.Performance.SampleFace(time, raw) : null;
         MelonLogger.Msg(FormattableString.Invariant($"[trace] band t={time:F3} role={player.Role} profile={ProfileName(player.Motion)} ") +
-            FormattableString.Invariant($"set={(player.Motion.IsLibrary ? "library" : player.Motion.SetName)} stance={segment.Stance} clip={segment.Clip} clipTime={clipTime:F4} ") +
+            FormattableString.Invariant($"set={(player.Motion.IsLibrary ? "library" : player.Motion.SetName)} stance={segment.Stance} clip={clip} clipTime={clipTime:F4} ") +
             FormattableString.Invariant($"scale={player.Root.localScale.x:F3} bones={values} hairPeak={player.Hair?.PeakSpeed ?? 0:F2}") +
             (face is { } facial ? FormattableString.Invariant($" face={facial.Clip} faceTime={facial.ClipTime:F4} faceBones={Values(TraceFaceBones, raw)}") : "") + walkValues +
             (player.Retarget is { } retarget ? FormattableString.Invariant($" retarget handMiss={retarget.Rig.HandMiss * 100:F2}cm move={retarget.Rig.InstrumentMove.Length() * 100:F1}cm") +
                 (retarget.Rig.HasMicrophone ? FormattableString.Invariant($" micToMouth={System.Numerics.Vector3.Distance(retarget.Rig.MicrophoneHead, retarget.Rig.Mouth) * 100:F1}cm ") +
                     FormattableString.Invariant($"gh3MicToMouth={System.Numerics.Vector3.Distance(retarget.Rig.Gh3MicrophoneHead, retarget.Rig.Gh3Mouth) * 100:F1}cm mouthHandMiss={retarget.Rig.MouthMiss * 100:F1}cm") : "") : ""));
+    }
+
+    private static readonly string[] TraceWalkBones = Packages.HumanoidRoles.Gh3TraceWalk.Select(Gh3Checksum.Of).ToArray();
+    // GH3_SKIN_TRACE: the walk trace starts this many seconds before a walk and ends after its last turn.
+    private const double TraceWalkMargin = 1;
+
+    // GH3_SKIN_TRACE: each frame near a walk, the root (x, z, yaw in degrees), the walk clip, and the position and the
+    // rotations of the leg and spine bones of the GH3 rig in the performer frame, to compare with the GH3 body recording.
+    private static void TraceWalk(Performer player, double time, BandPose root)
+    {
+        if (player.Performance == null || player.Definition == null ||
+            !player.Walks.Exists(w => time >= w.Start - TraceWalkMargin && time <= w.TurnEnd + TraceWalkMargin)) return;
+        var rig = player.Retarget?.Source ?? player.Animation;
+        var pose = player.Retarget?.SourcePose ?? player.Pose;
+        var bones = player.Definition.Bones;
+        var model = new BandPose[rig.Parents.Length];
+        for (var i = 0; i < model.Length; i++)
+        {
+            var parent = rig.Parents[i];
+            model[i] = parent < 0 ? pose[i] : new(model[parent].Position + System.Numerics.Vector3.Transform(pose[i].Position, model[parent].Rotation),
+                model[parent].Rotation * pose[i].Rotation);
+        }
+        var walk = player.Walks.FindLast(w => w.Start <= time)?.Active(time);
+        var yaw = 2 * MathF.Atan2(root.Rotation.Y, root.Rotation.W) * 180 / MathF.PI;
+        var values = string.Join(";", TraceWalkBones.Select(checksum => Array.IndexOf(bones, checksum)).Where(i => i >= 0).Select(i =>
+            FormattableString.Invariant($"{i}:{model[i].Position.X:F4},{model[i].Position.Y:F4},{model[i].Position.Z:F4},{model[i].Rotation.X:F5},{model[i].Rotation.Y:F5},{model[i].Rotation.Z:F5},{model[i].Rotation.W:F5}")));
+        MelonLogger.Msg(FormattableString.Invariant($"[trace] walk t={time:F4} role={player.Role} clip={walk?.Branch.Clip ?? "-"} clipTime={walk?.ClipTime ?? 0:F4} ") +
+            FormattableString.Invariant($"root={root.Position.X:F4},{root.Position.Z:F4},{yaw:F2} scale={player.Root.localScale.x:F3} bones={values}"));
     }
 
     private static string ProfileName(CharacterMotion motion) => motion.IsLibrary ? "library" : motion.Profile.Id;
@@ -428,26 +476,15 @@ internal sealed partial class StageBand : IDisposable
         var rotation = player.Rotation;
         if (player.Performance != null)
         {
-            var walkIndex = StageTimeline.UpperBound(player.Walks, time, w => w.Time) - 1;
-            var walkAge = -1.0;
-            var walkWeight = 1f;
-            var walkBackward = false;
-            if (walkIndex >= 0)
+            if (player.Walks.Count > 0 && time >= player.Walks[0].Start)
             {
-                var walk = player.Walks[walkIndex];
-                var age = time - walk.Time;
-                position = Vector3.Lerp(walk.From, walk.To, (float)Math.Clamp(age / walk.Duration, 0, 1));
-                rotation = walk.Rotation;
-                if (age < walk.Duration)
-                {
-                    walkAge = age;
-                    walkWeight = (float)Math.Clamp(Math.Min(age, walk.Duration - age) / WalkBlend, 0, 1);
-                    var facing = Quaternion.LookRotation(walk.Backward ? walk.To - walk.From : walk.From - walk.To, Vector3.up);
-                    rotation = Quaternion.Slerp(walk.Rotation, facing, walkWeight);
-                }
-                walkBackward = walk.Backward;
+                var (at, yaw) = RootState(player, time);
+                var half = yaw * MathF.PI / 360;
+                position.x = at.X;
+                position.z = at.Y;
+                rotation = new Quaternion { x = 0, y = MathF.Sin(half), z = 0, w = MathF.Cos(half) };
             }
-            player.Performance.Sample(time, walkAge, walkWeight, walkBackward);
+            player.Performance.Sample(time);
             Array.Copy(player.Performance.Pose, pose, player.Performance.Pose.Length);
         }
         else if (rig.Clips.Length == 0) Array.Copy(rig.BindPose, pose, rig.BindPose.Length);

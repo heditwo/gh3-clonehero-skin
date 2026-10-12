@@ -36,6 +36,8 @@ ANIMATION_CONSTANTS = [
     ("finger_press_blend_time", 0.07),
     ("finger_release_blend_time", 0.2),
     ("finger_note_padding", 0.01),
+    # The shortest walk of walk_to_pos (guitar_walking.qb).
+    ("min_walk_dist", 0.75),
 ]
 # MIDI notes of the GH3 animation tracks: drums (track_36 to track_57) and the fret hand positions (track_101 to 127).
 DRUM_PITCHES = range(36, 58)
@@ -51,6 +53,8 @@ WALKING = "walking"
 WALK_DIRECTIONS = ("forward", "backward")
 WALK_TURN_CLIPS = ("turn_left", "turn_idle", "turn_right")
 WALK_SCALARS = ("min_turn", "max_turn", "turn_speed", "face_audience_speed")
+# The turn scalars of a set without `walking` (guitar_animation_data.qb default_turn_data: min_turn, max_turn).
+DEFAULT_TURN_DATA = "default_turn_data"
 
 # The last column lists extra paks with clips: Axel's model pak holds his intro and win animations.
 MEMBERS = [
@@ -93,11 +97,13 @@ def walk_groups(anim_set, common):
 
     GH3 walk_to_pos plays `walking.forward` or `walking.backward` of the performer's own set: it reads `anim_set` from the
     performer's info struct, not the `normal_walk_data` of the Band_WalkToNode event (PARITY-NOTES.md, Walk clips). A set
-    without `walking` (the bassist) gets normal_walk_data as its forward walk.
+    without `walking` (the bassist) gets normal_walk_data as its forward walk and the scalars of default_turn_data.
     """
     walking = anim_set.get(key(WALKING))
     if walking is None:
-        return flatten(find_struct(common, "normal_walk_data"), "walk/forward/"), {}
+        turn = find_struct(common, DEFAULT_TURN_DATA)
+        scalars = {field: turn[key(field)] for field in WALK_SCALARS if key(field) in turn}
+        return flatten(find_struct(common, "normal_walk_data"), "walk/forward/"), scalars
     known = {key(field) for field in (*WALK_DIRECTIONS, *WALK_TURN_CLIPS, *WALK_SCALARS)}
     if not set(walking) - {0} <= known:
         raise ValueError("unknown field in an animation set walking struct")

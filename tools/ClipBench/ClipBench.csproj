@@ -22,6 +22,7 @@
     <Compile Include="../../src/Stage/Band/StageDrummer.cs" Link="StageDrummer.cs" />
     <Compile Include="../../src/Stage/Band/StageGuitarArms.cs" Link="StageGuitarArms.cs" />
     <Compile Include="../../src/Stage/Band/StagePerformance.cs" Link="StagePerformance.cs" />
+    <Compile Include="../../src/Stage/Band/StageWalk.cs" Link="StageWalk.cs" />
     <Compile Include="../../src/Stage/Band/LyricPhonemes.cs" Link="LyricPhonemes.cs" />
     <Compile Include="../../src/Stage/Band/VocalEnvelope.cs" Link="VocalEnvelope.cs" />
     <Compile Include="../../src/Stage/Band/StageLipSync.Life.cs" Link="StageLipSync.Life.cs" />

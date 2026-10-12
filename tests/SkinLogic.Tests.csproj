@@ -89,6 +89,7 @@
     <Compile Include="../src/Stage/Band/CharacterRetarget.cs" Link="CharacterRetarget.cs" />
     <Compile Include="../src/Stage/Rendering/StageTriangleOrder.cs" Link="StageTriangleOrder.cs" />
     <Compile Include="../src/Stage/Band/StagePerformance.cs" Link="StagePerformance.cs" />
+    <Compile Include="../src/Stage/Band/StageWalk.cs" Link="StageWalk.cs" />
     <Compile Include="../src/Stage/Band/PerformanceClip.cs" Link="PerformanceClip.cs" />
     <Compile Include="../src/Stage/Band/StageGuitarArms.cs" Link="StageGuitarArms.cs" />
     <Compile Include="../src/Stage/Band/StageLipSync.cs" Link="StageLipSync.cs" />

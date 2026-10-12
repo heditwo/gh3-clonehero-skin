@@ -64,6 +64,12 @@ internal static class HumanoidRoles
     };
     // The face bones of the [trace] band lines.
     public static readonly string[] Gh3TraceFace = { "Bone_Jaw", "Bone_Eyelid_Upper_L", "Bone_Lip_Lower_Mid", "Bone_Brow_L" };
+    // The leg and spine bones of the [trace] walk lines (the joints of the GH3 walk measurement, PARITY-NOTES.md Walk clips).
+    public static readonly string[] Gh3TraceWalk =
+    {
+        "Bone_Pelvis", "Bone_Thigh_L", "Bone_Thigh_R", "Bone_Knee_L", "Bone_Knee_R", "Bone_Ankle_L", "Bone_Ankle_R", "Bone_Stomach_Lower",
+        "Bone_Stomach_Upper", "Bone_Chest", "Bone_Neck", "Bone_Head",
+    };
 
     // The humanoid map of a GH3 rig (bone checksums) from the GH3 bone names: the bones of the Gh3 table, and the three
     // spine roles on bone_stomach_lower, bone_stomach_upper, and bone_chest (SpineSources(3)), so that a GH3 rig maps to

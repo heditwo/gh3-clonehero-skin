@@ -16,27 +16,30 @@ internal sealed class PerformanceMember
     public Dictionary<string, string[]> Groups { get; set; } = new();
     public Dictionary<string, string[]> Layers { get; set; } = new();
     public Dictionary<string, PerformanceClipInfo> Clips { get; set; } = new();
-    // The scalars of the GH3 `walking` struct of the set (min_turn); empty for a set without its own walk.
+    // The scalars of the GH3 `walking` struct of the set (min_turn, max_turn, turn_speed, face_audience_speed); for a
+    // set without its own walk, those of default_turn_data.
     public Dictionary<string, float> Walking { get; set; } = new();
 
     public bool HasValidWalking => Walking.Values.All(float.IsFinite);
 
-    private const string WalkMinTurn = "min_turn";
-    private const float HalfTurn = 180;
+    public const string WalkMinTurn = "min_turn";
+    public const string WalkTurnSpeed = "turn_speed";
+    public const string WalkFaceAudienceSpeed = "face_audience_speed";
+    // The GH3 constant of the shortest walk (guitar_animation_data.qb min_walk_dist), in the bank constants.
+    public const string MinimumWalkDistance = "min_walk_dist";
+    public const string WalkStart = "start_anim";
+    public const string WalkCycle = "cycle_anim";
+    public const string WalkStopLeft = "stop_left_anim";
+    public const string WalkStopRight = "stop_right_anim";
 
-    // The cycle clip group of the walk (`walking.forward` or `walking.backward`; pipeline.library.direction.walk_groups).
-    public static string WalkCycle(bool backward) => backward ? "walk/backward/cycle_anim/med" : "walk/forward/cycle_anim/med";
+    // A clip group of the walk (`walking.forward` or `walking.backward`; pipeline.library.direction.walk_groups). Slow,
+    // Med, and Fast name the same clip in every GH3 set.
+    public static string WalkClip(bool backward, string part) => (backward ? "walk/backward/" : "walk/forward/") + part + "/med";
 
-    // GH3 walk_to_pos (guitar_walking.qb): the performer keeps its facing and walks backward to a target within min_turn
-    // degrees of its back (IsFacing is then false); it turns to any other target and walks forward. `front` and `toward`
-    // are horizontal directions (x, z). A set without min_turn or a backward walk walks forward.
-    public bool WalksBackward(float frontX, float frontZ, float towardX, float towardZ)
-    {
-        var lengths = MathF.Sqrt((frontX * frontX + frontZ * frontZ) * (towardX * towardX + towardZ * towardZ));
-        if (!Walking.TryGetValue(WalkMinTurn, out var minTurn) || !Groups.ContainsKey(WalkCycle(true)) || lengths <= 0) return false;
-        var angle = MathF.Acos(Math.Clamp((frontX * towardX + frontZ * towardZ) / lengths, -1, 1)) * HalfTurn / MathF.PI;
-        return angle >= HalfTurn - minTurn;
-    }
+    // The clips of both walks of the set.
+    public IEnumerable<string> WalkClips() =>
+        new[] { false, true }.SelectMany(backward => new[] { WalkStart, WalkCycle, WalkStopLeft, WalkStopRight }
+            .SelectMany(part => Groups.GetValueOrDefault(WalkClip(backward, part), Array.Empty<string>()))).Distinct();
 }
 
 // The band library's performance bank (band/performance.json): members, clip groups and layers, and GH3's constants.
@@ -89,11 +92,17 @@ internal sealed class PerformancePlayer
     private const double JustBefore = 1e-4;
     // Charts give normal notes no length; GH3 note arrays give them their MIDI length, usually a sixteenth note.
     private const double SixteenthNoteBeats = 0.25;
-    internal sealed record Segment(double Time, double End, string Clip, double Rate, string Stance, string Action, int DisableArms);
+    // Walk: the segment is a walk (StageWalk) and Clip its start clip.
+    internal sealed record Segment(double Time, double End, string Clip, double Rate, string Stance, string Action, int DisableArms, StageWalk? Walk = null);
     private readonly string _role;
     private readonly PerformanceMember _member;
     private readonly BandPose[] _bind;
     private readonly BandPose[] _previous;
+    private readonly BandPose[] _walkPose;
+    private readonly List<StageWalk> _walks = new();
+    private (double Time, Vector2 Target)[] _walkCues = Array.Empty<(double, Vector2)>();
+    private Func<double, Vector2, StageWalk>? _planWalk;
+    private int _walkCue;
     private readonly StageTimeline _timeline;
     private readonly PerformanceClipCache _clips;
     private readonly PerformanceClipCache _faceClips;
@@ -135,6 +144,7 @@ internal sealed class PerformancePlayer
         _timeline = timeline;
         Pose = new BandPose[bind.Length];
         _previous = new BandPose[bind.Length];
+        _walkPose = new BandPose[bind.Length];
         if (member.Bones.Length != bind.Length) throw new InvalidDataException("Performance skeleton mismatch");
         _seed = Convert.ToUInt32(Gh3Checksum.Of(role), 16);
         _commands = timeline.PlaybackCues.Where(c => c.Role == role && c.Type is "stance" or "perform" or "clip").ToArray();
@@ -161,7 +171,7 @@ internal sealed class PerformancePlayer
     {
         var end = Math.Min(PrepareMaximumSeconds, Math.Max(PrepareMinimumSeconds, _timeline.Cues.LastOrDefault()?.Time ?? 0));
         _ = At(end);
-        var needed = _segments.Select(s => s.Clip)
+        var needed = _segments.Select(s => s.Clip).Concat(_walks.SelectMany(w => w.Branches.Select(b => b.Clip)))
             .Concat(_member.Layers.Where(pair => !pair.Key.StartsWith("strum/")).SelectMany(pair => pair.Value)).Concat(_armTracks.SelectMany(t => t.Clips));
         var faces = _timeline.Track("face", _role).Select(c => c.Value).Where(_faceMember.Clips.ContainsKey);
         if (_faceClips == _clips) _clips.Prefetch(needed.Concat(faces).Where(_member.Clips.ContainsKey).Distinct());
@@ -177,34 +187,32 @@ internal sealed class PerformancePlayer
     public PerformanceClipCache? FaceClips => _faceClips == _clips ? null : _faceClips;
     public StageLipSync? LipSync => _lipSync;
 
-    public void Sample(double time, double walkAge = -1, float walkWeight = 1, bool walkBackward = false)
+    // The walk cues of the member (Band_WalkToNode, with the waypoint position) and the planner of a walk from a start
+    // time (StageBand: StageWalk.Plan from the root state at that time). The segments call the planner in time order.
+    // Call before the first At or Prepare.
+    public void SetWalkCues(IEnumerable<(double Time, Vector2 Target)> cues, Func<double, Vector2, StageWalk> plan)
+    {
+        if (_segments.Count > 0) throw new InvalidOperationException("Walks are set before the segments");
+        _walkCues = cues.OrderBy(cue => cue.Time).ToArray();
+        _planWalk = plan;
+    }
+
+    // The root bone position of a clip at a clip time (the root motion of StageWalk).
+    public Vector3 RootAt(string clip, double time) => Clip(clip).RootPosition(time);
+
+    public void Sample(double time)
     {
         time = Math.Max(_timeline.Start, time);
         var segment = At(time);
         CurrentClip = segment.Clip;
         CurrentStance = segment.Stance;
-        Array.Copy(_bind, Pose, Pose.Length);
-        Clip(segment.Clip).Apply(Pose, _bind, (time - segment.Time) * segment.Rate);
+        Body(segment, time, Pose);
         var index = StageTimeline.UpperBound(_segments, time, s => s.Time) - 1;
         var weight = (float)Math.Clamp((time - segment.Time) / BodyBlend, 0, 1);
         if (index > 0 && weight < 1)
         {
-            var previous = _segments[index - 1];
-            Array.Copy(_bind, _previous, Pose.Length);
-            Clip(previous.Clip).Apply(_previous, _bind, (time - previous.Time) * previous.Rate);
+            Body(_segments[index - 1], time, _previous);
             for (var bone = 0; bone < Pose.Length; bone++) Pose[bone] = BandPose.Mix(_previous[bone], Pose[bone], weight);
-        }
-        if (walkAge >= 0)
-        {
-            var walk = Group(PerformanceMember.WalkCycle(walkBackward));
-            if (walk.Length > 0)
-            {
-                Array.Copy(_bind, _previous, Pose.Length);
-                var clip = Clip(walk[0]);
-                clip.Apply(_previous, _bind, walkAge % clip.Duration);
-                _previous[0] = _previous[0] with { Position = new(_bind[0].Position.X, _previous[0].Position.Y, _bind[0].Position.Z) };
-                for (var bone = 0; bone < Pose.Length; bone++) Pose[bone] = BandPose.Mix(Pose[bone], _previous[bone], walkWeight);
-            }
         }
         ArmGain = (0, 0);
         if (_drummer != null)
@@ -222,15 +230,40 @@ internal sealed class PerformancePlayer
         _ = Clip(next.Clip);
     }
 
-    // Verification (GH3_SKIN_TRACE): the body clip at `time` without blends, layers, or IK, as GH3 samples it.
-    public (Segment Segment, double ClipTime) SampleClip(double time, BandPose[] output)
+    // The body pose of a segment: its clip, or the walk clips (StageWalk.Branches) as CDegenerateBlendAnimNode blends
+    // them. The segment blend (BodyBlend, the hero_play_anim default) blends the walk in and out.
+    private void Body(Segment segment, double time, BandPose[] output)
+    {
+        Array.Copy(_bind, output, output.Length);
+        if (segment.Walk is not { } walk)
+        {
+            Clip(segment.Clip).Apply(output, _bind, (time - segment.Time) * segment.Rate);
+            return;
+        }
+        for (var i = 0; i < walk.Branches.Length && walk.Branches[i].Time <= time; i++)
+        {
+            var branch = walk.Branches[i];
+            var target = i == 0 ? output : _walkPose;
+            if (i > 0) Array.Copy(_bind, _walkPose, _walkPose.Length);
+            Clip(branch.Clip).Apply(target, _bind, StageWalk.ClipTime(branch, time));
+            // MotionExtractedSource: the root motion moves the performer (StageWalk.Root), not the root bone.
+            target[0] = target[0] with { Position = new(_bind[0].Position.X, target[0].Position.Y, _bind[0].Position.Z) };
+            if (i == 0) continue;
+            var weight = StageWalk.Weight(branch, time);
+            for (var bone = 0; bone < output.Length; bone++) output[bone] = BandPose.Mix(output[bone], _walkPose[bone], weight);
+        }
+    }
+
+    // Verification (GH3_SKIN_TRACE): the body clip at `time` without blends, layers, or IK, as GH3 samples it; during a
+    // walk the newest walk clip.
+    public (Segment Segment, string Clip, double ClipTime) SampleClip(double time, BandPose[] output)
     {
         time = Math.Max(_timeline.Start, time);
         var segment = At(time);
         Array.Copy(_bind, output, output.Length);
-        var clipTime = (time - segment.Time) * segment.Rate;
-        Clip(segment.Clip).Apply(output, _bind, clipTime);
-        return (segment, clipTime);
+        var (clip, clipTime) = segment.Walk?.Active(time) is { } active ? (active.Branch.Clip, active.ClipTime) : (segment.Clip, (time - segment.Time) * segment.Rate);
+        Clip(clip).Apply(output, _bind, clipTime);
+        return (segment, clip, clipTime);
     }
 
     // Verification (GH3_SKIN_TRACE): the song facial clip at `time` without the blend in, or null when none plays.
@@ -243,28 +276,34 @@ internal sealed class PerformancePlayer
         return (face.Value, time - face.Time);
     }
 
-    // Verification (GH3_SKIN_TRACE): the walk cycle clip `walkAge` seconds into a walk, without the blend and the root
-    // lock, or null when the member has no walk cycle.
-    public (string Clip, double ClipTime)? SampleWalk(double walkAge, bool backward, BandPose[] output)
+    // Verification (GH3_SKIN_TRACE): the newest walk clip at `time` without the blends and the root lock, or null outside
+    // the walk clips.
+    public (string Clip, double ClipTime)? SampleWalk(double time, BandPose[] output)
     {
-        var walk = Group(PerformanceMember.WalkCycle(backward));
-        if (walk.Length == 0) return null;
-        var clip = Clip(walk[0]);
-        var clipTime = walkAge % clip.Duration;
+        var segment = At(Math.Max(_timeline.Start, time));
+        if (segment.Walk?.Active(time) is not { } active) return null;
         Array.Copy(_bind, output, output.Length);
-        clip.Apply(output, _bind, clipTime);
-        return (walk[0], clipTime);
+        Clip(active.Branch.Clip).Apply(output, _bind, active.ClipTime);
+        return (active.Branch.Clip, active.ClipTime);
     }
 
     private void AddSegment()
     {
         var start = _segments.Count == 0 ? _timeline.Start : _segments[^1].End;
+        // A cue during a walk does nothing (Guitarist_Walking_EventTable has no walk handler).
+        while (_walkCue < _walkCues.Length && _walkCues[_walkCue].Time < start && _segments.Count > 0 && _segments[^1].Walk != null) _walkCue++;
+        if (_walkCue < _walkCues.Length && _walkCues[_walkCue].Time <= start && _planWalk != null)
+        {
+            Walk(_walkCues[_walkCue++], start);
+            return;
+        }
         var previousStance = _stance;
         while (_commandIndex < _commands.Length && _commands[_commandIndex].Time <= start)
         {
             var command = _commands[_commandIndex++];
             if (command.Type == "stance") _stance = command.Value;
-            else { _action = command.Value; _loop = command.Loop; _repeat = command.Count; _disableArms = command.DisableArms; }
+            // Guitarist_Walking_EventTable has no play_anim handler: GH3 drops these commands during a walk.
+            else if (!DuringWalk(command.Time)) { _action = command.Value; _loop = command.Loop; _repeat = command.Count; _disableArms = command.DisableArms; }
         }
         var bpm = _timeline.TempoAt(start);
         var speed = bpm < SlowTempo ? "slow" : bpm < MediumTempo ? "med" : "fast";
@@ -284,9 +323,41 @@ internal sealed class PerformancePlayer
         var end = start + _member.Clips[selected].Duration / rate;
         var immediate = _commands.Skip(_commandIndex).FirstOrDefault(c => c.Immediate && c.Time < end);
         if (immediate != null) end = Math.Max(start + MinimumSegment, immediate.Time);
+        if (_walkCue < _walkCues.Length && _walkCues[_walkCue].Time < end) end = Math.Max(start + MinimumSegment, _walkCues[_walkCue].Time);
         _segments.Add(new(start, Math.Max(start + MinimumSegment, end), selected, rate, _stance, _action, _disableArms));
         if (!transition && !_loop && --_repeat <= 0) { _action = "idle"; _loop = true; _disableArms = 0; }
     }
+
+    // handle_walking: in another stance the member first plays the stance transition to Stance_A
+    // (play_stance_transition_cfunc, hero_wait_until_anim_finished); then the walk plays with both arms
+    // (disable_arms = 0), and after it guitarist_idle plays the idle.
+    private void Walk((double Time, Vector2 Target) cue, double start)
+    {
+        var stance = _segments.Count > 0 ? _segments[^1].Stance : _stance;
+        while (_commandIndex < _commands.Length && _commands[_commandIndex].Time <= start) _commandIndex++;
+        var at = start;
+        var transition = stance != WalkStance ? Group($"{stance}/transitions/{WalkStance}") : Array.Empty<string>();
+        if (transition.Length > 0)
+        {
+            XorShift32.Next(ref _seed);
+            var clip = transition[_seed % transition.Length];
+            at += _member.Clips[clip].Duration;
+            _segments.Add(new(start, at, clip, 1, WalkStance, "walk", 0));
+        }
+        _stance = WalkStance;
+        _action = "idle";
+        _loop = true;
+        _repeat = 1;
+        _disableArms = 0;
+        var walk = _planWalk!(at, cue.Target);
+        if (!walk.Walks) return;
+        _walks.Add(walk);
+        _segments.Add(new(walk.Start, Math.Max(walk.Start + MinimumSegment, walk.End), walk.Branches[0].Clip, 1, _stance, "walk", 0, walk));
+    }
+
+    private const string WalkStance = "stance_a";
+
+    private bool DuringWalk(double time) => _walks.Exists(walk => time >= walk.Start && time < walk.End);
 
     // GH3 hero_arm_branch: strum, fret and finger difference animations applied to the body, then the IK and twist bones.
     // Hand events fire strum_anim_lead_time before each note (Strum_iterator, FretPos_iterator, FretFingers_iterator).

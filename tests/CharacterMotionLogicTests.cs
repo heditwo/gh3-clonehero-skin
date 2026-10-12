@@ -19,15 +19,50 @@ internal static class CharacterMotionLogicTests
         Console.WriteLine("Character library profiles, singer profiles on their own clip rig, set clip offsets, hinge and prismatic hair joints, IK data, and walk direction checks passed.");
     }
 
-    // GH3 walk_to_pos: backward to a target within min_turn of the back, else forward (after a turn when it is sideways).
+    // GH3 walk_to_pos and face_audience (StageWalk): the walk direction, the cycle count, the foot, the root motion, and
+    // the turns. Test clips: the root moves along -Z (forward) or +Z (backward) at a constant speed.
     private static void CheckWalkDirection()
     {
-        var member = new PerformanceMember { Groups = new() { [PerformanceMember.WalkCycle(true)] = new[] { "00000001" } }, Walking = new() { ["min_turn"] = 45 } };
-        Check(member.WalksBackward(0, -1, 0, 1) && member.WalksBackward(0, -1, 0.9f, 1), "a target behind or within min_turn of the back is walked to backward");
-        Check(!member.WalksBackward(0, -1, 0, -1) && !member.WalksBackward(0, -1, 1, 0) && !member.WalksBackward(0, -1, 1.1f, 1), "a target in front or to the side is walked to forward");
-        Check(!member.WalksBackward(0, -1, 0, 0), "no move walks forward");
-        Check(!new PerformanceMember { Groups = member.Groups }.WalksBackward(0, -1, 0, 1), "a set without min_turn walks forward");
-        Check(!new PerformanceMember { Walking = member.Walking }.WalksBackward(0, -1, 0, 1), "a set without a backward walk walks forward");
+        var clips = new Dictionary<string, (float Duration, float Distance)>
+        {
+            ["00000001"] = (0.6f, 0.6f), ["00000002"] = (1, 1.4f), ["00000003"] = (1, 0.6f), ["00000004"] = (1, 1.2f),
+            ["00000011"] = (0.6f, -0.6f), ["00000012"] = (1, -1.4f), ["00000013"] = (1, -0.6f), ["00000014"] = (1, -1.2f),
+        };
+        var groups = new Dictionary<string, string[]>();
+        var parts = new[] { PerformanceMember.WalkStart, PerformanceMember.WalkCycle, PerformanceMember.WalkStopLeft, PerformanceMember.WalkStopRight };
+        for (var i = 0; i < parts.Length; i++)
+        {
+            groups[PerformanceMember.WalkClip(false, parts[i])] = new[] { $"0000000{i + 1}" };
+            groups[PerformanceMember.WalkClip(true, parts[i])] = new[] { $"0000001{i + 1}" };
+        }
+        var member = new PerformanceMember
+        {
+            Groups = groups, Walking = new() { ["min_turn"] = 45, ["turn_speed"] = 45, ["face_audience_speed"] = 90 },
+            Clips = clips.ToDictionary(c => c.Key, c => new PerformanceClipInfo { Duration = c.Value.Duration, Frames = 31, RootDistance = Math.Abs(c.Value.Distance) }),
+        };
+        Vector3 Root(string clip, double time) => new(0, 0, -clips[clip].Distance * (float)(time / clips[clip].Duration));
+        var data = new StageWalk.Data(member, new Dictionary<string, float> { ["min_walk_dist"] = 0.75f }, Root, 1);
+
+        var back = StageWalk.Plan(data, 10, new Vector2(0, 0), 0, new Vector2(0, 2.6f));
+        var (end, yaw) = back.Root(back.TurnEnd);
+        Check(back.Backward && back.Cycles == 1 && !back.RightFoot, "a target behind is walked to backward with whole cycles and the left foot stop");
+        Check(back.Branches.Select(b => b.Clip).SequenceEqual(new[] { "00000011", "00000012", "00000013" }) && Math.Abs(back.Branches[1].Time - 10.6) < 1e-6 &&
+            Math.Abs(back.End - 12.6) < 1e-6, "start, cycle, and stop clips follow each other");
+        Check(Vector2.Distance(end, new Vector2(0, 2.6f)) < 0.05f && Math.Abs(yaw) < 0.01f, "the root motion (with the clip blends) reaches the target and the performer still faces the audience");
+        var (middle, _) = back.Root(11);
+        Check(middle.Y > 0.3f && middle.Y < 1.2f && back.Active(11)?.Branch.Clip == "00000012", "the root moves during the walk");
+
+        var side = StageWalk.Plan(data, 0, new Vector2(0, 0), 0, new Vector2(3, 0));
+        var (_, turned) = side.Root(1);
+        Check(!side.Backward && Math.Abs(turned + 45) < 0.5f, "a target to the side: the performer turns at turn_speed and walks forward");
+        var (sideEnd, sideYaw) = side.Root(side.TurnEnd);
+        Check(sideEnd.X > 2.5f && Math.Abs(sideYaw - StageWalk.Yaw(new Vector2(0, -50) - sideEnd)) < 0.01f, "after the stop the performer turns to the audience");
+
+        var half = StageWalk.Plan(data, 0, new Vector2(0, 0), 0, new Vector2(0, -2));
+        Check(!half.Backward && half.Cycles == 0.5 && half.RightFoot && half.Branches[^1].Clip == "00000004", "half a cycle stops on the right foot");
+
+        var near = StageWalk.Plan(data, 0, new Vector2(0, 0), 90, new Vector2(0.5f, 0));
+        Check(!near.Walks && Math.Abs(near.Root(near.TurnEnd).Yaw) < 0.01f && Math.Abs(near.TurnEnd - 2) < 0.02, "a target nearer than min_walk_dist: no walk, only the turn to the audience");
     }
 
     private static void CheckLibrary()

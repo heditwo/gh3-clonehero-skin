@@ -158,7 +158,7 @@
       }
     },
     "walking": {
-      "description": "The scalars of the GH3 walking struct of the set (degrees and degrees per second; min_turn: the angle from the back within which the performer walks backward). Absent: the set has no own walk.",
+      "description": "The scalars of the GH3 walking struct of the set (degrees and degrees per second): min_turn (a target within this angle of the front or the back axis gives a small turn and a forward or backward walk; else the performer turns to face it; at the stop a performer within this angle of the audience turns to it), max_turn, turn_speed (turn to the target and to the audience), face_audience_speed (turn at the stop). A set without its own walk has the min_turn and max_turn of default_turn_data.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
