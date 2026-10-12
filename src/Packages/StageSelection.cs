@@ -24,7 +24,7 @@ internal static class StageSelection
         var ini = Path.Combine(songFolder, "song.ini");
         if (File.Exists(ini) && SongIniValue(File.ReadAllLines(ini), SongIniKey) is { Length: > 0 } stage)
             return new StageSuggestion(stage, "", "song.ini " + SongIniKey);
-        if (libraryIndex != null && OriginalSong(libraryIndex, title, artist) is { } original && NativeVenues.Of(original) is { } originalVenue)
+        if (libraryIndex != null && OriginalSong(libraryIndex, title, artist) is { } original && Gh3CareerVenues.Of(original) is { } originalVenue)
             return new StageSuggestion(originalVenue, "", $"GH3 career venue of {original}");
         return null;
     }

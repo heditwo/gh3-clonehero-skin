@@ -9,7 +9,7 @@ QB_SECTION_SCRIPT = 0x00200700
 # Script header: checksum, size, compressed size; then the LZSS data (when the sizes differ).
 SCRIPT_HEADER_SIZE = 12
 MAX_SCRIPT_SIZE = 10000000
-# LZSS of the QB scripts (the same as src/Native/Gh3ScriptCode.cs): a 4096-byte ring that starts with spaces and
+# LZSS of the QB scripts (the same as src/Gh3/Gh3ScriptCode.cs): a 4096-byte ring that starts with spaces and
 # writes from 4078; each flag bit selects a literal byte (1) or a 12-bit ring offset and a length of 3 to 18 (0).
 RING_SIZE = 4096
 RING_START = 4078

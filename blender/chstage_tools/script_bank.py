@@ -1,6 +1,6 @@
 """Read-only index of a typed script bank (scripts.json, PACKAGE-FORMAT 8.1) and edits of its simple typed values.
 
-The bank keeps GH3 QB values as [type, value] (src/Native/Gh3QbText.cs). Script code (type 7) is compiled GH3 byte
+The bank keeps GH3 QB values as [type, value] (src/Gh3/Gh3QbText.cs). Script code (type 7) is compiled GH3 byte
 code: the add-on shows its size, never its content, and does not change it. No bpy; the tests use it without Blender.
 """
 

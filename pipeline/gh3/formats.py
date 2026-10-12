@@ -1,6 +1,6 @@
 """Bounded readers for GH3 PC PAK archives and QB data (big-endian), and the GH3 name checksum.
 
-The C# readers in tools/Gh3SongTool/Gh3Pak.cs and src/Native/Gh3Qb.cs read the same layouts.
+The C# readers in tools/Gh3SongTool/Gh3Pak.cs and src/Gh3/Gh3Qb.cs read the same layouts.
 """
 
 import struct

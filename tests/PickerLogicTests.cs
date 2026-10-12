@@ -22,7 +22,7 @@ internal static class PickerLogicTests
             CheckJump();
             CheckSelection(root);
             CheckSuggestions(root);
-            CheckNativeVenues();
+            CheckGh3CareerVenues();
             CheckCharacters(root);
             CheckSamplerOnlyImage(root);
             CheckCacheCleanUp(root);
@@ -130,14 +130,14 @@ internal static class PickerLogicTests
         Check(StageSelection.Suggestion(song, "", "", index)?.PackagePath == Path.Combine(song, "venue.chstage"), "venue.chstage in the song folder comes first");
     }
 
-    private static void CheckNativeVenues()
+    private static void CheckGh3CareerVenues()
     {
-        Check(NativeVenues.Songs.Count == 42 && NativeVenues.Of("bossdevil") == "gh3.hell" && NativeVenues.Of("mycurse") == null, "the 42 GH3 career songs have a venue");
+        Check(Gh3CareerVenues.Songs.Count == 42 && Gh3CareerVenues.Of("bossdevil") == "gh3.hell" && Gh3CareerVenues.Of("mycurse") == null, "the 42 GH3 career songs have a venue");
         // GH3_NATIVE_DATA=<GH3 DATA folder>: the table equals GH3_Career_Songs in qb.pak.xen.
         if (Environment.GetEnvironmentVariable("GH3_NATIVE_DATA") is not { } data) return;
         var pak = Path.Combine(data, "PAK", "qb.pak.xen");
         var bytes = File.ReadAllBytes(pak).Concat(File.ReadAllBytes(Path.ChangeExtension(pak, null)[..^4] + ".pab.xen")).ToArray();
-        foreach (var (level, songs) in NativeVenues.Table)
+        foreach (var (level, songs) in Gh3CareerVenues.Table)
         {
             var levelKey = BitConverter.GetBytes(Convert.ToUInt32(Gh3Checksum.Of(level), 16)).Reverse().ToArray();
             Check(IndexOf(bytes, levelKey) >= 0, $"{level} is in the GH3 career data");

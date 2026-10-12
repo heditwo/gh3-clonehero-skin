@@ -85,7 +85,7 @@ The C# code is the mod (`src/`), the logic tests (`tests/*.cs`), and the C# tool
 - A large type is split into partial files along its parts: `<Type>.<Part>.cs`, for example `Gh3ScriptRuntime.Builtins.cs` and `StageCompiler.Materials.cs`. A file of more than about 500 lines is a candidate for a split.
 - Each file starts with a comment of one or two lines that says what the file is for.
 - The modules and their boundaries are in [ARCHITECTURE.md](ARCHITECTURE.md#runtime-modules). Keep these boundaries:
-  - `src/Native` and `src/Packages` (except `PackageRuntime`) do not use Unity. The tests and the tools link them.
+  - `src/Gh3` and `src/Packages` (except `PackageRuntime`) do not use Unity. The tests and the tools link them.
   - The state classes of `src/Stage` and `src/Hud` that the tests link (see `tests/SkinLogic.Tests.csproj`) do not use Unity.
   - Only `CloneHeroBindings` calls obfuscated Clone Hero members.
 - When you add a file that a linked file needs, add it to `tests/SkinLogic.Tests.csproj` and, for `src/Packages`, `src/Stage/Band/StageHair*.cs`, and their helpers, to `tools/PackageImport/PackageImport.csproj`.
@@ -99,7 +99,7 @@ The C# code is the mod (`src/`), the logic tests (`tests/*.cs`), and the C# tool
 
 ### C# constants
 
-Do not write a number with a meaning directly in the code. Give it a name, or put a source note on it. The literal guard (`tests/LiteralGuardTests.cs`) checks this rule in `src/Stage`, `src/Hud`, `src/Gameplay`, and `src/Native`.
+Do not write a number with a meaning directly in the code. Give it a name, or put a source note on it. The literal guard (`tests/LiteralGuardTests.cs`) checks this rule in `src/Stage`, `src/Hud`, `src/Gameplay`, and `src/Gh3`.
 
 - A number is trivial and needs no name when it is an integer from 0 to 16, a half or a quarter, a power of two to 256, 24, 60, 90, 100, 180, 255, 360, 1000, or `1e-6`, and also `0xff`, `0xffff`, `0xffffffff`.
 - Put a constant in a `const` or `static readonly` field near its use. Put constants that several files use in a constants file (`*Constants.cs`, for example `Gh3QbConstants.cs`, `Gh3NoteConstants.cs`, `StageParticleConstants.cs`, `Gh3GameConstants.cs`) or in a shared class (`StageLimits`, `StageTolerance`, `HudCanvas`, `RenderQueue`).

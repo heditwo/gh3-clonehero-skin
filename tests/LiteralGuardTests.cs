@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
-// Fails when GH3-facing code (src/Stage, src/Hud, src/Gameplay, src/Native) has a numeric literal that is not trivial,
+// Fails when GH3-facing code (src/Stage, src/Hud, src/Gameplay, src/Gh3) has a numeric literal that is not trivial,
 // not named, and has no source marker (docs/CODE-STYLE.md, "Constants"). A literal is accepted when:
 // - its value is trivial (Trivial below: integers to 16, halves and quarters, powers of two, degrees, 1000);
 // - it is part of a const or static readonly declaration, an enum, or a file named *Constants.cs or *Tables.cs;
@@ -12,7 +12,7 @@ using System.Text.RegularExpressions;
 // reports other folders ("src" alone: its top folder).
 internal static class LiteralGuardTests
 {
-    private static readonly string[] Folders = { "src/Stage", "src/Hud", "src/Gameplay", "src/Native" };
+    private static readonly string[] Folders = { "src/Stage", "src/Hud", "src/Gameplay", "src/Gh3" };
     private static readonly string[] Markers = { "GH3:", "Measured:", "Tuned:" };
     private static readonly HashSet<double> Trivial = new()
     {

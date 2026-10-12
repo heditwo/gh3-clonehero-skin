@@ -1,6 +1,6 @@
 """Bounded readers for the owner's GH3 PC skeletons (.ske) and animation clips (.ska), and the guitar arm solver.
 
-The layouts were found by reading the GH3 PC files (no public specification); src/Native and the C# clip reader of the
+The layouts were found by reading the GH3 PC files (no public specification); src/Gh3 and the C# clip reader of the
 mod read the same data.
 """
 

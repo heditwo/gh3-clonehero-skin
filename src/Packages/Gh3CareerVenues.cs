@@ -2,7 +2,7 @@ namespace Gh3Skin.Packages;
 
 // The venue of each GH3 career song: the `level` of its tier in GH3_Career_Songs (DATA/PAK/qb.pak.xen). Bonus and
 // download songs have no venue in GH3 (the player picks one), so they are not in the table.
-internal static class NativeVenues
+internal static class Gh3CareerVenues
 {
     public static readonly IReadOnlyDictionary<string, string> Tiers = new Dictionary<string, string>
     {

@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../src/Native/*.cs" Link="Native/%(Filename)%(Extension)" />
+    <Compile Include="../src/Gh3/*.cs" Link="Gh3/%(Filename)%(Extension)" />
     <Compile Include="../src/Packages/*.cs" Exclude="../src/Packages/PackageRuntime.cs" Link="Packages/%(Filename)%(Extension)" />
     <Compile Include="../src/SkinOptions.cs" Link="SkinOptions.cs" />
     <Compile Include="../src/SkinEnvironment.cs" Link="SkinEnvironment.cs" />
