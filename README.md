@@ -10,7 +10,7 @@ This mod makes Clone Hero look and play like Guitar Hero III. It replaces the hi
 
 *Right: the character tutorial of the [creator guide](docs/CREATOR-GUIDE.md#5-make-a-character-on-a-gh3-rig). Model: Tda式初音ミク・アペンド by Tda; Hatsune Miku © Crypton Future Media, INC. www.piapro.net. The model is not in this repository.*
 
-Status: release readiness. Nothing is published yet ([STATUS.md](docs/STATUS.md)).
+Status: release readiness. Nothing is published yet ([STATUS.md](docs/STATUS.md)). The draft release notes list the downloads ([RELEASE-NOTES.md](docs/RELEASE-NOTES.md)).
 
 ## For players
 

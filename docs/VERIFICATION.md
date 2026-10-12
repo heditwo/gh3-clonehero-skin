@@ -18,7 +18,7 @@ These optional variables add checks against real data to the C# tests:
 | --- | --- |
 | `GH3_PACK_ASSETS=$PWD/assets` | Loads all compiled packs and the library: cameras, lighting, scripts, actors, particles, flag-driven nodes |
 | `GH3_NATIVE_DATA=<GH3 DATA>` | Reads all GH3 song PAKs with the pipeline reader of `tools/Gh3SongTool`; the My Curse direction (53 cameras, 5 singer facial cues, 2,916 drum cues) |
-| `GH3_EXPORTED_EVENTS=<events folder>` | Compares the exported song direction (`songs/` of the band library cache) with the direction of the song PAKs |
+| `GH3_EXPORTED_EVENTS=<events folder>` | Compares the exported song direction (`assets/stages/events/<song>.json` of the `events` step) with the direction of the song PAKs |
 | `GH3_DIRECTION_ASSETS`, `GH3_CROWD_ASSETS`, `GH3_HAIR_ASSETS`, `GH3_LIGHTING_ASSETS`, `GH3_AUDIO_ASSETS` | Library parts |
 | `GH3_HAIR_BENCH=<profile>` | Hair motion bench (no checks), see [Hair motion](#hair-motion). `GH3_HAIR_BENCH=character:<.chchar>` runs the profile hair and the custom chains of a character package, see [Custom chains](#custom-chains) |
 | `GH3_CHARACTER_HAIR_ASSETS=<assets>` | Plays My Curse (240 s) with each profile of `<assets>/libraries/gh3-characters-v1` (with `<assets>/libraries/gh3-band-v1` and `<assets>/stages/events`). It prints the fastest hair joint and the largest mean turn from the rest pose for each profile, and fails at 30 m/s (`StageHair.WarningSpeed`). 2026-10-09: 3.0–11.7 m/s, 14–36° |
@@ -195,17 +195,18 @@ Nothing is published. The release artifacts stay on the local disk, outside the 
 MISE_QUIET=1 GH3_RELEASE_OUT=~/.cache/gh3-skin-release GH3_CLONE_HERO_DIR=<game copy> bash scripts/build-release.sh [<git ref>]
 ```
 
-The script exports the commit (default `HEAD`; uncommitted changes are not included) with `git archive`, adds the generated packages (`assets/packages/*.chstage`, `*.chlib`) and shader bundles (`assets/libraries/gh3-band-v1/render/*.bundle`, `stage-templates.json`), builds the mod against the MelonLoader assemblies of `GH3_CLONE_HERO_DIR` (`install.sh --release`), and writes:
+The script exports the commit (default `HEAD`; uncommitted changes are not included) with `git archive`, adds the generated GH3 packages (`assets/packages/gh3.*.chstage`, `gh3-*.chlib`, `gh3.*.chchar`, `gh3.*.chinst`; not the example and template packages `example.*`) and shader bundles (`assets/libraries/gh3-band-v1/render/*.bundle`, `stage-templates.json`), builds the mod against the MelonLoader assemblies of `GH3_CLONE_HERO_DIR` (`install.sh --release`), and writes:
 
 | File | Contents |
 | --- | --- |
-| `gh3-skin-<version>-linux.zip` | `gh3-skin-<version>-linux/`: `Mods/` (`Gh3Skin.dll`, `GH3Skin/assets/<skin folders>`, `GH3Skin/Packages/`, `GH3Skin/render/`), `install-linux.sh`, `PLAYER-GUIDE.md` with `images/`, `release.json` (version, platform, commit), `SHA256SUMS` (every file) |
+| `gh3-skin-<version>-linux.zip` | `gh3-skin-<version>-linux/`: `Mods/` (`Gh3Skin.dll`, `GH3Skin/assets/<skin folders>`, `GH3Skin/Packages/` with the GH3 packages only, `GH3Skin/render/`), `install-linux.sh`, `PLAYER-GUIDE.md` with `images/`, `CREDITS.md`, `LICENSE`, `LICENSE-cmudict.txt`, `release.json` (version, platform, commit), `SHA256SUMS` (every file) |
 | `gh3-skin-<version>-windows.zip` | The same, with `install-windows.ps1` and `install-windows.bat` instead of `install-linux.sh` |
 | `chstage_tools-<add-on version>.zip` | The Blender add-on (`blender/build.py`) |
-| `<pack>-direction-<version>.zip` | For each pack of `assets/song-direction` (the `song-direction` step): the `stage-events.json` of each song folder of the chart pack, at the zip root in the pack's folder layout, with `README-GH3-DIRECTION.md` and `gh3-direction-pack.json`. No chart, audio, or `song.ini` file |
+| `gh3-skin-examples-<version>.zip` | `gh3-skin-examples-<version>/`: the CC0 example stage and character of `examples/` (`.blend` and package) with `examples/README-release.md` as `README.md` |
+| `<pack>-direction-<version>.zip` | For each pack of `assets/song-direction` (the `song-direction` step): the `stage-events.json` of each song folder of the chart pack, at the zip root in the pack's folder layout, with `README-GH3-DIRECTION.md`, `gh3-direction-pack.json`, `gh3-direction-charts.sha256`, and the install scripts of `tools/direction-install`. No chart, audio, or `song.ini` file |
 | `SHA256SUMS-<version>` | SHA-256 of these files |
 
-The version comes from `src/Packages/ModInfo.cs` (the only place). CREDITS, LICENSE, or COPYING files in the repository root go into the zips when they exist. The zips are reproducible: sorted entries, the commit time as the file time, fixed permissions, packages stored without a second compression. Two builds of one commit against the same game copy give the same bytes. A DLL built against another game copy (for example the Windows interop assemblies) has other bytes but works the same way.
+The version comes from `src/Packages/ModInfo.cs` (the only place). The script stops when the `Mods` folder has a package that is not a GH3 package, or when a file of the game zips contains the path of the home folder or of the checkout. CREDITS, LICENSE, or COPYING files in the repository root go into the zips when they exist. The zips are reproducible: sorted entries, the commit time as the file time, fixed permissions, packages stored without a second compression. Two builds of one commit against the same game copy give the same bytes. A DLL built against another game copy (for example the Windows interop assemblies) has other bytes but works the same way.
 
 `install-linux.sh` checks the game version, installs MelonLoader 0.7.3 (download or `--melonloader-zip <file>`, SHA-256 checked; an installed 0.7.3 is found by the SHA-256 of `MelonLoader.Bootstrap.so`), sets `force_offline_generation = true` after the first start, removes the same old files as `install-windows.ps1`, copies `Mods/`, and writes the launcher `clonehero-melonloader.sh` into the game folder (MelonLoader on Linux loads through `LD_PRELOAD`).
 
@@ -215,6 +216,10 @@ Verify a release from the zips only:
 2. Unzip the platform zip to a folder outside the repository. Run `sha256sum -c SHA256SUMS` in it.
 3. Linux: `./install-linux.sh <game>`. Windows under Wine: `pwsh -NoProfile -File ./install-windows.ps1 -GameDir <game>` (PowerShell 7 for Linux).
 4. Cold start (the import of all packages), then a warm start, with `GH3_SKIN_CAPTURE_CLOCK=song` frames on gh3.dive with My Curse; compare them with frames of the current `main` install at the same song times. Open the picker (F6) with `GH3_SKIN_PICKER_TEST`.
+5. A first start without MelonLoader: extract `~/games/CloneHero-1.1.0.6142-Linux.tar` into a new folder, run `install-linux.sh` on it (it downloads MelonLoader), start the game one time with `clonehero-melonloader.sh` until the menu, close it, and run `install-linux.sh` again (it sets `force_offline_generation`).
+6. Ten venues: play a short part of a song on each GH3 venue (`GH3_SKIN_STAGE=gh3.<venue>` with `scripts/capture-preview.sh`, one start for each venue). Each run must exit with 0, and each log must have `GH3 stage loaded` and no `Exception`.
+
+To test the install scripts of a direction zip on a nested songs folder, make a copy of the pack charts (`tools/fetch-song-pack.py`) with the folder layouts of the real packs (`Guitar Hero III/Quickplay/<song>`, `Guitar Hero III/Bonus/<song>`, `gh3dlc/gh3dlc/<song>`), extract the zip, and run `sh install-direction.sh <songs> --dry-run`, then `--yes`, then again (all files are already there). `tests/test_direction_install.py` runs the PowerShell script too when `pwsh` is on `PATH` or `GH3_PWSH` names it.
 
 ## Compare two builds
 

@@ -6,7 +6,7 @@ This guide tells you how to install the mod, how to select the stage and the ban
 
 You need Clone Hero `v1.1.0.6142-final` (64-bit) for Linux or Windows, and the release zip of the mod for your system: `gh3-skin-<version>-linux.zip` or `gh3-skin-<version>-windows.zip`. Use a separate copy of the game for the mod. macOS is not supported.
 
-Each zip has one folder with `Mods/`, the install script, this guide, `release.json` (the mod version), and `SHA256SUMS` (the SHA-256 value of each file).
+Each zip has one folder with `Mods/`, the install script, this guide, the credits and licenses, `release.json` (the mod version), and `SHA256SUMS` (the SHA-256 value of each file). `Mods/` has the mod, the ten GH3 venues, the GH3 band and character libraries, the GH3 characters, and the GH3 instruments.
 
 ### On Linux
 
@@ -179,11 +179,16 @@ GH3 songs have their GH3 camera cuts, light show, band performance, facial anima
 | `gh3-legends-of-rock-direction-<version>.zip` | "Guitar Hero III - Legends of Rock" (Chorus Encore, enchor.us; Google Drive folder "Guitar Hero III (Individual Songs)") | 75 of 75 |
 | `gh3-dlc-direction-<version>.zip` | "Guitar Hero III DLC" (Chorus Encore) | 76 of 77 |
 
-1. Find the folder of the chart pack in your songs folder. It contains one folder for each song, for example `Killswitch Engage - My Curse`.
-2. Extract the zip into that folder and accept to merge the folders. Each song folder gets one new file, `stage-events.json`.
-3. Scan the songs again in Clone Hero.
+Each `stage-events.json` must go into the song folder that has the matching chart (`notes.mid`). The song folders of a pack can be in subfolders, for example `Guitar Hero III/Quickplay/<song>` and `Guitar Hero III/Bonus/<song>`, or in two folders with the same name, for example `gh3dlc/gh3dlc/<song>`. The install script of the zip finds the folders for you:
 
-The zip does not change your charts, your audio, or `song.ini`. To remove the direction, delete `stage-events.json` from the song folders. The README in the zip tells which version of the pack it fits. A song with another chart (another version, or a chart that you converted yourself) gets the generated direction; the mod does not find GH3 direction by the title of a song.
+1. Extract the zip into a new folder. Do not extract it into your songs folder.
+2. On Windows, double-click `install-direction.bat` and type your Clone Hero songs folder (or drag the songs folder onto `install-direction.bat`). On Linux, open a terminal in the extracted folder and type `sh install-direction.sh "<songs folder>"`.
+3. The script calculates the SHA-256 of each `notes.mid` in the songs folder and in all its subfolders, and compares them with the chart SHA-256 values of the zip (`gh3-direction-charts.sha256`). It shows the files that it will copy, the files that are already there, and the songs that it did not find. Type `y` to copy the files. The script never replaces a file.
+4. Scan the songs again in Clone Hero.
+
+To install by hand, copy the `stage-events.json` of each song folder of the zip into your song folder with the same name. The README in the zip (`README-GH3-DIRECTION.md`) tells you more, and `gh3-direction-pack.json` gives the SHA-256 of each chart (`chartSha256`) and the version of the pack that the files fit.
+
+The zip does not change your charts, your audio, or `song.ini`. To remove the direction, delete `stage-events.json` from the song folders. A song with another chart (another version, or a chart that you converted yourself) gets the generated direction; the mod does not find GH3 direction by the title of a song.
 
 ## 6. Add stages, characters, and instruments
 
