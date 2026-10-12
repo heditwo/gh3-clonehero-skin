@@ -17,8 +17,8 @@ These optional variables add checks against real data to the C# tests:
 | Variable | Check |
 | --- | --- |
 | `GH3_PACK_ASSETS=$PWD/assets` | Loads all compiled packs and the library: cameras, lighting, scripts, actors, particles, flag-driven nodes |
-| `GH3_NATIVE_DATA=<GH3 DATA>` | Reads all native song PAKs; exact My Curse camera-edit round trip |
-| `GH3_EXPORTED_EVENTS=<events folder>` | Compares exported song direction with native playback |
+| `GH3_NATIVE_DATA=<GH3 DATA>` | Reads all GH3 song PAKs with the pipeline reader of `tools/Gh3SongTool`; the My Curse direction (53 cameras, 5 singer facial cues, 2,916 drum cues) |
+| `GH3_EXPORTED_EVENTS=<events folder>` | Compares the exported song direction (`songs/` of the band library cache) with the direction of the song PAKs |
 | `GH3_DIRECTION_ASSETS`, `GH3_CROWD_ASSETS`, `GH3_HAIR_ASSETS`, `GH3_LIGHTING_ASSETS`, `GH3_AUDIO_ASSETS` | Library parts |
 | `GH3_HAIR_BENCH=<profile>` | Hair motion bench (no checks), see [Hair motion](#hair-motion). `GH3_HAIR_BENCH=character:<.chchar>` runs the profile hair and the custom chains of a character package, see [Custom chains](#custom-chains) |
 | `GH3_CHARACTER_HAIR_ASSETS=<assets>` | Plays My Curse (240 s) with each profile of `<assets>/libraries/gh3-characters-v1` (with `<assets>/libraries/gh3-band-v1` and `<assets>/stages/events`). It prints the fastest hair joint and the largest mean turn from the rest pose for each profile, and fails at 30 m/s (`StageHair.WarningSpeed`). 2026-10-09: 3.0–11.7 m/s, 14–36° |

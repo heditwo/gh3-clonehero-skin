@@ -8,7 +8,6 @@ internal sealed record Gh3ScriptEvent(string Track, Gh3QbValue Row)
     private const int MaximumTextLength = 131072;
     private const int MaximumDepth = 64;
     private const int MaximumTrackName = 128;
-    public static readonly string[] Tracks = { "scripts", "anim", "triggers", "cameras", "lightshow", "crowd", "drums", "performance" };
     public uint Command => Required("scr").Integer;
     public uint Time => Required("time").Integer;
     public Gh3QbValue? Parameters => Row.Field("params");
@@ -39,12 +38,6 @@ internal sealed record Gh3ScriptEvent(string Track, Gh3QbValue Row)
         {
             throw new InvalidDataException("Invalid GH3 event.", error);
         }
-    }
-
-    public static IEnumerable<Gh3ScriptEvent> FromSong(Gh3Song song)
-    {
-        foreach (var track in Tracks)
-            foreach (var row in song.Array(track)) yield return new(track, row);
     }
 
     private Gh3QbValue Required(string name) => Row.Field(name) ?? throw new InvalidDataException($"GH3 event has no {name} field.");

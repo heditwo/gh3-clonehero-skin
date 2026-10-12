@@ -205,5 +205,5 @@ The `hud` step makes `assets/highway/beat-lines/beatline*.png` files that are di
 | `pipeline/render/` | Shader bundles and particle material fields |
 | `pipeline/hud/` | HUD, gem, highway, hit-effect, and font textures |
 | `pipeline/events.py` | Song direction export |
-| `pipeline/songtool.py` | Builds `tools/Gh3SongTool`, which shares the C# QB and song readers with the mod |
+| `pipeline/songtool.py` | Builds `tools/Gh3SongTool`: the C# song PAK reader, with the QB and script code of the mod |
 | `pipeline/paths.py` | Default locations |

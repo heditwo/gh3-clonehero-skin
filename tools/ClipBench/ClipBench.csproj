@@ -17,7 +17,6 @@
     <Compile Include="../../src/Packages/*.cs" Exclude="../../src/Packages/PackageRuntime.cs" Link="Packages/%(Filename)%(Extension)" />
     <Compile Include="../../src/Stage/Direction/StageTimeline.cs" Link="StageTimeline.cs" />
     <Compile Include="../../src/Stage/Direction/StageCue.cs" Link="StageCue.cs" />
-    <Compile Include="../../src/Stage/Direction/StageGh3Events.cs" Link="StageGh3Events.cs" />
     <Compile Include="../../src/Stage/Direction/StageCameraPath.cs" Link="StageCameraPath.cs" />
     <Compile Include="../../src/Stage/Band/BandAnimation.cs" Link="BandAnimation.cs" />
     <Compile Include="../../src/Stage/Band/StageDrummer.cs" Link="StageDrummer.cs" />

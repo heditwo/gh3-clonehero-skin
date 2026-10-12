@@ -495,8 +495,6 @@ internal sealed partial class GameplayStage
                 $"{clips} band clips decoded in {clipWorker:0} ms on worker threads while the main thread waited {clipWait:0} ms; managed heap {GC.GetTotalMemory(false) / BytesPerMegabyte:0} MB)");
             MelonLogger.Msg($"GH3 stage cues: {_timeline.CueCount} from {_timeline.Source}; {_timeline.Effects.Length} effects");
             foreach (var diagnostic in _timeline.Diagnostics) MelonLogger.Msg(diagnostic);
-            if (_timeline.NativeSong is { } nativeSong)
-                MelonLogger.Msg($"GH3 native cameras (first 8): {string.Join(", ", nativeSong.Notes("cameras").Take(8).Select(note => $"{note.Time}:{note.Note}:{note.Length}"))}");
         }
         catch (StageShaderUnsupportedException error)
         {

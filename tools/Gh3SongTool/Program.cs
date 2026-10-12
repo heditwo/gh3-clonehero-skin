@@ -68,8 +68,8 @@ try
         Console.WriteLine(JsonSerializer.Serialize(new
         {
             version = 1, offsetSeconds = 0, sourceSong = song.Id, sourceSha256 = Hash(song.Pak.Copy()),
-            events = StageGh3Events.Read(song),
-            playback = Gh3ScriptEvent.FromSong(song).Select(call => new
+            events = Gh3SongEvents.Read(song),
+            playback = song.ScriptEvents().Select(call => new
             {
                 track = call.Track, time = call.Time, command = Gh3QbText.Key(call.Command), result = Gh3CommandDispatch.Resolve(call)
             })
@@ -84,50 +84,15 @@ try
         Console.WriteLine($"Wrote {args[2]} from {song.Id} ({difficulty})");
         return 0;
     }
-    if (args.Length < 2 || args[0] is not ("inspect" or "camera"))
-        throw new ArgumentException("Usage: inspect <song_song.pak.xen> | events <song_song.pak.xen> | audit <DATA> <new output directory> [checksum files...] | camera <song_song.pak.xen> <index> <expected-note> <new-note> <output/song_song.pak.xen>");
+    if (args.Length != 2 || args[0] != "inspect")
+        throw new ArgumentException("Usage: inspect <song_song.pak.xen> | events <song_song.pak.xen> | chart <song_song.pak.xen> <notes.chart> [difficulty] | audit <DATA> <new output directory> [checksum files...]");
     var source = Gh3Song.Load(args[1]);
-    var notes = source.Notes("cameras");
-    object report;
-    if (args[0] == "inspect")
+    var report = new
     {
-        if (args.Length != 2) throw new ArgumentException("inspect takes one PAK path.");
-        report = new
-        {
-            song = source.Id, sha256 = Hash(source.Pak.Copy()), entries = source.Pak.Entries.Count,
-            tracks = new[] { "scripts", "anim", "triggers", "cameras", "lightshow", "crowd", "drums", "performance" }
-                .ToDictionary(name => name, name => new { notes = source.Notes(name).Length, scripts = source.Array(name).Count }),
-            cameras = notes.Select((note, index) => new { index, note.Time, note.Note, note.Length, note.Velocity })
-        };
-    }
-    else
-    {
-        if (args.Length != 6) throw new ArgumentException("camera takes a PAK path, index, expected note, new note, and output path.");
-        var index = int.Parse(args[2]);
-        var expected = uint.Parse(args[3]);
-        var replacement = uint.Parse(args[4]);
-        var output = source.ChangeCameraNote(index, expected, replacement);
-        var destination = Path.GetFullPath(args[5]);
-        if (Path.GetFileName(destination) != Path.GetFileName(args[1]))
-            throw new ArgumentException("Keep the original PAK filename in a separate output folder.");
-        var before = source.Pak.Copy();
-        var changed = Enumerable.Range(0, output.Length).Where(i => before[i] != output[i]).ToArray();
-        if (changed.Any(i => i < notes[index].NoteOffset || i >= notes[index].NoteOffset + 4))
-            throw new InvalidDataException("The export changed bytes outside the selected camera note.");
-        var otherEntries = source.Pak.Entries.Where(entry => entry != source.ChartEntry).ToArray();
-        foreach (var entry in otherEntries)
-            if (!before.AsSpan(entry.Offset, entry.Size).SequenceEqual(output.AsSpan(entry.Offset, entry.Size)))
-                throw new InvalidDataException("The export changed an unrelated PAK entry.");
-        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-        using (var stream = new FileStream(destination, FileMode.CreateNew, FileAccess.Write)) stream.Write(output);
-        report = new
-        {
-            song = source.Id, output = destination, index, timeMilliseconds = notes[index].Time,
-            previousNote = expected, newNote = replacement, sourceSha256 = Hash(before), outputSha256 = Hash(output),
-            size = output.Length, changedByteOffsets = changed, unchangedEntries = otherEntries.Length,
-            allOtherBytesIdentical = true
-        };
-    }
+        song = source.Id, sha256 = Hash(source.Pak.Copy()), entries = source.Pak.Entries.Count,
+        tracks = Gh3Song.Tracks.ToDictionary(name => name, name => new { notes = source.Notes(name).Length, scripts = source.Array(name).Count }),
+        cameras = source.Notes("cameras").Select((note, index) => new { index, note.Time, note.Note, note.Length, note.Velocity })
+    };
     Console.WriteLine(JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
     return 0;
 }

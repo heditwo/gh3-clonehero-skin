@@ -77,7 +77,7 @@ Do not write a number with a meaning in a function. Give it a name at the top of
 
 ## C#
 
-The C# code is the mod (`src/`), the logic tests (`tests/*.cs`), and the C# tools (`tools/PackageImport` and `tools/Gh3SongTool` link mod files).
+The C# code is the mod (`src/`), the logic tests (`tests/*.cs`), and the C# tools (`tools/PackageImport`, `tools/ClipBench`, and `tools/Gh3SongTool` link mod files; `scripts/test.sh` builds them). The GH3 song PAK reader is in `tools/Gh3SongTool`, not in `src/`: the mod does not read GH3 files.
 
 ### Files and modules
 

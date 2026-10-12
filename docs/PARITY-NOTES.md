@@ -378,6 +378,8 @@ A song PAK holds `<song>.mid.qb`, optional scripts, and song assets. The directi
 
 The original install has 159 song archives, 6,297 song script calls with 33 distinct commands, 3,569 global and venue script definitions, and five named note-map tables.
 
+Only the pipeline reads the song PAKs (`pipeline.events` with `tools/Gh3SongTool`). It writes the direction of each song into the original song library of the band library package. The mod does not read song PAKs; it finds the original direction of a song by its title and artist in that library.
+
 ## Performance
 
 Measured on an RTX 3060 laptop with My Curse (`GH3_SKIN_PROFILE=1`). After the 0.9.1 pass, median frame rates are 183–230 fps for the eight full venues; Soundcheck and Credits stay at the 241 fps cap. The Budokan pyro peak (about 12,000 particles) is the slowest case (minimum 71 fps).

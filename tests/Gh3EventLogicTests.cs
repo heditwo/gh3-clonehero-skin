@@ -96,8 +96,8 @@ internal static class Gh3EventLogicTests
         foreach (var path in Directory.EnumerateFiles(Path.Combine(root, "SONGS"), "*_song.pak.xen"))
         {
             var song = Gh3Song.Load(path);
-            var source = Gh3ScriptEvent.FromSong(song).OrderBy(call => call.Time).Select(call => call.Encode()).ToArray();
-            var native = StageNativeSong.Load(path);
+            var source = song.ScriptEvents().OrderBy(call => call.Time).Select(call => call.Encode()).ToArray();
+            var native = new StageTimeline(Gh3SongEvents.Read(song), song.Id);
             Check(native.Cues.Where(cue => cue.Type == "gh3-script").Select(cue => cue.Value).SequenceEqual(source), "All original script rows reach the runtime: " + song.Id);
             var midi = StageChartReader.ReadMidi(Midi(source.Select(text => ((int)Gh3ScriptEvent.Decode(text).Time, "gh3 " + text)).ToArray()));
             Check(midi.Cues.Where(cue => cue.Type == "gh3-script").Select(cue => cue.Value).SequenceEqual(source), "Original script rows survive standard MIDI text: " + song.Id);

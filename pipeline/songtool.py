@@ -1,4 +1,4 @@
-"""Build and locate tools/Gh3SongTool, the C# reader that shares the mod's QB, script, and song-event code."""
+"""Build and locate tools/Gh3SongTool, the C# reader of GH3 song PAKs that shares the mod's QB, script, and event code."""
 
 import os
 import subprocess

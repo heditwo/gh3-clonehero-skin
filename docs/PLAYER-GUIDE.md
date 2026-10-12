@@ -90,7 +90,7 @@ A song can select its stage in three ways. The mod looks for them in this order:
 
 1. A stage package with the name `venue.chstage` in the song folder (a zip file or a folder). The mod imports it when you start the song. The first start of the song can take some seconds longer.
 2. The key `gh3_stage` in the `[song]` section of `song.ini`, for example `gh3_stage = gh3.dive`. The value is the ID of an installed stage. Clone Hero does not use this key.
-3. The original GH3 venue of a GH3 career song: a native song (`<name>_song.pak.xen` in the song folder), or a chart with the title and artist of a GH3 career song. GH3 bonus songs have no venue.
+3. The original GH3 venue of a GH3 career song: a chart with the title and artist of a GH3 career song. GH3 bonus songs have no venue.
 
 **Songs can select their stage** (on by default) controls items 1 to 3 when you select a stage name or **Random**:
 

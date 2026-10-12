@@ -15,7 +15,7 @@ internal static class StageSelection
     public const string SongPackage = "venue.chstage";
 
     // In order: venue.chstage (zip or development folder) in the song folder, `gh3_stage` in song.ini, then the GH3 career
-    // venue of a native song (its `<name>_song.pak.xen`) or of an original GH3 song found by title and artist in the library.
+    // venue of an original GH3 song found by title and artist in the library.
     public static StageSuggestion? Suggestion(string songFolder, string title, string artist, string? libraryIndex)
     {
         if (string.IsNullOrEmpty(songFolder) || !Directory.Exists(songFolder)) return null;
@@ -24,10 +24,6 @@ internal static class StageSelection
         var ini = Path.Combine(songFolder, "song.ini");
         if (File.Exists(ini) && SongIniValue(File.ReadAllLines(ini), SongIniKey) is { Length: > 0 } stage)
             return new StageSuggestion(stage, "", "song.ini " + SongIniKey);
-        var native = Directory.EnumerateFiles(songFolder).Select(Path.GetFileName)
-            .Where(name => name!.EndsWith("_song.pak.xen", StringComparison.OrdinalIgnoreCase)).ToArray();
-        if (native.Length == 1 && NativeVenues.Of(native[0]![..^"_song.pak.xen".Length]) is { } venue)
-            return new StageSuggestion(venue, "", "GH3 career venue of " + native[0]);
         if (libraryIndex != null && OriginalSong(libraryIndex, title, artist) is { } original && NativeVenues.Of(original) is { } originalVenue)
             return new StageSuggestion(originalVenue, "", $"GH3 career venue of {original}");
         return null;

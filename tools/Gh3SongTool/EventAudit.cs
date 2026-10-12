@@ -71,12 +71,12 @@ internal static class EventAudit
                     data.Add(new { key = Gh3QbText.Key(key), name = Name(key), value = JsonSerializer.Deserialize<JsonElement>(text) });
                 }
                 File.WriteAllText(Path.Combine(output, "songs", song.Id + ".json"), JsonSerializer.Serialize(new { song = song.Id, sections = data }, Json));
-                foreach (var track in Gh3ScriptEvent.Tracks)
+                foreach (var track in Gh3Song.Tracks)
                 {
                     if (!notes.TryGetValue(track, out var pitches)) notes.Add(track, pitches = new());
                     foreach (var note in song.Notes(track)) pitches[note.Note] = pitches.GetValueOrDefault(note.Note) + 1;
                 }
-                foreach (var call in Gh3ScriptEvent.FromSong(song))
+                foreach (var call in song.ScriptEvents())
                 {
                     var result = Gh3CommandDispatch.Resolve(call);
                     if (!commands.TryGetValue(call.Command, out var use))

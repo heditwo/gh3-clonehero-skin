@@ -53,10 +53,6 @@ internal static class StageChartReader
     public static StageTimeline Load(string songDirectory, string chartPath, string? library = null, string title = "", string artist = "",
         StagePerformance? performance = null)
     {
-        var native = Directory.Exists(songDirectory) ? Directory.EnumerateFiles(songDirectory)
-            .Where(path => path.EndsWith("_song.pak.xen", StringComparison.OrdinalIgnoreCase)).ToArray() : Array.Empty<string>();
-        if (native.Length > 1) throw new InvalidDataException("The song folder contains more than one native GH3 song PAK.");
-        if (native.Length == 1) return StageNativeSong.Load(native[0]);
         var sidecar = Path.Combine(songDirectory, "stage-events.json");
         var file = File.Exists(sidecar) ? ReadEventFile(sidecar) : null;
         if (file?.Version == 1) return EventTimeline(file, sidecar);

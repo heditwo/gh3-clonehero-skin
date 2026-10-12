@@ -5,7 +5,7 @@ namespace Gh3Skin;
 internal sealed record Gh3CommandResult(string Name, string Status, string[] Gaps, string Type = "", string Value = "",
     string Role = "", bool Immediate = false, bool Loop = false, int Count = 1, int DisableArms = 0);
 
-// Maps the GH3 script calls of song direction (native, converted, or authored) to stage cues, with a support status.
+// Maps the GH3 script calls of song direction (original, converted, or authored) to stage cues, with a support status.
 internal static class Gh3CommandDispatch
 {
     // GH3: lightshow_defaultblendtime (scripts\fx\lightshow.qb), PARITY-NOTES.md#lighting-and-node-flags.

@@ -120,7 +120,7 @@ internal static class PickerLogicTests
         Check(StageSelection.Suggestion(song, "Slow Ride", "Foghat", null)?.StageId == "gh3.hell", "song.ini gh3_stage suggests a stage");
         File.WriteAllText(Path.Combine(song, "song.ini"), "[song]\nname = Slow Ride\n");
         File.WriteAllBytes(Path.Combine(song, "slowride_song.pak.xen"), new byte[] { 0 });
-        Check(StageSelection.Suggestion(song, "", "", null)?.StageId == "gh3.party", "a native career song suggests its GH3 venue");
+        Check(StageSelection.Suggestion(song, "", "", null) == null, "the mod does not read a GH3 song PAK in the song folder");
         File.Delete(Path.Combine(song, "slowride_song.pak.xen"));
         var index = Path.Combine(root, "index.json");
         File.WriteAllText(index, "{\"version\":1,\"songs\":[{\"title\":\"Raining Blood\",\"artist\":\"Slayer\",\"file\":\"rainingblood.json\"}]}");

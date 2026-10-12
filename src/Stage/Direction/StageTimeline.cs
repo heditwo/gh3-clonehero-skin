@@ -54,7 +54,6 @@ internal sealed class StageTimeline
     public StageCue[] Cameras { get; }
     public int CueCount { get; }
     public string Source { get; }
-    public Gh3Song? NativeSong { get; init; }
     public string SourceSong { get; init; } = "";
     public string Countoff { get; init; } = "";
     private readonly string[] _commandDiagnostics;

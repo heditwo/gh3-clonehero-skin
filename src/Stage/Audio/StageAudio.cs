@@ -32,8 +32,7 @@ internal sealed class StageAudio : IDisposable
         var path = Path.Combine(directory, "audio.json");
         if (!File.Exists(path)) return null;
         var bank = StageSoundBank.Load(path);
-        var song = timeline.NativeSong?.Id ?? timeline.SourceSong;
-        var countoff = timeline.Countoff.Length > 0 ? timeline.Countoff : bank.Countoffs.GetValueOrDefault(Gh3Checksum.Of(song), "sticks_normal");
+        var countoff = timeline.Countoff.Length > 0 ? timeline.Countoff : bank.Countoffs.GetValueOrDefault(Gh3Checksum.Of(timeline.SourceSong), "sticks_normal");
         return new(directory, bank, new StageAudioState(bank, timeline, venue, countoff) { Training = training });
     }
 

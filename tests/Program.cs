@@ -31,7 +31,7 @@ LiteralGuardTests.Run();
 ComboReelLogicTests.Run();
 HookPageGuardTests.Run();
 StageLogicTests.Run();
-NativeSongLogicTests.Run();
+Gh3SongLogicTests.Run();
 Gh3EventLogicTests.Run();
 CrowdLogicTests.Run();
 ActorLogicTests.Run();

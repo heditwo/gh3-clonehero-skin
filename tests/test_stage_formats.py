@@ -41,7 +41,7 @@ class StageFormatTests(unittest.TestCase):
         self.assertEqual(result["playback"], [])
 
     def test_wrong_song_id_is_not_silently_exported(self):
-        with self.assertRaisesRegex(ValueError, "Expected one native chart"):
+        with self.assertRaisesRegex(ValueError, "Expected one chart"):
             events.extract(song_fixture(), "another_song")
 
     def test_truncated_pak_entry_is_rejected(self):
@@ -62,7 +62,7 @@ class StageFormatTests(unittest.TestCase):
     def test_unknown_note_pitch_is_rejected(self):
         pak = bytearray(song_fixture())
         pak[64 + 84 : 64 + 88] = words(256)
-        with self.assertRaisesRegex(ValueError, "Invalid native lightshow note"):
+        with self.assertRaisesRegex(ValueError, "Invalid lightshow note"):
             events.extract(pak, "fixture")
 
 

@@ -29,7 +29,9 @@
     <Compile Include="../src/HookPageGuard.cs" Link="HookPageGuard.cs" />
     <Compile Include="../src/Stage/Direction/StageTimeline.cs" Link="StageTimeline.cs" />
     <Compile Include="../src/Stage/Direction/StageCue.cs" Link="StageCue.cs" />
-    <Compile Include="../src/Stage/Direction/StageGh3Events.cs" Link="StageGh3Events.cs" />
+    <Compile Include="../tools/Gh3SongTool/Gh3Song.cs" Link="Gh3SongTool/Gh3Song.cs" />
+    <Compile Include="../tools/Gh3SongTool/Gh3Pak.cs" Link="Gh3SongTool/Gh3Pak.cs" />
+    <Compile Include="../tools/Gh3SongTool/Gh3SongEvents.cs" Link="Gh3SongTool/Gh3SongEvents.cs" />
     <Compile Include="../src/Stage/Crowd/StageCrowdState.cs" Link="StageCrowdState.cs" />
     <Compile Include="../src/Stage/Scripts/StageActorState.cs" Link="StageActorState.cs" />
     <Compile Include="../src/Stage/Audio/StageSoundBank.cs" Link="StageSoundBank.cs" />
@@ -104,7 +106,6 @@
     <Compile Include="../src/Stage/Direction/Gh3NoteConstants.cs" Link="Gh3NoteConstants.cs" />
     <Compile Include="../src/Stage/Direction/StageGeneratedDirection.cs" Link="StageGeneratedDirection.cs" />
     <Compile Include="../src/Stage/Direction/MidiConstants.cs" Link="MidiConstants.cs" />
-    <Compile Include="../src/Stage/Direction/StageNativeSong.cs" Link="StageNativeSong.cs" />
     <Compile Include="../src/Stage/Direction/StageSongDirection.cs" Link="StageSongDirection.cs" />
     <Compile Include="../src/Stage/Direction/StageShowFlow.cs" Link="StageShowFlow.cs" />
     <Compile Include="../src/Hud/YouRockAnimation.cs" Link="YouRockAnimation.cs" />

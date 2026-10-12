@@ -31,7 +31,7 @@ internal static class StageShowFlow
         }
         return new StageTimeline(cues, timeline.Source)
         {
-            NativeSong = timeline.NativeSong, SourceSong = timeline.SourceSong, Countoff = timeline.Countoff,
+            SourceSong = timeline.SourceSong, Countoff = timeline.Countoff,
             ChannelSources = timeline.ChannelSources, Diagnostics = timeline.Diagnostics
         };
     }

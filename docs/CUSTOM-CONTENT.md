@@ -2,9 +2,9 @@
 
 ## Status
 
-This is the reference for song direction (sections 6 and 10 to 12) and for the stage-pack source format (sections 2 to 5 and 9). Players and creators use packages: stages (`.chstage`) and characters (`.chchar`) in [package format v1](PACKAGE-FORMAT.md), made with the Blender add-on ([CREATOR-GUIDE.md](CREATOR-GUIDE.md)). A `.chstage` package holds a stage pack of this format in a zip. The pipeline writes the GH3 venues as source packs, and the converter makes the packages from them ([PIPELINE.md](PIPELINE.md)). All ten GH3 venues and custom stages use the same compiler and the same loader.
+This is the reference for song direction (sections 6, 10, and 11) and for the stage-pack source format (sections 2 to 5 and 9). Players and creators use packages: stages (`.chstage`) and characters (`.chchar`) in [package format v1](PACKAGE-FORMAT.md), made with the Blender add-on ([CREATOR-GUIDE.md](CREATOR-GUIDE.md)). A `.chstage` package holds a stage pack of this format in a zip. The pipeline writes the GH3 venues as source packs, and the converter makes the packages from them ([PIPELINE.md](PIPELINE.md)). All ten GH3 venues and custom stages use the same compiler and the same loader.
 
-The authoring target is Moonscraper's chart workflow with complete GH3 data and behavior. Native GH3 archives are reference inputs and a possible export target. Authors do not need to edit or distribute PAK files. Sections 9 to 12 give the workflow.
+The authoring target is Moonscraper's chart workflow with complete GH3 data and behavior. GH3 archives are inputs of the pipeline only: the mod does not read GH3 files. Authors do not need to edit or distribute PAK files. Sections 9 to 11 give the workflow.
 
 The library uses **four original GH3 skeletons and their animations**. Characters use these fixed profiles (PACKAGING-PLAN decision 2), or a GH3 guitarist profile of the character library `gh3-characters-v1` with its own skeleton and animations ([PACKAGE-FORMAT.md section 10.1](PACKAGE-FORMAT.md#101-character-library)), or keep the skeleton of their model: the mod retargets the clips of the profile to it (PACKAGING-PLAN decision 13, [PACKAGE-FORMAT.md section 9.6](PACKAGE-FORMAT.md#96-own-skeleton)). Instruments are packages too ([PACKAGE-FORMAT.md section 9.4](PACKAGE-FORMAT.md#94-instrument-chinst)). Stages supply the setting and camera shots. Charts select the performance through timed cues.
 
@@ -538,11 +538,11 @@ On the GH3 rigs, each viseme is a pose of the 18 jaw, lip, cheek, and tongue bon
 
 A character on its own skeleton uses its blend shapes (`face` in `character.json`, [PACKAGE-FORMAT.md section 9.6](PACKAGE-FORMAT.md#96-own-skeleton)): a viseme uses its own shape when the character has it (the VRChat and Oculus visemes `pp`, `ff`, `th`, `dd`, `kk`, `ch`, `ss`, `nn`, `rr`), else a mix of the vowel shapes `a`, `i`, `u`, `e`, `o`. `browUp`, `browDown`, and `squint` show the brows and the eyes. The head and the eyes of the character follow the GH3 rig.
 
-GH3 facial clips always have priority: a native song, an original song from the library, or a `face` cue keeps the GH3 face exactly; the mod then does not decode the stem. The guitarist does not get lip sync. Set `GH3_SKIN_LIPSYNC=off` to keep the face still. The F6 picker has no lip-sync option. The game log tells the source: `lip sync from 253 sung notes (197 syllables, 552 viseme keys; 149 words from the pronouncing dictionary, 0 from spelling rules)` and `vocal stem loudness from vocals.opus (221.5 s) ready 665 ms after the chart was read`.
+GH3 facial clips always have priority: an original song from the library or a `face` cue keeps the GH3 face exactly; the mod then does not decode the stem. The guitarist does not get lip sync. Set `GH3_SKIN_LIPSYNC=off` to keep the face still. The F6 picker has no lip-sync option. The game log tells the source: `lip sync from 253 sung notes (197 syllables, 552 viseme keys; 149 words from the pronouncing dictionary, 0 from spelling rules)` and `vocal stem loudness from vocals.opus (221.5 s) ready 665 ms after the chart was read`.
 
 ### GH3 script calls in charts
 
-A text event can hold `gh3 ` followed by the JSON of `Gh3ScriptEvent.Encode`: a version, the source track, and the typed source row. Checksums can be `0x12345678` or a name. The chart time controls playback; the row's original `time` stays as metadata. Such events can be on custom track names. Native and authored calls use the same dispatcher.
+A text event can hold `gh3 ` followed by the JSON of `Gh3ScriptEvent.Encode`: a version, the source track, and the typed source row. Checksums can be `0x12345678` or a name. The chart time controls playback; the row's original `time` stays as metadata. Such events can be on custom track names. Calls from the original song library and authored calls use the same dispatcher.
 
 ### Song event file
 
@@ -553,23 +553,9 @@ MISE_QUIET=1 python3 -m pipeline.events "$HOME/games/gh3-test-tools/game/DATA/SO
   --output "/path/to/song/stage-events.json"
 ```
 
-The command does not replace an existing file. `offsetSeconds` shifts all cues of the file; a positive value runs them later.
+The command does not replace an existing file. `offsetSeconds` shifts all cues of the file; a positive value runs them later. The mod does not read a GH3 song PAK (`<song>_song.pak.xen`) in a song folder; use this command to get its direction.
 
-## 11. Native song PAK
-
-Put exactly one `<song>_song.pak.xen` in the song folder, beside the playable chart and audio. It supplies direction, Expert guitar and bass gestures, and fretbar timing, and it has priority over the other sources. The audio and chart must use the native song's time origin.
-
-`tools/Gh3SongTool` inspects a song PAK and changes one camera note. Only that four-byte field changes; all other bytes stay:
-
-```bash
-MISE_QUIET=1 dotnet run --project tools/Gh3SongTool -c Release -- inspect /path/to/mycurse_song.pak.xen
-MISE_QUIET=1 dotnet run --project tools/Gh3SongTool -c Release -- \
-  camera /path/to/mycurse_song.pak.xen 1 84 89 /path/to/edited/mycurse_song.pak.xen
-```
-
-The camera arguments are the zero-based row, the expected old note, and the new note. Split PAK/PAB song archives and console files are not supported. There is no general QB writer.
-
-## 12. Moonscraper
+## 11. Moonscraper
 
 The editor fork is <https://github.com/heditwo/gh3-chart-editor>, based on Moonscraper 1.5.13 (upstream `7b4a7eab62e286b2a7bc2b21d2c22d4f65ff44fd`). It adds preservation fixes and an event browser with search, filters, presets, raw arguments, and undo. The accepted workflow is: save `.msce`, export `notes.mid`, play with the mod.
 

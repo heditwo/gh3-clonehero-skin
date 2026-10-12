@@ -2,19 +2,16 @@ using System.Buffers.Binary;
 using System.Text;
 using Gh3Skin;
 
-internal static class NativeSongLogicTests
+internal static class Gh3SongLogicTests
 {
     public static void Run()
     {
         var bytes = Fixture();
         var song = new Gh3Song(bytes, "native_test");
-        Check(song.Notes("cameras")[1] is { Time: 12453, Note: 84, Length: 8268, Velocity: 91 }, "Native timing and velocity survive reading.");
-        Check(song.ChangeCameraNote(1, 84, 84).SequenceEqual(bytes), "A no-op export is byte-identical.");
-        var edited = song.ChangeCameraNote(1, 84, 89);
-        Check(Enumerable.Range(0, bytes.Length).Where(i => bytes[i] != edited[i]).SequenceEqual(new[] { song.Notes("cameras")[1].NoteOffset + 3 }),
-            "One camera edit changes exactly one byte and preserves unknown content.");
-        Check(new Gh3Song(edited, "native_test").ChangeCameraNote(1, 89, 84).SequenceEqual(bytes), "Undo restores the exact original archive.");
-        Reject(() => song.ChangeCameraNote(1, 85, 89));
+        Check(song.Notes("cameras")[1] is { Time: 12453, Note: 84, Length: 8268, Velocity: 91 }, "Song PAK timing and velocity survive reading.");
+        var cues = new StageTimeline(Gh3SongEvents.Read(song), song.Id);
+        Check(cues.Cameras[1] is { Value: "84", Time: 12.453, Duration: 8.268 }, "The pipeline keeps the camera timing of the song PAK.");
+        Check(cues.Track("drum")[0].Velocity == 50, "The pipeline keeps the drum velocity of the song PAK.");
         Reject(() => new Gh3Song(bytes, "wrong_song"));
         Reject(() => new Gh3Song(bytes[..^40], "native_test"));
         var corrupt = bytes.ToArray();
@@ -24,50 +21,37 @@ internal static class NativeSongLogicTests
         Write(cycle, 256 + 60, 48);
         Reject(() => new Gh3Song(cycle, "native_test"));
 
-        var directory = Path.Combine(Path.GetTempPath(), "opencode", "gh3-native-test-" + Guid.NewGuid().ToString("N"));
+        var directory = Path.Combine(Path.GetTempPath(), "opencode", "gh3-song-pak-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         try
         {
-            var path = Path.Combine(directory, "native_test_song.pak.xen");
-            File.WriteAllBytes(path, edited);
-            File.WriteAllText(Path.Combine(directory, "stage-events.json"), "invalid legacy data");
-            var timeline = StageChartReader.Load(directory, "");
-            Check(timeline.NativeSong != null && timeline.Cameras[1].Value == "89", "Playback loads the native package directly.");
-            Check(timeline.Cameras[1].Time == 12.453 && timeline.Cameras[1].Duration == 8.268, "Playback preserves native camera timing.");
-            Check(timeline.NativeSong!.Notes("drums")[0].Velocity == 50, "The native document retains drum velocity.");
-            Check(timeline.Track("drum")[0].Velocity == 50, "The native runtime cue retains drum velocity.");
-            File.WriteAllBytes(Path.Combine(directory, "other_song.pak.xen"), edited);
-            Reject(() => StageChartReader.Load(directory, ""));
+            File.WriteAllBytes(Path.Combine(directory, "native_test_song.pak.xen"), bytes);
+            File.WriteAllBytes(Path.Combine(directory, "other_song.pak.xen"), bytes);
+            var timeline = StageChartReader.Load(directory, Path.Combine(directory, "notes.chart"));
+            Check(timeline.CueCount == 0 && timeline.Source == "no venue cues", "The mod does not read GH3 song PAKs in a song folder.");
         }
         finally { Directory.Delete(directory, true); }
 
         if (Environment.GetEnvironmentVariable("GH3_NATIVE_DATA") is { } root) CheckOriginal(root);
-        Console.WriteLine("Native GH3 PAK preservation, camera edit, bounds, and direct playback checks passed.");
+        Console.WriteLine("GH3 song PAK reader (pipeline) bounds and direction checks passed; the mod ignores song PAKs.");
     }
 
     private static void CheckOriginal(string root)
     {
-        var file = Path.Combine(root, "SONGS", "mycurse_song.pak.xen");
-        var original = File.ReadAllBytes(file);
-        var song = Gh3Song.Load(file);
+        var song = Gh3Song.Load(Path.Combine(root, "SONGS", "mycurse_song.pak.xen"));
         Check(song.Pak.Entries.Count == 9 && song.Notes("cameras").Length == 53, "Read the original My Curse archive.");
         Check(song.Notes("drums").Length == 2916 && song.Notes("drums")[0].Velocity == 75, "Read original drum direction.");
-        var output = song.ChangeCameraNote(1, 84, 89);
-        Check(Enumerable.Range(0, original.Length).Where(i => original[i] != output[i]).SequenceEqual(new[] { song.Notes("cameras")[1].NoteOffset + 3 }),
-            "Original My Curse export differs by exactly one camera byte.");
-        Check(new Gh3Song(output, "mycurse").ChangeCameraNote(1, 89, 84).SequenceEqual(original), "Original My Curse round trip is lossless.");
-        var timeline = StageNativeSong.Load(file);
+        var timeline = new StageTimeline(Gh3SongEvents.Read(song), song.Id);
         Check(timeline.Cameras.Length == 53 && timeline.Track("face", "singer").Length == 5 && timeline.Track("drum").Length == 2916 && timeline.Effects.Length == 18,
-            "Original My Curse plays its native direction without an event export.");
+            "Original My Curse gives its complete direction to the pipeline.");
         var count = 0;
         foreach (var path in Directory.EnumerateFiles(Path.Combine(root, "SONGS"), "*_song.pak.xen"))
         {
-            var native = Gh3Song.Load(path);
-            foreach (var section in new[] { "scripts", "anim", "triggers", "cameras", "lightshow", "crowd", "drums", "performance" })
-                _ = native.Notes(section);
+            var original = Gh3Song.Load(path);
+            foreach (var section in Gh3Song.Tracks) _ = original.Notes(section);
             count++;
         }
-        Console.WriteLine($"Read native direction from {count} installed GH3 song archives.");
+        Console.WriteLine($"Read the direction of {count} installed GH3 song archives.");
     }
 
     private static byte[] Fixture()
@@ -116,6 +100,6 @@ internal static class NativeSongLogicTests
     private static void Reject(Action action)
     {
         try { action(); } catch (InvalidDataException) { return; }
-        throw new Exception("Invalid native data was accepted.");
+        throw new Exception("Invalid song PAK data was accepted.");
     }
 }
