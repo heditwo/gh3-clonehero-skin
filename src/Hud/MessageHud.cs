@@ -4,7 +4,8 @@ using UnityEngine.UI;
 namespace Gh3Skin;
 
 // GH3's centre-screen gameplay messages drawn from the original message font. Measured: timing and scale keyframes
-// from 60 fps recordings of original GH3 at 1600x900 (My Curse, The Dive).
+// from 60 fps recordings of original GH3 at 1600x900 (My Curse, The Dive). "Star Power Ready" is not drawn here: the
+// GH3 frames of ReadyBannerHud already contain that text.
 internal sealed class MessageHud
 {
     private readonly record struct Key(float Time, float Scale, float Alpha, float Warm);
@@ -18,10 +19,6 @@ internal sealed class MessageHud
         new(1.80f, 1.73f, 1, 1), new(2.05f, 1.36f, 1, 1), new(2.15f, 1.63f, 1, 1), new(2.30f, 1.26f, 1, 1),
         new(2.45f, 1.15f, 0, 1),
     };
-    private static readonly Key[] ReadyKeys =
-    {
-        new(0.00f, 2.6f, 0, 1), new(0.20f, 1.5f, 1, 1), new(1.60f, 1.5f, 1, 1), new(1.95f, 1.1f, 0, 1),
-    };
     private const float CenterX = 800;
     // GH3 lays the message out with extra tracking between glyphs and a wide word space.
     private const float Tracking = 1;
@@ -34,10 +31,7 @@ internal sealed class MessageHud
     private const float MessageScale = 1.2f;
     private const float WarmGreenLoss = 0.04f;
     private const float WarmBlueLoss = 0.40f;
-    // Tuned: the Star Power Ready wave (radians per second, radians per letter, units), and the baseline offset.
-    private const float WaveSpeed = 7;
-    private const float WavePhasePerLetter = 0.55f;
-    private const float WaveHeight = 6;
+    // Tuned: the baseline offset.
     private const float BaselineOffset = 15;
     // Measured: the light streak peaks 0.35 s into the message and lasts 0.25 s on each side.
     private const float StreakPeak = 0.35f;
@@ -55,10 +49,8 @@ internal sealed class MessageHud
     private readonly List<RawImage> _images = new();
     private string _text = "";
     private Key[] _keys = StreakKeys;
-    private bool _ready;
     private float _start = float.NegativeInfinity;
     private int _lastCombo;
-    private bool _wasReady;
 
     public MessageHud(Transform parent, string fonts)
     {
@@ -92,19 +84,15 @@ internal sealed class MessageHud
     public void Update(GameplayState state, float time)
     {
         if (state.Combo < _lastCombo) _lastCombo = 0;
-        if (state.Combo >= 100 && state.Combo / 100 > _lastCombo / 100) Show($"{state.Combo / 100 * 100} Note Streak!", StreakKeys, false, time);
+        if (state.Combo >= 100 && state.Combo / 100 > _lastCombo / 100) Show($"{state.Combo / 100 * 100} Note Streak!", StreakKeys, time);
         _lastCombo = state.Combo;
-        var ready = state.StarPower >= 0.5f && !state.StarPowerActive;
-        if (ready && !_wasReady) Show("Star Power Ready", ReadyKeys, true, time);
-        _wasReady = ready;
         Draw(time);
     }
 
-    private void Show(string text, Key[] keys, bool ready, float time)
+    private void Show(string text, Key[] keys, float time)
     {
         _text = text;
         _keys = keys;
-        _ready = ready;
         _start = time;
         while (_images.Count < text.Length) _images.Add(HudVisual.Image(_root, "glyph", _font.Atlas, new Rect(0, 0, 1, 1)));
     }
@@ -137,9 +125,7 @@ internal sealed class MessageHud
         }
         var key = Sample(_keys, age);
         var scale = key.Scale * MessageScale;
-        // Tuned: the Star Power Ready color.
-        var color = _ready ? new Color { r = 0.55f, g = 0.86f, b = 0.96f, a = key.Alpha }
-            : new Color { r = 1, g = 1 - WarmGreenLoss * key.Warm, b = 1 - WarmBlueLoss * key.Warm, a = key.Alpha };
+        var color = new Color { r = 1, g = 1 - WarmGreenLoss * key.Warm, b = 1 - WarmBlueLoss * key.Warm, a = key.Alpha };
         var width = 0f;
         foreach (var character in _text) width += Advance(character);
         var x = CenterX - width * scale / 2;
@@ -152,18 +138,16 @@ internal sealed class MessageHud
                 if (i < _text.Length) x += Advance(_text[i]) * scale;
                 continue;
             }
-            // Star Power Ready rolls a wave through its letters.
-            var wave = _ready ? MathF.Sin(age * WaveSpeed - i * WavePhasePerLetter) * WaveHeight : 0;
             image.enabled = true;
             image.uvRect = glyph.Uv;
             image.color = color;
             // The font stores each glyph's distance below the baseline (descenders are positive).
             var bottom = CenterY + BaselineOffset * scale + glyph.X * scale;
-            HudVisual.Layout(image, new Rect(x, bottom - glyph.Height * scale + wave, glyph.Width * scale, glyph.Height * scale));
+            HudVisual.Layout(image, new Rect(x, bottom - glyph.Height * scale, glyph.Width * scale, glyph.Height * scale));
             x += Advance(_text[i]) * scale;
         }
         // The light streak sweeps in from the left while the streak message flashes white.
-        var streak = _ready ? 0 : Math.Clamp(1 - Math.Abs(age - StreakPeak) / StreakHalfWidth, 0, 1);
+        var streak = Math.Clamp(1 - Math.Abs(age - StreakPeak) / StreakHalfWidth, 0, 1);
         _streak.enabled = streak > 0;
         if (_streak.enabled)
         {

@@ -14,7 +14,6 @@ internal sealed partial class GameplaySpriteRenderer
     private readonly List<GemVisual> _notes = new();
     private readonly List<BeatlineVisual> _beatlines = new();
     private readonly List<(SpriteRenderer Renderer, Transform Transform, GameObject Object, string Name)> _effects = new();
-    private readonly List<SpriteRenderer> _hidden = new();
     private readonly List<Renderer> _stockHitEffects = new();
     private readonly List<(Renderer Renderer, bool ForceRenderingOff)> _stockStarPowerEffects = new();
     private readonly Dictionary<IntPtr, string> _spriteNames = new();
@@ -35,7 +34,7 @@ internal sealed partial class GameplaySpriteRenderer
         _notes.Clear();
         _beatlines.Clear();
         _effects.Clear();
-        _hidden.Clear();
+        ResetStockHud();
         _stockHitEffects.Clear();
         foreach (var (renderer, forceRenderingOff) in _stockStarPowerEffects)
             if (renderer != null)
@@ -77,9 +76,6 @@ internal sealed partial class GameplaySpriteRenderer
             _neck = _player.Find("Neck");
             for (var lane = 0; lane < _frets.Length; lane++)
                 _frets[lane] = _player.Find(FretNames[lane]);
-            var hud = GameObject.Find("HUDCam")?.transform.Find("HUD");
-            if (hud != null)
-                CacheHidden(hud);
             _starParticles = score.starProgress?.starParticles?.GetComponent<ParticleSystemRenderer>();
             var stockEffects = player.spNeckRenderer?.spController;
             if (stockEffects != null)
@@ -124,9 +120,6 @@ internal sealed partial class GameplaySpriteRenderer
         foreach (var (renderer, _) in _stockStarPowerEffects)
             if (renderer != null)
                 renderer.forceRenderingOff = true;
-        foreach (var renderer in _hidden)
-            if (renderer != null)
-                renderer.sprite = _assets.GetSprite("clear");
         if (!_options.KeepStockFlames)
             foreach (var renderer in _stockHitEffects)
                 if (renderer != null && renderer.enabled)
@@ -168,6 +161,7 @@ internal sealed partial class GameplaySpriteRenderer
             else if (entry.Name is "sidebar_l" or "sidebar_r")
                 renderer.enabled = false;
         }
+        HideStockHud(player);
     }
 
     private void CachePlayer(Transform transform)
@@ -200,15 +194,6 @@ internal sealed partial class GameplaySpriteRenderer
         }
         for (var child = 0; child < transform.childCount; child++)
             CachePlayer(transform.GetChild(child));
-    }
-
-    private void CacheHidden(Transform transform)
-    {
-        var renderer = transform.GetComponent<SpriteRenderer>();
-        if (renderer != null)
-            _hidden.Add(renderer);
-        for (var child = 0; child < transform.childCount; child++)
-            CacheHidden(transform.GetChild(child));
     }
 
     private string SpriteName(Sprite? sprite)

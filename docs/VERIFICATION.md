@@ -174,6 +174,8 @@ flock /tmp/opencode/gh3-record.lock env GH3_WINDOWS_TEST_DIR=$HOME/games/clonehe
 
 Without a launch option the game uses Direct3D 11 (DXVK); `-force-glcore` selects OpenGL. Windows paths in variables need the `Z:` drive. Put the frames on a disk folder: `/tmp` here is a RAM disk with a quota, and a full `/tmp` also stops Xwayland (`Could not write pid to lock file`). Settings that the test copy needs: `analytics_opt = 3` in `PlayerData\settings.ini` (else the analytics consent dialog stays on top of the menus), and fonts with the name Arial in the prefix (`C:\windows\Fonts\arial.ttf`, for example Liberation Sans with the font name changed). Without Arial, Unity's IMGUI shows no text in the picker. The zip release of the game runs in portable mode: `Custom` and `Songs` are in `<game>\PlayerData`.
 
+Stock HUD check (all platforms): the log has one `Clone Hero stock HUD hidden (<n>): <parts>; HUDCam features kept: <parts>` line for each song. With `GH3_SKIN_TRACE=1`, each `[trace] stock hud parts=<n> layer=<layer> shown=<n>` line (every 2 s) must have `shown=0`: `shown` counts the stock HUD renderers that a camera drew in the last frame (`Renderer.isVisible`) and the stock highway rails that are on. Look also at the right side of the highway in the frames: no dark rail, no multiplier ball, and no score panel next to the rock meter.
+
 Run the same chart on Linux with `scripts/capture-preview.sh` and the same `GH3_SKIN_TRACE` and capture variables. Then compare the frames (same song times) and the `[trace]` lines of the two loader logs.
 
 ## GH3 direction files
