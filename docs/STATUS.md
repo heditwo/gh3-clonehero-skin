@@ -1,6 +1,6 @@
 # Current status and known gaps
 
-Version **0.9.10** (`src/Packages/ModInfo.cs`; it reads package format 1.0 of all kinds: `chstage/1.0`, `chchar/1.0`, `chinst/1.0`, `chlib/1.0`). Release readiness: the release zips build and install, but nothing is published ([PACKAGING-PLAN.md section 10](PACKAGING-PLAN.md#10-before-a-release)).
+Version **0.9.11** (`src/Packages/ModInfo.cs`; it reads package format 1.0 of all kinds: `chstage/1.0`, `chchar/1.0`, `chinst/1.0`, `chlib/1.0`). Release readiness: the release zips build and install, but nothing is published ([PACKAGING-PLAN.md section 10](PACKAGING-PLAN.md#10-before-a-release)).
 
 ## Platforms
 
