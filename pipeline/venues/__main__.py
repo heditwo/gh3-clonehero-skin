@@ -35,21 +35,9 @@ from pipeline.paths import GH3_DATA, STAGE_PACKS, STAGES
 from pipeline.stagepack.gltf import GlbWriter, matrix_quaternion
 from pipeline.stagepack.install import install
 from pipeline.stagepack.pack import load_json, write_json
-from pipeline.venues import lighting
+from pipeline.venues import VENUES, lighting, stage_id
 from pipeline.venues.transforms import angles_matrix
 
-VENUES = {
-    "z_party": "Backyard Bash",
-    "z_dive": "Mitch's Moose Lounge",
-    "z_video": "Video Shoot",
-    "z_artdeco": "Ye Olde Royal Odeon",
-    "z_prison": "Shanker's Island",
-    "z_wikker": "Desert Rock Tour",
-    "z_budokan": "Kaiju Megadome",
-    "z_hell": "Lou's Inferno",
-    "z_soundcheck": "Soundcheck",
-    "z_credits": "Credits",
-}
 FLARE_TEMPLATE = "379bed00"
 # GO_NoHousing01 flare models show only their lens flare card; the housing body is a hidden placeholder.
 FLARE_HOUSINGS = ["GO_NoHousing01_Flare01", "GO_NoHousing01_SmallFlare01"]
@@ -693,7 +681,7 @@ def export(source, scripts, global_entries, zone, directory, global_references=N
     manifest = {
         "version": 1,
         "kind": "stage",
-        "id": "gh3." + zone[2:],
+        "id": stage_id(zone),
         "name": VENUES[zone],
         "library": LIBRARY_ID,
         "model": "stage.glb",
@@ -759,7 +747,7 @@ def main():
     global_references = references(scripts.values())
     reports = []
     for zone in args.venue or VENUES:
-        folder = args.output / ("gh3." + zone[2:])
+        folder = args.output / stage_id(zone)
         report = export(source, scripts, global_entries, zone, folder, global_references)
         report["compiled"] = install(folder, args.compiled)
         reports.append(report)
