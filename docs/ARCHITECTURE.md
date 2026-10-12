@@ -165,7 +165,7 @@ The GLSL sources have `#ifdef GH3_D3D11` blocks only where Direct3D 11 needs oth
 | Path | Contents |
 | --- | --- |
 | `tests/*.cs`, `tests/SkinLogic.Tests.csproj` | C# logic tests. They link the Unity-free source files. `LiteralGuardTests` fails on a new unnamed number without a source note in `src/Stage`, `Hud`, `Gameplay`, and `Gh3` ([CODE-STYLE.md](CODE-STYLE.md#c-constants)). `DataGuardTests` fails on a GH3 stage ID, zone, character name, or bone name in a string of `src/` ([CODE-STYLE.md](CODE-STYLE.md#data-not-code)). Optional variables (`GH3_PACK_ASSETS`, `GH3_NATIVE_DATA`, `GH3_*_ORACLE`, ...) add checks against real assets and native reference data. C# code style: [CODE-STYLE.md](CODE-STYLE.md#c) |
-| `tests/test_*.py` | Python tests: pipeline, package format, Blender add-on without Blender (`tests/addon.py` loads the add-on modules), examples, the Markdown links, anchors, and diagram size (`test_docs_links.py`), the unnamed numbers in the format code (`test_magic_numbers.py`), and the `pipeline` names that tools and research scripts import (`test_pipeline_imports.py`). Python code style: [CODE-STYLE.md](CODE-STYLE.md#python) |
+| `tests/test_*.py` | Python tests: pipeline, package format, Blender add-on without Blender (`tests/addon.py` loads the add-on modules), examples, the Markdown links, anchors, and diagram size (`test_docs_links.py`), the full colour of the documentation images (`test_docs_images.py`), the unnamed numbers in the format code (`test_magic_numbers.py`), and the `pipeline` names that tools and research scripts import (`test_pipeline_imports.py`). Python code style: [CODE-STYLE.md](CODE-STYLE.md#python) |
 | `schemas/*.schema.json` | JSON Schemas (draft 2020-12) of package format v1: manifest, venue sidecars, `character.json`, GLB extras. See [PACKAGE-FORMAT.md](PACKAGE-FORMAT.md) |
 | `scripts/test.sh` | Runs both suites, `ruff check` and `ruff format --check` (`ruff.toml`), `mypy` on the package format code (`mypy.ini`), and shell syntax checks |
 | `scripts/build-release.sh` | Builds the release zips (Linux, Windows) and the Blender add-on zip from a clean export of a commit ([VERIFICATION.md](VERIFICATION.md#release-build)) |
@@ -175,6 +175,7 @@ The GLSL sources have `#ifdef GH3_D3D11` blocks only where Direct3D 11 needs oth
 | `tools/check-character-trace.py` | Compares the `[trace] band` poses of a game log with the GH3 clips on the GH3 skeletons ([VERIFICATION.md](VERIFICATION.md#gh3-characters)) |
 | `tools/PackageImport/` | Runs the mod's package importer outside the game (`dotnet run --project tools/PackageImport -c Release -- PACKAGES CACHE [--rgba] [--workers N]`) |
 | `tools/capture-manifest.py`, `tools/compare-captures.py`, `tools/compare-sheet.py`, `tools/summarize-profile.py` | Capture metadata, side-by-side comparison, contact sheets, profile summary |
+| `tools/doc-image.py` | Documentation images in full colour ([images/README.md](images/README.md)) |
 | `scripts/measure-load.sh`, `tools/measure-load.py`, `tools/summarize-load.py` | Load times of the user flows with `GH3_SKIN_TIMING` ([VERIFICATION.md](VERIFICATION.md#load-times)) |
 | `tools/disassemble-ps.py` | Prints a GH3 pixel shader |
 | `tools/gh3-reference/` | Start, drive, and stop the original GH3 under Wine for reference captures |

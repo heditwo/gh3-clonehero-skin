@@ -6,7 +6,7 @@
 MISE_QUIET=1 scripts/test.sh
 ```
 
-The script runs the C# logic tests (`tests/SkinLogic.Tests.csproj`, .NET 10 SDK; they include the literal guard of [CODE-STYLE.md](CODE-STYLE.md#c-constants) and the data guard of [CODE-STYLE.md](CODE-STYLE.md#data-not-code)), `ruff check`, `ruff format --check`, and `mypy` on the Python code ([CODE-STYLE.md](CODE-STYLE.md#python)), the Python tests (`tests/test_*.py`), and a syntax check of the shell scripts. `tests/test_docs_links.py` checks that every relative link and anchor in the Markdown files resolves and that each Mermaid diagram is small (at most 16 nodes). Also build the mod with zero warnings:
+The script runs the C# logic tests (`tests/SkinLogic.Tests.csproj`, .NET 10 SDK; they include the literal guard of [CODE-STYLE.md](CODE-STYLE.md#c-constants) and the data guard of [CODE-STYLE.md](CODE-STYLE.md#data-not-code)), `ruff check`, `ruff format --check`, and `mypy` on the Python code ([CODE-STYLE.md](CODE-STYLE.md#python)), the Python tests (`tests/test_*.py`), and a syntax check of the shell scripts. `tests/test_docs_links.py` checks that every relative link and anchor in the Markdown files resolves and that each Mermaid diagram is small (at most 16 nodes). `tests/test_docs_images.py` checks that the documentation images are in full colour ([images/README.md](images/README.md)). Also build the mod with zero warnings:
 
 ```bash
 MISE_QUIET=1 dotnet build src/Gh3Skin.csproj -c Release --nologo
@@ -118,7 +118,7 @@ The loader log always has one `Unable to create a snapshot of process` error and
 MISE_QUIET=1 scripts/capture-preview.sh
 ```
 
-The script starts a temporary Xwayland display, plays a chart with the command-line bot, and saves frames. It needs Hyprland, Xwayland, `xrandr`, `jq`, `ripgrep`, ImageMagick, and Python.
+The script starts a temporary Xwayland display, plays a chart with the command-line bot, and saves frames. It needs Hyprland, Xwayland, `xrandr`, `jq`, `ripgrep`, ImageMagick, and Python. For images of the documentation, follow [images/README.md](images/README.md): full colour, JPEG for game captures.
 
 ### Menus and the picker
 
