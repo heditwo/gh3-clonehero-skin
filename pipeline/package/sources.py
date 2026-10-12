@@ -111,7 +111,6 @@ TARGETS = [
     ("render/*.bundle, render/stage-templates.json", "not in the package (mod install, platform-specific)"),
     ("render/particle-materials.json, render/tesla-*", "effects/ (shader-independent data)"),
     ("library.json", "manifest.json files"),
-    ("assets/stages/events/*.json (original song direction)", "songs/<song>.json + songs/index.json"),
 ]
 
 

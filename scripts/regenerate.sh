@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Regenerate every generated asset from the owner's GH3 files, in dependency order.
 # Usage: scripts/regenerate.sh [--clean] [step...]
-# Steps: library characters instruments venues events render hud template packages. The default is all steps.
+# Steps: library characters instruments venues events song-direction render hud template packages. The default is all steps.
 # The optional hud-video step needs GH3_REFERENCE_VIDEO (the GH3 Star Power reference recording).
 set -euo pipefail
 export MISE_QUIET=1
@@ -17,11 +17,11 @@ steps=()
 for argument in "$@"; do
   case "$argument" in
     --clean) clean=true ;;
-    library | characters | instruments | venues | events | render | hud | hud-video | template | packages) steps+=("$argument") ;;
+    library | characters | instruments | venues | events | song-direction | render | hud | hud-video | template | packages) steps+=("$argument") ;;
     *) printf 'Unknown step: %s\n' "$argument" >&2; exit 2 ;;
   esac
 done
-(( ${#steps[@]} )) || steps=(library characters instruments venues events render hud template packages)
+(( ${#steps[@]} )) || steps=(library characters instruments venues events song-direction render hud template packages)
 
 stage_python=(uv run --with pillow --with numpy --with 'shapely>=2.1' python)
 run() {
@@ -33,7 +33,7 @@ run() {
 
 if [[ "$clean" == true ]]; then
   rm -rf assets/libraries/gh3-band-v1 assets/libraries/gh3-characters-v1 assets/characters assets/instruments assets/stages assets/stage-packs/gh3.* assets/stage-packs/example.studio \
-    assets/stage-packs/conversion-report.json assets/packages
+    assets/stage-packs/conversion-report.json assets/packages assets/song-direction
 fi
 
 for step in "${steps[@]}"; do
@@ -49,6 +49,8 @@ for step in "${steps[@]}"; do
     instruments) run "${stage_python[@]}" -m pipeline.instruments --data "$data" ;;
     venues) run "${stage_python[@]}" -m pipeline.venues --data "$data" ;;
     events) run python3 -m pipeline.events "$data" --library --output assets/stages/events ;;
+    # The stage-events.json sidecars of the chart packs in pipeline/song_packs (from the events step and the GH3 song data).
+    song-direction) run "${stage_python[@]}" -m pipeline.song_direction export --data "$data" ;;
     render)
       # The stage shader holds the GH3 templates that the compiled venues, the library, the characters, and the instruments use, so it follows them.
       # The Direct3D 11 programs need Wine and the Windows SDK compiler (see docs/PIPELINE.md, "Shader tools").

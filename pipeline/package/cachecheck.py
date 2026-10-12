@@ -3,7 +3,7 @@
 The mod's importer (src/Packages, run outside the game by tools/PackageImport) writes one cache folder for each package.
 This check compares each cache folder with the files that the Python compiler writes from the same package:
 `assets/stages/<id>` for venues (roundtrip.py shows that these are equal to `compile_stage` of the package) and
-`assets/libraries/gh3-band-v1` with `assets/stages/events` for the library.
+`assets/libraries/gh3-band-v1` for the library.
 
 - JSON: equal, numbers within 1e-6 (relative) or 1e-9. pack.json `sources`, `files`, and `package` are not compared.
 - meshes.bin, animation.bin: byte-equal, or the largest float difference (venue limit 1e-5 m; library UV 6e-8).
@@ -11,7 +11,7 @@ This check compares each cache folder with the files that the Python compiler wr
   error is reported for BC1 and BC3 (maximum and PSNR of mip 0).
 - Audio: `<sample>.pcm` against the decompressed `<sample>.pcm.gz`. Clips: `.q48.br` against the package bytes.
 
-Usage: python -m pipeline.package.cachecheck CACHE [--stages DIR] [--library DIR] [--events DIR] [--packages DIR] [--json OUT]
+Usage: python -m pipeline.package.cachecheck CACHE [--stages DIR] [--library DIR] [--packages DIR] [--json OUT]
 """
 
 import argparse
@@ -26,7 +26,7 @@ import numpy as np
 from PIL import Image
 
 from pipeline.package import runtime, texture
-from pipeline.package.build import EVENTS, OUTPUT, json_bytes
+from pipeline.package.build import OUTPUT, json_bytes
 from pipeline.package.roundtrip import UNREAD_MATERIAL_FIELDS
 from pipeline.paths import LIBRARY, STAGES
 from pipeline.stagepack.gltf import SKINNED_GH3_VERTEX, STATIC_VERTEX
@@ -216,7 +216,7 @@ def venue_check(cache, expected):
     return report
 
 
-def library_check(cache, library, events, package):
+def library_check(cache, library, package):
     cache, library = Path(cache), Path(library)
     report = {"models": {}, "files": {}, "audio": {}, "clips": {}}
     textures = []
@@ -264,8 +264,6 @@ def library_check(cache, library, events, package):
             (cache / "audio" / (s.name[:-3])).read_bytes() == gzip.decompress(s.read_bytes()) for s in samples
         ),
     }
-    songs = sorted(p for p in Path(events).glob("*.json") if p.name != "export-report.json")
-    report["files"]["songs"] = all((cache / "songs" / p.name).read_bytes() == p.read_bytes() for p in songs)
     clips = sorted(p.relative_to(cache).as_posix() for p in cache.rglob("*.q48.br"))
     with zipfile.ZipFile(package) as archive:
         report["clips"] = {
@@ -288,7 +286,6 @@ def main(argv=None):
     parser.add_argument("cache", type=Path)
     parser.add_argument("--stages", type=Path, default=STAGES)
     parser.add_argument("--library", type=Path, default=LIBRARY)
-    parser.add_argument("--events", type=Path, default=EVENTS)
     parser.add_argument("--packages", type=Path, default=OUTPUT)
     parser.add_argument("--json", type=Path)
     args = parser.parse_args(argv)
@@ -299,9 +296,7 @@ def main(argv=None):
         if info["package"]["format"].startswith("chchar"):
             continue
         if info["package"]["format"].startswith("chlib"):
-            report[identifier] = row = library_check(
-                folder, args.library, args.events, args.packages / f"{identifier}.chlib"
-            )
+            report[identifier] = row = library_check(folder, args.library, args.packages / f"{identifier}.chlib")
             summary = {k: row[k] for k in ("files", "audio", "clips")}
             summary["models"] = {k: v["ok"] for k, v in row["models"].items()}
             print(

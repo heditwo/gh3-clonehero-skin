@@ -165,17 +165,8 @@ internal static class VenueTrackLogicTests
         Check(timeline.Cameras.Single().Value == "89" && timeline.Track("lighting").Single().Value == "verse" && timeline.Effects.Length == 1,
             "a GH CAMERAS track keeps the camera channel; VENUE fills lighting and pyro");
 
-        var library = Path.Combine(directory, "library");
-        Directory.CreateDirectory(library);
-        File.WriteAllText(Path.Combine(library, "index.json"), """{"version":1,"songs":[{"title":"Venue Song","artist":"Band","file":"song.json"}]}""");
-        File.WriteAllText(Path.Combine(library, "song.json"), """{"version":1,"events":[{"time":0,"type":"gh3-note","value":"74"},{"time":1,"type":"gh3-note","value":"58"}]}""");
-        var original = StageChartReader.Load(song, midi, library, "Venue Song", "Band");
-        Check(original.Cameras.Single().Value == "89" && original.Track("lighting").Length == 0 &&
-            original.Cues.Count(c => c.Type == "gh3-note") == 2 && original.Effects.Length == 1,
-            "the original song library comes before VENUE lighting; VENUE still fills pyro");
-
         File.WriteAllText(Path.Combine(song, "stage-events.json"), """
-            {"version":2,"library":"gh3-band-v1","originalSongLookup":"off","clearChannels":["pyro"],"events":[{"time":0,"type":"lighting","value":"solo"}]}
+            {"version":2,"library":"gh3-band-v1","clearChannels":["pyro"],"events":[{"time":0,"type":"lighting","value":"solo"}]}
             """);
         var file = StageChartReader.Load(song, midi);
         Check(file.Track("lighting").Single().Value == "solo" && file.Cameras.Single().Value == "89" && file.Effects.Length == 0 &&

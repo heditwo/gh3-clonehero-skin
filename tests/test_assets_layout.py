@@ -4,7 +4,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "assets"
-GENERATED = {"stages", "stage-packs", "libraries", "characters", "instruments", "packages", "event-audit", "previews"}
+GENERATED = {
+    "stages",
+    "stage-packs",
+    "libraries",
+    "characters",
+    "instruments",
+    "packages",
+    "song-direction",
+    "event-audit",
+    "previews",
+}
 
 
 class AssetsLayoutTest(unittest.TestCase):

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from pipeline import songtool
 from pipeline.gh3.data import Source, scalar
-from pipeline.gh3.formats import find_struct, key
+from pipeline.gh3.formats import key
 from pipeline.stagepack.pack import write_json
 
 # FMOD FSB3 sample bank with one sample: a 24-byte file header (sample count, header size, data size at +4), a sample
@@ -117,13 +117,6 @@ def convert(data, output):
                 "loopEnd": frames if loop is None else min(frames, round(loop[1] * rate)),
                 "loop": loop is not None,
             }
-    countoffs = {}
-    songlist = scripts.get(key("scripts\\guitar\\songlist.qb"))
-    if songlist:
-        props = find_struct(songlist, "permanent_songlist_props") or {}
-        for song, row in props.items():
-            if isinstance(row, dict) and key("countoff") in row:
-                countoffs[f"{song:08x}"] = row[key("countoff")]
     constants = {
         name: next(scalar(qb, name, None) for qb in scripts.values() if scalar(qb, name, None) is not None)
         for name in ("CrowdLevelForSurges", "health_poor_medium", "health_medium_good")
@@ -134,7 +127,6 @@ def convert(data, output):
             "version": 1,
             "definitions": definitions,
             "samples": samples,
-            "countoffs": countoffs,
             "constants": constants,
             "sources": source.hashes,
         },

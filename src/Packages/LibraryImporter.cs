@@ -7,7 +7,7 @@ namespace Gh3Skin.Packages;
 // Library package (`.chlib`, PACKAGE-FORMAT.md section 10) to the runtime library folder that the mod loads. The C# side of
 // pipeline/package/roundtrip.py library_round_trip: model GLBs become GH3BND02 meshes, GH3ANM01 rigs, and stage.json;
 // movies become GH3VID01; WAV samples become raw PCM (`<sample>.pcm`). Clips stay q48 + Brotli (`.q48.br`) and are decoded
-// by the clip prefetch (PerformanceClip). Songs go to `songs/`, the effect files to `render/`. A character library keeps
+// by the clip prefetch (PerformanceClip). The effect files go to `render/`. A character library keeps
 // characters.json and `clips/`.
 internal sealed class LibraryImporter
 {
@@ -116,7 +116,6 @@ internal sealed class LibraryImporter
             Copy(name);
             clips++;
         }
-        foreach (var name in _package.Names.Where(n => n.StartsWith("songs/") && n.EndsWith(".json")).ToList()) Copy(name);
         _package.VerifyRemaining();
         return (models, clips, samples, movies);
     }

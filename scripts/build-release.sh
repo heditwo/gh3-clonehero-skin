@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Builds the release artifacts from a clean export of a Git commit and the generated packages and shader bundles:
-#   gh3-skin-<version>-linux.zip, gh3-skin-<version>-windows.zip, and chstage_tools-<add-on version>.zip (Blender add-on).
+#   gh3-skin-<version>-linux.zip, gh3-skin-<version>-windows.zip, chstage_tools-<add-on version>.zip (Blender add-on), and
+#   <pack>-direction-<version>.zip for each chart pack of pipeline/song_packs (the stage-events.json sidecars, merged by players
+#   into their copy of the chart pack; no chart or audio files).
 # Usage: scripts/build-release.sh [<git ref>]   (default HEAD; uncommitted changes are not in the release)
 #   GH3_RELEASE_OUT    output folder (default ~/.cache/gh3-skin-release); keep it outside the repository
 #   GH3_CLONE_HERO_DIR game folder whose MelonLoader assemblies the mod builds against (one DLL works on Linux and Windows)
@@ -90,11 +92,36 @@ with zipfile.ZipFile(target, "w") as archive:
 PY
 done
 
+# The direction sidecars of the GH3 chart packs: the song folders of the pack at the zip root, with the README.
+direction_zips=()
+for pack in "$project_dir/assets/song-direction/"*/; do
+  [[ -f "$pack/README-GH3-DIRECTION.md" ]] || continue
+  name="$(basename "$pack")-direction-$version.zip"
+  rm -f "$out/$name"
+  python3 - "$pack" "$out/$name" "$epoch" << 'PY'
+import sys, time, zipfile
+from pathlib import Path
+
+root, target, epoch = Path(sys.argv[1]), Path(sys.argv[2]), int(sys.argv[3])
+date = time.gmtime(max(epoch, 315532800))[:6]
+files = sorted((p for p in root.rglob("*") if p.is_file()), key=lambda p: p.relative_to(root).as_posix())
+with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+    for path in files:
+        info = zipfile.ZipInfo(path.relative_to(root).as_posix(), date)
+        info.create_system = 3
+        info.external_attr = 0o100644 << 16
+        info.compress_type = zipfile.ZIP_DEFLATED
+        archive.writestr(info, path.read_bytes(), compresslevel=9)
+PY
+  direction_zips+=("$name")
+done
+(( ${#direction_zips[@]} )) || printf 'Warning: no chart pack direction in assets/song-direction. Run scripts/regenerate.sh song-direction.\n' >&2
+
 python3 "$work/source/blender/build.py" --output "$work/blender" > /dev/null
 addon="$(find "$work/blender" -name 'chstage_tools-*.zip' -printf '%f\n')"
 cp "$work/blender/$addon" "$out/$addon"
 
-artifacts=("gh3-skin-$version-linux.zip" "gh3-skin-$version-windows.zip" "$addon")
+artifacts=("gh3-skin-$version-linux.zip" "gh3-skin-$version-windows.zip" "$addon" "${direction_zips[@]}")
 (cd "$out" && sha256sum "${artifacts[@]}" > "SHA256SUMS-$version")
 printf 'Release %s (commit %s) in %s:\n' "$version" "${commit:0:12}" "$out"
 (cd "$out" && for artifact in "${artifacts[@]}"; do printf '  %s  %s bytes\n' "$artifact" "$(stat -c %s "$artifact")"; done)

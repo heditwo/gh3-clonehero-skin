@@ -155,7 +155,7 @@ internal static class DirectionLogicTests
         var bank = StagePerformance.Load(Path.Combine(directory, "performance.json"))!;
         var cameras = StageCameraBank.Load(Path.Combine(directory, "cameras.json"))!;
         Check(bank.Waypoints.Count > 0, "converted venue waypoints are present");
-        var timeline = StageChartReader.Load("", "", Path.Combine(assets, "events"), "My Curse", "Killswitch Engage");
+        var timeline = StageChartReader.LoadEventFile(Path.Combine(Path.Combine(assets, "events"), "mycurse.json"));
         Check(timeline.Cameras.Length == 53 && timeline.Track("face", "singer").Length == 5, "original song direction is complete");
         var path = new StageCameraPath(new(Vector3.Zero, Vector3.UnitZ, 55, "fixed"), new Dictionary<string, Vector3>(), bank: cameras);
         foreach (var (role, definition) in bank.Members)

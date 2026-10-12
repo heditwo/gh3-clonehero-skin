@@ -17,15 +17,19 @@ internal sealed partial class GameplayStage
 
     // The player's choice (in-game picker, GH3_SKIN_STAGE for tests), the song's suggestion, and the installed stages
     // select the stage once for each song (docs/PLAYER-GUIDE.md).
-    private void ChooseStage(Packages.PackageManager manager, Packages.InstalledPackage? library)
+    private void ChooseStage(Packages.PackageManager manager)
     {
         var choices = Packages.PackageRuntime.Choices;
         var entry = GlobalVariables.instance?.currentSongEntry;
-        var index = library?.State == Packages.PackageState.Ready ? Path.Combine(library.CacheDirectory, "songs", "index.json") : "";
         Packages.StageSuggestion? suggestion = null;
+        IReadOnlyDictionary<string, string> songCharacters = new Dictionary<string, string>();
         try
         {
-            if (entry != null) suggestion = Packages.StageSelection.Suggestion(entry.folderPath, entry.Name_StrippedTags, entry.Artist_StrippedTags, index);
+            if (entry != null)
+            {
+                suggestion = Packages.StageSelection.Suggestion(entry.folderPath);
+                songCharacters = Packages.StageSelection.CharacterSuggestions(entry.folderPath);
+            }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
@@ -58,11 +62,17 @@ internal sealed partial class GameplayStage
         foreach (var role in Packages.PlayerChoices.Roles)
         {
             var id = SkinEnvironment.Get(SkinEnvironment.CharacterPrefix + role.ToUpperInvariant()) ?? choices.Character(role);
+            var fromSong = id == Packages.PlayerChoices.DefaultCharacter && choices.SongSuggestions && songCharacters.ContainsKey(role);
+            if (fromSong) id = songCharacters[role];
             if (id == Packages.PlayerChoices.DefaultCharacter || id.Length == 0) continue;
             var character = manager.Find(Packages.PackageKind.Character, id);
             if (character == null || character.State == Packages.PackageState.Failed)
-                MelonLogger.Warning($"GH3 band {role}: character {id} is not installed or did not import; the venue default plays");
-            else _characterPackages[role] = character;
+                MelonLogger.Warning($"GH3 band {role}: character {id}{(fromSong ? " (the song's choice)" : "")} is not installed or did not import; the venue default plays");
+            else
+            {
+                if (fromSong) MelonLogger.Msg($"GH3 band {role}: {id} (the song's {Packages.StageSelection.EventFile})");
+                _characterPackages[role] = character;
+            }
         }
         _instrumentPackages.Clear();
         foreach (var role in Packages.PlayerChoices.InstrumentRoles)
@@ -84,17 +94,7 @@ internal sealed partial class GameplayStage
         if (_waitingFor.Length == 0) LoadTiming.Mark("stage resolves its packages");
         if (manager == null || !manager.Scanned) return Wait("the package scan");
         static bool Busy(Packages.InstalledPackage? package) => package?.State is Packages.PackageState.Pending or Packages.PackageState.Importing;
-        if (_decision == null)
-        {
-            // The library has the song index for the stage suggestion of GH3 career songs.
-            var songIndex = manager.Find(Packages.PackageKind.Library, "gh3-band-v1");
-            if (Busy(songIndex))
-            {
-                manager.Prioritize(songIndex!);
-                return Wait("the import of gh3-band-v1");
-            }
-            ChooseStage(manager, songIndex);
-        }
+        if (_decision == null) ChooseStage(manager);
         if (_stageId.Length == 0) return SourceState.Missing;
         var stage = _songPackage ?? manager.Find(Packages.PackageKind.Stage, _stageId);
         if (stage == null) return SourceState.Missing;
@@ -113,7 +113,6 @@ internal sealed partial class GameplayStage
         }
         _directory = stage.CacheDirectory;
         _library = library.CacheDirectory;
-        _events = Path.Combine(library.CacheDirectory, "songs");
         _effectsDirectory = Path.Combine(library.CacheDirectory, "render");
         _render = Path.GetFullPath(Path.Combine(_assetsDirectory, "..", "render"));
         MelonLogger.Msg($"GH3 stage source: package {stage.Label}, library {library.Label}");

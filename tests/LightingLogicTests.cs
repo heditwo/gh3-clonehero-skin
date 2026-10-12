@@ -62,7 +62,7 @@ internal static class LightingLogicTests
         if (Environment.GetEnvironmentVariable("GH3_LIGHTING_ASSETS") is { } directory)
         {
             var original = StageLightingBank.Load(directory)!;
-            var timeline = StageChartReader.Load("", "", Path.Combine(Path.GetDirectoryName(directory)!, "events"), "My Curse", "Killswitch Engage");
+            var timeline = StageChartReader.LoadEventFile(Path.Combine(Path.Combine(Path.GetDirectoryName(directory)!, "events"), "mycurse.json"));
             var actual = new StageLighting(original, timeline);
             var frame = actual.At(3.8).Sample(3.8);
             var index = Array.FindIndex(original.Lights, l => l.Id == Gh3Checksum.Of("Z_Budokan_GFX_L_Band_Ambient01"));

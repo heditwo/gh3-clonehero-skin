@@ -22,7 +22,6 @@ internal static class PickerLogicTests
             CheckJump();
             CheckSelection(root);
             CheckSuggestions(root);
-            CheckGh3CareerVenues();
             CheckCharacters(root);
             CheckSamplerOnlyImage(root);
             CheckCacheCleanUp(root);
@@ -113,44 +112,24 @@ internal static class PickerLogicTests
     {
         var song = Path.Combine(root, "song");
         Directory.CreateDirectory(song);
-        Check(StageSelection.Suggestion(song, "", "", null) == null, "a plain song has no suggestion");
+        Check(StageSelection.Suggestion(song) == null && StageSelection.CharacterSuggestions(song).Count == 0, "a plain song has no suggestion");
         Check(StageSelection.SongIniValue(new[] { "[Song]", "name = X", "GH3_Stage = gh3.dive ", "[other]", "gh3_stage = no" }, "gh3_stage") == "gh3.dive",
             "song.ini keys are case-insensitive and only in [song]");
-        File.WriteAllText(Path.Combine(song, "song.ini"), "[song]\nname = Slow Ride\nartist = Foghat\ngh3_stage = gh3.hell\n");
-        Check(StageSelection.Suggestion(song, "Slow Ride", "Foghat", null)?.StageId == "gh3.hell", "song.ini gh3_stage suggests a stage");
-        File.WriteAllText(Path.Combine(song, "song.ini"), "[song]\nname = Slow Ride\n");
+        File.WriteAllText(Path.Combine(song, "song.ini"), "[song]\nname = Raining Blood\nartist = Slayer\n");
+        Check(StageSelection.Suggestion(song) == null, "the title and artist of a GH3 song do not select its venue");
+        File.WriteAllText(Path.Combine(song, StageSelection.EventFile),
+            "{\"version\":2,\"library\":\"gh3-band-v1\",\"stage\":\"gh3.hell\",\"characters\":{\"singer\":\"gh3.singer-female\",\"keyboard\":\"x\"},\"events\":[]}");
+        Check(StageSelection.Suggestion(song)?.StageId == "gh3.hell", "the direction file suggests the GH3 career venue");
+        Check(StageSelection.CharacterSuggestions(song).Single().Value == "gh3.singer-female", "the direction file suggests the band roles only");
+        File.WriteAllText(Path.Combine(song, "song.ini"), "[song]\nname = Slow Ride\nartist = Foghat\ngh3_stage = gh3.dive\n");
+        Check(StageSelection.Suggestion(song)?.StageId == "gh3.dive", "song.ini gh3_stage comes before the direction file");
+        File.WriteAllText(Path.Combine(song, StageSelection.EventFile), "{");
+        Check(StageSelection.CharacterSuggestions(song).Count == 0, "a damaged direction file suggests nothing");
         File.WriteAllBytes(Path.Combine(song, "slowride_song.pak.xen"), new byte[] { 0 });
-        Check(StageSelection.Suggestion(song, "", "", null) == null, "the mod does not read a GH3 song PAK in the song folder");
-        File.Delete(Path.Combine(song, "slowride_song.pak.xen"));
-        var index = Path.Combine(root, "index.json");
-        File.WriteAllText(index, "{\"version\":1,\"songs\":[{\"title\":\"Raining Blood\",\"artist\":\"Slayer\",\"file\":\"rainingblood.json\"}]}");
-        Check(StageSelection.Suggestion(song, "Raining  Blood", "SLAYER", index)?.StageId == "gh3.hell", "an original GH3 song found by title suggests its venue");
-        Check(StageSelection.Suggestion(song, "My Curse", "Killswitch Engage", index) == null, "a GH3 bonus song has no venue");
+        File.WriteAllText(Path.Combine(song, "song.ini"), "[song]\nname = Slow Ride\n");
+        Check(StageSelection.Suggestion(song) == null, "the mod does not read a GH3 song PAK in the song folder");
         Directory.CreateDirectory(Path.Combine(song, "venue.chstage"));
-        Check(StageSelection.Suggestion(song, "", "", index)?.PackagePath == Path.Combine(song, "venue.chstage"), "venue.chstage in the song folder comes first");
-    }
-
-    private static void CheckGh3CareerVenues()
-    {
-        Check(Gh3CareerVenues.Songs.Count == 42 && Gh3CareerVenues.Of("bossdevil") == "gh3.hell" && Gh3CareerVenues.Of("mycurse") == null, "the 42 GH3 career songs have a venue");
-        // GH3_NATIVE_DATA=<GH3 DATA folder>: the table equals GH3_Career_Songs in qb.pak.xen.
-        if (Environment.GetEnvironmentVariable("GH3_NATIVE_DATA") is not { } data) return;
-        var pak = Path.Combine(data, "PAK", "qb.pak.xen");
-        var bytes = File.ReadAllBytes(pak).Concat(File.ReadAllBytes(Path.ChangeExtension(pak, null)[..^4] + ".pab.xen")).ToArray();
-        foreach (var (level, songs) in Gh3CareerVenues.Table)
-        {
-            var levelKey = BitConverter.GetBytes(Convert.ToUInt32(Gh3Checksum.Of(level), 16)).Reverse().ToArray();
-            Check(IndexOf(bytes, levelKey) >= 0, $"{level} is in the GH3 career data");
-            foreach (var song in songs)
-                Check(IndexOf(bytes, BitConverter.GetBytes(Convert.ToUInt32(Gh3Checksum.Of(song), 16)).Reverse().ToArray()) >= 0, $"{song} is in the GH3 data");
-        }
-    }
-
-    private static int IndexOf(byte[] data, byte[] pattern)
-    {
-        for (var i = 0; i + pattern.Length <= data.Length; i++)
-            if (data.AsSpan(i, pattern.Length).SequenceEqual(pattern)) return i;
-        return -1;
+        Check(StageSelection.Suggestion(song)?.PackagePath == Path.Combine(song, "venue.chstage"), "venue.chstage in the song folder comes first");
     }
 
     // A small glTF binary with the accessors that the tests need.

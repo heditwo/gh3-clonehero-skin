@@ -20,7 +20,7 @@ flowchart LR
 | Venue | `.chstage` | `chstage/1.0` | `stage.glb`, cameras, lighting, scripts, placements, actors |
 | Character | `.chchar` | `chchar/1.0` | One skinned GLB on a GH3 rig profile (a fixed profile of the band library or a profile of a character library), `character.json`, an optional highway image |
 | Instrument | `.chinst` | `chinst/1.0` | A guitar or a bass: one skinned GLB on the guitarist or bassist profile, `instrument.json`, an optional highway image ([section 9.4](#94-instrument-chinst)) |
-| Library | `.chlib` | `chlib/1.0` | The shared GH3 band, crowd, clips, audio, movies, particle textures, and song direction (`gh3-band-v1`), or a character library (`gh3-characters-v1`, [section 10.1](#101-character-library)) |
+| Library | `.chlib` | `chlib/1.0` | The shared GH3 band, crowd, clips, audio, movies, and particle textures (`gh3-band-v1`), or a character library (`gh3-characters-v1`, [section 10.1](#101-character-library)) |
 
 The extension selects the kind. The `format` field in `manifest.json` must agree with the extension.
 
@@ -628,9 +628,8 @@ The library has the ID `gh3-band-v1`. The release ships it. Venues and character
 | `hair` | No | `band/hair.json` | Hair physics |
 | `crowd` | No | `crowd/crowd.json` | Crowd models, groups, hands, clips |
 | `handFire` | No | `hand-fire/hand-fire.json` | Hand-fire emitters |
-| `audio` | No | `audio/audio.json` | Sound definitions, samples, count-offs |
+| `audio` | No | `audio/audio.json` | Sound definitions, samples |
 | `scripts` | No | `scripts.json` | Global typed script bank, particle textures, movies |
-| `songs` | No | `songs/index.json` | Original song direction |
 
 Other files have fixed paths:
 
@@ -644,7 +643,6 @@ Other files have fixed paths:
 | `particle-textures/<id>.png` | Particle textures |
 | `hand-fire/*.png` | Hand-fire textures |
 | `effects/particle-materials.json`, `effects/tesla-material.json`, `effects/tesla-noise.png` | Shader-independent effect data |
-| `songs/<song>.json` | Original song direction (`stage-events.json` version 1 layout) |
 
 The library does **not** contain shader bundles (`render/*.bundle`) or `render/stage-templates.json`. They depend on the graphics API and the Unity version. The mod installation supplies them for each platform.
 
@@ -660,11 +658,10 @@ The library JSON files keep their current layouts (written by `pipeline.library`
 | `hand-fire/hand-fire.json` | [`hand-fire.schema.json`](../schemas/hand-fire.schema.json) |
 | `audio/audio.json` | [`audio.schema.json`](../schemas/audio.schema.json) |
 | `scripts.json` | [`scripts.schema.json`](../schemas/scripts.schema.json) |
-| `songs/index.json`, `songs/<song>.json` | [`songs.schema.json`](../schemas/songs.schema.json), [`song.schema.json`](../schemas/song.schema.json) |
 | `movies/<name>/movie.json` | [`movie.schema.json`](../schemas/movie.schema.json) |
 | `effects/particle-materials.json`, `effects/tesla-material.json` | [`particle-materials.schema.json`](../schemas/particle-materials.schema.json), [`tesla-material.schema.json`](../schemas/tesla-material.schema.json) |
 
-Shared definitions are in [`library-common.schema.json`](../schemas/library-common.schema.json). The validator also checks that the files that the JSON files name exist: clips (`direction/<role>/<clip>.q48.br`, `crowd/clips/<clip>.q48.br`), models, audio samples, hand-fire textures, songs, and all movie frames.
+Shared definitions are in [`library-common.schema.json`](../schemas/library-common.schema.json). The validator also checks that the files that the JSON files name exist: clips (`direction/<role>/<clip>.q48.br`, `crowd/clips/<clip>.q48.br`), models, audio samples, hand-fire textures, and all movie frames.
 
 Library model GLBs (`band/<role>/model.glb`, `crowd/…/model.glb`):
 
@@ -794,14 +791,13 @@ The importer converts a package one time and writes a per-machine cache.
 - `cache.json` in each cache folder records the key, the platform, the graphics API, and the texture formats. The loader rebuilds the cache when they differ from the running game (for example a copied user folder or `-force-glcore` on Windows).
 - The importer writes into a temporary folder and renames it when it is complete. A crash does not leave a partial cache.
 - `index.json` in the cache root keeps the key of each package with its size and time (zip) or with a signature of its file list (folder). A warm start reads the manifests (the scan) and this index; it does not hash the packages. When the size or the time of a zip changes, the importer reads its manifest again; the same manifest gives the same cache folder without an import.
-- Cache layout (importer version 2; version 1 encoded PNG textures): the runtime folders that the mod loaded before packages. A venue cache is a compiled stage folder (`pack.json`, `stage.json`, `meshes.bin` `GH3STG04`, `cameras.json`, `lighting.json`, `scripts.json`, `actors/`, `fixtures/`). A library cache is a library folder (`band/<role>/` and `crowd/…/` with `GH3BND02` meshes, `GH3ANM01` rigs, and `stage.json`; JSON files; `songs/`; `render/` with the effect files). Differences from the older install:
+- Cache layout (importer version 2; version 1 encoded PNG textures): the runtime folders that the mod loaded before packages. A venue cache is a compiled stage folder (`pack.json`, `stage.json`, `meshes.bin` `GH3STG04`, `cameras.json`, `lighting.json`, `scripts.json`, `actors/`, `fixtures/`). A library cache is a library folder (`band/<role>/` and `crowd/…/` with `GH3BND02` meshes, `GH3ANM01` rigs, and `stage.json`; JSON files; `render/` with the effect files). Differences from the older install:
 
 | Item | Cache file | Older install |
 |---|---|---|
 | Model textures | `textures/<name>.tex`: the GH3TEX02 file of the package ([section 7](#7-textures)), copied without a change. On a GPU without BC1/BC3, the importer decodes it to RGBA32 (`textureFormat` `rgba32` in `cache.json`) | `textures/<name>.png` |
 | Clips | `<clip>.q48.br`, copied from the package; decoded by the clip prefetch | `<clip>.bin.gz` (`GH3CLP01`) |
 | Sounds | `audio/<sample>.pcm` (raw 16-bit PCM) | `audio/<sample>.pcm.gz` |
-| Song direction | `songs/` in the library cache | `assets/stages/events/` |
 | Shader bundles | Not in the cache: `Mods/GH3Skin/render/` | `libraries/gh3-band-v1/render/` |
 
 ## 15. Validation
@@ -844,7 +840,7 @@ The current library does not map file for file. Each part has a conversion step 
 | `render/particle-materials.json`, `tesla-material.json`, `tesla-noise.png` | `effects/` | Copied |
 | `render/*.bundle`, `render/stage-templates.json` | Not in the package | Mod installation |
 | `library.json` | `manifest.json` `files` | — |
-| `assets/stages/events/` (original song direction, 169 MB) | `songs/` | Copied (not `export-report.json`, a pipeline report) |
+| `assets/stages/events/` (original song direction, 169 MB) | Not in the package | Since 2026-10-12 (decision 16) the GH3 song direction is a sidecar in the song folder ([CUSTOM-CONTENT.md section 6](CUSTOM-CONTENT.md#6-song-direction-version-2)); before, the library carried it in `songs/` |
 
 ## 17. Open questions
 
@@ -932,7 +928,7 @@ All 12 packages (ten venues, `example.studio`, the library), as zip and as folde
 | `scripts.json`, `audio/audio.json` | Map `movie.json` back to `.gh3video`, remove `file` | JSON-equal |
 | Audio (227 samples) | WAV → PCM → gzip with the pipeline header | 227 byte-equal `.pcm.gz` files |
 | Movies (4) | Frames → `GH3VID01` | Byte-equal |
-| Particle and hand-fire textures, Tesla noise, songs (159 and `index.json`) | Bytes | Byte-equal |
+| Particle and hand-fire textures, Tesla noise | Bytes | Byte-equal |
 | Band and crowd models (4 band, 10 crowd, 8 hands) | GLB → `meshes.bin`, `animation.bin`, `stage.json`, `textures/` | `animation.bin` byte-equal (bind pose and start clips), `stage.json` equal, textures byte-equal. `meshes.bin` byte-equal for 20 models. Guitarist and drummer: 159 of the 33,391 band vertices have a V coordinate that differs by at most 3.0e-8, because glTF stores 1 − v in float32 |
 | Clips (1,138 band, 102 crowd) | q48 → `GH3CLP01` → compare the channels in the track mask | All within the bound: rotation 0.00715° maximum (bound 0.0075°), position 0.115 mm maximum, at most 0.99 of the half quantization step |
 
@@ -975,7 +971,6 @@ Library parts:
 | Audio (WAV) | 228 | 132.4 | 107.7 | 108.4 |
 | Movies (PNG frames) | 4,603 | 356.9 | 356.9 | 357.0 |
 | Particle textures | 542 | 38.1 | 38.1 | 38.1 |
-| Songs | 160 | 169.0 | 5.9 | 169.0 (`assets/stages/events`) |
 | `scripts.json` | 1 | 12.1 | 1.2 | 12.1 |
 | Other JSON, hand fire, effects, manifest | 9 | 1.7 | 0.4 | 1.0 (with `render/` bundles and `library.json`) |
 
@@ -1018,7 +1013,7 @@ flowchart LR
 
 ### 20.3 Loader
 
-- `GameplayStage` uses only the cache folders. Before it selects the stage of a song, it waits for the library import (the library has the song index for the stage suggestion of GH3 career songs). Then it waits until the stage package, the library, and the selected characters are ready; there is no time limit. A stage without a package, or a package that did not import, gives no stage (one warning line); the older install (`Mods/GH3Skin/assets/stages`, `assets/libraries`) was removed in step 6.
+- `GameplayStage` uses only the cache folders. It selects the stage of a song from the song folder (no package import is necessary), then it waits until the stage package, the library, and the selected characters are ready; there is no time limit. A stage without a package, or a package that did not import, gives no stage (one warning line); the older install (`Mods/GH3Skin/assets/stages`, `assets/libraries`) was removed in step 6.
 - At the start of the stage load, worker threads read the files that the load will need and that have no Unity objects (`StageModelPrefetch`): `stage.json` and `meshes.bin` of the stage, its fixtures and actors, the band, the crowd, and the selected characters and instruments (`StageModelData`), the actor clips (`animation.bin`), and the stage and library script banks (`scripts.json`). The main thread builds the Unity objects in the same order and waits for a file only when it is not read yet.
 - `StageAssets` uploads `.tex` files with `LoadRawTextureDataImpl` from the pinned file bytes and `Apply(false, true)` (no decode and no second copy on the main thread). All uploads are in the stage load frame: 367 textures of gh3.dive take 37–70 ms.
 - Clip prefetch: `PerformancePlayer.Prepare` gives the song's clip set to `PerformanceClipCache`, which decodes it with `Parallel.ForEach` on worker threads. The main thread waits for it in the stage load (16–35 ms measured). A clip outside the set loads on the main thread with a warning (`clip … was not prefetched`), and the stage reset logs the count. The crowd prefetches all its performance clips (102).
@@ -1027,12 +1022,12 @@ flowchart LR
 
 ### 20.4 Comparison with the Python pipeline
 
-`tools/PackageImport` runs the importer outside the game; `python -m pipeline.package.cachecheck` compares its cache with the Python output (`assets/stages/<id>`, `assets/libraries/gh3-band-v1`, `assets/stages/events`), which `roundtrip.py` showed to be the Python conversion of the same packages. Result on 2026-10-09 (all 12 packages):
+`tools/PackageImport` runs the importer outside the game; `python -m pipeline.package.cachecheck` compares its cache with the Python output (`assets/stages/<id>`, `assets/libraries/gh3-band-v1`), which `roundtrip.py` showed to be the Python conversion of the same packages. Result on 2026-10-09 (all 12 packages):
 
 | Part | Result |
 |---|---|
 | Venues (10 and `example.studio`) | All equal: `meshes.bin`, `stage.json`, cameras, lighting, scripts, and fixtures byte-equal or JSON-equal. 11 actor meshes have equal values (a few zeros have the other sign, `-0.0`). 28 actor `animation.bin` files are within 3.3e-16 |
-| Library JSON, effect files, particle and hand-fire textures, movies (`GH3VID01`), songs | Byte-equal or JSON-equal |
+| Library JSON, effect files, particle and hand-fire textures, movies (`GH3VID01`) | Byte-equal or JSON-equal |
 | Sounds | 227 of 227 PCM equal |
 | Band and crowd models (22) | `meshes.bin` byte-equal except the guitarist and drummer UV (3.0e-8, as `roundtrip.py`), `animation.bin` and `stage.json` equal |
 | Clips | 1,240 `.q48.br` byte-equal to the package. The C# decoder against the `GH3CLP01` clips of the older install (C# test, `GH3_PACKAGE_ASSETS`): 0.0068° and 0.108 mm maximum |
@@ -1158,3 +1153,4 @@ When all imports end (or at a warm start, on a worker thread), `PackageManager.C
 | 1.0 | 2026-10-11 | Changed in 1.0 (decision 12, decision 15): every character plays every band role (section 9.7). A character on a GH3 rig in another role is retargeted to its own rig (humanoid map from the GH3 bone names, face bones by name), and the drum kit and the microphone stand fit the body. Before, a fixed profile in another role used the role rig, and a character library profile played only its roles. No field changed; packages do not change |
 | 1.0 | 2026-10-11 | Changed in 1.0 (decision 12): the toon `outline` `width` is for a vertical field of view of 45°; at other fields of view the line keeps its screen width (before: the same width in metres, so a long-lens close-up made it thick). Packages do not change |
 | 1.0 | 2026-10-10 | Changed in 1.0 (decision 12): model textures are pre-encoded GH3TEX02 files (BC1, BC3, or RGBA32 with the full mip chain; GLB images `image/vnd-gh3.tex` with the required extension `GH3_texture_bc`, texture files `.tex`; section 7). PNG model textures are errors. GLB and `.tex` entries use DEFLATE (O1). Importer version 2 |
+| 1.0 | 2026-10-12 | Removed from 1.0 (decision 12, decision 16): the library entry `songs` (`songs/index.json`, `songs/<song>.json`, the GH3 song direction found by title and artist) and `audio/audio.json` `countoffs` (the count-off of each GH3 song). The direction, the count-off, the GH3 venue, and the GH3 singer of a song are now in `stage-events.json` in the song folder ([CUSTOM-CONTENT.md section 6](CUSTOM-CONTENT.md#6-song-direction-version-2)). `gh3-band-v1.chlib`: 644,122,982 to 637,589,612 bytes (contents 866,017,218 to 697,025,648 bytes) |

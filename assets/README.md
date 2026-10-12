@@ -29,9 +29,10 @@ This folder has one folder for each type of file. Do not put files directly in `
 | Folder | Contents | Written by |
 | --- | --- | --- |
 | `stage-packs/` | The public stage packs of the venues (the source form) | `venues` and `template` steps |
-| `stages/` | The compiled venues, and `stages/events/` (the GH3 song direction). Intermediate output: the `packages` step and the tests read it; `install.sh` does not copy it | `venues`, `events`, and `template` steps |
+| `stages/` | The compiled venues, and `stages/events/` (the GH3 direction of every GH3 song). Intermediate output: the `packages` and `song-direction` steps and the tests read it; `install.sh` does not copy it | `venues`, `events`, and `template` steps |
 | `libraries/` | The compiled band library (`gh3-band-v1`), with the shader bundles in `render/`. Intermediate output: the `packages` step and the tests read it; `install.sh` copies only the shader bundles to `Mods/GH3Skin/render/` | `library` and `render` steps |
 | `characters/` | The playable GH3 characters on the library rigs (one band model folder for each outfit and style) and `inventory.json`. Intermediate output: the `render` and `packages` steps read it; `install.sh` does not copy it | `characters` step (`pipeline.characters`) |
 | `instruments/` | The GH3 guitars and basses (one band model folder for each instrument), the highway image of each GH3 guitarist (`highways/`), and `inventory.json`. Intermediate output: the `render` and `packages` steps read it; `install.sh` does not copy it | `instruments` step (`pipeline.instruments`) |
 | `packages/` | The `.chstage`, `.chlib`, `.chchar`, and `.chinst` packages. `install.sh` copies them (the characters `gh3.*.chchar` and the instruments `gh3.*.chinst`) to `Mods/GH3Skin/Packages/` | `packages` step (`pipeline.package.build`) |
+| `song-direction/` | The `stage-events.json` sidecars of each chart pack of `pipeline/song_packs/` (`<pack id>/<song folder>/stage-events.json`), the README, and the pack record. `scripts/build-release.sh` makes one zip of each pack; `install.sh` does not copy it | `song-direction` step (`pipeline.song_direction`) |
 | `event-audit/` | Local research tools and reports. Not in Git and not installed | Manual |

@@ -78,29 +78,11 @@ internal static class StageLogicTests
             File.WriteAllText(Path.Combine(directory, "stage-events.json"), "{\"version\":3}");
             Reject(() => StageChartReader.Load(directory, "missing.mid"), "unsupported sidecar version is rejected");
             File.Delete(Path.Combine(directory, "stage-events.json"));
-            var library = Path.Combine(directory, "library");
-            Directory.CreateDirectory(library);
-            File.WriteAllText(Path.Combine(library, "index.json"), """
-                {"version":1,"songs":[{"title":"My Curse","artist":"Killswitch Engage","file":"mycurse.json"}]}
-                """);
-            File.WriteAllText(Path.Combine(library, "mycurse.json"), """
-                {"version":1,"events":[{"time":45.274,"type":"gh3-note","value":"56"}]}
-                """);
-            var matched = StageChartReader.Load(directory, "missing.mid", library, "MY CURSE!", "Killswitch Engage");
-            Check(matched.Effects.Single().Time == 45.274, "original GH3 library matches title and artist");
-            File.WriteAllText(Path.Combine(library, "mycurse.json"), """
-                {"version":1,"events":[{"time":0,"type":"gh3-camera","value":"88"},{"time":45.274,"type":"pyro"}]}
-                """);
             var overrideChart = Path.Combine(directory, "override.chart");
-            File.WriteAllText(overrideChart, "[Events]\n0 = E \"stage camera drummer\"");
-            var overlay = StageChartReader.Load(directory, overrideChart, library, "My Curse", "Killswitch Engage");
-            Check(overlay.Cameras.Single().Value == "drummer" && overlay.Effects.Single().Time == 45.274,
-                "custom camera channel replaces GH3 camera notes and keeps the original effects");
-            Check(StageChartReader.Load(directory, "missing.mid", library, "My Curse", "Other Artist").CueCount == 0,
-                "same song title with another artist does not use GH3 cues");
-            File.WriteAllText(Path.Combine(directory, "stage-events.json"), "{\"version\":1,\"events\":[]}");
-            Check(StageChartReader.Load(directory, "missing.mid", library, "My Curse", "Killswitch Engage").CueCount == 0,
-                "an explicit empty sidecar takes priority over the library");
+            File.WriteAllText(overrideChart, "[Song]\nname = \"My Curse\"\n[Events]\n0 = E \"section intro\"");
+            var plain = StageChartReader.Load(directory, overrideChart);
+            Check(plain.Cameras.Single().Value == "79" && !plain.Effects.Any(),
+                "a chart without a direction file gets generated direction, whatever its title");
         }
         finally { Directory.Delete(directory, true); }
         Console.WriteLine("Stage timing, MIDI, cue mapping, pause, and seek tests passed.");

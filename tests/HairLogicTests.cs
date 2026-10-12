@@ -331,7 +331,7 @@ internal static class HairLogicTests
         var directory = Path.Combine(assets, "budokan/direction");
         var bank = HairBank.Load(Path.Combine(band, "hair.json"))!;
         var performance = StagePerformance.Load(Path.Combine(directory, "performance.json"))!;
-        var timeline = StageChartReader.Load("", "", Path.Combine(assets, "events"), "My Curse", "Killswitch Engage");
+        var timeline = StageChartReader.LoadEventFile(Path.Combine(Path.Combine(assets, "events"), "mycurse.json"));
         foreach (var (role, definition) in bank.Members)
         {
             using var reader = new BinaryReader(File.OpenRead(Path.Combine(band, role, "animation.bin")));
@@ -364,7 +364,7 @@ internal static class HairLogicTests
         var library = Gh3Skin.Packages.CharacterLibrary.Load(folder);
         var bank = CharacterMotionBank.Load(folder);
         var performance = StagePerformance.Load(Path.Combine(assets, "libraries/gh3-band-v1/direction/performance.json"))!;
-        var timeline = StageChartReader.Load("", "", Path.Combine(assets, "stages/events"), "My Curse", "Killswitch Engage");
+        var timeline = StageChartReader.LoadEventFile(Path.Combine(Path.Combine(assets, "stages/events"), "mycurse.json"));
         foreach (var (id, profile) in library.Profiles.OrderBy(p => p.Key, StringComparer.Ordinal))
         {
             if (profile.Hair.Length == 0) continue;

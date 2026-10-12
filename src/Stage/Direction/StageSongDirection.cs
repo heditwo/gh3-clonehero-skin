@@ -51,7 +51,6 @@ internal static class StageSongDirection
     public static void Validate(StageEventFile file, JsonElement document)
     {
         if (file.Library != "gh3-band-v1") throw new InvalidDataException("library must be gh3-band-v1");
-        if (file.OriginalSongLookup is not ("auto" or "off")) throw new InvalidDataException("originalSongLookup must be auto or off");
         if (file.ClearChannels == null || file.ClearChannels.Length > 64 ||
             file.ClearChannels.Any(channel => !Clearable(channel)) || file.ClearChannels.Distinct().Count() != file.ClearChannels.Length)
             throw new InvalidDataException("clearChannels must contain unique supported channels; timing cannot be cleared");
@@ -119,8 +118,7 @@ internal static class StageSongDirection
         if (!valueValid) throw new InvalidDataException($"{field}.value is invalid for {cue.Type}");
     }
 
-    public static StageTimeline Resolve(StageEventFile file, StageTimeline authored, StageChartData chart, StageTimeline? original,
-        StagePerformance? performance = null)
+    public static StageTimeline Resolve(StageEventFile file, StageTimeline authored, StageChartData chart, StagePerformance? performance = null)
     {
         var selected = file.ClearChannels.ToDictionary(channel => channel, _ => authored.Source + " (cleared)");
         var cues = new List<StageCue>();
@@ -145,14 +143,12 @@ internal static class StageSongDirection
         Select(chart.Direction, chart.Timeline.Source, validate: true);
         Select(chart.Strums, chart.Timeline.Source + " Expert notes");
         Select(chart.Vocals, chart.Timeline.Source + " vocals");
-        if (original != null) Select(original.Cues, original.Source);
         if (StageChartReader.UseVenueTrack) Select(chart.Venue, chart.Timeline.Source + " VENUE", validate: true);
         if (StageChartReader.UseGeneratedDirection) Select(chart.Generated, "generated");
         var source = authored.Source + " v2 [" + string.Join("; ", selected.OrderBy(pair => pair.Key)
             .Select(pair => pair.Key + "=" + pair.Value)) + "]";
         return new StageTimeline(cues, source) { ChannelSources = selected,
-            SourceSong = authored.SourceSong.Length > 0 ? authored.SourceSong : original?.SourceSong ?? "",
-            Countoff = authored.Countoff.Length > 0 ? authored.Countoff : original?.Countoff ?? "", Diagnostics = StageChartReader.UseVenueTrack ? chart.Diagnostics : Array.Empty<string>() };
+            SourceSong = authored.SourceSong, Countoff = authored.Countoff, Diagnostics = StageChartReader.UseVenueTrack ? chart.Diagnostics : Array.Empty<string>() };
     }
 
     private static void ValidateReference(StageCue cue, StagePerformance? performance, string source)

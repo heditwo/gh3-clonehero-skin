@@ -200,7 +200,7 @@ internal sealed class PickerOverlay
         if (shown != null && Preview(shown) is { } texture) GUI.Box(image, GUIContent.none, Style(texture));
         else GUI.Label(new Rect(image.x + 16, image.y + 98, 360, 22), shown == null ? StageLabel(_hover.Length > 0 ? _hover : choices.Stage) : "No preview image");
         GUI.Label(new Rect(area.x, image.yMax + 4, 448, 22), shown?.Name ?? StageLabel(choices.Stage));
-        Option(new Rect(area.x, image.yMax + 30, 448, 22), choices.SongSuggestions, " Songs can select their stage", value => choices.SongSuggestions = value);
+        Option(new Rect(area.x, image.yMax + 30, 448, 22), choices.SongSuggestions, " Songs can select their stage and band", value => choices.SongSuggestions = value);
         Option(new Rect(area.x, image.yMax + 54, 448, 22), choices.ShowHint, " Show the F6 hint in the menus", value => choices.ShowHint = value);
         GUI.Label(new Rect(area.x, image.yMax + 86, 448, 22), "<b>Band</b>" + (_characters.Count == 0 ? "  <color=#999999>(no character packages in Custom/Characters)</color>" : ""));
         var rows = PlayerChoices.Roles.SelectMany(role => PlayerChoices.InstrumentRoles.Contains(role) ? new[] { (role, false), (role, true) } : new[] { (role, false) }).ToArray();

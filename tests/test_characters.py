@@ -27,7 +27,7 @@ class CharacterPackageTests(unittest.TestCase):
     def test_package_is_valid_on_the_profile_rig(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            folder, _ = library(root / "library")
+            folder = library(root / "library")
             character = root / "characters/gh3.test"
             skinned_model(character, "0000abcd", "gh3.test")
             write(
@@ -137,7 +137,7 @@ class CharacterLibraryPackageTests(unittest.TestCase):
     def test_character_library_and_a_character_on_its_profile(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            folder, _ = library(root / "library")
+            folder = library(root / "library")
             characters_folder = character_library(root / "characters-library")
             (root / "out").mkdir()
             (_, chlib), clips = build.build_character_library(characters_folder, root / "out", jobs=1)
@@ -200,7 +200,7 @@ class CharacterLibraryPackageTests(unittest.TestCase):
     def test_band_library_profiles_reject_the_character_library_fields(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            folder, _ = library(root / "library")
+            folder = library(root / "library")
             character = root / "characters/gh3.test"
             skinned_model(character, "0000abcd", "gh3.test")
             write(

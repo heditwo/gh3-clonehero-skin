@@ -12,7 +12,7 @@ internal static class StagePackLogicTests
         CheckCameraKeyframes();
         CheckLookAtScreenOffset();
         if (Environment.GetEnvironmentVariable("GH3_PACK_ASSETS") is not { } assets) return;
-        var timeline = StageChartReader.Load("", "", Path.Combine(assets, "stages", "events"), "My Curse", "Killswitch Engage");
+        var timeline = StageChartReader.LoadEventFile(Path.Combine(Path.Combine(assets, "stages", "events"), "mycurse.json"));
         var paths = Directory.GetFiles(Path.Combine(assets, "stages"), "pack.json", SearchOption.AllDirectories);
         Check(paths.Length >= 10, "all ten performance stages are imported");
         foreach (var file in paths)

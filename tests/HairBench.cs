@@ -108,7 +108,7 @@ internal static class HairBench
         else
         {
             var performance = StagePerformance.Load(Path.Combine(assets, "libraries/gh3-band-v1/direction/performance.json"))!;
-            var timeline = StageChartReader.Load("", "", Path.Combine(assets, "stages/events"), "My Curse", "Killswitch Engage");
+            var timeline = StageChartReader.LoadEventFile(Path.Combine(Path.Combine(assets, "stages/events"), "mycurse.json"));
             var set = bank.Animations[profile.Animations];
             var motion = new CharacterMotion
             {
@@ -131,7 +131,7 @@ internal static class HairBench
         var directory = Path.Combine(library, "direction");
         var definition = HairBank.Load(Path.Combine(band, "hair.json"))!.Members[role];
         var performance = StagePerformance.Load(Path.Combine(directory, "performance.json"))!;
-        var timeline = StageChartReader.Load("", "", Path.Combine(assets, "stages/events"), "My Curse", "Killswitch Engage");
+        var timeline = StageChartReader.LoadEventFile(Path.Combine(Path.Combine(assets, "stages/events"), "mycurse.json"));
         using var reader = new BinaryReader(File.OpenRead(Path.Combine(band, role, "animation.bin")));
         var animation = new BandAnimation(reader);
         var player = new PerformancePlayer(role, directory, performance.Members[role], animation.BindPose, timeline);
@@ -256,7 +256,7 @@ internal static class HairBench
             definition = HairDefinition.Merge(profile.Hair.Length > 0 ? bank.Hair[profile.Hair] : null, joints, colliders)!;
         }
         var performance = StagePerformance.Load(Path.Combine(assets, "libraries/gh3-band-v1/direction/performance.json"))!;
-        var timeline = StageChartReader.Load("", "", Path.Combine(assets, "stages/events"), "My Curse", "Killswitch Engage");
+        var timeline = StageChartReader.LoadEventFile(Path.Combine(Path.Combine(assets, "stages/events"), "mycurse.json"));
         var set = bank.Animations[profile.Animations];
         var motion = new CharacterMotion
         {

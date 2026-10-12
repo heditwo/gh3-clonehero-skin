@@ -9,6 +9,8 @@ internal sealed class StageAudio : IDisposable
     private const int WaveHeaderAfterRiffSize = 36;
     // A voice more than 50 ms off the song clock is moved back to its place.
     private const double MaximumDrift = .05;
+    // The count-off of a song whose direction file names none (the GH3 count-off of most songs, songlist.qb).
+    private const string DefaultCountoff = "sticks_normal";
 
     private sealed record Wave(IntPtr Data, int Length);
     private readonly string _directory;
@@ -32,7 +34,7 @@ internal sealed class StageAudio : IDisposable
         var path = Path.Combine(directory, "audio.json");
         if (!File.Exists(path)) return null;
         var bank = StageSoundBank.Load(path);
-        var countoff = timeline.Countoff.Length > 0 ? timeline.Countoff : bank.Countoffs.GetValueOrDefault(Gh3Checksum.Of(timeline.SourceSong), "sticks_normal");
+        var countoff = timeline.Countoff.Length > 0 ? timeline.Countoff : DefaultCountoff;
         return new(directory, bank, new StageAudioState(bank, timeline, venue, countoff) { Training = training });
     }
 

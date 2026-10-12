@@ -6,7 +6,7 @@
 - Library: package -> GH3BND02, GH3ANM01, stage.json, and textures of each model; GH3CLP01 clips; gzip PCM; GH3VID01
   movies; library JSON files -> compare with the current library folder. Clips must stay within the q48 error bound.
 
-Usage: python -m pipeline.package.roundtrip [--packages DIR] [--stages DIR] [--library DIR] [--events DIR]
+Usage: python -m pipeline.package.roundtrip [--packages DIR] [--stages DIR] [--library DIR]
                                             [--venue ID ...] [--no-venues] [--no-library] [--json OUT]
 """
 
@@ -23,7 +23,7 @@ import numpy as np
 from PIL import Image
 
 from pipeline.package import q48, runtime, texture
-from pipeline.package.build import EFFECT_FILES, EVENTS, OUTPUT, encode_texture, json_bytes
+from pipeline.package.build import EFFECT_FILES, OUTPUT, encode_texture, json_bytes
 from pipeline.package.glb import COLUMNS, COMPONENTS, Glb
 from pipeline.package.package_files import Report, Source
 from pipeline.paths import LIBRARY, STAGES
@@ -357,7 +357,7 @@ def check_clip(package_data, source_data):
     }
 
 
-def library_round_trip(package, library, events):
+def library_round_trip(package, library):
     source = open_package(package)
     library = Path(library)
     read = source.read
@@ -449,11 +449,6 @@ def library_round_trip(package, library, events):
     current = sorted(p.relative_to(library).as_posix() for p in library.rglob("*.bin.gz"))
     result["clips"]["currentClipFiles"] = len(current)
 
-    songs = sorted(n for n in source.names if n.startswith("songs/"))
-    result["files"]["songs"] = all(read(n) == (Path(events) / n.split("/", 1)[1]).read_bytes() for n in songs) and len(
-        songs
-    ) == len([p for p in Path(events).glob("*.json") if p.name != "export-report.json"])
-
     kinds = Counter()
     for path in sorted(library.rglob("*")):
         if not path.is_file():
@@ -493,7 +488,6 @@ def main(argv=None):
     parser.add_argument("--packages", type=Path, default=OUTPUT)
     parser.add_argument("--stages", type=Path, default=STAGES, help="compiled packs to compare with")
     parser.add_argument("--library", type=Path, default=LIBRARY)
-    parser.add_argument("--events", type=Path, default=EVENTS)
     parser.add_argument("--venue", action="append")
     parser.add_argument("--no-venues", action="store_true")
     parser.add_argument("--no-library", action="store_true")
@@ -514,7 +508,7 @@ def main(argv=None):
             )
     if not args.no_library:
         package = next(args.packages.glob("gh3-band-v1.ch*"))
-        report["library"] = library_round_trip(package, args.library, args.events)
+        report["library"] = library_round_trip(package, args.library)
         print(json.dumps(report["library"], indent=1))
     if args.json:
         args.json.write_bytes(json_bytes(report))

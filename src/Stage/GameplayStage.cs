@@ -26,7 +26,6 @@ internal sealed partial class GameplayStage
     private static readonly System.Random StageRandom = new();
     private string _directory = "";
     private string _library = "";
-    private string _events = "";
     private string _render = "";
     private string _effectsDirectory = "";
     private string _waitingFor = "";
@@ -416,7 +415,7 @@ internal sealed partial class GameplayStage
             try
             {
                 _timeline = entry == null ? new StageTimeline(Array.Empty<StageCue>(), "song path unavailable") :
-                    StageChartReader.Load(entry.folderPath, entry.ChartPath, _events, entry.Name_StrippedTags, entry.Artist_StrippedTags, performance);
+                    StageChartReader.Load(entry.folderPath, entry.ChartPath, performance);
             }
             catch (Exception error)
             {

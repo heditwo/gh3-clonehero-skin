@@ -2,7 +2,6 @@
   "version": 2,
   "library": "gh3-band-v1",
   "offsetSeconds": 0,
-  "originalSongLookup": "auto",
   "clearChannels": ["fireworks"],
   "events": [
     { "time": 0, "type": "camera", "value": "wide", "duration": 8 },

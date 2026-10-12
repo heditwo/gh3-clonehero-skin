@@ -15,17 +15,13 @@ internal static class SongDirectionLogicTests
             if (Environment.GetEnvironmentVariable("GH3_PACK_ASSETS") is { } assets) CheckOriginal(directory, assets);
         }
         finally { Directory.Delete(directory, true); }
-        Console.WriteLine("Version 2 song channel priority, clearing, timing, MIDI, validation, and legacy checks passed.");
+        Console.WriteLine("Version 2 song channel priority, clearing, timing, suggestions, MIDI, validation, and version 1 checks passed.");
     }
 
     private static void CheckFiles(string directory)
     {
-        var library = Path.Combine(directory, "library");
-        Directory.CreateDirectory(library);
-        File.WriteAllText(Path.Combine(library, "index.json"), """
-            {"version":1,"songs":[{"title":"My Curse","artist":"Killswitch Engage","file":"mycurse.json"}]}
-            """);
-        var original = new[] {
+        // The GH3 direction of a song as a chart pack sidecar has (pipeline.song_direction): no strums, beats, or tempo.
+        var direction = new[] {
             new StageCue(0, "gh3-camera", "85", 8), new StageCue(40, "camera", "drummer"),
             new StageCue(0, "gh3-note", "39"), new StageCue(1, "gh3-note", "75"), new StageCue(5, "gh3-note", "58"),
             new StageCue(0, "stance", "stance_a", Role: "guitarist"), new StageCue(20, "perform", "jump", Role: "guitarist"),
@@ -34,11 +30,8 @@ internal static class SongDirectionLogicTests
             new StageCue(0, "arms", "1", Role: "guitarist"), new StageCue(0, "strum-style", "normal", Role: "guitarist"),
             new StageCue(0, "walk", "guitarist_walk01", Role: "guitarist"),
             new StageCue(0, "fret", "125"), new StageCue(0, "fret", "108"), new StageCue(1, "drum", "36"),
-            new StageCue(4, "strum", "31", Role: "guitarist"), new StageCue(4, "strum", "31", Role: "bassist"),
-            new StageCue(6, "gh3-note", "56"), new StageCue(7, "pyro"), new StageCue(8, "smoke"),
-            new StageCue(0, "tempo", "80"), new StageCue(0, "beat"), new StageCue(0.75, "beat")
+            new StageCue(6, "gh3-note", "56"), new StageCue(7, "pyro"), new StageCue(8, "smoke")
         };
-        File.WriteAllText(Path.Combine(library, "mycurse.json"), JsonSerializer.Serialize(new { version = 1, events = original }));
         var chartPath = Path.Combine(directory, "notes.chart");
         const string chart = """
             [Song]
@@ -56,35 +49,40 @@ internal static class SongDirectionLogicTests
         File.WriteAllText(chartPath, chart);
         var sidecar = Path.Combine(directory, "stage-events.json");
         void Write(string fields) => File.WriteAllText(sidecar, "{\"version\":2,\"library\":\"gh3-band-v1\"," + fields + "}");
-        StageTimeline Load(StagePerformance? performance = null) => StageChartReader.Load(directory, chartPath, library,
-            "MY CURSE!", "Killswitch Engage", performance);
+        void WriteDirection(double offset) => File.WriteAllText(sidecar, JsonSerializer.Serialize(new
+        {
+            version = 2, library = "gh3-band-v1", sourceSong = "mycurse", countoff = "HiHat01", offsetSeconds = offset, stage = "gh3.dive",
+            characters = new Dictionary<string, string> { ["singer"] = "gh3.singer-female" }, events = direction
+        }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+        StageTimeline Load(StagePerformance? performance = null) => StageChartReader.Load(directory, chartPath, performance);
 
-        Write(""" "offsetSeconds":-1,"events":[{"time":12,"type":"camera","value":"singer","duration":4}] """);
-        var cameras = Load();
-        Check(cameras.Cameras.Single() == new StageCue(11, "camera", "singer", 4), "file camera cues replace the entire original camera channel");
-        Check(cameras.Cues.Where(c => StageSongDirection.Channel(c) == "lighting").SequenceEqual(original.Where(c => StageSongDirection.Channel(c) == "lighting")),
-            "a camera-only file retains original numeric lighting with unshifted times");
-        Check(cameras.Track("perform", "guitarist").Single().Time == 20 && cameras.Track("face", "singer").Single().Time == 10,
-            "a camera-only file retains body and face direction");
-        Check(cameras.Track("strum", "guitarist").Single() == new StageCue(0.125, "strum", "5", 1.5, "guitarist"),
-            "playable chord masks, note times, and sustains replace original strums");
-        Check(cameras.Track("strum", "bassist").Single().Value == "2", "bass notes resolve separately");
-        Check(cameras.Beats.Length == 0 && cameras.TempoAt(0.2) == 120 && cameras.TempoAt(0.7) == 60,
-            "the chart tempo map replaces both original tempo and beat cues");
-        Check(cameras.ChannelSources["camera"] == "stage-events.json" && cameras.ChannelSources["lighting"] == "mycurse.json",
+        WriteDirection(-1);
+        var full = Load();
+        Check(full.Cues.Where(c => StageSongDirection.Channel(c) is not (null or "timing" or "strum/guitarist" or "strum/bassist"))
+                .SequenceEqual(direction.Select(c => c with { Time = c.Time - 1 }).OrderBy(c => c.Time)),
+            "the file supplies every direction channel, shifted by its offset");
+        Check(full.Cameras.Length == 2 && full.Cameras[0].Time == -1 && full.SourceSong == "mycurse" && full.Countoff == "HiHat01",
+            "the file keeps its source song and count-off");
+        Check(full.Track("strum", "guitarist").Single() == new StageCue(0.125, "strum", "5", 1.5, "guitarist"),
+            "playable chord masks, note times, and sustains supply the strums");
+        Check(full.Track("strum", "bassist").Single().Value == "2", "bass notes resolve separately");
+        Check(full.Beats.Length == 0 && full.TempoAt(0.2) == 120 && full.TempoAt(0.7) == 60, "the chart tempo map supplies the timing");
+        Check(full.ChannelSources["camera"] == "stage-events.json" && full.ChannelSources["strum/guitarist"] == "notes.chart Expert notes",
             "the loader reports the selected channel sources");
-        var light = cameras.Lighting(6);
-        _ = cameras.Lighting(100);
-        Check(cameras.Lighting(6) == light && cameras.CameraAt(11)?.Value == "singer", "resolved direction retains clock-based seek behavior");
+        var light = full.Lighting(5);
+        _ = full.Lighting(100);
+        Check(full.Lighting(5) == light && full.CameraAt(39)?.Value == "drummer", "resolved direction retains clock-based seek behavior");
 
-        File.WriteAllText(chartPath, chart + "\n[Events]\n0 = E \"stage camera drummer\"\n192 = E \"stage pyro\"\n384 = E \"stage strum guitarist 9\"");
+        File.WriteAllText(chartPath, chart + "\n[Events]\n0 = E \"stage camera singer\"\n192 = E \"stage sparks\"\n384 = E \"stage strum guitarist 9\"");
         var chartPriority = Load();
-        Check(chartPriority.Cameras.Single().Value == "singer" && chartPriority.Effects.Count(c => c.Type == "pyro") == 1 &&
-            chartPriority.Effects.Single(c => c.Type == "pyro").Time == 0.625, "file overrides chart cameras while chart pyro replaces both original pyro forms");
+        Check(chartPriority.Cameras.Length == 2 && chartPriority.Cameras.All(c => c.Value != "singer") &&
+            chartPriority.Effects.Single(c => c.Type == "sparks").Time == 0.625, "the file overrides chart cameras; chart sparks fill a free channel");
         Check(chartPriority.Track("strum", "guitarist").Single().Value == "9" && chartPriority.Track("strum", "bassist").Single().Value == "2",
             "explicit chart strums replace note-derived strums for only their role");
         Write(""" "events":[{"time":9,"type":"strum","role":"guitarist","value":"3"}] """);
         Check(Load().Track("strum", "guitarist").Single().Time == 9, "file strums take priority over explicit chart strums");
+        Write(""" "events":[] """);
+        Check(Load().Cameras.Single().Value == "singer", "an empty version 2 file inherits chart direction");
 
         Write("""
             "events":[
@@ -94,26 +92,18 @@ internal static class SongDirectionLogicTests
             {"time":0,"type":"color","value":"blue"}]
             """);
         var grouped = Load();
-        Check(grouped.Track("stance", "guitarist").Length == 0 && grouped.Track("clip", "guitarist").Length == 0 &&
-            grouped.Track("perform", "guitarist").Single().Time == 2, "all guitarist body command types form one channel");
-        Check(grouped.Track("stance", "bassist").Length == 1 && grouped.Track("walk", "guitarist").Length == 1 &&
-            grouped.Track("arms", "guitarist").Length == 1, "body replacement keeps other roles, walking, and arm control");
-        Check(!grouped.Cues.Any(c => c.Type == "gh3-note" && c.Value != "56") && grouped.Lighting(0) == StageColor.Named("blue"),
-            "lighting replacement removes all inherited light state and preserves equal-time command order");
+        Check(grouped.Track("perform", "guitarist").Single().Time == 2 && grouped.Lighting(0) == StageColor.Named("blue"),
+            "body and lighting commands keep their equal-time order");
 
-        Write(""" "clearChannels":["camera","lighting","body/guitarist","face/singer","strum/guitarist","fret/bassist","drum","pyro"],"events":[] """);
+        Write(""" "clearChannels":["camera","strum/guitarist","sparks"],"events":[] """);
         var cleared = Load();
-        Check(cleared.Cameras.Length == 0 && !cleared.Cues.Any(c => StageSongDirection.Channel(c) is "lighting" or "body/guitarist" or "face/singer" or "strum/guitarist" or "fret/bassist" or "drum" or "pyro"),
-            "clearChannels suppresses file, chart, generated notes, and original events in each cleared channel");
-        Check(cleared.Track("face", "guitarist").Length == 1 && cleared.Track("strum", "bassist").Length == 1 &&
-            cleared.Effects.Single().Type == "smoke" && cleared.TempoAt(0.7) == 60, "clearing channels retains independent channels and chart timing");
-        Write(""" "events":[{"time":3,"type":"fret","value":"120"}] """);
-        Check(Load().Track("fret").Select(c => c.Value).SequenceEqual(new[] { "108", "120" }), "numeric frets resolve to separate instrument channels");
-
-        Write(""" "events":[] """);
-        Check(Load().Cameras.Single().Value == "drummer", "an empty version 2 file inherits chart direction");
+        Check(cleared.Cameras.Length == 0 && cleared.Track("strum", "guitarist").Length == 0 && !cleared.Effects.Any(),
+            "clearChannels suppresses chart and generated cues in each cleared channel");
+        Check(cleared.Track("strum", "bassist").Length == 1 && cleared.TempoAt(0.7) == 60, "clearing channels retains independent channels and chart timing");
         File.WriteAllText(chartPath, chart);
-        Check(Load().Cameras.Length == 2, "omitted camera direction inherits the original library");
+        Write(""" "events":[{"time":3,"type":"fret","value":"120"},{"time":3,"type":"fret","value":"108"}] """);
+        Check(Load().Track("fret").Select(c => c.Value).SequenceEqual(new[] { "120", "108" }), "numeric frets resolve to separate instrument channels");
+
         Write(""" "events":[{"time":0,"type":"tempo","value":"200"}] """);
         Check(Load().TempoAt(0.2) == 120, "file timing cannot override the playable tempo map");
         File.WriteAllText(chartPath, "[SyncTrack]\n192 = B 60000");
@@ -121,29 +111,25 @@ internal static class SongDirectionLogicTests
         File.WriteAllText(chartPath, "[ExpertSingle]\n0 = N 0 0");
         Check(Load().TempoAt(0) == 200, "file timing is used when the chart has no tempo map");
         Write(""" "events":[] """);
-        Check(Load().TempoAt(0) == 80, "original timing supplies the next fallback");
-        Write(""" "originalSongLookup":"off","events":[] """);
-        File.WriteAllText(Path.Combine(library, "index.json"), "not JSON");
-        var disabled = Load();
-        Check(disabled.Cameras.Length == 0 && disabled.Track("strum", "guitarist").Single().Value == "1" && disabled.TempoAt(0) == 115,
-            "lookup off bypasses the library and retains gameplay notes and default tempo");
+        Check(Load().TempoAt(0) == 115 && Load().Track("strum", "guitarist").Single().Value == "1", "without file timing the default tempo applies");
 
         var member = new PerformanceMember { Groups = new() { ["stance_a/idle/normal/med"] = new[] { "00000001" },
             ["stance_a/jump/normal/med"] = new[] { "00000001" }, ["walk/cycle_anim/med"] = new[] { "00000001" } }, Clips = new() { ["00000001"] = new() },
             Layers = new() { ["strum/normal/short"] = new[] { "00000001" } } };
         var performance = new StagePerformance { Members = new() { ["guitarist"] = member,
             ["drummer"] = new() { Groups = new() { ["stance_a/idle/normal/med"] = new[] { "00000001" } } } } };
-        Write(""" "originalSongLookup":"off","events":[{"time":0,"type":"perform","role":"guitarist","value":"jump"}] """);
+        Write(""" "events":[{"time":0,"type":"perform","role":"guitarist","value":"jump"}] """);
         Check(Load(performance).Track("perform", "guitarist").Length == 1, "authored actions resolve through the role catalog");
-        Write(""" "originalSongLookup":"off","events":[{"time":0,"type":"perform","role":"drummer","value":"jump"}] """);
+        Write(""" "events":[{"time":0,"type":"perform","role":"drummer","value":"jump"}] """);
         Reject(() => Load(performance), "unresolved perform", "an action must exist for its target role");
-        Write(""" "originalSongLookup":"off","events":[{"time":0,"type":"face","role":"guitarist","value":"deadbeef"}] """);
+        Write(""" "events":[{"time":0,"type":"face","role":"guitarist","value":"deadbeef"}] """);
         Reject(() => Load(performance), "unresolved face", "unknown facial clips are reported");
-        Write(""" "originalSongLookup":"off","events":[{"time":0,"type":"stance","role":"guitarist","value":"walk"}] """);
+        Write(""" "events":[{"time":0,"type":"stance","role":"guitarist","value":"walk"}] """);
         Reject(() => Load(performance), "unresolved stance", "walking groups cannot be used as body stances");
 
         foreach (var fields in new[] {
-            "\"events\":[],\"originalSongLookup\":\"yes\"", "\"events\":[],\"clearChannels\":[\"timing\"]",
+            "\"events\":[],\"stage\":\"Not An Id\"", "\"events\":[],\"characters\":{\"keyboard\":\"gh3.judy\"}",
+            "\"events\":[],\"characters\":{\"singer\":\"\"}", "\"events\":[],\"clearChannels\":[\"timing\"]",
             "\"events\":[],\"clearChannels\":[\"body/other\"]", "\"events\":[],\"clearChannels\":[\"strum/singer\"]",
             "\"events\":[],\"clearChannels\":[\"camera\",\"camera\"]", "\"events\":[],\"clearChannels\":null",
             "\"events\":[{\"time\":0,\"type\":\"camera\",\"value\":\"wide\"}],\"clearChannels\":[\"camera\"]",
@@ -172,12 +158,12 @@ internal static class SongDirectionLogicTests
             File.WriteAllText(sidecar, json);
             Reject(() => Load(), "stage-events.json", "required version 2 fields and JSON syntax are checked");
         }
-        Write(""" "originalSongLookup":"off","offsetSeconds":2,"events":[{"time":86400,"type":"pyro"}] """);
+        Write(""" "offsetSeconds":2,"events":[{"time":86400,"type":"pyro"}] """);
         Reject(() => Load(), "Invalid stage cue", "the time limit applies after the file offset");
 
         File.WriteAllText(chartPath, "[Song]\nResolution = 0");
         File.WriteAllText(sidecar, "{\"version\":1,\"events\":[]}");
-        Check(Load().CueCount == 0, "version 1 still replaces the entire timeline without loading chart or library");
+        Check(Load().CueCount == 0, "version 1 still replaces the entire timeline without loading the chart");
         CheckMidi(directory);
     }
 
@@ -194,7 +180,7 @@ internal static class SongDirectionLogicTests
             Track(output, "GH3 DRUMS", new byte[] { 0, 144, 36, 100, 131, 96, 128, 36, 0 });
         }
         File.WriteAllText(Path.Combine(directory, "stage-events.json"), """
-            {"version":2,"library":"gh3-band-v1","originalSongLookup":"off","events":[{"time":0,"type":"camera","value":"wide"}]}
+            {"version":2,"library":"gh3-band-v1","events":[{"time":0,"type":"camera","value":"wide"}]}
             """);
         var timeline = StageChartReader.Load(directory, path);
         Check(timeline.Track("strum", "guitarist").Single() == new StageCue(0, "strum", "5", 0.5, "guitarist") && timeline.TempoAt(1) == 120,
@@ -216,24 +202,31 @@ internal static class SongDirectionLogicTests
         data.WriteTo(output);
     }
 
+    // The GH3 direction of My Curse as the chart pack sidecar (pipeline.song_direction) against the GH3 export of the song.
     private static void CheckOriginal(string directory, string assets)
     {
-        var library = Path.Combine(assets, "stages", "events");
         var performance = StagePerformance.Load(Path.Combine(assets, "libraries", "gh3-band-v1", "direction", "performance.json"))!;
-        var original = StageChartReader.Load("", "", library, "My Curse", "Killswitch Engage");
-        File.WriteAllText(Path.Combine(directory, "stage-events.json"), """
-            {"version":2,"library":"gh3-band-v1","events":[{"time":0,"type":"camera","value":"wide"},{"time":12,"type":"camera","value":"singer"}]}
-            """);
-        var resolved = StageChartReader.Load(directory, "", library, "My Curse", "Killswitch Engage", performance);
-        var expected = original.Cues.Where(c => StageSongDirection.Channel(c) is not (null or "camera"));
-        Check(resolved.Cues.Where(c => StageSongDirection.Channel(c) != "camera").SequenceEqual(expected),
-            "a real My Curse camera override retains every supported original non-camera cue");
+        var original = StageChartReader.LoadEventFile(Path.Combine(assets, "stages", "events", "mycurse.json"));
+        var pack = Path.Combine(assets, "song-direction", "gh3-legends-of-rock", "Killswitch Engage - My Curse", "stage-events.json");
+        if (File.Exists(pack))
+        {
+            File.Copy(pack, Path.Combine(directory, "stage-events.json"), true);
+            var sidecar = StageChartReader.Load(directory, "", performance);
+            Check(sidecar.Cues.Where(c => c.Type is not ("strum" or "beat")).SequenceEqual(original.Cues.Where(c => c.Type is not ("strum" or "beat"))),
+                "the pack sidecar of My Curse has every direction cue of the GH3 song at the same time");
+        }
+        File.WriteAllText(Path.Combine(directory, "stage-events.json"), JsonSerializer.Serialize(new
+        {
+            version = 2, library = "gh3-band-v1", events = original.Cues.Where(c => c.Type is not ("strum" or "beat" or "camera" or "gh3-camera"))
+                .Append(new StageCue(0, "camera", "wide")).Append(new StageCue(12, "camera", "singer"))
+        }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+        var resolved = StageChartReader.Load(directory, "", performance);
         Check(resolved.Cameras.Length == 2 && resolved.Track("drum").Length == 2916 && resolved.Track("face", "singer").Length == 5 && resolved.Effects.Length == 18,
-            "the original My Curse drum, face, and effect channels remain complete");
+            "the My Curse drum, face, and effect channels stay complete beside authored cameras");
         File.Copy(Path.Combine(assets, "..", "docs", "examples", "custom-content", "stage-events.json"), Path.Combine(directory, "stage-events.json"), true);
-        var example = StageChartReader.Load(directory, "", library, "My Curse", "Killswitch Engage", performance);
+        var example = StageChartReader.Load(directory, "", performance);
         Check(example.Track("perform", "guitarist").Single().Value == "jump", "the documented example resolves against the installed action catalog");
-        Console.WriteLine("Version 2 camera-only and documented full examples checked against the original My Curse library.");
+        Console.WriteLine("Version 2 camera-only and documented full examples checked against the My Curse direction.");
     }
 
     private static void Check(bool valid, string message)

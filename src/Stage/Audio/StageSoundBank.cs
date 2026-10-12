@@ -24,7 +24,6 @@ internal sealed class StageSoundBank
     public int Version { get; set; }
     public Dictionary<string, JsonElement> Definitions { get; set; } = new();
     public Dictionary<string, StageSoundSample> Samples { get; set; } = new();
-    public Dictionary<string, string> Countoffs { get; set; } = new();
     public Dictionary<string, double> Constants { get; set; } = new();
     private readonly Dictionary<uint, Gh3QbValue> _values = new();
     private readonly Dictionary<uint, uint> _parents = new();

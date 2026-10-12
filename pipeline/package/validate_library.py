@@ -17,7 +17,6 @@ LIBRARY_SCHEMAS = {
     "handFire": "hand-fire.schema.json",
     "audio": "audio.schema.json",
     "scripts": "scripts.schema.json",
-    "songs": "songs.schema.json",
 }
 EFFECT_SCHEMAS = {
     "effects/particle-materials.json": "particle-materials.schema.json",
@@ -159,11 +158,6 @@ class LibraryChecks:
                 self.report.error(entry["audio"], "each sample needs 'file'")
             else:
                 need(entry["audio"], sample["file"], "audio sample")
-        songs = data.get("songs")
-        if songs:
-            song_folder = entry["songs"].rsplit("/", 1)[0] + "/" if "/" in entry["songs"] else ""
-            for song in songs["songs"]:
-                need(entry["songs"], song_folder + song["file"], "song direction")
         for name, schema in EFFECT_SCHEMAS.items():
             if name in self.source.set:
                 value = load_json(self.source, name, self.report)
@@ -189,14 +183,3 @@ class LibraryChecks:
                 )
         for folder in frames:
             self.report.error(folder, "movie frames without movie.json")
-        if songs:
-            for name in self.source.names:
-                if (
-                    name.startswith(song_folder)
-                    and name.endswith(".json")
-                    and name != entry["songs"]
-                    and "/" not in name[len(song_folder) :]
-                ):
-                    value = load_json(self.source, name, self.report)
-                    if value is not None:
-                        check_schema(self.schemas, value, "song.schema.json", name, self.report)

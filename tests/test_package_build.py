@@ -182,7 +182,6 @@ def library(root):
         {
             "version": 1,
             "definitions": {"41aca0a3": [1, 90]},
-            "countoffs": {},
             "constants": {},
             "samples": {
                 "5a5a5a5a": {"rate": 22050, "channels": 2, "frames": 4, "loopStart": 0, "loopEnd": 4, "loop": False}
@@ -218,21 +217,7 @@ def library(root):
     )
     write(root / "render/tesla-noise.png", png(4, 4))
     write(root / "render/stage.bundle", b"platform data")
-    events = root.parent / "events"
-    write(events / "index.json", {"version": 1, "songs": [{"title": "Song", "artist": "Artist", "file": "song.json"}]})
-    write(
-        events / "song.json",
-        {
-            "version": 1,
-            "offsetSeconds": 0,
-            "sourceSong": "song",
-            "sourceSha256": "4" * 64,
-            "events": [{"time": 0, "type": "beat"}],
-            "playback": [],
-        },
-    )
-    write(events / "export-report.json", {"exported": 1})
-    return root, events
+    return root
 
 
 class ImageNameTests(unittest.TestCase):
@@ -384,11 +369,11 @@ class LibraryBuildTests(unittest.TestCase):
     def test_library_package_is_valid_reproducible_and_round_trips(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            source, events = library(root / "current/gh3-band-v1")
+            source = library(root / "current/gh3-band-v1")
             (root / "out").mkdir()
             (root / "again").mkdir()
-            (folder, archive), clips = build.build_library(source, events, root / "out", jobs=1)
-            (_, again), _ = build.build_library(source, events, root / "again", jobs=1)
+            (folder, archive), clips = build.build_library(source, root / "out", jobs=1)
+            (_, again), _ = build.build_library(source, root / "again", jobs=1)
             self.assertEqual(archive.read_bytes(), again.read_bytes())
             self.assertEqual(len(clips), 2)
             self.assertEqual(
@@ -401,7 +386,7 @@ class LibraryBuildTests(unittest.TestCase):
             for package in (folder, archive):
                 report = Validator(package).run()
                 self.assertEqual((report.errors, report.warnings), ([], []))
-            result = roundtrip.library_round_trip(archive, source, events)
+            result = roundtrip.library_round_trip(archive, source)
             self.assertTrue(result["ok"], json.dumps(result, indent=1))
             self.assertTrue(all(m["meshesBinByteEqual"] and m["texturesByteEqual"] for m in result["models"].values()))
             self.assertEqual(result["audio"]["gzipByteEqual"], 1)
@@ -431,14 +416,14 @@ class LibraryBuildTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            source, events = library(root / "current/gh3-band-v1")
+            source = library(root / "current/gh3-band-v1")
             (root / "out").mkdir()
-            (folder, _), _ = build.build_library(source, events, root / "out", jobs=1)
+            (folder, _), _ = build.build_library(source, root / "out", jobs=1)
             entry = json.loads((folder / "manifest.json").read_text())["entry"]
             pairs = (
                 [(entry[key], schema) for key, schema in LIBRARY_SCHEMAS.items()]
                 + list(EFFECT_SCHEMAS.items())
-                + [("movies/clip/movie.json", "movie.schema.json"), ("songs/song.json", "song.schema.json")]
+                + [("movies/clip/movie.json", "movie.schema.json")]
             )
             cases = []
             for name, schema in pairs:
@@ -455,9 +440,9 @@ class LibraryBuildTests(unittest.TestCase):
     def test_validator_finds_missing_library_files(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            source, events = library(root / "current/gh3-band-v1")
+            source = library(root / "current/gh3-band-v1")
             (root / "out").mkdir()
-            (folder, _), _ = build.build_library(source, events, root / "out", jobs=1)
+            (folder, _), _ = build.build_library(source, root / "out", jobs=1)
             manifest = json.loads((folder / "manifest.json").read_text())
             manifest["files"] = {}
             write(folder / "manifest.json", manifest)

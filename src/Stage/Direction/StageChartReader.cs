@@ -11,12 +11,14 @@ internal sealed class StageEventFile
 {
     public int Version { get; set; }
     public string Library { get; set; } = "";
-    public string OriginalSongLookup { get; set; } = "auto";
     public string[] ClearChannels { get; set; } = Array.Empty<string>();
     public double OffsetSeconds { get; set; }
     public StageCue[] Events { get; set; } = Array.Empty<StageCue>();
     public string SourceSong { get; set; } = "";
     public string Countoff { get; set; } = "";
+    // Suggestions for the song (version 2): a stage ID and {role: character ID}; StageSelection reads them.
+    public string Stage { get; set; } = "";
+    public Dictionary<string, string> Characters { get; set; } = new();
 }
 
 internal sealed record StageChartData(StageTimeline Timeline, StageCue[] Direction, StageCue[] Strums, StageCue[] Timing)
@@ -25,19 +27,6 @@ internal sealed record StageChartData(StageTimeline Timeline, StageCue[] Directi
     public StageCue[] Generated { get; init; } = Array.Empty<StageCue>();
     public StageCue[] Vocals { get; init; } = Array.Empty<StageCue>();
     public string[] Diagnostics { get; init; } = Array.Empty<string>();
-}
-
-internal sealed class StageEventIndex
-{
-    public int Version { get; set; }
-    public StageSongEntry[] Songs { get; set; } = Array.Empty<StageSongEntry>();
-}
-
-internal sealed class StageSongEntry
-{
-    public string Title { get; set; } = "";
-    public string Artist { get; set; } = "";
-    public string File { get; set; } = "";
 }
 
 internal static class StageChartReader
@@ -50,10 +39,9 @@ internal static class StageChartReader
     // GH3_SKIN_GENERATED_DIRECTION=off keeps charts without direction on the static defaults (for older reference captures).
     public static bool UseGeneratedDirection { get; set; } = SkinEnvironment.IsNotOff(SkinEnvironment.GeneratedDirection);
 
-    public static StageTimeline Load(string songDirectory, string chartPath, string? library = null, string title = "", string artist = "",
-        StagePerformance? performance = null)
+    public static StageTimeline Load(string songDirectory, string chartPath, StagePerformance? performance = null)
     {
-        var sidecar = Path.Combine(songDirectory, "stage-events.json");
+        var sidecar = Path.Combine(songDirectory, Packages.StageSelection.EventFile);
         var file = File.Exists(sidecar) ? ReadEventFile(sidecar) : null;
         if (file?.Version == 1) return EventTimeline(file, sidecar);
         var chart = new StageChartData(new StageTimeline(Array.Empty<StageCue>(), "no venue cues"),
@@ -68,21 +56,11 @@ internal static class StageChartReader
                 _ => chart
             };
         }
-        var original = file?.OriginalSongLookup == "off" ? null : ReadOriginal(library, title, artist);
-        if (file != null)
-            return StageSongDirection.Resolve(file, EventTimeline(file, sidecar), chart, original, performance);
-        var timeline = chart.Timeline;
-        if (original != null)
-        {
-            var direction = timeline.Cues.Where(c => c.Type is not ("strum" or "beat" or "tempo")).ToArray();
-            static string Channel(StageCue cue) => StageSongDirection.Channel(cue) ?? cue.Type + "/" + cue.Role;
-            var overridden = direction.Select(Channel).ToHashSet();
-            timeline = direction.Length == 0 ? original :
-                new StageTimeline(original.Cues.Where(c => !overridden.Contains(Channel(c))).Concat(direction), original.Source + " + " + timeline.Source)
-                    { SourceSong = original.SourceSong, Countoff = original.Countoff };
-        }
-        return Fallback(timeline, chart);
+        return file != null ? StageSongDirection.Resolve(file, EventTimeline(file, sidecar), chart, performance) : Fallback(chart.Timeline, chart);
     }
+
+    // A direction file on its own, without a chart: the cues of all its events (tests and benches).
+    public static StageTimeline LoadEventFile(string path) => EventTimeline(ReadEventFile(path), path);
 
     // The VENUE track and the generated cues fill only the channels that no other source supplies.
     private static StageTimeline Fallback(StageTimeline timeline, StageChartData chart)
@@ -109,28 +87,6 @@ internal static class StageChartReader
             { SourceSong = timeline.SourceSong, Countoff = timeline.Countoff, Diagnostics = timeline.Diagnostics.Concat(diagnostics).ToArray() };
     }
 
-    private static StageTimeline? ReadOriginal(string? library, string title, string artist)
-    {
-        if (library == null || title.Length == 0 || artist.Length == 0) return null;
-        var indexPath = Path.Combine(library, "index.json");
-        if (!File.Exists(indexPath)) return null;
-        CheckSize(indexPath);
-        var index = JsonSerializer.Deserialize<StageEventIndex>(File.ReadAllText(indexPath), JsonOptions);
-        if (index?.Version != 1 || index.Songs == null) throw new InvalidDataException("Invalid GH3 cue library index");
-        var matches = index.Songs.Where(song => Normalize(song.Title) == Normalize(title) && Normalize(song.Artist) == Normalize(artist)).ToArray();
-        if (matches.Length != 1) return null;
-        var filename = matches[0].File;
-        if (filename.Length == 0 || Path.GetFileName(filename) != filename || !filename.EndsWith(".json", StringComparison.Ordinal))
-            throw new InvalidDataException("Invalid GH3 cue library filename");
-        var path = Path.Combine(library, filename);
-        var file = ReadEventFile(path);
-        if (file.Version != 1) throw new InvalidDataException("The original song library requires version 1 event files");
-        return EventTimeline(file, path);
-    }
-
-    private static string Normalize(string value) => new(value.Normalize(NormalizationForm.FormD)
-        .Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
-
     private static StageEventFile ReadEventFile(string path)
     {
         CheckSize(path);
@@ -154,6 +110,10 @@ internal static class StageChartReader
             file.SourceSong == null || file.SourceSong.Length > 128 || file.Countoff == null || file.Countoff.Length > 128 ||
             file.Events.Length > StageLimits.MaximumCount || file.Events.Any(cue => cue == null))
             throw new InvalidDataException("Invalid stage event file");
+        if (file.Stage == null || file.Stage.Length > 0 && !Packages.PackageManifest.ValidId(file.Stage))
+            throw new InvalidDataException("stage must be a package ID");
+        if (file.Characters == null || file.Characters.Any(pair => !Packages.PlayerChoices.Roles.Contains(pair.Key) || !Packages.PackageManifest.ValidId(pair.Value ?? "")))
+            throw new InvalidDataException("characters must map band roles to package IDs");
         var types = new HashSet<string> { "pyro", "sparks", "fireworks", "smoke", "flash", "lighting", "color", "blend", "snapshot", "strobe-toggle", "gh3-note", "camera",
             "gh3-camera", "gh3-script", "gh3-scripts-note", "gh3-triggers-note", "fret", "drum", "vocal", "crowd", "stance", "perform", "face", "clip", "walk", "strum-style", "arms", "strum", "beat", "tempo",
             "stage-diver", "actor-play", "actor-hide", "actor-show", "crowd-lighters", "crowd-animation", "crowd-hand", "gh3-audio" };

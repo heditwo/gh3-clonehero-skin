@@ -3,7 +3,7 @@
 Each package is written two times: as an unpacked development folder (`<output>/unpacked/<name>`) and as a zip
 (`<output>/<name>`). The output is reproducible: sorted zip entries, fixed times and attributes, and stable JSON.
 
-Usage: python -m pipeline.package.build [--packs DIR] [--library DIR] [--character-library DIR] [--events DIR]
+Usage: python -m pipeline.package.build [--packs DIR] [--library DIR] [--character-library DIR]
                                         [--characters DIR] [--instruments DIR] [--output DIR] [--venue ID ...] [--no-venues]
                                         [--no-library] [--no-character-library] [--no-characters] [--no-instruments] [--jobs N]
 
@@ -28,11 +28,10 @@ from pipeline.package import decisions, q48, runtime, texture
 from pipeline.package.container import file_list, json_bytes, write_zip
 from pipeline.package.glb import Glb
 from pipeline.package.profiles import CHARACTER_LIBRARY_ID, LIBRARY_ID
-from pipeline.paths import CHARACTER_LIBRARY, CHARACTERS, INSTRUMENTS, LIBRARY, PACKAGES, STAGE_PACKS, STAGES
+from pipeline.paths import CHARACTER_LIBRARY, CHARACTERS, INSTRUMENTS, LIBRARY, PACKAGES, STAGE_PACKS
 from pipeline.stagepack.gltf import GlbWriter
 
 OUTPUT = PACKAGES
-EVENTS = STAGES / "events"
 BROTLI_QUALITY = 11
 BROTLI_WINDOW = 24
 # Increment when the clip encoder output changes, so that the clip cache is not reused.
@@ -49,7 +48,6 @@ LIBRARY_ENTRY = {
     "handFire": "hand-fire/hand-fire.json",
     "audio": "audio/audio.json",
     "scripts": "scripts.json",
-    "songs": "songs/index.json",
 }
 EFFECT_FILES = {
     "render/particle-materials.json": "effects/particle-materials.json",
@@ -294,7 +292,7 @@ def library_manifest(entry):
     }
 
 
-def build_library(library, events, output, jobs=2, textures=None):
+def build_library(library, output, jobs=2, textures=None):
     if decisions.AUDIO_FORMAT != "wav" or decisions.MOVIE_FORMAT != "png-frames":
         raise ValueError("Only WAV audio and PNG movie frames are implemented")
     library = Path(library)
@@ -388,10 +386,6 @@ def build_library(library, events, output, jobs=2, textures=None):
     with ProcessPoolExecutor(max_workers=max(1, jobs)) as pool:
         sizes = list(pool.map(encode_clip, tasks, chunksize=8))
 
-    events = Path(events)
-    for path in sorted(events.glob("*.json")):
-        if path.name != "export-report.json":
-            writer.add_file(f"songs/{path.name}", path)
     writer.finish(library_manifest(LIBRARY_ENTRY))
     return publish(writer, output, name), sizes
 
@@ -599,7 +593,6 @@ def main(argv=None):
     parser.add_argument("--packs", type=Path, default=STAGE_PACKS)
     parser.add_argument("--library", type=Path, default=LIBRARY)
     parser.add_argument("--character-library", type=Path, default=CHARACTER_LIBRARY)
-    parser.add_argument("--events", type=Path, default=EVENTS)
     parser.add_argument("--characters", type=Path, default=CHARACTERS)
     parser.add_argument("--instruments", type=Path, default=INSTRUMENTS)
     parser.add_argument("--output", type=Path, default=OUTPUT)
@@ -627,7 +620,7 @@ def main(argv=None):
             report["venues"][source.name] = {"folder": tree_size(folder), "zip": archive.stat().st_size}
             print(f"{archive}: folder {tree_size(folder):,} bytes, zip {archive.stat().st_size:,} bytes")
     if not args.no_library:
-        (folder, archive), clips = build_library(args.library, args.events, args.output, args.jobs, textures)
+        (folder, archive), clips = build_library(args.library, args.output, args.jobs, textures)
         report["library"] = {
             "folder": tree_size(folder),
             "zip": archive.stat().st_size,

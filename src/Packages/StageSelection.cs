@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json.Nodes;
 
 namespace Gh3Skin.Packages;
@@ -13,10 +12,14 @@ internal static class StageSelection
 {
     public const string SongIniKey = "gh3_stage";
     public const string SongPackage = "venue.chstage";
+    // The song direction file beside the chart (StageChartReader).
+    public const string EventFile = "stage-events.json";
+    // The size limit of StageChartReader (Midi.MaximumFileBytes).
+    private const long MaximumEventFileBytes = 32L * 1024 * 1024;
 
-    // In order: venue.chstage (zip or development folder) in the song folder, `gh3_stage` in song.ini, then the GH3 career
-    // venue of an original GH3 song found by title and artist in the library.
-    public static StageSuggestion? Suggestion(string songFolder, string title, string artist, string? libraryIndex)
+    // In order: venue.chstage (zip or development folder) in the song folder, `gh3_stage` in song.ini, then `stage` in the
+    // song's direction file (the GH3 career venue of a song of a GH3 chart pack, docs/CUSTOM-CONTENT.md section 6).
+    public static StageSuggestion? Suggestion(string songFolder)
     {
         if (string.IsNullOrEmpty(songFolder) || !Directory.Exists(songFolder)) return null;
         var package = Path.Combine(songFolder, SongPackage);
@@ -24,9 +27,34 @@ internal static class StageSelection
         var ini = Path.Combine(songFolder, "song.ini");
         if (File.Exists(ini) && SongIniValue(File.ReadAllLines(ini), SongIniKey) is { Length: > 0 } stage)
             return new StageSuggestion(stage, "", "song.ini " + SongIniKey);
-        if (libraryIndex != null && OriginalSong(libraryIndex, title, artist) is { } original && Gh3CareerVenues.Of(original) is { } originalVenue)
-            return new StageSuggestion(originalVenue, "", $"GH3 career venue of {original}");
+        if (SongDirection(songFolder) is { Stage.Length: > 0 } direction)
+            return new StageSuggestion(direction.Stage, "", EventFile + " stage");
         return null;
+    }
+
+    // The band members that the song's direction file suggests: {role: character ID}.
+    public static IReadOnlyDictionary<string, string> CharacterSuggestions(string songFolder) =>
+        string.IsNullOrEmpty(songFolder) || !Directory.Exists(songFolder) ? new Dictionary<string, string>() :
+            SongDirection(songFolder)?.Characters ?? new Dictionary<string, string>();
+
+    private sealed record DirectionSuggestions(string Stage, Dictionary<string, string> Characters);
+
+    // Only the suggestion fields of stage-events.json; StageChartReader checks the whole file when the song loads.
+    private static DirectionSuggestions? SongDirection(string songFolder)
+    {
+        var path = Path.Combine(songFolder, EventFile);
+        if (!File.Exists(path) || new FileInfo(path).Length > MaximumEventFileBytes) return null;
+        try
+        {
+            var root = PackageJson.Object(File.ReadAllBytes(path));
+            var stage = PackageJson.Text(root["stage"]) is { } id && PackageManifest.ValidId(id) ? id : "";
+            var characters = new Dictionary<string, string>();
+            if (root["characters"] is JsonObject roles)
+                foreach (var role in PlayerChoices.Roles)
+                    if (PackageJson.Text(roles[role]) is { } character && PackageManifest.ValidId(character)) characters[role] = character;
+            return new DirectionSuggestions(stage, characters);
+        }
+        catch (Exception error) when (error is IOException or PackageException or System.Text.Json.JsonException) { return null; }
     }
 
     // The value of a key in the [song] section of song.ini (case-insensitive, as Clone Hero reads it).
@@ -47,23 +75,6 @@ internal static class StageSelection
         }
         return null;
     }
-
-    private static string? OriginalSong(string index, string title, string artist)
-    {
-        if (title.Length == 0 || artist.Length == 0 || !File.Exists(index)) return null;
-        try
-        {
-            var songs = PackageJson.Object(File.ReadAllBytes(index))["songs"] as JsonArray ?? new JsonArray();
-            var matches = songs.OfType<JsonObject>().Where(song => Normalize(PackageJson.Text(song["title"]) ?? "") == Normalize(title) &&
-                Normalize(PackageJson.Text(song["artist"]) ?? "") == Normalize(artist)).ToArray();
-            return matches.Length == 1 && PackageJson.Text(matches[0]["file"]) is { } file && file.EndsWith(".json", StringComparison.Ordinal) ? file[..^5] : null;
-        }
-        catch (Exception error) when (error is IOException or PackageException or System.Text.Json.JsonException) { return null; }
-    }
-
-    // As StageChartReader matches the original song library.
-    private static string Normalize(string value) => new(value.Normalize(NormalizationForm.FormD)
-        .Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
 
     // `environment` is GH3_SKIN_STAGE (tests and recordings): a stage ID there wins over everything. `available` are the
     // stages that can load (installed packages). `previous` is avoided by a random choice when possible.

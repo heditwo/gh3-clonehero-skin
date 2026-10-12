@@ -4,7 +4,7 @@ using System.Text.Json;
 using Gh3Skin;
 
 // GH3_BENCH=<venue> GH3_BENCH_SONG=<song folder> GH3_PACK_ASSETS=<assets> runs a venue's scripts and particles
-// against a real chart at 144 Hz and reports CPU time and managed allocations per second of song time.
+// against a real chart (its GH3 direction from stage-events.json in the song folder) at 144 Hz and reports CPU time and managed allocations per second of song time.
 internal static class ScriptBench
 {
     private sealed class Scene
@@ -46,10 +46,7 @@ internal static class ScriptBench
         var library = Path.Combine(root, "libraries", "gh3-band-v1");
         var bank = StageScriptBank.Load(Path.Combine(directory, "scripts.json"), Path.Combine(library, "scripts.json"));
         var performance = StagePerformance.Load(Path.Combine(library, "direction", "performance.json"));
-        var ini = File.ReadLines(Path.Combine(song, "song.ini")).Select(line => line.Split('=', 2)).Where(pair => pair.Length == 2)
-            .ToDictionary(pair => pair[0].Trim().ToLowerInvariant(), pair => pair[1].Trim());
-        var timeline = StageChartReader.Load(song, Path.Combine(song, "notes.chart"), Path.Combine(root, "stages", "events"),
-            ini.GetValueOrDefault("name", ""), ini.GetValueOrDefault("artist", ""), performance);
+        var timeline = StageChartReader.Load(song, Path.Combine(song, "notes.chart"), performance);
         var lighting = new StageLighting(StageLightingBank.Load(directory)!, timeline);
         using var state = new StageScriptState(bank, placements, timeline, venue, (id, time) => null, actors, lighting);
         if (Environment.GetEnvironmentVariable("GH3_BENCH_CAMERAS") == "1")

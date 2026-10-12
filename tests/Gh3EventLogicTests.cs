@@ -78,7 +78,7 @@ internal static class Gh3EventLogicTests
             var all = cues.Concat(new[] { new StageCue(2, "drum", "96"), new StageCue(2, "crowd", "1"), new StageCue(2, "fret", "96") }).ToArray();
             File.WriteAllText(Path.Combine(directory, "stage-events.json"), JsonSerializer.Serialize(new StageEventFile
             {
-                Version = 2, Library = "gh3-band-v1", OriginalSongLookup = "off", Events = all
+                Version = 2, Library = "gh3-band-v1", Events = all
             }));
             var loaded = StageChartReader.Load(directory, "");
             Check(loaded.Cues.SequenceEqual(all), "Version 2 channel resolution retains unknown commands and numeric cues.");

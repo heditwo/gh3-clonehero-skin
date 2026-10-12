@@ -25,7 +25,7 @@ internal static class DrumHandLogicTests
             var parents = animation.Parents;
             Check(member.Bones[72] == Gh3Checksum.Of("Bone_IK_Hand_Slave_L") && member.Bones[73] == Gh3Checksum.Of("Bone_IK_Hand_Slave_R"),
                 "drummer hand targets match drummer_IK_params");
-            var timeline = StageChartReader.Load("", "", Path.Combine(assets, "events"), "My Curse", "Killswitch Engage");
+            var timeline = StageChartReader.LoadEventFile(Path.Combine(Path.Combine(assets, "events"), "mycurse.json"));
             var player = new PerformancePlayer("drummer", directory, member, animation.BindPose, timeline, parents, bank.Constants);
             player.Prepare();
             var reached = 0;
