@@ -140,7 +140,7 @@ Rules:
 3. In the menus, push **F6**. Select your stage in the **Stage** list. Push **F6** again to close the picker.
 4. Start a song.
 
-![The F6 picker with the example stage and Miku as the guitarist](images/creator/game-picker.png)
+![The F6 picker with the example stage and Miku as the guitarist](images/creator/game-picker.jpg)
 
 *Model: Tda式初音ミク・アペンド by Tda; Hatsune Miku © Crypton Future Media, INC. www.piapro.net ([section 5](#5-make-a-character-on-a-gh3-rig))*
 
@@ -352,19 +352,19 @@ The steps of this tutorial work the same in Blender 4.2 LTS and Blender 5.2 (che
 4. Start a song. Miku plays the guitar with the animations of Midori, on any stage.
 5. To make Miku the singer, select her on the line **Singer** (and set the guitarist back to **Default (venue)**). The singer moves the mouth with the lyrics of the chart. A song with a vocal stem (`vocals.ogg` or `vocals.opus`) also gives the loudness. Every character can play every role: in the other roles, the game uses the animations of that role on her skeleton.
 
-![The F6 picker with the example stage and Miku as the guitarist](images/creator/game-picker.png)
+![The F6 picker with the example stage and Miku as the guitarist](images/creator/game-picker.jpg)
 
 *Model: Tda式初音ミク・アペンド by Tda; Hatsune Miku © Crypton Future Media, INC. www.piapro.net*
 
-![Miku as the guitarist in Mitch's Moose Lounge](images/creator/game-miku-guitarist.png)
+![Miku as the guitarist in Mitch's Moose Lounge](images/creator/game-miku-guitarist.jpg)
 
 *Model: Tda式初音ミク・アペンド by Tda; Hatsune Miku © Crypton Future Media, INC. www.piapro.net*
 
-![Miku as the singer with lip sync, in a close-up](images/creator/game-miku-singer.png)
+![Miku as the singer with lip sync, in a close-up](images/creator/game-miku-singer.jpg)
 
 *Model: Tda式初音ミク・アペンド by Tda; Hatsune Miku © Crypton Future Media, INC. www.piapro.net*
 
-The log (`<game>/MelonLoader/Latest.log`) has the line `GH3 band guitarist: character yourname.tda-miku (Hatsune Miku (Tda Append)) on its own skeleton (206 joints, 57 humanoid roles), retargeted from profile gh3-guitarist-midori-v1 ...` and the face shapes. The singer close-up uses `GH3_SKIN_DEBUG_VIEW_HEAD=local` and `GH3_SKIN_DEBUG_VIEW_ROLE=singer` ([VERIFICATION.md](VERIFICATION.md#runtime-variables)).
+The log (`<game>/MelonLoader/Latest.log`) has the line `GH3 band guitarist: character yourname.tda-miku (Hatsune Miku (Tda Append)) on its own skeleton (206 joints, 57 humanoid roles), retargeted from profile gh3-guitarist-midori-v1 ...` and the face shapes. The singer close-up is a camera cut of the song (a chart with a Rock Band `VENUE` track) in Kaiju Megadome. For a fixed view of the face, use `GH3_SKIN_DEBUG_VIEW_HEAD=local` and `GH3_SKIN_DEBUG_VIEW_ROLE=singer` ([VERIFICATION.md](VERIFICATION.md#runtime-variables)).
 
 ### 5.10 Use any humanoid model with its own skeleton
 

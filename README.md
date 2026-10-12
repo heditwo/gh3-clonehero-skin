@@ -2,11 +2,11 @@
 
 This mod makes Clone Hero look and play like Guitar Hero III. It replaces the highway, the gems, the sustains, the hit effects, and the HUD with the GH3 art and animation. Behind the highway, it shows the GH3 venues with the band, the crowd, the cameras, the lights, and the effects. Songs from GH3 get their original direction, and other charts get direction from their GH or Rock Band venue tracks or from their sections. Players add stages and characters as single files, and creators make them in Blender.
 
-![Mitch's Moose Lounge behind the GH3 highway](docs/images/gameplay-dive.png)
+![Mitch's Moose Lounge behind the GH3 highway](docs/images/gameplay-dive.jpg)
 
 | The F6 picker | A character made with the Blender add-on |
 | --- | --- |
-| ![The stage and band picker](docs/images/picker.png) | ![Hatsune Miku (Tda) as the guitarist in Mitch's Moose Lounge](docs/images/creator/game-miku-guitarist.png) |
+| ![The stage and band picker](docs/images/picker.jpg) | ![Hatsune Miku (Tda) as the guitarist in Mitch's Moose Lounge](docs/images/creator/game-miku-guitarist.jpg) |
 
 *Right: the character tutorial of the [creator guide](docs/CREATOR-GUIDE.md#5-make-a-character-on-a-gh3-rig). Model: Tda式初音ミク・アペンド by Tda; Hatsune Miku © Crypton Future Media, INC. www.piapro.net. The model is not in this repository.*
 

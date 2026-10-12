@@ -54,7 +54,7 @@ for platform in linux windows; do
     windows) cp "$work/source/install-windows.ps1" "$work/source/install-windows.bat" "$stage/" ;;
   esac
   cp "$work/source/docs/PLAYER-GUIDE.md" "$stage/"
-  cp "$work/source/docs/images/picker.png" "$stage/images/"
+  cp "$work/source/docs/images/picker.jpg" "$stage/images/"
   for file in "$work/source/"{CREDITS,LICENSE,COPYING}*; do
     [[ -f "$file" ]] && cp "$file" "$stage/"
   done

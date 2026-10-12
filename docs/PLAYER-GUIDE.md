@@ -68,7 +68,7 @@ While the picker is open, mouse clicks go only to the picker. The keyboard and t
 
 At the top of the menu screen, a small line shows the current stage and the F6 key. To remove this line, clear **Show the F6 hint in the menus** in the picker.
 
-![The picker in the main menu](images/picker.png)
+![The picker in the main menu](images/picker.jpg)
 
 ## 3. Select the stage
 
