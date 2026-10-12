@@ -44,7 +44,7 @@ The mod keeps its files here (Windows paths; Linux uses `/`):
 
 | Item | Folder |
 | --- | --- |
-| Mod, stages, characters, and shaders (about 1.65 GB) | `<game>\Mods\Gh3Skin.dll`, `<game>\Mods\GH3Skin\` |
+| Mod, stages, characters, instruments, and shaders (about 1.2 GB) | `<game>\Mods\Gh3Skin.dll`, `<game>\Mods\GH3Skin\` |
 | Cache of the imported packages (about 1.9 GB) | `<game>\UserData\GH3Skin\Cache\` |
 | Your choices in the picker | `<game>\UserData\GH3Skin\choices.json` |
 | Your stages, characters, and instruments | `Custom\Stages\`, `Custom\Characters\`, and `Custom\Instruments\` (see [section 6](#6-add-stages-characters-and-instruments)) |

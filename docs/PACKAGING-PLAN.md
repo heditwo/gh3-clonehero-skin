@@ -262,9 +262,9 @@ Steps 1 to 6 do not publish anything. These items remain:
 | Item | Kind |
 | --- | --- |
 | The public URL of the schema `$id` values (now `https://schemas.gh3skin.invalid/v1/…`, [PACKAGE-FORMAT.md](PACKAGE-FORMAT.md#171-for-the-orchestrator-or-the-owner) O6) | Owner decision |
-| Where to publish the zips, the showcase video, and the Discord post (decision 5) | Owner decision |
+| Where to publish the zips: the owner chose the GitHub releases page of `heditwo/gh3-clonehero-skin` when the known bugs are fixed; the release notes draft is [RELEASE-NOTES.md](RELEASE-NOTES.md). The showcase video and the Discord post (decision 5) remain | Owner decision, partly made |
 | Windows on real hardware: the typical installation (`Documents\Clone Hero`), `install-windows.bat` with Windows PowerShell 5.1, paths longer than 260 characters, real drivers | Test on real hardware |
-| A first start of a game without MelonLoader assemblies (the install scripts download and install MelonLoader, then MelonLoader generates its assemblies) | Test |
-| One complete ten-venue run on the release build, with exit 0 for all venues | Test |
+| A first start of a game without MelonLoader assemblies (the install scripts download and install MelonLoader, then MelonLoader generates its assemblies). Done on Linux on 2026-10-12 ([STATUS.md](STATUS.md#release-build)); Windows not done | Test |
+| One complete ten-venue run on the release build, with exit 0 for all venues. Done on Linux on 2026-10-12 from the 0.9.10 Linux zip ([STATUS.md](STATUS.md#release-build)) | Test |
 | macOS: not in the first release (decision 7). It needs Metal programs, a MelonLoader release with arm64, and a community tester ([spike/macos.md](spike/macos.md)) | Later |
 
