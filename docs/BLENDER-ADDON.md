@@ -60,7 +60,7 @@ The `.blend` file holds all package data: the JSON files are text blocks, and th
 | | Lighting | Live lighting preview (a snapshot or a mood), beams; snapshots (light settings with specular, and beams), **Capture** and **Apply**, moods, color presets |
 | | Script Bank | Objects, events, and values of `scripts.json`; jump to object; set a simple value |
 | | Groups and Flags | Visibility groups, node flags, light groups (show, hide, select, show only), start state, color by light group |
-| | Crowd and Camera Notes | Crowd roles and models, GH3 camera note selectors |
+| | Crowd and Camera Notes | **Small venue** (`placements.json` `smallVenue`: the band plays the small-stage intro and win animations of the small GH3 venues), crowd roles and models, GH3 camera note selectors |
 | Properties editor, tab **Material** | CH Stage Material | Shading (lit, ambient, unlit, toon, not set); with toon: threshold, softness, shade texture and color, shade mask, sphere map, rim, outline, **Preview**, **glTF material**, **Toon from MMD**; hair layer (characters); transparency (opaque, cutout, blend, additive), alpha cutoff, two-sided, color alpha (opaque GH3 materials), color scale, lightmap and its UV map, movie slot, sorted transparency, crowd atlas, crowd role, billboard, flipbook. "Kept GH3 data" lists the GH3 shader data that export keeps |
 
 ### 1.6 Actors (animated scenery)

@@ -316,10 +316,10 @@ The model textures are 574.5 MB as PNG and 700.1 MB as GH3TEX02. A PNG copy besi
 | `entry` key | Required | Schema | Contents |
 |---|---|---|---|
 | `model` | Yes | GLB rules | Static scenery, materials, node extras, fixtures |
-| `placements` | Yes | [`placements.schema.json`](../schemas/placements.schema.json) | `band` (1–4 roles), `waypoints`, `effects`, `crowd` |
+| `placements` | Yes | [`placements.schema.json`](../schemas/placements.schema.json) | `band` (1–4 roles), `waypoints`, `effects`, `crowd`, `smallVenue` |
 | `cameras` | Yes | [`cameras.schema.json`](../schemas/cameras.schema.json) | Shots, groups, and GH3 camera note selectors |
 | `lighting` | No | [`lighting.schema.json`](../schemas/lighting.schema.json) | Lights, snapshots, moods, color presets. Absent: the basic fill-light preset |
-| `scripts` | No | [`scripts.schema.json`](../schemas/scripts.schema.json) | Typed script bank |
+| `scripts` | No | [`scripts.schema.json`](../schemas/scripts.schema.json) | Typed script bank, and the GH3 zone name of the venue (`zone`) |
 | `actors` | No | [`actors.schema.json`](../schemas/actors.schema.json) | Animated scenery. Each actor has its own skinned GLB |
 
 The field meanings are the same as in [CUSTOM-CONTENT.md, section 5](CUSTOM-CONTENT.md#5-stage-pack). The package format moves the identity fields of `stage-pack.json` into `manifest.json`. It splits the other fields into `placements.json` and `actors.json`:
@@ -328,9 +328,18 @@ The field meanings are the same as in [CUSTOM-CONTENT.md, section 5](CUSTOM-CONT
 |---|---|
 | `version`, `kind`, `id`, `name`, `library` | `manifest.json`: `format`, `id`, `name`, `requires` |
 | `model`, `cameras`, `lighting`, `scripts` | `manifest.json` `entry` |
-| `band`, `waypoints`, `effects`, `crowd` | `placements.json` (with `version: 1`) |
+| `band`, `waypoints`, `effects`, `crowd`, `smallVenue` | `placements.json` (with `version: 1`) |
 | `actors` | `actors.json` (`{"version": 1, "actors": {…}}`) |
 | `source-report.json` (pipeline report) | Not in the package |
+
+Two fields give the runtime what it must not get from the stage ID (PACKAGING-PLAN decision 16):
+
+| Field | Meaning | GH3 venues |
+|---|---|---|
+| `placements.json` `smallVenue` | `true`: the band plays the small-stage intro and win animations (`play_intro_anims`: `intro_smstg` for all members except the drummer; `play_win_anims`: `win_smstg` for the guitarist and the bassist). Absent or `false`: the normal animations | `true` for the zones that GH3 `UseSmallVenueAnims` (guitar_character.qb) selects without a condition: party, dive, video, prison, hell |
+| `scripts.json` `zone` | The GH3 zone name of the venue scripts: `GetPakManCurrent` returns it, and the venue definitions `<zone>_lightshow_mapping` and `<zone>_snapshots` use it. Absent: no zone | `z_<name>` (for example `z_dive`) |
+
+A creator sets **Small venue** in the Blender add-on ([BLENDER-ADDON.md section 1.5](BLENDER-ADDON.md#15-what-you-can-set)). A creator stage without a GH3 script bank has no zone.
 
 ### 8.2 Rules in addition to the schemas
 
@@ -360,7 +369,7 @@ The field meanings are the same as in [CUSTOM-CONTENT.md, section 5](CUSTOM-CONT
 |---|---|---|
 | `version` | Yes | `1` |
 | `library` | Yes | `gh3-band-v1` for a fixed profile. For a character library profile: the ID of the character library that has the profile (`gh3-characters-v1`); the manifest `requires` lists it with `gh3-band-v1` |
-| `profile` | Yes | `gh3-guitarist-axel-v1`, `gh3-bassist-v1`, `gh3-singer-male-v1`, or `gh3-drummer-v1` (the fixed profiles of `gh3-band-v1`), or a profile of the character library that `library` names, for example `gh3-guitarist-judy-v1` ([section 10.1](#101-character-library)). The profile gives the GH3 rig and the animation set of the character and its own band role. The character plays every band role ([section 9.7](#97-character-model-and-band-roles)) |
+| `profile` | Yes | `gh3-guitarist-axel-v1`, `gh3-bassist-v1`, `gh3-singer-male-v1`, or `gh3-drummer-v1` (the fixed profiles of `gh3-band-v1`: `catalog.json` `profile` of each role, section 10.2), or a profile of the character library that `library` names, for example `gh3-guitarist-judy-v1` ([section 10.1](#101-character-library)). The profile gives the GH3 rig and the animation set of the character and its own band role. The character plays every band role ([section 9.7](#97-character-model-and-band-roles)) |
 | `animations` | No | Only for a character library profile: an animation set of the same character library, on a clip rig with the bones of the profile. Absent: the set of the profile. A character on a fixed profile must not have this field |
 | `hairMaterials` | No | GLB material names with sorted hair transparency |
 | `highway` | No | Package path of the highway image of the character: a PNG, 512 × 1024 in GH3 (other sizes stretch; the validator warns). When the character plays the role of the Clone Hero player, the player's highway uses it, as GH3 `create_guitarist` does ([PARITY-NOTES.md](PARITY-NOTES.md#instruments-and-highways)). The GH3 guitarist packages have the highway of their GH3 profile |
@@ -605,7 +614,7 @@ Else the GH3 rig plays without a mesh and the retarget of section 9.6 moves the 
 
 Face of a character with `skeleton`: the blend shapes of `face` (section 9.6). A character without a face (no `face` slots and no GH3 face bones) plays without face motion.
 
-The gear fits the body (retarget only; `CharacterRetarget`):
+The gear fits the body (retarget only; `CharacterRetarget`). The GH3 bones of the gear are the rig points of the GH3 rig that plays (section 10.2); the table names them by their GH3 names:
 
 | Gear | Rule |
 | --- | --- |
@@ -678,10 +687,12 @@ A character library is a `.chlib` package with one `entry` key, `characters` (`c
 | `version`, `library` | `1`, the library ID |
 | `clipRig` | The rig that the clip files of a set without `clipRig` are recorded on: `profile` (its name), `bones`, `parents`, `bind` |
 | `clipRigs` | Optional. Other clip rigs by ID (at most 16), each with the fields of `clipRig`. `gh3-characters-v1` has `singer` (`GH3_Singer_Male`, the rig of `gh3-singer-male-v1`) |
+| `clipRig.points`, `clipRigs.<id>.points` | Optional. The rig points of the clip rig (section 10.2) |
+| `constraints` | Optional. The twist and split constraints of the rigs (section 10.2) |
 | `profiles` | Profile ID to: `role` (`guitarist` or `singer`), `name`, `outfit`, `skeleton` (GH3 checksum of the skeleton that the GH3 profile names; the God of Rock rig takes the accessory bones of another skeleton, [PARITY-NOTES.md](PARITY-NOTES.md#god-of-rock-hair)), `scale`, `animations` (set ID), `hair` (hair ID or `null`), `ik` (IK ID), and the rig: `bones` (checksums, the names and order of `clipRig`), `parents`, `bind` (local `[x, y, z, qx, qy, qz, qw]` for each bone, runtime coordinates). `bones` are the names and order of the clip rig of the profile's animation set |
 | `animations` | Set ID to `animSet` (GH3 checksum of the `<name>_animations` struct), `clipRig` (optional: an ID of `clipRigs`; absent: `clipRig`), `groups`, `layers`, `clips`, `missingClips`: the layout of a `performance.json` member without `bones` |
 | `hair` | Hair ID (the ragdoll checksum) to `head`, `joints`, `capsule`, `ragdoll`, as in `band/hair.json`, with the joint types below |
-| `ik` | IK ID to a list of two-joint chains: `bones` (three checksums), `target`, `hinge`, `cosMax`, `cosMin` (GH3 `Hero_Ik_params`, `Satan_Ik_params`, `singer_IK_Params`) |
+| `ik` | IK ID to a list of two-joint chains: `bones` (three checksums), `target`, `hinge`, `cosMax`, `cosMin`, and `hand` of an arm chain (GH3 `Hero_Ik_params`, `Satan_Ik_params`, `singer_IK_Params`; section 10.2) |
 
 Other files: `clips/<clip>.q48.br`, one file for each clip ID of all sets ([section 11](#11-clip-encoding-q48)). Sets share clip files: a clip ID is one clip in the whole library.
 
@@ -695,6 +706,17 @@ Rules:
 - The profile IDs must not be IDs of the fixed profiles. Every reference (set, clip rig, hair, IK, clip file) must exist. The bones of a profile equal the bones of the clip rig of its set.
 
 A character on a profile of a character library plays its own role with its own rig, set, hair, IK, and scale. A character on a guitarist profile also plays the bassist role with the same set and the bassist's library instrument (GH3 makes the co-op bassist with `create_guitarist`, so the character keeps its animation set; [PARITY-NOTES.md](PARITY-NOTES.md#playable-characters)). In the other roles it plays the role's set, retargeted ([section 9.7](#97-character-model-and-band-roles)).
+
+### 10.2 Rig data
+
+The libraries declare the bones that the band code needs by their use, so the runtime does not look for GH3 bone names (PACKAGING-PLAN decision 16). The pipeline writes them from the GH3 data (`pipeline/library/rigs.py`).
+
+| Field | Where | Contents |
+|---|---|---|
+| `profile` | `catalog.json` `members.<role>` | The ID of the fixed profile of the role rig (`gh3-guitarist-axel-v1`, `gh3-bassist-v1`, `gh3-singer-male-v1`, `gh3-drummer-v1`). `character.json` and `instrument.json` name these IDs |
+| `points` | `catalog.json` `members.<role>`; `characters.json` `clipRig` and each `clipRigs` entry | Bone checksums by use: `instrument` (the guitar or bass bone, GH3 `bone_guitar_body`), `microphone` (`bone_mic`; its parent is the stand), `mouthUpper` and `mouthLower` (`Bone_Lip_Upper_Mid`, `Bone_Lip_Lower_Mid`), `stickLeft` and `stickRight` (`Bone_Drum_Stick_L`, `_R`; their parent is the drum kit), `seat` (the throne of the drum kit, GH3 checksum `fdeaebd9`). A rig has only the points that it has bones for. A profile has the points of the clip rig of its set |
+| `ik` | `catalog.json` `members.<role>` (guitarist and bassist: GH3 `Hero_Ik_params`; drummer: `drummer_IK_params`); `characters.json` `ik` | Two-joint chains as in section 10.1, with `hand`: `right` (the strum arm) or `left` (the fret arm) for an arm chain; absent for a leg. The strength of an arm chain follows its hand (`hero_toggle_arms`). The mod runs the IK only for the guitarist, the bassist, and the drummer |
+| `constraints` | `catalog.json` and `characters.json` (top level) | GH3 `hero_ConstraintBones`: `type` (`Split`, `SplitR`, `Twist`, `TwistChild`), `bone`, `target`, and `amount` (0–1) |
 
 ## 11. Clip encoding q48
 
@@ -1072,7 +1094,7 @@ At load, `StageBand` loads every character in the same way ([section 9.7](#97-ch
 
 **Attachments (instrument).** The library has no separate instrument models: `band/<role>/model.glb` contains the member and its instrument in one mesh. The loader (`StageBand`, `BandAttachments`) takes the instrument from that model with the rule of `pipeline/package/character.py` `split_model`, which the Blender add-on and `python -m pipeline.package.character` use to leave the instrument out:
 
-- The body joints are the subtree of the parent of `bone_pelvis`. The other subtrees of the root are the instrument, the microphone stand, the drum kit, and IK helpers.
+- The body joints are the subtree of the parent of `bone_pelvis` (the `hips` bone of the GH3 humanoid map). The other subtrees of the root are the instrument, the microphone stand, the drum kit, and IK helpers.
 - A mesh part (a GLB primitive; the cache keeps one part for each primitive) is an attachment when more than half of its vertices have their largest weight on a joint outside the body (the first influence wins a tie).
 
 ```mermaid
@@ -1114,7 +1136,7 @@ Checks (2026-10-09):
 - Game (Linux, gh3.dive, mycurse-native, the role cameras at 20, 30, and 40 s): the four characters with their library instruments against the default members. PSNR of character against default 16.5–51.3 dB; PSNR of runs of the same kind (default against default, `main` against this build, character against character) 16.7–47.0 dB. The difference comes from frame timing (edges of moving parts and notes), not from the models.
 - The Blender add-on test character (`tester.blocky-guitarist`) plays with the library guitar. A copy that names `SG_Black` plays the bassist with the bass (`tobB4`).
 
-GH3 characters (2026-10-09): `python -m pipeline.characters` and the `packages` step write the 72 playable GH3 characters as `gh3.<name>[.outfit<n>[.style<m>]].chchar` (one package for each outfit and style; v1 has no variants in one package). They keep their GH3 meshes, materials, textures, hair cards, and the default instrument of their GH3 profile ([PIPELINE.md](PIPELINE.md#gh3-characters)). Axel Steel's first outfit (4 packages) uses `gh3-guitarist-axel-v1` (fixed profile). The other 66 guitarists and the two singers are packages on their own GH3 skeleton: a profile of `gh3-characters-v1` (section 10.1; the singers since 2026-10-11, before on `gh3-singer-male-v1` with the mesh moved to the male skeleton).
+GH3 characters (2026-10-09): `python -m pipeline.characters` and the `packages` step write the 72 playable GH3 characters as `gh3.<name>[.outfit<n>[.style<m>]].chchar` (one package for each outfit and style; v1 has no variants in one package). They keep their GH3 meshes, materials, textures, hair cards, and the default instrument of their GH3 profile ([PIPELINE.md](PIPELINE.md#gh3-characters)). Since 2026-10-12 all 70 guitarists and the two singers are packages on their own GH3 skeleton: a profile of `gh3-characters-v1` (Axel Steel's first outfit: `gh3-guitarist-axel-outfit1-v1`; before, the fixed profile `gh3-guitarist-axel-v1`) (section 10.1; the singers since 2026-10-11, before on `gh3-singer-male-v1` with the mesh moved to the male skeleton).
 
 **Characters on a character library profile.** `CharacterImporter` takes the rig of the profile from `characters.json` of the required character library (the checks of the table above are the same). The cache `character.json` also records `library` and `animations` (empty for a fixed profile). At load (`StageBand`, `CharacterMotion`):
 
@@ -1153,4 +1175,5 @@ When all imports end (or at a warm start, on a worker thread), `PackageManager.C
 | 1.0 | 2026-10-11 | Changed in 1.0 (decision 12, decision 15): every character plays every band role (section 9.7). A character on a GH3 rig in another role is retargeted to its own rig (humanoid map from the GH3 bone names, face bones by name), and the drum kit and the microphone stand fit the body. Before, a fixed profile in another role used the role rig, and a character library profile played only its roles. No field changed; packages do not change |
 | 1.0 | 2026-10-11 | Changed in 1.0 (decision 12): the toon `outline` `width` is for a vertical field of view of 45°; at other fields of view the line keeps its screen width (before: the same width in metres, so a long-lens close-up made it thick). Packages do not change |
 | 1.0 | 2026-10-10 | Changed in 1.0 (decision 12): model textures are pre-encoded GH3TEX02 files (BC1, BC3, or RGBA32 with the full mip chain; GLB images `image/vnd-gh3.tex` with the required extension `GH3_texture_bc`, texture files `.tex`; section 7). PNG model textures are errors. GLB and `.tex` entries use DEFLATE (O1). Importer version 2 |
+| 1.0 | 2026-10-12 | Added to 1.0 (decision 12, decision 16): `placements.json` `smallVenue` and `scripts.json` `zone` (section 8.1); `catalog.json` `profile`, `points`, and `ik` of each role and `constraints`; `characters.json` `clipRig.points`, `clipRigs.<id>.points`, `constraints`, and the IK chain field `hand` (section 10.2). The runtime reads them instead of stage IDs and GH3 bone names. `gh3-characters-v1` adds the profile `gh3-guitarist-axel-outfit1-v1` (Axel's first outfit; the four `gh3.axel.outfit1.*` characters use it). The GH3 venue names are the GH3 `LevelZones` titles ("Ye olde Royal Odeon", "Desert Rock Festival", "soundcheck", "credits"). Changed packages: the ten GH3 venues, the two libraries, and the four `gh3.axel.outfit1.*` characters |
 | 1.0 | 2026-10-12 | Removed from 1.0 (decision 12, decision 16): the library entry `songs` (`songs/index.json`, `songs/<song>.json`, the GH3 song direction found by title and artist) and `audio/audio.json` `countoffs` (the count-off of each GH3 song). The direction, the count-off, the GH3 venue, and the GH3 singer of a song are now in `stage-events.json` in the song folder ([CUSTOM-CONTENT.md section 6](CUSTOM-CONTENT.md#6-song-direction-version-2)). `gh3-band-v1.chlib`: 644,122,982 to 637,589,612 bytes (contents 866,017,218 to 697,025,648 bytes) |

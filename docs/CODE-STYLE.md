@@ -134,6 +134,22 @@ GH3_LITERAL_REPORT=1 GH3_LITERAL_FOLDERS=src/Packages,src/Menu,src dotnet tests/
 - Write comments in ASD-STE100 Simplified Technical English: short sentences, active voice, one meaning for each word.
 - Do not leave commented-out code, old TODO notes, or the history of a change in comments. The Git history keeps them.
 
+### Data, not code
+
+The mod does not choose behaviour by a stage ID, a GH3 zone name, a character or profile name, a song title, an ID prefix, or a GH3 bone name (PACKAGING-PLAN decision 16). Put the value that the code needs into the package data, and let the pipeline write it from the GH3 data:
+
+| The code needs | Read it from |
+| --- | --- |
+| The small-stage intro and win animations | `placements.json` `smallVenue` (`StagePack.SmallVenue`) |
+| The GH3 zone name of a venue | `scripts.json` `zone` (`StagePack.Zone`) |
+| The band library | The required library with a catalog (`PackageManager.BandLibrary`) |
+| The fixed profiles of the band roles | `catalog.json` `profile` (`LibraryRigs`) |
+| The instrument, microphone, mouth, drum stick, and throne bones | The rig points (`RigPoints`) of the rig that plays |
+| The IK chains and the twist bones | The rig data `ik` and `constraints` (`IkChainDefinition`, `RigConstraint`) |
+| The humanoid and face bones of a GH3 rig | `HumanoidRoles` (the one place for GH3 bone names) |
+
+`tests/DataGuardTests.cs` fails when a string literal in `src/` is a GH3 stage ID (`gh3.<name>`), a GH3 zone (`z_<name>`), a GH3 character name, or a GH3 bone name (`Bone_<name>`). Its allowlist has two files: `src/Packages/HumanoidRoles.cs` (bone names) and `src/Packages/PlayerChoices.cs` (`FallbackStage`, the default stage of a setting). Do not add to the allowlist; change the data. Band roles (`guitarist`, `bassist`, `singer`, `drummer`) are not names of content; code can use them. In the pipeline, a rule for a single GH3 character or venue comes from the GH3 data (for example the `IsWinPort` branch of `create_guitarist`), or it is a documented exception in [PARITY-NOTES.md](PARITY-NOTES.md#data-rules).
+
 ### Environment variables
 
 `SkinEnvironment` lists every environment variable that the mod reads, with a name for each one. Read variables only through `SkinEnvironment.Get`, `IsOne` ("1" turns a test switch on), and `IsNotOff` ("off" or "0" turns a feature off). Document a new variable in [VERIFICATION.md](VERIFICATION.md#runtime-variables).

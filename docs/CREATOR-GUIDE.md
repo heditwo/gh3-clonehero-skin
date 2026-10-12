@@ -84,6 +84,8 @@ The template has four band placements (`band-guitarist`, `band-bassist`, `band-s
 
 Each role can have one placement. A stage needs at least one placement. The template also has a waypoint (`guitarist_walk01`, a place where the guitarist can walk) and effect emitters (pyro, sparks, fireworks, smoke).
 
+A small stage, for example a bar or a basement: open **Crowd and Camera Notes** and turn on **Small venue**. Then the guitarist, the bassist, and the singer start the song with the small-stage intro, and the guitarist and the bassist end it with the small-stage win animation, as in the small GH3 venues (Mitch's Moose Lounge, Backyard Bash).
+
 ### 3.5 Set two cameras
 
 The template has two camera shots:

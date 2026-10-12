@@ -85,6 +85,8 @@ The manifest is `stage-pack.json`. Example: [stage-pack.json](examples/custom-co
 | `effects` | No | Effect name to a list of emitter transforms; default `{}` |
 | `actors` | No | Named animated scenery models; see [animated scenery](#animated-scenery); default `{}` |
 | `crowd` | No | Crowd profile, model, and yaw entries; see [crowd and scenery visibility](#crowd-and-scenery-visibility); default shared assignments |
+| `smallVenue` | No | `true`: the band plays the small-stage intro (all members except the drummer) and win animations (the guitarist and the bassist), as GH3 `UseSmallVenueAnims` selects them; default `false` |
+| `scripts` | No | Relative path to a typed script bank. Its `zone` is the GH3 zone name of the venue (`GetPakManCurrent`, the zone definitions); a stage without GH3 scripts has none |
 
 A transform has `position` and `rotation`. Performer placement has unit scale. A performer's root, instrument, and moving props use the same placement transform. The drummer's fixed kit reference uses the drummer placement. The scenery contains any matching static kit geometry.
 

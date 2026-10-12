@@ -41,6 +41,21 @@ Since 2026-10-12 (PACKAGING-PLAN decision 16) the GH3 direction of a GH3 song is
 
 Evidence: `~/.cache/gh3-song-pack/cap/` (logs and frames of each run), `~/.cache/gh3-song-pack/SOURCE.md` (pack sources and hashes).
 
+## Data, not code
+
+Since 2026-10-12 (PACKAGING-PLAN decision 16) the mod does not choose behaviour by stage ID, zone, character name, or GH3 bone name. The packages carry the data: `placements.json` `smallVenue` and `scripts.json` `zone` of the venues, and the rig data of the libraries (fixed profiles, rig points, IK chains with their hand, constraints; [PACKAGE-FORMAT.md section 10.2](PACKAGE-FORMAT.md#102-rig-data)). The pipeline reads the small venues, the venue names, the PC-port hair exclusion, and the God of Rock accessory skeleton from the GH3 scripts and skeletons ([PARITY-NOTES.md](PARITY-NOTES.md#data-rules)). Axel Steel's first outfit is a character library profile. `DataGuardTests` keeps the names out of `src/`. Checks on 2026-10-12, game copy `~/games/clonehero-gh3-data-not-code`, My Curse (`mycurse-native`):
+
+| Check | Result |
+| --- | --- |
+| `[trace] pose` hashes against `main` 5a0b1cd | Equal for every member in 9 runs: the default band (gh3.dive, gh3.budokan); Judy Nails with Lars Umlaut as bassist; the female singer; the God of Rock; Axel Steel outfit 1 with Project SEKAI Miku (bassist) and Tda Miku (singer); Lars Umlaut as drummer, Judy Nails as singer, Axel outfit 1 as bassist; the Grim Ripper, Lou outfit 2, Bret Michaels, and Tda Miku as drummer; the intro run |
+| Intro and win animations | gh3.dive: `stance` and clip sequence of the intro frames equal to `main` (`intro_smstg`); log `GH3 stage loaded: Mitch's Moose Lounge (zone z_dive, small venue intro and win)`, gh3.budokan `(zone z_budokan, normal venue intro and win)` |
+| Zone names and small venues | For the ten GH3 venues, `scripts.json` `zone` equals `z_` + the old ID rule, and `smallVenue` is set for exactly party, dive, video, prison, and hell (the old list) |
+| Screenshots | Main against this build 22.6–54.5 dB PSNR; two runs of this build 22.8–34.4 dB (frame timing) |
+| Package cache (`tools/PackageImport`, 193 packages) | Byte-equal to `main` except `cache.json` times, and: the ten GH3 venues (`pack.json`, `scripts.json`; `stage.json` for the four renamed venues), `example.studio` (`pack.json` gets `smallVenue: false`, `zone: ""`), the two libraries (`catalog.json`, `characters.json`), and the four `gh3.axel.outfit1.*` characters (`character.json`: the new profile) |
+| Changes that players see | The GH3 venue names of `LevelZones`: "Ye olde Royal Odeon" (was "Ye Olde Royal Odeon"), "Desert Rock Festival" (was "Desert Rock Tour"), "soundcheck", "credits". Axel Steel outfit 1 packages have 15 hair joints (all chains of his ragdoll, as the other playable characters; were 9) |
+
+Evidence: `~/.cache/data-not-code/runs/` (logs, pose hashes, frames of each run, `main-*` and `new-*`), `~/.cache/data-not-code/evidence/main-vs-new.jpg`.
+
 ## GH3 characters
 
 Since 0.9.9 each GH3 guitarist plays on its own GH3 rig profile of the character library `gh3-characters-v1` ([PACKAGE-FORMAT.md section 10.1](PACKAGE-FORMAT.md#101-character-library), [PARITY-NOTES.md](PARITY-NOTES.md#playable-characters)). Checks on 2026-10-09, gh3.dive, My Curse, game copy `~/games/clonehero-gh3-character-motion`:
