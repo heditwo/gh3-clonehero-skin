@@ -4,7 +4,8 @@ Run the game with GH3_SKIN_TRACE=1 and a GH3 character on a character library pr
 characters), then:
     MISE_QUIET=1 uv run --with numpy --with pillow python tools/check-character-trace.py <game>/MelonLoader/Latest.log
 It prints the largest position and rotation difference over all logged bones of the body clips, of the song facial
-clips of a singer (`face=`, the clip of the song PAK on the singer's skeleton), and of the walk cycle clips (`walk=`).
+clips (`face=`, the clip of the song PAK: on the singer's skeleton, or for the guitarist on the guitarist's skeleton by bone
+index with the rotations as keyed and the translations relative to its rest pose), and of the walk clips (`walk=`).
 Lines of the band library members (`profile=library`) compare with the clips of the member's GH3 skeleton
 (pipeline.library.direction.MEMBERS)."""
 
@@ -87,8 +88,13 @@ class Clips:
         return self.songs[clip]
 
 
-def compare(clip, clip_time, rig, bones, worst):
-    p, q = sample_animation(animation(clip, len(rig[0])), rig[2], rig[3], np.array([clip_time]))
+def compare(clip, clip_time, rig, bones, worst, clip_rig=None):
+    """`clip_rig`: the skeleton of the clip when another rig plays it by bone index (a song facial clip)."""
+    source = clip_rig or rig
+    p, q = sample_animation(animation(clip, len(source[0])), source[2], source[3], np.array([clip_time]))
+    if clip_rig is not None:
+        count = len(source[0])
+        p[:, :count] += np.asarray(rig[2][:count]) - np.asarray(source[2])
     count = 0
     for item in bones.split(";"):
         index, values = item.split(":")
@@ -109,6 +115,7 @@ def main():
     rigs = {n: b for k, n, b in source.load("ZONES/global.pak.xen") if k == key(".ske")}
     clips = Clips(source, library)
     member_rigs = {role: key(rig_name) for role, rig_name, *_ in MEMBERS}
+    singer = skeleton(rigs[member_rigs["singer"]])
     body, face, walk = [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]
     samples = face_samples = walk_samples = lines = 0
     for match in LINE.finditer(log):
@@ -121,7 +128,8 @@ def main():
             rig, bank = skeleton(rigs[int(library["profiles"][profile]["skeleton"], 16)]), clips.bank(set_name)
         samples += compare(bank[int(clip, 16)], float(clip_time), rig, bones, body)
         if face_clip:
-            face_samples += compare(clips.face(int(face_clip, 16)), float(face_time), rig, face_bones, face)
+            face_rig = singer if len(rig[0]) != len(singer[0]) else None
+            face_samples += compare(clips.face(int(face_clip, 16)), float(face_time), rig, face_bones, face, face_rig)
         walk_clip, walk_time, walk_bones = walking
         if walk_clip:
             walk_samples += compare(bank[int(walk_clip, 16)], float(walk_time), rig, walk_bones, walk)

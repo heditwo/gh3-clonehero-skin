@@ -8,7 +8,6 @@ import numpy as np
 from pipeline.gh3.band_formats import (
     animation,
     clip_bone_count,
-    multiply_quaternions,
     sample_animation,
     skeleton,
 )
@@ -149,7 +148,13 @@ def hand_layers(data, common, profile, profiles):
 
 
 def write_clip(path, data, rig, source_rig=None, rotations_only=False):
-    names, parents, positions, rotations = rig
+    """Write a GH3 clip sampled for `rig`; returns its clip info (duration, frames, rootDistance).
+
+    `source_rig`: the skeleton that the clip has the bone count of, when it plays on another rig (a song facial clip of
+    the singer rig on the guitarist rig). GH3 plays it by bone index with the rotations as keyed and the translations
+    relative to the rest pose of the rig that plays it (PARITY-NOTES.md, Song facial clips on the guitarist).
+    """
+    names, parents, positions, _ = rig
     source_names, _, source_positions, source_rotations = source_rig or rig
     clip = animation(data, len(source_names))
     duration = max(clip[0], MIN_CLIP_SECONDS)
@@ -165,10 +170,6 @@ def write_clip(path, data, rig, source_rig=None, rotations_only=False):
     if source_rig is not None:
         for source_index, target in mapping:
             p[:, source_index] += positions[target] - source_positions[source_index]
-            inverse = source_rotations[source_index] * [-1, -1, -1, 1]
-            q[:, source_index] = multiply_quaternions(
-                multiply_quaternions(q[:, source_index], inverse), rotations[target]
-            )
     packed = np.concatenate((p[:, source_indices] * [1, 1, -1], q[:, source_indices] * [1, 1, -1, 1]), axis=2)
     if not np.isfinite(packed).all():
         raise ValueError("Non-finite direction clip")
@@ -254,7 +255,11 @@ def _member_clips(output, role, rig, groups, layers, bank, walking):
 
 
 def _song_facial_clips(source, output, definition, member_rigs):
-    """Write the facial clips (Band_PlayFacialAnim) of every song into the singer and guitarist clip lists."""
+    """Write the facial clips (Band_PlayFacialAnim) of every song into the singer and guitarist clip lists.
+
+    The clips have the bones of the singer rig. GH3 plays a clip on the guitarist (125 bones) by bone index; the face
+    bones have the same index and name on both rigs, which this export checks.
+    """
     for pak in sorted((source.directory / "SONGS").glob("*_song.pak.xen")):
         song_id = pak.name.split("_song.")[0]
         entries = source.load(f"SONGS/{pak.name}")
@@ -274,9 +279,18 @@ def _song_facial_clips(source, output, definition, member_rigs):
                     continue
                 member = definition["members"][role]
                 ref_name = f"{ref:08x}"
+                _check_bone_indices(clips[ref], member_rigs["singer"], member_rigs[role])
                 member["clips"][ref_name] = write_clip(
                     output / role / f"{ref_name}.bin.gz", clips[ref], member_rigs[role], member_rigs["singer"]
                 )
+
+
+def _check_bone_indices(data, source_rig, rig):
+    """Raise ValueError when a bone that the clip animates has another name at its index in `rig` (GH3 maps by index)."""
+    clip = animation(data, len(source_rig[0]))
+    for index in clip[1].keys() | clip[2].keys():
+        if index >= len(rig[0]) or rig[0][index] != source_rig[0][index]:
+            raise ValueError("A song facial clip bone has another index on the rig that plays it")
 
 
 def convert(data_directory, output, shared=False):

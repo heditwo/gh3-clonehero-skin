@@ -373,8 +373,8 @@ internal sealed partial class StageBand : IDisposable
     }
     private static readonly string[] TraceFaceBones = Packages.HumanoidRoles.Gh3TraceFace.Select(Gh3Checksum.Of).ToArray();
 
-    // GH3_SKIN_TRACE: the body clip and its local pose of a few bones, to compare with the GH3 clip on the GH3 skeleton; for
-    // the singer also the song facial clip and the local pose of a few face bones; during a walk also the walk clip.
+    // GH3_SKIN_TRACE: the body clip and its local pose of a few bones, to compare with the GH3 clip on the GH3 skeleton; during
+    // a song facial clip also the facial clip and the local pose of a few face bones; during a walk also the walk clip.
     private static void Trace(Performer player, double time)
     {
         var raw = new BandPose[(player.Retarget?.Source ?? player.Animation).Parents.Length];
@@ -389,7 +389,7 @@ internal sealed partial class StageBand : IDisposable
         var walkPose = new BandPose[raw.Length];
         var walk = player.Performance.SampleWalk(time, walkPose);
         var walkValues = walk is { } walking ? FormattableString.Invariant($" walk={walking.Clip} walkTime={walking.ClipTime:F4} walkBones={Values(traced, walkPose)}") : "";
-        var face = player.Role == "singer" ? player.Performance.SampleFace(time, raw) : null;
+        var face = player.Performance.SampleFace(time, raw);
         MelonLogger.Msg(FormattableString.Invariant($"[trace] band t={time:F3} role={player.Role} profile={ProfileName(player.Motion)} ") +
             FormattableString.Invariant($"set={(player.Motion.IsLibrary ? "library" : player.Motion.SetName)} stance={segment.Stance} clip={clip} clipTime={clipTime:F4} ") +
             FormattableString.Invariant($"scale={player.Root.localScale.x:F3} bones={values} hairPeak={player.Hair?.PeakSpeed ?? 0:F2}") +
