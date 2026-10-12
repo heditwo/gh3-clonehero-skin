@@ -89,7 +89,7 @@ internal sealed class StageSoundEvents
     private readonly Dictionary<uint, Queue<int>> _choices = new();
     private long _voice;
     private long _instance;
-    private uint _seed = Gh3ScriptRuntime.ScriptRandomSeed;
+    private uint _seed = (uint)ScriptSeed.Current;
     public IReadOnlyList<StageSoundVoice> Voices => _voices;
 
     public StageSoundEvents(StageSoundBank bank) => _bank = bank;

@@ -343,6 +343,7 @@ internal sealed partial class GameplayStage
             return;
         }
         var loadClock = System.Diagnostics.Stopwatch.StartNew();
+        MelonLogger.Msg($"GH3 script seed: {ScriptSeed.NewSong()}");
         var steps = new LoadTiming.Steps();
         LoadTiming.Mark("stage load starts");
         var texturesBefore = (StageAssets.TexturesUploaded, StageAssets.TextureMilliseconds);

@@ -43,6 +43,7 @@ internal static class SkinEnvironment
     public const string DebugHairLayer = "GH3_SKIN_DEBUG_HAIR_LAYER";
 
     // Measurements and checks.
+    public const string Seed = "GH3_SKIN_SEED";
     public const string Trace = "GH3_SKIN_TRACE";
     public const string TraceCharge = "GH3_SKIN_TRACE_CHARGE";
     public const string Timing = "GH3_SKIN_TIMING";

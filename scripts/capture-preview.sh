@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Repeatable captures: script seed 1 unless the caller sets one (an empty value gives a random seed).
+export GH3_SKIN_SEED="${GH3_SKIN_SEED-1}"
 set -euo pipefail
 export MISE_QUIET=1
 

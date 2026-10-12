@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/Gh3/*.cs" Link="Gh3/%(Filename)%(Extension)" />
+    <Compile Include="../../src/SkinEnvironment.cs" Link="SkinEnvironment.cs" />
     <Compile Include="../../src/Stage/Direction/StageCue.cs" Link="StageCue.cs" />
     <Compile Include="../../src/Stage/Direction/Gh3NoteConstants.cs" Link="Gh3NoteConstants.cs" />
   </ItemGroup>

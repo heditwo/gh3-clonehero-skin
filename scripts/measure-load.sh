@@ -6,6 +6,8 @@
 #   GH3_CLONE_HERO_DIR selects the game. The cold flows delete UserData/GH3Skin/Cache of that game.
 #   The song flows use GH3_SKIN_PREVIEW_SONG (default: the native My Curse chart) and GH3_SKIN_STAGE (default gh3.dive).
 # Each run takes the record lock. Summarize the results with tools/summarize-load.py <output folder>.
+# Repeatable captures: script seed 1 unless the caller sets one (an empty value gives a random seed).
+export GH3_SKIN_SEED="${GH3_SKIN_SEED-1}"
 set -euo pipefail
 export MISE_QUIET=1
 
