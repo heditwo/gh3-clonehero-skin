@@ -31,7 +31,7 @@ done
 
 [[ -f "$source_dir/Mods/Gh3Skin.dll" ]] || fail "Mods/Gh3Skin.dll is not next to this script. Run the script from the release folder."
 if [[ -z "$game_dir" ]]; then
-  if [[ -x ./clonehero ]]; then game_dir="$PWD"
+  if [[ -f ./clonehero && -d ./clonehero_Data ]]; then game_dir="$PWD"
   else read -r -p 'Clone Hero folder (the folder with the clonehero file): ' game_dir
   fi
 fi
@@ -44,6 +44,12 @@ game_dir="$(cd -- "$game_dir" && pwd)"
 # The game writes its version string (Application.version) into globalgamemanagers.
 grep -aqF "$game_version" "$game_dir/clonehero_Data/globalgamemanagers" ||
   fail "This Clone Hero is not $game_version. The mod works only with $game_version."
+
+# Some archives of the game (for example a tar made on Windows) lose the execute permission; the launcher needs it.
+if [[ ! -x "$game_dir/clonehero" ]]; then
+  chmod u+x "$game_dir/clonehero"
+  printf 'Made %s/clonehero executable\n' "$game_dir"
+fi
 
 for pid in $(pgrep -x clonehero || true); do
   [[ "$(readlink "/proc/$pid/exe" 2> /dev/null || true)" == "$game_dir/clonehero" ]] &&
