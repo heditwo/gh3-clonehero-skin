@@ -55,9 +55,14 @@ def hair_materials(scene):
 
 
 def image_nodes(material):
+    """The image nodes of the glTF material. The toon preview nodes do not count: export writes the toon images as PNG."""
     if material is None or not material.use_nodes or material.node_tree is None:
         return []
-    return [node for node in material.node_tree.nodes if node.type == "TEX_IMAGE" and node.image is not None]
+    return [
+        node
+        for node in material.node_tree.nodes
+        if node.type == "TEX_IMAGE" and node.image is not None and not node.get(toon.PREVIEW)
+    ]
 
 
 # Surface nodes that the glTF exporter converts (Principled BSDF, and the unlit and emission forms that it detects).

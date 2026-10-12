@@ -316,6 +316,25 @@ check(
     (preview, from_mmd),
 )
 
+# A BMP sphere map (as MMD models have): the toon preview shows it with an image node, but only the glTF material must
+# be PNG (export writes the toon images as PNG).
+sphere = bpy.data.images.new("test_sphere", 8, 8)
+sphere.filepath_raw, sphere.file_format = str(output / "test_sphere.bmp"), "BMP"
+sphere.save()
+hair_props.toon_sphere_image = sphere
+sphere_errors = [m for s, m, _, _ in character_package.validate_scene(scene) if s == "ERROR" and "test_sphere" in m]
+check(
+    "toon preview with a BMP sphere map validates",
+    any(n.get(toon_tools.PREVIEW) and getattr(n, "image", None) == sphere for n in hair_material.node_tree.nodes)
+    and not sphere_errors,
+    sphere_errors,
+)
+hair_props.toon_sphere_image = None
+# The sphere map changes rebuild the preview nodes.
+preview_outputs = [
+    n for n in hair_material.node_tree.nodes if n.type == "OUTPUT_MATERIAL" and n.get(toon_tools.PREVIEW)
+]
+
 package = scene.chstage.package
 package.package_id, package.name, package.license = "tester.blocky-guitarist", "Blocky Guitarist", "CC0-1.0"
 package.authors[0].name = "CH Stage Tools test"
@@ -845,6 +864,11 @@ mmd_joints = [
     )
     for i in (1, 2)
 ]
+check(
+    "chains from MMD physics: a separate MMD import is the MMD armature, not the rig",
+    chain_tools.mmd_armature(scene, bodies) == mmd,
+    chain_tools.mmd_armature(scene, bodies),
+)
 made, _ = chain_tools.import_mmd(scene, mmd, bodies, mmd_joints, parent=head_bone)
 mmd_bones = [rig.data.bones[made[n]] for n in ("hair2", "hair3") if n in made]
 check(
@@ -1246,6 +1270,12 @@ check(
     and mapped.get("rightToes") == "mixamorig:RightToeBase"
     and skeleton_tools.face(own_scene) == {"blink": "Blink", "a": "A"},
     (mapped, skeleton_tools.face(own_scene)),
+)
+own_bodies = [SimpleNamespace(mmd_rigid=SimpleNamespace(bone=n)) for n in ("mixamorig:Head", "mixamorig:Neck")]
+check(
+    "own skeleton: chains from MMD physics use the rig as the MMD armature, never the GH3 rig",
+    chain_tools.mmd_armature(own_scene, own_bodies) == model_rig,
+    chain_tools.mmd_armature(own_scene, own_bodies),
 )
 issues = character_package.validate_scene(own_scene)
 check("own skeleton: validates without errors", not errors_of(issues), errors_of(issues))

@@ -803,6 +803,22 @@ def mmd_rows(armature, rigid_bodies, joints, names=None):
     return rows, statics
 
 
+def mmd_armature(scene, rigid_bodies):
+    """The armature of the MMD model whose rigid bodies make the chains: the armature in the scene with the bones of the
+    most rigid bodies. A separate MMD import comes before the character's rig (an MMD model on a GH3 rig); on its own
+    skeleton the rig itself is the MMD armature. The GH3 rig and the helpers never count."""
+    p = character_tools.props(scene)
+    names = [getattr(getattr(o, "mmd_rigid", None), "bone", "") for o in rigid_bodies]
+    best, choice = None, None
+    for obj in scene.objects:
+        if obj.type != "ARMATURE" or obj == p.source_rig or character_tools.is_helper(obj):
+            continue
+        key = (sum(1 for n in names if n and n in obj.data.bones), obj != p.rig)
+        if key[0] and (best is None or key > best):
+            best, choice = key, obj
+    return choice
+
+
 def import_mmd(
     scene,
     armature,
@@ -1343,7 +1359,7 @@ class CHSTAGE_OT_fit_colliders(Operator):
 
 
 class CHSTAGE_OT_import_mmd_physics(Operator):
-    """Make chains from the MMD rigid bodies and joints of an MMD Tools model in the scene: a new bone for each dynamic body, with the MMD mass, damping, rotation limits, and spring (stiffness). Fit the MMD model to the rig first"""
+    """Make chains from the MMD rigid bodies and joints of an MMD Tools model in the scene: a new bone for each dynamic body, with the MMD mass, damping, rotation limits, and spring (stiffness). On the model's own skeleton, the MMD bones become the joints. On a GH3 rig, fit the MMD model to the rig first"""
 
     bl_idname = "chstage.import_mmd_physics"
     bl_label = "Chains from MMD Physics"
@@ -1379,24 +1395,13 @@ class CHSTAGE_OT_import_mmd_physics(Operator):
 
     def execute(self, context):
         scene = context.scene
-        armature = (
-            bpy.data.objects.get(self.armature)
-            if self.armature
-            else next(
-                (
-                    o
-                    for o in scene.objects
-                    if o.type == "ARMATURE" and o != scene.chstage.character.rig and getattr(o, "mmd_type", "") != ""
-                ),
-                None,
-            )
-        )
-        if armature is None or armature.type != "ARMATURE":
-            self.report({"WARNING"}, "No MMD armature: import the model with MMD Tools (with physics) first")
-            return {"CANCELLED"}
         objects = [o for o in bpy.data.objects if getattr(o, "mmd_type", "") in ("RIGID_BODY", "JOINT")]
         rigid = [o for o in objects if o.mmd_type == "RIGID_BODY"]
         joint_objects = [o for o in objects if o.mmd_type == "JOINT"]
+        armature = bpy.data.objects.get(self.armature) if self.armature else mmd_armature(scene, rigid)
+        if armature is None or armature.type != "ARMATURE":
+            self.report({"WARNING"}, "No MMD armature: import the model with MMD Tools (with physics) first")
+            return {"CANCELLED"}
         names = {n.strip() for n in self.bones.split(",") if n.strip()} or None
         try:
             made, made_colliders = import_mmd(
@@ -1414,7 +1419,10 @@ class CHSTAGE_OT_import_mmd_physics(Operator):
             traceback.print_exc()
             self.report({"WARNING"}, str(error))
             return {"CANCELLED"}
-        self.report({"INFO"}, f"{len(made)} bones, {len(made_colliders)} colliders")
+        if not made and not made_colliders:
+            self.report({"WARNING"}, f"No moving MMD rigid bodies on the bones of '{armature.name}'")
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"{len(made)} bones, {len(made_colliders)} colliders from '{armature.name}'")
         return {"FINISHED"}
 
 
@@ -1459,10 +1467,11 @@ class CHSTAGE_OT_import_vrm_springs(Operator):
 class CHSTAGE_UL_chains(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_property, index=0, flt_flag=0):
         rig = context.scene.chstage.character.rig
-        count = len(chain_bones(rig, item.name)) if rig is not None else 0
+        bones = chain_bones(rig, item.name) if rig is not None else []
         row = layout.row(align=True)
-        row.prop(item, "name", text="", emboss=False, icon="CON_SPLINEIK")
-        row.label(text=f"{count} joints")
+        # A label, not the name field: the joints find their chain by its name, so a rename here would lose them.
+        row.label(text=item.name, icon="CON_SPLINEIK")
+        row.label(text=f"{bones[0].name}, {len(bones)} joints" if bones else "0 joints")
 
 
 class CHSTAGE_PT_character_chains(Panel):

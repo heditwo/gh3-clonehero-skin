@@ -548,6 +548,13 @@ class CHSTAGE_PT_character_weights(CharacterPanel, Panel):
         if not p.own_skeleton:
             layout.operator("chstage.transfer_weights", icon="MOD_DATA_TRANSFER")
         layout.operator("chstage.limit_weights", icon="MOD_VERTEX_WEIGHT")
+        layout.label(text="Materials of the selected meshes")
+        row = layout.row(align=True)
+        row.operator("chstage.toon_from_mmd", icon="IMPORT").scope = "SELECTED"
+        on = row.operator("chstage.toon_preview", text="Toon Preview", icon="HIDE_OFF")
+        on.enable, on.scope = True, "SELECTED"
+        off = row.operator("chstage.toon_preview", text="", icon="HIDE_ON")
+        off.enable, off.scope = False, "SELECTED"
         box = layout.box()
         if not p.own_skeleton:
             box.label(text="Hair bones of the profile")
