@@ -56,7 +56,16 @@ The GH3 `DATA` folder on the development machine is the BetterGH3 full package v
 
 ## Example content
 
-The example stage and character in `examples/` are made by this project with Blender primitives and generated textures (`examples/build_examples.py`). Their manifests give the license `CC0-1.0`. The example character uses the GH3 guitarist rig (bone names and bind pose), because package format v1 requires the fixed GH3 rigs (`docs/PACKAGING-PLAN.md` decision 2).
+The example stage and character in `examples/` are made by this project with Blender primitives and generated textures (`examples/build_examples.py`). Their manifests give the license `CC0-1.0`. The example character uses the GH3 guitarist rig (bone names and bind pose), because package format v1 requires the fixed GH3 rigs (`docs/PACKAGING-PLAN.md` decision 2). It is a minimal test package for the automatic tests.
+
+## Hatsune Miku in the creator guide
+
+| Item | Credit and terms | Where |
+| --- | --- | --- |
+| Tda式初音ミク・アペンド (Type Tda Hatsune Miku Append) Ver1.10, an MMD model by Tda ([bowlroll.net/file/4576](https://bowlroll.net/file/4576)) | The terms of the model's readme (`よんでね.txt`, `readme_English.txt`): non-commercial use, edits for videos and pictures with the CRYPTON logo removed, no redistribution of the unchanged model | Screenshots in `docs/images/creator/miku-*.png`, `game-picker.png`, `game-miku-guitarist.png`, `game-miku-singer.png`, and `README.md` |
+| Hatsune Miku | © Crypton Future Media, INC. www.piapro.net. The images show the character of Crypton Future Media, INC. under the [Piapro Character License](https://piapro.jp/license/pcl/summary) (non-commercial) | The same images |
+
+The repository has no file of the model: no PMX file, no textures, no `.blend` file, and no `.chchar` package. The tutorial (`docs/CREATOR-GUIDE.md` section 5) tells the reader where to download the model. `blender/tests/screenshots_miku.py` makes the Blender screenshots from the reader's own download.
 
 ## Licenses of this repository
 

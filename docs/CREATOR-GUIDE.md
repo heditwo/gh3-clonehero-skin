@@ -2,7 +2,7 @@
 
 This guide tells you how to make a stage (`.chstage`), a character (`.chchar`), and an instrument (`.chinst`) for the mod with Blender and the CH Stage Tools add-on. The reference for each panel is [BLENDER-ADDON.md](BLENDER-ADDON.md). The reference for the file format is [PACKAGE-FORMAT.md](PACKAGE-FORMAT.md).
 
-The folder [`examples/`](../examples/) has an example stage and an example character. Open them in Blender to see a finished result.
+The folder [`examples/`](../examples/) has the example stage of section 3. Open it in Blender to see a finished result. The character tutorial (section 5) uses Hatsune Miku: a free MMD model that you download yourself.
 
 ## 1. Before you start
 
@@ -138,7 +138,9 @@ Rules:
 3. In the menus, push **F6**. Select your stage in the **Stage** list. Push **F6** again to close the picker.
 4. Start a song.
 
-![The F6 picker with the example stage and the example guitarist](images/creator/game-picker.png)
+![The F6 picker with the example stage and Miku as the guitarist](images/creator/game-picker.png)
+
+*Model: Tda式初音ミク・アペンド by Tda; Hatsune Miku © Crypton Future Media, INC. www.piapro.net ([section 5](#5-make-a-character-on-a-gh3-rig))*
 
 ## 4. Edit a GH3 venue
 
@@ -155,80 +157,256 @@ The GH3 venues have the license `LicenseRef-GH3-Derived` with the permissions `r
 
 ## 5. Make a character on a GH3 rig
 
-A character is a mesh on one GH3 rig, or a model with its own skeleton ([section 5.1](#51-use-any-humanoid-model-with-its-own-skeleton)). The game plays the GH3 animations of the band member on your character and adds the instrument. You do not make animations. The example is `examples/example-guitarist.blend`.
+A character plays the GH3 animations of a band member. You do not make animations. The game takes the GH3 rig of a profile (for example the guitarist Midori), plays its animations, and moves your model with them. Your model can keep its own skeleton and its proportions. The game adds the instrument.
 
-1. Set **GH3 library (.chlib)** in the add-on preferences (section 2).
-2. Click **File > New > New Character from GH3 Rig**. Select a profile:
-   - A fixed profile: guitarist (Axel), bassist, singer, or drummer.
-   - A GH3 guitarist, for example **Midori (outfit 1)** or **Judy Nails (outfit 1)**. Your character then gets the skeleton, the animations, and the hair physics of that guitarist. It plays the guitarist and the bassist. Select the guitarist with the body that is nearest to your character (height, length of the legs and the arms, width of the shoulders).
+This section is a tutorial: you make Hatsune Miku from a free MMD model, and play her as the guitarist and as the singer. Do the steps in their order. After the tutorial, [section 5.10](#510-use-any-humanoid-model-with-its-own-skeleton) tells you how to use other models (VRM, FBX, glTF), and [section 5.12](#512-alternative-fit-a-model-to-a-gh3-rig) tells you how to fit a model to the GH3 skeleton.
 
-   The add-on makes a scene with the rig, the GH3 body as a wireframe reference, the instrument as a preview, and a preview camera. Export never writes the reference body and the instrument.
-3. Do not move, turn, scale, or edit the rig.
-4. Model your character over the reference body, or import a mesh and move it onto the reference body. Use PNG images.
-5. Select your meshes, and click **Transfer Weights from the GH3 Body** in **Weights and Hair**. Each vertex gets the weights of the nearest point on the GH3 body (4 bones at most).
-6. Change the weights with Weight Paint if necessary. Then click **Limit and Normalize**.
-7. Hair: select the hair cards, select a chain in **Hair bones of the profile**, and click **Assign to Hair Bones**. Make the hair material active and click **+** under **Hair materials**. For long hair, a skirt, or a tail that the profile does not have, make your own chains (section 5.3).
-8. Optional: click a clip in **Clip Preview** and click **Play** to see your character move.
-
-![Weight Paint after Transfer Weights, with the GH3 body and the guitar helpers](images/creator/character-weights.png)
-
-9. Set the package information in **Character Package > Package Information** (ID, name, version, authors, license).
-10. Click **Validate**. Correct all errors.
-11. Click **Export .chchar**. Put the file into `Custom/Characters` of Clone Hero.
-
-![The character package panel after Validate](images/creator/character-package.png)
-
-### 5.1 Use any humanoid model with its own skeleton
-
-Any humanoid model with an armature can keep its skeleton: MMD (`.pmx`), VRM and VRoid, Mixamo, Unity, Unreal, Daz, Rigify, 3ds Max Biped, Ready Player Me, or a model with bone names that say nothing (`joint1`, `Bone.023`, Chinese or Japanese names). The game moves your model with the GH3 animations of the profile: it retargets the GH3 clips to your bones. The proportions of your model do not change. Read the terms of the model first: many models do not permit changes or distribution.
-
-The add-on finds the humanoid in your skeleton from the hierarchy and the bone positions, not from a list of names. It finds the left and right sides of the body, the legs (the pair of limbs that reaches the floor), the arms (the pair that hangs from the spine below the head), the elbow and the knee (where a limb divides into two parts of almost the same length), twist bones (bones on the straight line of a limb part), the fingers (in their order across the palm), the head, and the front of the model (the toes and the feet). The bone names help only when the bone positions do not decide.
+The folder [`examples/`](../examples/) also has `example.guitarist.chchar`. It is a minimal test package for the automatic tests (a body from Blender primitives), not a tutorial.
 
 ```mermaid
 flowchart LR
-    Import[Import the model] --> Setup[Set Up Skeleton]
-    Setup --> Check[Check the map]
-    Check --> Clips[Check Clips and preview]
-    Clips --> Export[Validate and export]
+    Get[Get the model] --> Import[Import]
+    Import --> Skeleton[Set Up Skeleton]
+    Skeleton --> Clips[Check Clips]
+    Clips --> Materials[Materials]
+    Materials --> Chains[Chains]
+    Chains --> Export[Validate and export]
+    Export --> Play[Play]
 ```
 
-1. Click **File > New > New Character from GH3 Rig**. Select the profile whose animations you want, for example **Midori (outfit 1)** for a guitarist. Set **Use my model's skeleton**. The add-on makes a scene with the GH3 rig as a helper (the source of the clip preview) and the instrument preview.
-2. Import your model into the scene with the importer of its format:
-   - glTF, GLB, VRM: **File > Import > glTF**. With the **VRM Add-on for Blender**, the add-on uses the humanoid map of the VRM file.
-   - FBX (Mixamo, Unity, Unreal, a game): **File > Import > FBX**.
-   - MMD: install the extension **MMD Tools** and import at the scale 0.08 (1 MMD unit is 8 cm). Import the morphs (shape keys) too.
-   - A model in two parts with two armatures (a body and a head): select both armatures, the body last, and click **Join Armatures** in the **Skeleton** panel. Bones with the same name become one bone, and the head moves onto the body at these bones.
-3. Select the armature of your model and click **Set Up Skeleton** in the **Skeleton** panel. The add-on:
-   - applies the object transforms of the armature and of its meshes (an import root, a 0.01 scale, a Z-up node);
-   - turns the model so that it stands on +Z and looks toward −Y, with its left side at +X;
-   - mirrors a mirrored export back (a Unity model that comes in with its left bones on its right side);
-   - puts the feet on the floor and the hips above the origin;
-   - gives the model a height in metres: a model of 0.5–3 m keeps its height; else the add-on finds the unit (centimetres, millimetres) or uses 1.7 m. To set a height, type it in **Height** before you click (for example 1.58 m);
-   - makes meshes that follow one bone (no weights) skinned to that bone;
-   - gives deform bones under control bones (Rigify `DEF-` bones) the deform bone at the place of their control bone as parent, so that the exported skeleton is one tree;
-   - finds the roles, the followers, and the face shape keys.
+The Miku images in this guide show Tda's model:
 
-   The panel lists each change in words. Undo (**Ctrl Z**) restores the model.
+*Model: Tda式初音ミク・アペンド by Tda; Hatsune Miku © Crypton Future Media, INC. www.piapro.net. These images show the character Hatsune Miku of Crypton Future Media, INC. under the [Piapro Character License](https://piapro.jp/license/pcl/summary).*
 
-   The blue skeleton is the GH3 rig (**GH3 rig (animation source)**). The add-on gives it the size of your model: its hips are at the height of your hips. During a clip preview it shows what the GH3 animation does, and your model follows it. To hide it, click **Show GH3 Rig** in the **Skeleton** panel or the eye of the rig in the outliner. The face, hair, and instrument bones of the GH3 rig are in a hidden bone collection.
-4. **Check the map.** Click **Show Map**: the add-on draws the roles on your armature. Green is sure, yellow is a role to check, red is not sure. The role list has the same marks; a required role without a bone is red.
-   - To correct a role: select the role in the list, click the bone in the viewport (Pose Mode or Edit Mode), and click **Assign Active Bone**. The next role in the list is then selected.
-   - **Left to Right** gives each right role the bone on the other side of its left role (by the name, else by the place). **Right to Left** does the opposite.
-   - The X button clears a role. A finger, a toe, a shoulder, a neck, a twist bone, the eyes, and the jaw are optional.
-   - **Save Preset** writes the map to a JSON file. **Load Preset** applies it to another model of the same rig family (the roles whose bones the armature has).
-5. **Check the clips.** Click a clip button (idle, stance change, solo, ...) to preview it, or click **Check Clips**. The add-on plays GH3 clips with the retarget of the game and lists problems with what to do: a hand far from its place on the instrument, a bone that flips, a knee or an elbow that bends the other way, a foot that slides, a forearm that twists too far, mesh edges that stretch. Validate shows the errors of the last check.
-6. **Face.** The add-on finds the shape keys for blink and the mouth shapes a, i, u, e, o (MMD `まばたき`, `あ`; VRM `Blink`, `A`; VRoid `Fcl_EYE_Close`, `Fcl_MTH_A`; `eye_close`, `lip_a`, `mouth_a`; VRChat visemes; Ready Player Me `mouthOpen`). It also finds the optional shapes: the consonant visemes pp, ff, th, dd, kk, ch, ss, nn, rr (VRChat `vrc.v_pp`, Oculus and Ready Player Me `viseme_PP`), brow up and brow down (MMD `上`, `下`; VRoid `Fcl_BRW_Surprised`, `Fcl_BRW_Angry`; `eyeblow_up`, `eye_brow_up`), and squint (`eyeSquint`). Correct them in the face fields. The game blinks with the GH3 blink timing. The singer moves the mouth with the words of the lyrics and the loudness of the vocal stem: a model with the consonant visemes shows them; else the mod mixes the five vowel shapes. With the brow shapes, the brows rise on long and high notes. The export writes only these shape keys.
-7. **Materials.** Importers of MMD and VRM models make toon shader node groups. The glTF export does not read them, and the package then has no texture (the character is white in the game). Validate gives a warning for each such material. For an MMD model, click **Toon from MMD** first ([section 5.2](#52-toon-look-and-eyebrows-over-the-hair)). Then give each material a **Principled BSDF** with the image on **Base Color**, and save the images as PNG (1024 × 1024 pixels are sufficient).
-8. **Weights.** Keep the weights of your model. Click **Limit and Normalize** (four influences at most). The export writes only the deform bones. At most 255 deform bones.
-9. **Long hair, skirt, tail.** Make chains on the bones of your model ([section 5.3](#53-make-hair-skirt-and-tail-chains)). With MMD Tools, **Chains from MMD Physics** uses the MMD bones of your model; it adds no bones.
-10. Optional, **Instrument**: the instrument hangs in front of the top spine bone, at the GH3 distance scaled by your torso. Its size is your arm length divided by the GH3 arm length. **Instrument bone**, **Instrument offset**, and **Instrument scale** change this.
-11. Click **Validate**, then **Export .chchar**.
+### 5.1 Get the model and read its terms
+
+1. Open the author's download page: [bowlroll.net/file/4576](https://bowlroll.net/file/4576) (BowlRoll account "Tda"). Download `Tda式初音ミク・アペンドVer1.10.zip` (Tda式初音ミク・アペンド, Type Tda Hatsune Miku Append, version 1.10, 17,267,524 bytes, MD5 `2385604d7fe8359489351879a1e201b5`). You do not need a login.
+2. Extract the zip file. The folder has `Tda式初音ミク・アペンド_Ver1.10.pmx`, the textures, `readme_English.txt`, and `よんでね.txt` (the Japanese terms; they apply when the two texts are different).
+3. Read the terms. In short:
+   - The model shows Crypton Future Media's character Hatsune Miku Append under the [Piapro Character License](https://piapro.jp/license/pcl/summary). Use the model only in the limits of that license and of the readme.
+   - Commercial use needs the permission of Crypton Future Media, and then a contact to Tda. Do not sell the character.
+   - You can edit the model for your videos and pictures with no request to Tda, if the result stays a Tda-style model, and if you remove the CRYPTON logo on the anklet (step 4).
+   - Do not share the unchanged model. If you share an edited model, include both readmes and give the model name, Tda, and the editors. Do not move parts of the model to other models. No nude, base, or adult edits.
+   - The readme names videos and pictures. A game package is not named. Keep your Miku package for your own use, and ask Tda before you share it.
+4. Remove the CRYPTON logo: copy `ロゴ違いテクスチャ/body00_MikuAp.tga` (the texture without the logo) over `body00_MikuAp.tga` in the main folder.
+
+The repository has no file of the model, its textures, or its package.
+
+### 5.2 Install MMD Tools
+
+1. In Blender, open **Edit > Preferences > Get Extensions**. If Blender asks, click **Allow Online Access**.
+2. Search for **MMD Tools**, and click **Install**. The guide uses MMD Tools 4.5.14 ([extensions.blender.org/add-ons/mmd-tools](https://extensions.blender.org/add-ons/mmd-tools/)), which works with Blender 4.2 and later.
+3. Set **GH3 library (.chlib)** in the preferences of CH Stage Tools ([section 2](#2-install-the-add-on)). The add-on finds `gh3-characters-v1.chlib` in the same folder.
+
+### 5.3 Make the character scene and import Miku
+
+1. Click **File > New > New Character from GH3 Rig**.
+2. In the dialog, set **Profile** to **Midori (outfit 1)**, and set **Use my model's skeleton**. Click **OK**.
+
+   The add-on makes the scene `CH Character (guitarist)` with the GH3 rig of Midori (**GH3 rig (animation source)**, blue), the GH3 guitar as a preview, and a preview camera. These are helpers: export never writes them. Do not move, turn, or edit the GH3 rig.
+3. Click **File > Import > MikuMikuDance Model (.pmd, .pmx)**, and select `Tda式初音ミク・アペンド_Ver1.10.pmx`. Keep the default options: **Scale** 0.08 (1 MMD unit is 8 cm) and all **Types** (Mesh, Armature, Physics, Display, Morphs). The morphs become shape keys (68 on this model), and the physics gives the rigid bodies for the chains ([section 5.7](#57-make-chains-from-the-mmd-physics)).
+4. Open the sidebar of the 3D view (**N**), tab **CH Character**.
+5. Convert the materials now, while MMD Tools still knows the model (after **Set Up Skeleton**, its panel shows "Select a MMD Model"). MMD Tools makes MMD shader node groups, and the glTF export does not read them: a material without a **Principled BSDF** has no texture in the game. Do the two steps in this order, because **Toon from MMD** reads the MMD nodes and **Convert to Blender** removes them:
+   1. Select the mesh `Tda式初音ミク・アペンド_Ver1.10_mesh`. In **CH Character > Weights and Hair > Materials of the selected meshes**, click **Toon from MMD**. All 17 materials get **Shading** **Toon**: the MMD toon texture gives the threshold, the softness, and the shade color; the sphere map and the MMD edge (outline) carry over. A material without a toon texture (the eyes, the cheeks) is always lit, as in MMD.
+   2. Open the sidebar tab **MMD**, panel **Model Setup**, and click **Convert to Blender** (in **Material**). Each material gets a Principled BSDF with its image on **Base Color**.
+
+![Miku after the MMD Tools import, next to the blue GH3 rig and the guitar preview](images/creator/miku-import.png)
+
+*Model: Tda式初音ミク・アペンド by Tda; Hatsune Miku © Crypton Future Media, INC. www.piapro.net*
+
+### 5.4 Set up the skeleton and check the map
+
+1. Select the armature of Miku (`Tda式初音ミク・アペンド_Ver1.10_arm`, in the outliner or with a click on a bone).
+2. In the panel **Skeleton**, click **Set Up Skeleton**. Keep **Height** at 0 m: Miku is 1.6 m tall, and the add-on keeps a height between 0.5 m and 3 m.
+
+   The panel lists the changes: "the armature is no longer a child of 'Tda式初音ミク・アペンド_Ver1.10'" (the MMD root object) and "the feet are on the floor and the hips above the origin". The MMD model already stands on +Z and looks toward −Y.
+3. Look at **2. Check the map**. For Miku it says **all roles sure**: 57 roles have a bone with a green mark. Only `upperChest` and `jaw` are empty; they are optional. **Show Map** (on after the set-up) draws the roles on the armature in green.
+4. The blue skeleton is the GH3 rig. The add-on gives it the size of Miku: its hips are at her hip height. Click **Show GH3 Rig** to hide or show it.
+
+![Set Up Skeleton: the role map in green on Miku's armature, the GH3 rig in blue, and the Skeleton panel](images/creator/miku-skeleton.png)
+
+*Model: Tda式初音ミク・アペンド by Tda; Hatsune Miku © Crypton Future Media, INC. www.piapro.net*
+
+The map uses the MMD bones: `下半身` (hips), `上半身` and `上半身2` (spine and chest), `首`, `頭`, the arms on `腕`, `ひじ`, and `手首` with the twist bones `腕捩` and `手捩`, all fingers, and the legs on the `D` bones (`足D`, `ひざD`, `足首D`). The panel also shows **Followers (MMD append rotation): 22**: the MMD bones that copy the turn of another bone (for example the IK leg bones) follow it in the game.
+
+To correct a role on another model, select the role in the list, click the bone in the viewport, and click **Assign Active Bone** ([section 5.10](#510-use-any-humanoid-model-with-its-own-skeleton)).
+
+### 5.5 Check the clips and the face
+
+1. In **3. Preview and check the clips**, click a clip button (for example **stance a**, the first idle clip). Miku plays the GH3 clip with the retarget of the game. The blue GH3 rig shows the GH3 animation, and the GH3 guitar takes the size of her arms. Click **Play** in the timeline to play the clip.
+2. Click **Check Clips**. The add-on plays six GH3 clips of the profile (for example idle, stance change, solo, and jump) and looks for problems: a hand far from its place on the guitar, a bone that flips, a knee or an elbow that bends the other way, a foot that slides, a forearm that twists too far, mesh edges that stretch. For Miku the result is **No problems in the check clips**.
+3. Look at **Face shape keys**. The add-on found the MMD morphs: **blink** `まばたき`, **a** `あ`, **i** `い`, **u** `う`, **e** `え`, **o** `お`, **brow up** `上`, and **brow down** `下`. Miku has no consonant visemes, so the game mixes the five vowel shapes for the lyrics. The export writes only these shape keys.
+4. Click **Bind Pose** (in **Clip Preview**) before you continue.
+
+![A clip preview of Miku with the GH3 guitar, Check Clips without problems, and the face shape keys](images/creator/miku-clip.png)
+
+*Model: Tda式初音ミク・アペンド by Tda; Hatsune Miku © Crypton Future Media, INC. www.piapro.net*
+
+The game blinks with the GH3 blink timing. As the singer, Miku moves the mouth with the words of the lyrics and the loudness of the vocal stem, and her brows rise on long and high notes.
+
+### 5.6 Make the materials: toon look and eyebrows over the hair
+
+The materials have the toon settings and a Principled BSDF from step 5 of [section 5.3](#53-make-the-character-scene-and-import-miku). If you did not do that step before Set Up Skeleton, use **Ctrl Z** to go back, or give each material a Principled BSDF with its image on **Base Color** yourself (Validate gives a warning for each material that the glTF export does not read).
+
+1. Select the mesh `Tda式初音ミク・アペンド_Ver1.10_mesh`.
+2. Save the textures as PNG. Packages use PNG images only. In an **Image Editor** (for example in the workspace **Shading**), select each of the six `.tga` images (`body00_MikuAp`, `body01_MikuAp`, `body02_MikuAp`, `face_MikuAp`, `hair_MikuAp`, `wing_MikuAp`), click **Image > Save As**, set **File Format** to **PNG**, and click **Save As Image**. The materials then use the PNG files. The `.bmp` sphere maps can stay: export writes the toon images as PNG.
+3. Set the transparency in **Properties > Material > CH Stage Material** for each of these materials (select it in the material list):
+
+| Material | Part | Settings |
+| --- | --- | --- |
+| `face01` | Eyes, eyelashes, eyebrows | **Transparency** Cutout |
+| `eye_hi`, `eye_hi2` | Eye highlights | **Transparency** Cutout |
+| `cheek`, `hairshadow` | Blush, hair shadow on the face | **Transparency** Blend |
+| `hair00`, `hair01` | Hair | **Transparency** Blend, **Hair layer** Hair |
+| `body02`, `body_green2`, `lens` | Clear parts of the clothes and the headset | **Transparency** Blend |
+| `wing` | Waist wings | **Transparency** Blend, **Two-sided** on |
+
+   The other materials stay **Opaque**.
+4. Hair materials: make `hair00` the active material, and click **+** under **Hair materials** in **Weights and Hair**. Do the same for `hair01`. The game sorts their transparent faces.
+5. Eyebrows over the hair. In anime games the eyebrows show through the bangs. Miku's eyebrows are in `face01`, so give them their own material:
+   1. Push **Tab** (Edit Mode), and push **3** (face select). Push **Alt A** to clear the selection.
+   2. Put the mouse on each part of the two eyebrows and push **L** (each eyebrow has two parts, 4 parts and 66 faces in total; L adds the linked faces to the selection).
+   3. In **Properties > Material**, click **+** (a new slot). In the new slot, select `face01` in the material list, and click the **New Material** button (two sheets) to make a copy. Rename the copy `eyebrow`.
+   4. Click **Assign**, then push **Tab** (Object Mode).
+   5. In **CH Stage Material** of `eyebrow`, set **Hair layer** to **Over hair**.
+6. Click **Toon Preview** in **Materials of the selected meshes**, and set the viewport to **Material Preview**: you see the toon look in EEVEE. The eye button next to it shows the glTF material again. Export always writes the glTF material and the toon settings.
+
+![The toon preview of Miku and the toon settings of the hair material](images/creator/miku-toon.png)
+
+*Model: Tda式初音ミク・アペンド by Tda; Hatsune Miku © Crypton Future Media, INC. www.piapro.net*
+
+The toon settings in **CH Stage Material** (**Toon from MMD** sets them; you can change them):
+
+| Field | Meaning |
+| --- | --- |
+| **Threshold** | Where the shade starts. 0.5 shades the side that turns away from the key light. 0 is always lit (the eyes) |
+| **Softness** | The width of the edge between light and shade. 0.02 gives a hard anime edge |
+| **Shade texture**, **Shade color** | The color of the shaded side. Without a texture, the shade is the base color times the shade color. A model from a game often has a shadow color texture (Project SEKAI: the `_S` texture) |
+| **Shade mask** | Red 0 is always shaded, 0.5 follows the light, 1 is always lit (Project SEKAI: the blue channel of the `_H` texture) |
+| **Sphere map** | An MMD sphere map (`.sph` multiply, `.spa` add) for shine on hair and cloth |
+| **Rim width**, **Rim color** | A thin light at the silhouette |
+| **Outline** | **Width** about 0.0015 (1.5 mm at 1 m from the camera, about 1.7 pixels at 900 pixels; the line keeps this screen width in close-ups) and **Color**. **Textured** multiplies the color by the base texture. Do not use an outline on the eyes, the eyelashes, and the eye highlights. The mesh needs smooth normals; split normals give gaps in the line |
+
+The venue lights still color a toon character: in a red light the character is red, and in a blackout the character is dark. Rules for the hair layers:
+
+- The eyebrows need their own material (step 5).
+- The eyebrows show over the hair only where their faces turn to the camera, so they never show through the back of the head. Other parts (the hands, the instrument, other band members) still cover them.
+- To check it in the game, use `GH3_SKIN_DEBUG_HAIR_LAYER=mark` ([VERIFICATION.md](VERIFICATION.md#runtime-variables)): the eyebrows then show in a flat color.
+
+### 5.7 Make chains from the MMD physics
+
+A chain is a line of bones that the game moves with gravity and the motion of the body, as GH3 moves its hair. A stiffness pulls the chain back to the shape of the model, as the spring bones of MMD and VRM do. Colliders are capsules on the body: the chains do not go into them.
+
+1. Select the mesh and click **Limit and Normalize** in **Weights and Hair** (four bone influences for each vertex at most). Miku keeps her MMD weights.
+2. Open the panel **Chains and Colliders**, and click **Chains from MMD Physics**. Keep the options empty: the tool uses the rigid bodies of Miku's MMD import, and her MMD bones become the joints (no new bones). Each joint gets the MMD mass, damping, rotation limits, and spring (the stiffness).
+3. The tool makes 18 chains. The list shows the name, the first joint, and the number of joints of each chain. A character can have 16 chains at most. Remove the short and stiff chains, which move very little: select each chain whose first joint is `胸` (chest), `アホ毛` (the hair tuft on top), `もみあげ` (sideburns), or `前髪` (bangs), and click **X**. Eight chains go. Their bones stay and follow the head and the chest.
+4. Select each of the 10 chains that stay, select its **Preset**, and click **Apply**:
+
+| First joint | Part | Joints | Preset | Colliders |
+| --- | --- | --- | --- | --- |
+| `髪２.L`, `髪２.R` | Twin tails | 7 each | **Long hair or twin tail** | `head, chest, stomach, hips, thigh_l, thigh_r` |
+| `しっぽ１` | Cable tail | 13 | **Tail or cable** | `floor, hips, thigh_l, thigh_r, shin_l, shin_r` |
+| `腰羽１`, `腰羽３`, `腰羽４` (`.L` and `.R`) | Waist wings | 1–2 each | **Skirt** | `thigh_l, thigh_r, shin_l, shin_r` |
+| `ﾈｸﾀｲ１` | Necktie | 5 | **Hair** | `chest, stomach` |
+
+5. Click **Fit Body Colliders**. The tool adds capsules on the hips, the stomach, the chest, the legs, the arms, and a sphere on the head, with a radius from Miku's mesh (12 colliders).
+6. Add a floor for the cable tail: select the armature, push **Ctrl Tab** (Pose Mode), click the root bone `全ての親`, and click **Add Collider**. Push **Ctrl Tab** again (Object Mode), and click the new object `Collider chain` in the outliner (collection **Character Helpers**). In its box in **Chains and Colliders**, set **Name** `floor`, **Radius** 3 m, and **Length** 0. Then put its centre 3 m under the floor: push **Shift S** and click **Cursor to World Origin**, push **Shift S** and click **Selection to Cursor**, then push **G Z**, type `-3`, and push **Enter**. The top of the sphere is then at the floor, and the sphere keeps the tail above the floor.
+7. For each chain, clear **All colliders** and type the colliders of the table in **Colliders**.
+8. To change the motion of a joint, make a joint bone active in Pose Mode. The panel shows **Stiffness** (how strongly the joint goes back to the shape of the model), **Drag** (how fast the swings stop), **Gravity** (1: full gravity, 0: none), **Swing limit**, **Side limit**, **Mass**, **Friction**, **Damping** (how much the chain trails behind the head), **Speed limit**, and **Radius**. **Bend limit** in the chain box is the largest angle of the chain end from its rest direction: 60° keeps a hanging twin tail below the head.
+
+![The chains of Miku, the twin tail chain with its colliders, and a joint of the twin tail](images/creator/miku-chains.png)
+
+*Model: Tda式初音ミク・アペンド by Tda; Hatsune Miku © Crypton Future Media, INC. www.piapro.net*
+
+Hints:
+
+- Hair that whips: add drag. Hair that is too stiff: less stiffness. Hair that does not trail behind the head: more damping.
+- A chain that touches a collider at rest pushes away from it all the time. Give each chain only the colliders near it.
+- Each joint costs time in the game: the 40 joints of Miku take 0.15–0.47 ms of each frame on the test computer. A character can have 64 joints at most.
+
+### 5.8 Validate and export
+
+1. Open **Character Package > Package Information** and set:
+   - **ID**: `yourname.tda-miku`. **Name**: `Hatsune Miku (Tda Append)`. **Version**: `1.0.0`.
+   - **Authors**: `Tda` (role `model`), and your name.
+   - **License**: `LicenseRef-Tda-Miku-Append`. Clear **Redistribute**, **Modify**, and **Commercial use**: the terms of the model apply.
+   - **Credits**: `Hatsune Miku © Crypton Future Media, INC. www.piapro.net`.
+2. Click **Validate**. Miku gives 0 errors and 2 warnings:
+   - `mesh '...': export ignores the vertex groups that are not rig bones, for example 'mmd_edge_scale'`: MMD Tools adds the vertex groups `mmd_edge_scale` and `mmd_vertex_order`. They are not bones, and export does not need them. You can ignore this warning.
+   - `character.json: the chains have 40 joints; more than 32 cost frame time on slow computers`: the twin tails, the cable, the wings, and the necktie have 40 joints. Keep them, or remove the necktie and the wings (27 joints) for a slow computer.
+3. Click **Export .chchar**. Set **Copy to Custom/Characters** if you set that folder in the preferences. The package `yourname.tda-miku.chchar` is about 3.9 MB. The add-on writes it only when there is no error.
+
+![Validate: 0 errors and 2 warnings, and the package information](images/creator/miku-validate.png)
+
+*Model: Tda式初音ミク・アペンド by Tda; Hatsune Miku © Crypton Future Media, INC. www.piapro.net*
+
+The steps of this tutorial work the same in Blender 4.2 LTS and Blender 5.2 (checked with Blender 4.2.23 and 5.2.1, MMD Tools 4.5.14). Save your `.blend` file: it holds all the settings, and you can export again after a change.
+
+### 5.9 Play Miku in the game
+
+1. Put `yourname.tda-miku.chchar` into `Custom/Characters` of Clone Hero (or use **Copy to Custom/Characters**).
+2. Start Clone Hero. The mod imports the package one time (about 0.3 s).
+3. In the menus, push **F6**. In **Band**, click **<** or **>** on the line **Guitarist** until **Hatsune Miku (Tda Append)** shows. Push **F6** again to close the picker.
+4. Start a song. Miku plays the guitar with the animations of Midori, on any stage.
+5. To make Miku the singer, select her on the line **Singer** (and set the guitarist back to **Default (venue)**). The singer moves the mouth with the lyrics of the chart. A song with a vocal stem (`vocals.ogg` or `vocals.opus`) also gives the loudness. Every character can play every role: in the other roles, the game uses the animations of that role on her skeleton.
+
+![The F6 picker with the example stage and Miku as the guitarist](images/creator/game-picker.png)
+
+*Model: Tda式初音ミク・アペンド by Tda; Hatsune Miku © Crypton Future Media, INC. www.piapro.net*
+
+![Miku as the guitarist in Mitch's Moose Lounge](images/creator/game-miku-guitarist.png)
+
+*Model: Tda式初音ミク・アペンド by Tda; Hatsune Miku © Crypton Future Media, INC. www.piapro.net*
+
+![Miku as the singer with lip sync, in a close-up](images/creator/game-miku-singer.png)
+
+*Model: Tda式初音ミク・アペンド by Tda; Hatsune Miku © Crypton Future Media, INC. www.piapro.net*
+
+The log (`<game>/MelonLoader/Latest.log`) has the line `GH3 band guitarist: character yourname.tda-miku (Hatsune Miku (Tda Append)) on its own skeleton (206 joints, 57 humanoid roles), retargeted from profile gh3-guitarist-midori-v1 ...` and the face shapes. The singer close-up uses `GH3_SKIN_DEBUG_VIEW_HEAD=local` and `GH3_SKIN_DEBUG_VIEW_ROLE=singer` ([VERIFICATION.md](VERIFICATION.md#runtime-variables)).
+
+### 5.10 Use any humanoid model with its own skeleton
+
+The steps of the tutorial work for any humanoid model with an armature: MMD (`.pmx`), VRM and VRoid, Mixamo, Unity, Unreal, Daz, Rigify, 3ds Max Biped, Ready Player Me, or a model with bone names that say nothing (`joint1`, `Bone.023`, Chinese or Japanese names). The proportions of your model do not change. Read the terms of the model first: many models do not permit changes or distribution.
+
+The add-on finds the humanoid in your skeleton from the hierarchy and the bone positions, not from a list of names. It finds the left and right sides of the body, the legs (the pair of limbs that reaches the floor), the arms (the pair that hangs from the spine below the head), the elbow and the knee (where a limb divides into two parts of almost the same length), twist bones (bones on the straight line of a limb part), the fingers (in their order across the palm), the head, and the front of the model (the toes and the feet). The bone names help only when the bone positions do not decide.
+
+Import the model into the character scene with the importer of its format:
+
+- glTF, GLB, VRM: **File > Import > glTF**. With the **VRM Add-on for Blender**, the add-on uses the humanoid map of the VRM file.
+- FBX (Mixamo, Unity, Unreal, a game): **File > Import > FBX**.
+- MMD: MMD Tools at the scale 0.08, with the morphs (the tutorial).
+- A model in two parts with two armatures (a body and a head): select both armatures, the body last, and click **Join Armatures** in the **Skeleton** panel. Bones with the same name become one bone, and the head moves onto the body at these bones.
+
+**Set Up Skeleton** does these changes. The panel lists each change in words, and **Ctrl Z** restores the model:
+
+- It applies the object transforms of the armature and of its meshes (an import root, a 0.01 scale, a Z-up node).
+- It turns the model so that it stands on +Z and looks toward −Y, with its left side at +X, and mirrors a mirrored export back (a Unity model that comes in with its left bones on its right side).
+- It puts the feet on the floor and the hips above the origin.
+- It gives the model a height in metres: a model of 0.5–3 m keeps its height; else the add-on finds the unit (centimetres, millimetres) or uses 1.7 m. To set a height, type it in **Height** before you click (for example 1.58 m).
+- It makes meshes that follow one bone (no weights) skinned to that bone, and gives deform bones under control bones (Rigify `DEF-` bones) the deform bone at the place of their control bone as parent, so that the exported skeleton is one tree.
+- It finds the roles, the followers, and the face shape keys.
+
+Correct the map:
+
+- Green is sure, yellow is a role to check, red is not sure. A required role without a bone is red.
+- To correct a role: select the role in the list, click the bone in the viewport (Pose Mode or Edit Mode), and click **Assign Active Bone**. The next role in the list is then selected.
+- **Left to Right** gives each right role the bone on the other side of its left role (by the name, else by the place). **Right to Left** does the opposite.
+- The X button clears a role. A finger, a toe, a shoulder, a neck, a twist bone, the eyes, and the jaw are optional.
+- **Save Preset** writes the map to a JSON file. **Load Preset** applies it to another model of the same rig family.
+
+The face fields also find the shapes of other formats: blink and the mouth shapes a, i, u, e, o (VRM `Blink`, `A`; VRoid `Fcl_EYE_Close`, `Fcl_MTH_A`; `eye_close`, `lip_a`, `mouth_a`; VRChat visemes; Ready Player Me `mouthOpen`), the consonant visemes pp, ff, th, dd, kk, ch, ss, nn, rr (VRChat `vrc.v_pp`, Oculus and Ready Player Me `viseme_PP`), brow up and brow down (VRoid `Fcl_BRW_Surprised`, `Fcl_BRW_Angry`; `eyeblow_up`, `eye_brow_up`), and squint (`eyeSquint`). A model with the consonant visemes shows them in the lip sync.
+
+Other model settings:
+
+- **Materials**: a VRM importer also makes toon node groups. Give each material a **Principled BSDF** with the image on **Base Color**, and save the images as PNG (1024 × 1024 pixels are sufficient).
+- **Weights**: keep the weights of your model, and click **Limit and Normalize**. The export writes only the deform bones, 255 at most.
+- **Instrument** (in the **Skeleton** panel): the instrument hangs in front of the top spine bone, at the GH3 distance scaled by your torso. Its size is your arm length divided by the GH3 arm length. **Instrument bone**, **Instrument offset**, and **Instrument scale** change this.
 
 When Set Up Skeleton does not find the humanoid, the notes in the panel say what is missing:
 
 | Note | What to do |
 | --- | --- |
-| no left and right body parts | The model is not symmetric enough, or it has no limbs as bones. Map the roles by hand (step 4) |
+| no left and right body parts | The model is not symmetric enough, or it has no limbs as bones. Map the roles by hand |
 | the arm chain has no elbow / the leg chain has no knee | The limb has fewer than three joints. A humanoid needs an upper arm, a forearm, and a hand (an upper leg, a lower leg, and a foot). Add the missing bone in Edit Mode, with weights |
 | hips must be a parent of the upper leg (a Validate error) | A foot or a leg is not a child of the leg above it (IK rigs). In Edit Mode, make the foot a child of the lower leg (**Keep Offset**) |
 | the bone names say left where the body is right | The model is mirrored. Set Up Skeleton mirrors it back (the **Mirror** option of the operator turns this off) |
@@ -252,84 +430,33 @@ What the game does with your skeleton:
 
 Measured (2026-10-10): the automatic map gave the hand-made map with no change for 27 of the 28 humanoid test models of the rig corpus (Mixamo, Ready Player Me, VRM 0 and 1, VRoid, Unity-chan, 3ds Max Biped, Rigify, Unreal-like, KayKit, Khronos samples, MMD, Project SEKAI, and synthetic variants with other names, turns, units, rest poses, and missing bones; [STATUS.md](STATUS.md#characters-on-their-own-skeleton)). The own skeleton keeps the proportions of the source model. In the game, the hands miss their places on the guitar by at most 0.2 mm.
 
-**Alternative: fit the mesh to a GH3 rig.** You can also move your model onto the GH3 bind pose and use the GH3 skeleton (the character then has the GH3 proportions):
-
-1. In Pose Mode of the model's armature, turn and scale the bones so that each joint is on the joint of the GH3 rig. Apply the Armature modifier and delete the model's armature. Use only the vertex groups of deform bones (MMD Tools adds `mmd_edge_scale` and `mmd_vertex_order`; they are not bones).
-2. Remove the shape keys (a character on a GH3 rig moves the face with bones).
-3. Click **Transfer Weights from the GH3 Body**. Give the face and the head hair full weight on `bone_head`. Keep good finger weights: rename the finger vertex groups to the GH3 finger bones.
-4. Use the hair chains of the profile (**Assign to Hair Bones**) or your own chains, then Validate and export.
-
-A fitted character does not blink and does not move its mouth.
-
 Compare the face of your export with the source model: render both front-on in Blender (the export with **File > Import > glTF**). The eyes must be at the same places. To see the face in the game at a fixed angle, use `GH3_SKIN_DEBUG_VIEW_HEAD=local` and `GH3_SKIN_DEBUG_VIEW_ROLE` ([VERIFICATION.md](VERIFICATION.md)).
 
-### 5.2 Toon look and eyebrows over the hair
+### 5.11 Chains on other models
 
-Anime models look flat with the **Lit**, **Ambient**, or **Unlit** shading. Use **Toon** (cel shading). The venue lights still color a toon character: in a red light the character is red, and in a blackout the character is dark.
+A model without MMD physics gets its chains from its mesh or from its VRM spring bones.
 
-1. Set **Shading** to **Toon** in **CH Stage Material**.
-2. Set the light and the shade:
-   - **Threshold**: where the shade starts. 0.5 shades the side that turns away from the key light. 0 is always lit (use it for the eyes).
-   - **Softness**: the width of the edge between light and shade. 0.02 gives a hard anime edge.
-   - **Shade texture** and **Shade color**: the color of the shaded side. A model from a game often has a shadow color texture (Project SEKAI: the `_S` texture). Without a texture, the shade is the base color times the shade color, for example (0.8, 0.8, 0.9).
-   - **Shade mask**: red 0 is always shaded, 0.5 follows the light, 1 is always lit (Project SEKAI: the blue channel of the `_H` texture).
-   - **Sphere map**: an MMD sphere map (`.sph` multiply, `.spa` add) for shine on hair and cloth.
-   - **Rim width** and **Rim color**: a thin light at the silhouette.
-3. **Outline**: set **Width** to about 0.0015 (1.5 mm at 1 m from the camera in a normal GH3 view, about 1.7 pixels at 900 pixels; the line keeps this screen width in close-ups) and the **Color**. **Textured** multiplies the color by the base texture (a darker line in the color of the part). Do not use an outline on the eyes, the eyelashes, and the eye highlights. The mesh needs smooth normals; split normals give gaps in the line.
-4. Click **Preview** to see the toon look in Material Preview (EEVEE). Click **glTF material** to see the Principled BSDF again. Export always writes the glTF material and the toon settings.
+**Chain along Strand** (a twin tail, a skirt panel, a tail):
 
-**Eyebrows over the hair.** In anime games the eyebrows and the eyelashes show through the bangs. Set **Hair layer** to **Over hair** on the eyebrow (and eyelash) material, and to **Hair** on the hair materials of the same character. The game then draws the hair around the eyebrows. Rules:
+1. Select your mesh, go to Edit Mode, and select the vertices of one strand.
+2. Click **Chain along Strand**. Set **Chain name** (for example `twin_tail_l`), **Joints** (5 to 8 for a long twin tail, 2 for a skirt panel, 6 to 13 for a tail), **Parent bone** (the bone that holds the chain, for example the head; empty: the nearest body bone), and **Preset** (**Long hair or twin tail**, **Skirt**, **Tail or cable**, **Hair**, or **Stiff accessory**). The tool adds the bones and gives the selected vertices weights on them.
+3. Do steps 1 and 2 again for each strand, then click **Fit Body Colliders** and set the colliders of each chain (as in [section 5.7](#57-make-chains-from-the-mmd-physics)).
 
-- The eyebrows need their own material. If the eyebrows are in the face texture, select their faces in Edit Mode and give them a copy of the face material.
-- The feature shows only where its faces turn to the camera, so it never shows through the back of the head. Other parts (the hands, the instrument, other band members) still cover it.
-- To check it in the game, use `GH3_SKIN_DEBUG_HAIR_LAYER=mark` ([VERIFICATION.md](VERIFICATION.md#runtime-variables)): the features then show in a flat color.
+On a character with its own skeleton, the bones of your model can also be chain joints (**Chain from Selected Bones**): a joint is a bone that has no role, that is not a parent of a bone with a role, and that is not a follower.
 
-### 5.3 Make hair, skirt, and tail chains
+**Chains from VRM Spring Bones**: click it and select the `.vrm` file. The tool makes a chain for each VRM spring with the VRM stiffness, drag, gravity, and hit radius, and the VRM colliders.
 
-A chain is a line of bones that you add to the rig. The game moves the chain with gravity and the motion of the body, as GH3 moves its hair. A stiffness pulls the chain back to the shape of your model, as the spring bones of VRM and MMD do. Colliders are capsules on the body: the chain does not go into them.
+A long tail can hit the floor: add a large sphere under the floor on the root bone (step 6 of [section 5.7](#57-make-chains-from-the-mmd-physics)). Each joint adds its swing: the bend limit of the chain stops a long chain from folding.
 
-1. Open **Chains and Colliders** in the tab **CH Character**.
-2. Select your mesh, go to Edit Mode, and select the vertices of one strand: one twin tail, one skirt panel, or a tail.
-3. Click **Chain along Strand**. Set:
-   - **Chain name**, for example `twin_tail_l`.
-   - **Joints**: the number of bones. Use 5 to 8 for a long twin tail, 2 for a skirt panel, 6 to 13 for a tail.
-   - **Parent bone**: the bone that holds the chain (for a twin tail the head, for a skirt the pelvis). Empty: the nearest body bone.
-   - **Preset**: **Long hair or twin tail**, **Skirt**, **Tail or cable**, **Hair**, or **Stiff accessory**.
+### 5.12 Alternative: fit a model to a GH3 rig
 
-   The tool adds the bones and gives the selected vertices weights on them.
-4. Do steps 2 and 3 again for each strand.
-5. Click **Fit Body Colliders**. The tool adds capsules on the hips, the body, the legs, the arms, a sphere on the head, and a capsule on the guitar. Look at them in the viewport. Move a capsule or change its radius if necessary.
-6. For each chain, clear **All colliders** and type the colliders near it. Example: a twin tail touches `head, chest, waist, stomach, hips, thigh_l, thigh_r, guitar`; a skirt touches `thigh_l, thigh_r, shin_l, shin_r`.
-7. To change the motion, make a joint bone active in Pose Mode and change its values: **Stiffness** (how strongly the joint goes back to the shape of your model), **Drag** (how fast the swings stop after a move), **Gravity** (1: full gravity, 0: none), **Damping** (how much the chain trails behind the head), **Swing limit** (how far each joint swings), **Speed limit** (how fast it can turn). In the chain list, **Bend limit** is the largest angle of the chain end from its rest direction: 60° keeps a hanging twin tail below the head.
-8. Click **Validate**, then **Export .chchar**.
+You can also put a mesh on the GH3 skeleton itself. The character then has the GH3 proportions of the profile, and it does not blink and does not move its mouth (a character on a GH3 rig moves the face with bones). Use this to edit a GH3 band member (**Start from the GH3 body** in the dialog of **New Character from GH3 Rig**) or for a model without a skeleton.
 
-![A twin tail chain (blue) and the Chains and Colliders panel](images/creator/character-chains.png)
-
-With an MMD model: import the model with MMD Tools with physics and click **Chains from MMD Physics**. On a GH3 rig, first move the MMD model onto the rig (the same fit as the mesh); the tool makes a bone for each moving rigid body. On the model's own skeleton, the tool uses the MMD bones themselves. Both get the MMD mass, damping, limits, and springs (the stiffness). Then remove the MMD model that you imported for the physics.
-
-With a VRM model on its own skeleton: click **Chains from VRM Spring Bones** and select the `.vrm` file. The tool makes a chain for each VRM spring with the VRM stiffness, drag, gravity, and hit radius, and the VRM colliders.
-
-On a character with its own skeleton, a chain joint is a bone of your model that has no role, that is not a parent of a bone with a role, and that is not a follower. **Fit Body Colliders** puts the capsules on the bones with the roles (no guitar capsule: the instrument hangs on the GH3 rig).
-
-Hints:
-
-- Each joint adds its swing: the bend limit of the chain stops a long chain from folding.
-- Hair that whips: add drag. Hair that is too stiff: less stiffness. Hair that does not trail behind the head: more damping.
-- A chain that touches a collider at rest pushes away from it all the time. Give each chain only the colliders near it.
-- A long tail can hit the floor: add a large sphere under the floor on the root bone (**Add Collider** on the root bone, radius 3 m, 3 m under the floor).
-- At most 64 joints. Each joint costs time in the game; 40 joints of the test character take 0.15–0.47 ms of each frame on the test computer.
-
-### 5.4 Play the character
-
-To use the character:
-
-1. Start Clone Hero, and push **F6** in the menus.
-2. In **Band**, click **<** or **>** on the line of the band member (for example **Guitarist**) until your character shows.
-3. Start a song. Every character can play every role: in the role of its profile with the animations of the profile (a guitarist profile also as the bassist), in the other roles with the animations of that role on its own rig.
-
-![The example guitarist in the example club](images/creator/game-example.png)
-
-The example `.blend` file has no helpers (the GH3 body and the guitar are not in the file). Set the library in the preferences, then click the reload button in **Weights and Hair** to load them.
+1. Click **File > New > New Character from GH3 Rig**, select a profile, and do not set **Use my model's skeleton**. Select the GH3 guitarist with the body that is nearest to your character (height, length of the legs and the arms, width of the shoulders). The scene has the rig, the GH3 body as a wireframe reference, and the instrument preview. Do not move, turn, scale, or edit the rig.
+2. Model your character over the reference body, or import a mesh and move it onto the reference body. For a rigged model: in Pose Mode of its armature, turn and scale the bones so that each joint is on the joint of the GH3 rig, apply the Armature modifier, delete the model's armature, and remove the shape keys.
+3. Select your meshes, and click **Transfer Weights from the GH3 Body** in **Weights and Hair**. Each vertex gets the weights of the nearest point on the GH3 body (4 bones at most). Change the weights with Weight Paint if necessary (give the face and the head hair full weight on `bone_head`), then click **Limit and Normalize**.
+4. Hair: select the hair cards, select a chain in **Hair bones of the profile**, and click **Assign to Hair Bones**. For long hair, a skirt, or a tail, make your own chains ([section 5.11](#511-chains-on-other-models)). **Chains from MMD Physics** then makes new bones from the MMD bodies of the fitted MMD model.
+5. Click **Validate**, then **Export .chchar**.
 
 ## 6. Make an instrument
 
@@ -391,7 +518,10 @@ On a custom stage, the GH3 camera notes select these groups: 84 and 86 close-up 
 | `the rig must stay at the origin ...` or `the rig has no bone ...` | Clear the rig transform, or start again from **New** |
 | `material '...': image '...' is ...; packages use PNG only` | Save the image as PNG |
 | `image N is PNG; package format 1.0 stores textures pre-encoded ...` (validator, or `texture ... is a PNG image` in the game log) | The package comes from an older add-on. Open the `.blend` file and export again with the current add-on |
-| `material '...': the glTF export does not read its surface node ...` (warning) | Connect a Principled BSDF with the image on Base Color to the material output (section 5.1) |
+| `material '...': the glTF export does not read its surface node ...` (warning) | Connect a Principled BSDF with the image on Base Color to the material output. For an MMD model, use **Convert to Blender** of MMD Tools before **Set Up Skeleton** (section 5.3) |
+| `character.json: .chains: too many items` | A character can have 16 chains at most. Remove chains (section 5.7) |
+| `character.json: the chains have N joints; more than 32 cost frame time on slow computers` (warning) | Keep the joints, or remove chains for slow computers (section 5.8) |
+| `mesh '...': export ignores the vertex groups that are not rig bones, for example '...'` (warning) | Nothing to do. MMD Tools adds `mmd_edge_scale` and `mmd_vertex_order`; export does not need them |
 | `... needs the GH3 character library ...` (Open) | Set **GH3 character library (.chlib)** in the add-on preferences |
 | `no GH3 library: ...` (warning) | Set **GH3 library (.chlib)** in the add-on preferences |
 

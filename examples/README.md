@@ -1,6 +1,6 @@
 # Examples
 
-Example content for creators. [docs/CREATOR-GUIDE.md](../docs/CREATOR-GUIDE.md) tells you how to make the same things.
+Example content and test fixtures. The example stage is the result of [docs/CREATOR-GUIDE.md section 3](../docs/CREATOR-GUIDE.md#3-make-your-first-stage). The example character is a minimal test package for the automatic tests; the character tutorial of the guide uses Hatsune Miku ([section 5](../docs/CREATOR-GUIDE.md#5-make-a-character-on-a-gh3-rig)).
 
 | File | Contents |
 | --- | --- |

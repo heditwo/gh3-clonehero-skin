@@ -2,7 +2,7 @@
 
 blender --window-geometry 0 0 1600 900 --python blender/tests/screenshots_guide.py -- ZIP OUTPUT_DIR LIBRARY VENUE
 
-The stage and character shots use the example .blend files in examples/."""
+The stage shots use examples/example-club.blend. The character shots come from blender/tests/screenshots_miku.py."""
 
 import sys
 from pathlib import Path
@@ -175,35 +175,6 @@ def venue_open():
     view()
 
 
-def character():
-    guitarist = append_scene(ROOT / "examples" / "example-guitarist.blend")
-    window().scene = guitarist
-    props = guitarist.chstage.character
-    props.library = str(library)
-    with bpy.context.temp_override(window=window(), screen=window().screen, area=area("VIEW_3D"), scene=guitarist):
-        bpy.ops.chstage.character_helpers(action="RELOAD")
-    panels("CHSTAGE_PT_character", "CHSTAGE_PT_character_weights")
-    body = guitarist.objects["body"]
-    view(perspective="PERSP", objects=[body])
-    select([body])
-    bpy.ops.object.mode_set(mode="WEIGHT_PAINT")
-    group = next(g for g in body.vertex_groups if g.name.startswith("bone-"))
-    names = [g.name for g in body.vertex_groups]
-    # A bone of the upper arm shows the weight transfer well.
-    character_format = sys.modules[module + ".vendor.package_format.character"]
-    wanted = f"bone-{character_format.gh3_key('bone_bicep_l'):08x}"
-    body.vertex_groups.active_index = names.index(wanted) if wanted in names else group.index
-
-
-def character_package():
-    bpy.ops.object.mode_set(mode="OBJECT")
-    with bpy.context.temp_override(window=window(), screen=window().screen, area=area("VIEW_3D"), scene=scene()):
-        bpy.ops.chstage.validate_character()
-    panels("CHSTAGE_PT_character", "CHSTAGE_PT_character_info", opened=("CHSTAGE_PT_character_info",))
-    select([])
-    view(perspective="PERSP")
-
-
 steps = [
     setup,
     lambda: None,
@@ -223,12 +194,6 @@ steps = [
     lambda: None,
     lambda: None,
     lambda: shot("stage-lighting"),
-    character,
-    lambda: None,
-    lambda: shot("character-weights"),
-    character_package,
-    lambda: None,
-    lambda: shot("character-package"),
     venue_open,
     lambda: None,
     lambda: shot("venue-open"),
