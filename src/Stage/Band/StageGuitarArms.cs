@@ -1,4 +1,5 @@
 using System.Numerics;
+using Gh3Skin.Packages;
 
 namespace Gh3Skin;
 
@@ -69,17 +70,6 @@ internal sealed class StageBlendTrack
     }
 }
 
-// One chain of a GH3 IK parameter array (guitar_anim_tree.qb): bone0-2 and boneTarget as bone checksums, HingeAxis, and
-// the hinge cosine limits.
-internal sealed class IkChainDefinition
-{
-    public string[] Bones { get; set; } = Array.Empty<string>();
-    public string Target { get; set; } = "";
-    public float[] Hinge { get; set; } = Array.Empty<float>();
-    public float CosMax { get; set; }
-    public float CosMin { get; set; }
-}
-
 // GH3 guitarist_static_tree and drummer_static_tree after the animation layers: Havok two-joint IK (Hero_Ik_params,
 // drummer_IK_params; they differ only in the hand target bones), then hero_ConstraintBones.
 internal sealed class StageGuitarRig
@@ -88,7 +78,11 @@ internal sealed class StageGuitarRig
     private const float MinimumBoneLength = 1e-5f;
     private sealed record Chain(int First, int Second, int End, int Target, Vector3 Hinge, int Side, float CosMax, float CosMin);
     private sealed record Constraint(int Type, int Bone, int Target, float Amount);
-    private const float CosMaxArm = -0.97f, CosMinArm = 0.97f, CosMaxLeg = -0.98999995f, CosMinLeg = 0.97f;
+    private const int Split = 1, SplitR = 2, Twist = 3, TwistChild = 4;
+    private static readonly Dictionary<string, int> ConstraintTypes = new(StringComparer.Ordinal)
+    {
+        ["Split"] = Split, ["SplitR"] = SplitR, ["Twist"] = Twist, ["TwistChild"] = TwistChild,
+    };
     private readonly int[] _parents;
     private readonly BandPose[] _bind;
     private readonly Chain[] _chains;
@@ -96,36 +90,22 @@ internal sealed class StageGuitarRig
     private readonly Vector3[] _position;
     private readonly Quaternion[] _rotation;
 
-    // `ik`: the IK chains of a character library profile (Hero_Ik_params or Satan_Ik_params); null: Hero_Ik_params.
-    public StageGuitarRig(int[] parents, BandPose[] bind, string[] bones, string handTarget = "Bone_IK_Hand_Guitar", IkChainDefinition[]? ik = null)
+    // `ik`: the IK chains of the rig (catalog.json or characters.json: Hero_Ik_params, drummer_IK_params, or a profile's
+    // ik_params); `constraints`: hero_ConstraintBones of the library.
+    public StageGuitarRig(int[] parents, BandPose[] bind, string[] bones, IkChainDefinition[] ik, RigConstraint[] constraints)
     {
         _parents = parents;
         _bind = bind;
         _position = new Vector3[bind.Length];
         _rotation = new Quaternion[bind.Length];
-        int Bone(string name) => Array.IndexOf(bones, Gh3Checksum.Of(name));
+        int Bone(string checksum) => Array.IndexOf(bones, checksum);
         // Hinge axes are the original values; mirroring Z to Unity space keeps a Z axis unchanged for an axis-angle pair.
-        int Key(string checksum) => Array.IndexOf(bones, checksum);
-        _chains = (ik != null ? ik.Select(c => new Chain(Key(c.Bones[0]), Key(c.Bones[1]), Key(c.Bones[2]), Key(c.Target), new Vector3(c.Hinge[0], c.Hinge[1], c.Hinge[2]),
-                c.Target == Gh3Checksum.Of(handTarget + "_R") ? 1 : c.Target == Gh3Checksum.Of(handTarget + "_L") ? -1 : 0, c.CosMax, c.CosMin)).ToArray() : new[]
-        {
-            new Chain(Bone("Bone_Bicep_R"), Bone("Bone_Forearm_R"), Bone("Bone_Palm_R"), Bone(handTarget + "_R"), -Vector3.UnitZ, 1, CosMaxArm, CosMinArm),
-            new Chain(Bone("Bone_Bicep_L"), Bone("Bone_Forearm_L"), Bone("Bone_Palm_L"), Bone(handTarget + "_L"), -Vector3.UnitZ, -1, CosMaxArm, CosMinArm),
-            new Chain(Bone("Bone_Thigh_L"), Bone("Bone_Knee_L"), Bone("Bone_Ankle_L"), Bone("Bone_IK_Foot_Slave_L"), Vector3.UnitZ, 0, CosMaxLeg, CosMinLeg),
-            new Chain(Bone("Bone_Thigh_R"), Bone("Bone_Knee_R"), Bone("Bone_Ankle_R"), Bone("Bone_IK_Foot_Slave_R"), Vector3.UnitZ, 0, CosMaxLeg, CosMinLeg),
-        }).Where(c => c.First >= 0 && c.Second >= 0 && c.End >= 0 && c.Target >= 0 &&
-            parents[c.Second] == c.First && parents[c.End] == c.Second).ToArray();
-        const int split = 1, splitR = 2, twist = 3, twistChild = 4;
-        _constraints = new (int, string, string, float)[]
-        {
-            (twistChild, "Bone_Twist_Wrist_L", "Bone_Palm_L", 0.5f), (twistChild, "Bone_Twist_Wrist_R", "Bone_Palm_R", 0.5f),
-            (twist, "Bone_Twist_Bicep_Mid_R", "Bone_Bicep_R", 0.5f), (twist, "Bone_Twist_Bicep_Mid_L", "Bone_Bicep_L", 0.5f),
-            (twist, "Bone_Twist_Bicep_Top_R", "Bone_Bicep_R", 1), (twist, "Bone_Twist_Bicep_Top_L", "Bone_Bicep_L", 1),
-            (twist, "Bone_Twist_Thigh_R", "Bone_Thigh_R", 0.5f), (twist, "Bone_Twist_Thigh_L", "Bone_Thigh_L", 0.5f),
-            (split, "Bone_Split_Knee_R", "Bone_Knee_R", 0.5f), (split, "Bone_Split_Knee_L", "Bone_Knee_L", 0.5f),
-            (splitR, "Bone_Split_Ass_R", "Bone_Twist_Thigh_R", 0.5f), (splitR, "Bone_Split_Ass_L", "Bone_Twist_Thigh_L", 0.5f),
-            (split, "Bone_Split_Elbow_R", "Bone_Forearm_R", 0.5f), (split, "Bone_Split_Elbow_L", "Bone_Forearm_L", 0.5f),
-        }.Select(c => new Constraint(c.Item1, Bone(c.Item2), Bone(c.Item3), c.Item4)).Where(c => c.Bone >= 0 && c.Target >= 0).ToArray();
+        _chains = ik.Select(c => new Chain(Bone(c.Bones[0]), Bone(c.Bones[1]), Bone(c.Bones[2]), Bone(c.Target), new Vector3(c.Hinge[0], c.Hinge[1], c.Hinge[2]),
+                c.Hand switch { "right" => 1, "left" => -1, _ => 0 }, c.CosMax, c.CosMin))
+            .Where(c => c.First >= 0 && c.Second >= 0 && c.End >= 0 && c.Target >= 0 &&
+                parents[c.Second] == c.First && parents[c.End] == c.Second).ToArray();
+        _constraints = constraints.Select(c => new Constraint(ConstraintTypes[c.Type], Bone(c.Bone), Bone(c.Target), c.Amount))
+            .Where(c => c.Bone >= 0 && c.Target >= 0).ToArray();
     }
 
     public void Apply(BandPose[] pose, float right, float left)
@@ -211,19 +191,19 @@ internal sealed class StageGuitarRig
         Quaternion driven;
         switch (constraint.Type)
         {
-            case 1:
+            case Split:
                 driven = target;
                 break;
-            case 2:
+            case SplitR:
                 var stop = _parents[constraint.Bone];
                 for (var bone = _parents[constraint.Target]; bone >= 0 && bone != stop; bone = _parents[bone])
                     target = Multiply(Gh3(pose[bone].Rotation), target);
                 driven = Multiply(new Quaternion(0, 1, 0, 0), target);
                 break;
-            case 3:
+            case Twist:
                 driven = Roll(Multiply(target, Quaternion.Conjugate(Gh3(_bind[constraint.Target].Rotation))), 0);
                 break;
-            default:
+            default: // TwistChild
                 var axis = pose[constraint.Target].Position * new Vector3(1, 1, -1);
                 driven = Roll(target, axis.X >= axis.Y && axis.X >= axis.Z ? 0 : axis.Y >= axis.X && axis.Y >= axis.Z ? 1 : 2);
                 break;

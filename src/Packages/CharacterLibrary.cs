@@ -18,6 +18,8 @@ internal sealed class CharacterProfile
     public int[] Parents { get; init; } = System.Array.Empty<int>();
     // Local bind transforms [x, y, z, qx, qy, qz, qw] in runtime coordinates, as the rows of GH3ANM01.
     public float[][] Bind { get; init; } = System.Array.Empty<float[]>();
+    // The rig points of a clip rig (section 10.2); a profile has the points of the clip rig of its set.
+    public RigPoints Points { get; init; } = RigPoints.None;
 }
 
 // characters.json of a character library in the cache: the rig profiles and the clip rigs. The animation sets, hair, and
@@ -97,7 +99,7 @@ internal sealed class CharacterLibrary
         for (var i = 0; i < parents.Length; i++)
             for (int bone = i, depth = 0; bone >= 0; bone = parents[bone], depth++)
                 if (depth > bones.Length) throw new PackageException($"the rig of profile {id} has a cycle");
-        if (rigOnly) return new CharacterProfile { Id = id, Bones = bones, Parents = parents, Bind = bind };
+        if (rigOnly) return new CharacterProfile { Id = id, Bones = bones, Parents = parents, Bind = bind, Points = RigPoints.Read(row["points"], bones, id) };
         var role = Text(row["role"]) ?? "";
         var set = Text(row["animations"]) ?? "";
         var hairId = row["hair"] == null ? "" : Text(row["hair"]) ?? throw new PackageException($"invalid hair in profile {id}");

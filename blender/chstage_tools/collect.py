@@ -335,6 +335,7 @@ def sidecar_files(scene, issues, keeper=None):
             issues,
             keeper,
             kept.get("placementKeys", ()),
+            scene.chstage.small_venue,
         ),
         "cameras.json": sidecars.build_cameras(
             shot_list, camera_notes(scene), marker_list, issues, keeper, scene.chstage, anchor_frames(scene)

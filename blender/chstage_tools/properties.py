@@ -872,6 +872,10 @@ class CHSTAGE_PG_scene(PropertyGroup):
     package: PointerProperty(type=CHSTAGE_PG_package)
     crowd: CollectionProperty(type=CHSTAGE_PG_crowd)
     crowd_index: IntProperty()
+    small_venue: BoolProperty(
+        name="Small venue",
+        description="The band plays the small-stage intro and win animations of the small GH3 venues (placements.json smallVenue)",
+    )
     camera_notes: CollectionProperty(type=CHSTAGE_PG_camera_note)
     camera_notes_index: IntProperty()
     snapshots: CollectionProperty(type=CHSTAGE_PG_snapshot)

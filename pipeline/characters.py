@@ -8,9 +8,8 @@ exported.
 
 Each variant keeps the GH3 meshes, materials (GH3 templates and constants), textures, and hair cards as the library band
 does (pipeline/library/band.py), on its own GH3 skeleton: the rig profile of its GH3 profile and outfit in the character
-library gh3-characters-v1 (pipeline.character_library). Axel's first outfit uses the library profile
-gh3-guitarist-axel-v1. The two singers use gh3-singer-female-v1 and gh3-singer-bret-v1: the skeleton, animation set,
-and ragdoll of their GH3 vocalist profile.
+library gh3-characters-v1 (pipeline.character_library), as every other outfit. The two singers use
+gh3-singer-female-v1 and gh3-singer-bret-v1: the skeleton, animation set, and ragdoll of their GH3 vocalist profile.
 
 Output: assets/characters/<id>/ (meshes.bin GH3BND02, stage.json, textures/*.png, character.json) and
 assets/characters/inventory.json. The packages step (pipeline.package.build) writes them as .chchar packages.
@@ -31,34 +30,18 @@ from pipeline.gh3.hair_mesh import combine_hair
 from pipeline.gh3.mesh_cutout import trim_prop_cutouts
 from pipeline.library.models import read_models
 from pipeline.package import runtime
+from pipeline.package.profiles import PROFILES
 from pipeline.paths import CHARACTERS, GH3_DATA
 
-CLIP_RIG_PROFILE = "gh3-guitarist-axel-v1"
 # The GH3 vocalist profiles that have their own model, with their rig profile in the character library and their name.
 # Singer_Alt and the *_Alt profiles only change the microphone.
 SINGERS = {
     "Singer_Female": ("gh3-singer-female-v1", "Female singer"),
     "Singer_Bret": ("gh3-singer-bret-v1", "Bret Michaels"),
 }
-RIG_NAMES = [
-    f"GH3_Guitarist_{n}{s}"
-    for n in (
-        "Axel",
-        "Casey",
-        "Izzy",
-        "Johnny",
-        "Judy",
-        "Lars",
-        "Midori",
-        "Xavier",
-        "Morello",
-        "Ripper",
-        "RockGod",
-        "Satan",
-        "Slash",
-    )
-    for s in ("", "_2")
-] + ["GH3_Singer_Male", "GH3_Singer_Female", "GH3_Singer_BretMichaels"]
+# The names of the GH3 skeletons for the inventory report: GH3_Guitarist_<profile name> (and _2) for the guitarist
+# profiles, and the vocalist skeletons (their names do not follow the profile names).
+SINGER_RIG_NAMES = ["GH3_Singer_Male", "GH3_Singer_Female", "GH3_Singer_BretMichaels"]
 SLUGS = {
     "Satan": "lou",
     "RockGod": "god-of-rock",
@@ -88,10 +71,10 @@ def slug(name):
 
 
 def profile_id(name, second):
-    """The rig profile ID of a GH3 guitarist profile and outfit (second: the outfit 2 skeleton or ragdoll differs)."""
-    if name == "Axel" and not second:
-        return CLIP_RIG_PROFILE
-    return f"gh3-guitarist-{slug(name)}{'-outfit2' if second else ''}-v1"
+    """The rig profile ID of a GH3 guitarist profile and outfit (second: the outfit 2 skeleton or ragdoll differs). An
+    ID that is a fixed profile of the band library (gh3-guitarist-axel-v1) takes `-outfit1`."""
+    identifier = f"gh3-guitarist-{slug(name)}{'-outfit2' if second else ''}-v1"
+    return f"gh3-guitarist-{slug(name)}-outfit1-v1" if identifier in PROFILES else identifier
 
 
 def outfits(profile):
@@ -125,7 +108,16 @@ def inventory(data_directory):
     # QB ids (desc_id, Skeleton, store ids) are checksums.
     bodies = {row[key("desc_id")]: row for row in tables[key("musician_body")]}
     instruments = {row[key("desc_id")]: row for row in tables[key("musician_instrument")]}
-    rig_names = {key(name): name for name in RIG_NAMES}
+    rig_names = {
+        key(name): name
+        for name in [
+            f"GH3_Guitarist_{text(p[key('name')])}{suffix}"
+            for p in profiles
+            if p.get(key("Type")) == key("Guitarist")
+            for suffix in ("", "_2")
+        ]
+        + SINGER_RIG_NAMES
+    }
     store = qb_items(script(scripts, "store_data"))
     secret = {row[key("id")] for row in store[key("Secret_Characters")]}
     bonus_outfits = {row[key("id")] for row in store[key("Bonus_Outfits")]}

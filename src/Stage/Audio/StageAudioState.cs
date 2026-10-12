@@ -13,7 +13,8 @@ internal sealed class StageAudioState
     private sealed record HealthChange(double Time, float Rock);
     private readonly StageSoundBank _bank;
     private readonly StageCue[] _commands;
-    private readonly string _venue;
+    // The GH3 zone name of the venue scripts (GetPakManCurrent).
+    private readonly string _zone;
     private readonly string _countoff;
     private readonly double _start;
     private readonly List<HealthChange> _health = new() { new(double.NegativeInfinity, .5f) };
@@ -32,11 +33,11 @@ internal sealed class StageAudioState
     public IReadOnlyCollection<string> Diagnostics => _diagnostics;
     public IReadOnlyList<StageSoundVoice> Voices => _events.Voices;
 
-    public StageAudioState(StageSoundBank bank, StageTimeline timeline, string venue, string countoff)
+    public StageAudioState(StageSoundBank bank, StageTimeline timeline, string zone, string countoff)
     {
         _bank = bank;
         _commands = timeline.PlaybackCues.Where(cue => cue.Type == "gh3-audio").ToArray();
-        _venue = venue;
+        _zone = zone;
         _countoff = countoff;
         _start = timeline.Start;
         _events = new(bank);
@@ -168,9 +169,8 @@ internal sealed class StageAudioState
         }
         if (Is("GetPakManCurrent") || Is("GetPakManCurrentName"))
         {
-            var zone = _venue.StartsWith("gh3.") ? "z_" + _venue.Substring(4) : _venue;
             return new(true, new[] { new Gh3QbField(Gh3Checksum.Value(Is("GetPakManCurrent") ? "pak" : "pakname"),
-                Is("GetPakManCurrent") ? new(Gh3QbType.Checksum, -1, _runtime.Intern(zone)) : new(Gh3QbType.String, -1, zone)) });
+                Is("GetPakManCurrent") ? new(Gh3QbType.Checksum, -1, _runtime.Intern(_zone)) : new(Gh3QbType.String, -1, _zone)) });
         }
         if (Is("get_song_struct")) return new(true, new[] { new Gh3QbField(Gh3Checksum.Value("song_struct"),
             Gh3ScriptRuntime.Structure(new[] { new Gh3QbField(Gh3Checksum.Value("countoff"), new(Gh3QbType.String, -1, _countoff)) })) });

@@ -98,8 +98,7 @@ internal sealed partial class GameplayStage
         if (_stageId.Length == 0) return SourceState.Missing;
         var stage = _songPackage ?? manager.Find(Packages.PackageKind.Stage, _stageId);
         if (stage == null) return SourceState.Missing;
-        var requirement = stage.Manifest.Requires.FirstOrDefault(r => r.Id.StartsWith("gh3-band-", StringComparison.Ordinal));
-        var library = manager.Find(Packages.PackageKind.Library, requirement.Id ?? "gh3-band-v1");
+        var library = manager.BandLibrary(stage.Manifest);
         if (Busy(stage) || Busy(library) || _characterPackages.Values.Any(Busy) || _instrumentPackages.Values.Any(Busy))
         {
             manager.Prioritize(stage);
@@ -108,7 +107,7 @@ internal sealed partial class GameplayStage
         }
         if (stage.State != Packages.PackageState.Ready || library?.State != Packages.PackageState.Ready)
         {
-            MelonLogger.Warning($"GH3 stage package {_stageId} did not import ({stage.Error}{(library == null ? "library gh3-band-v1 is not installed" : library.Error)})");
+            MelonLogger.Warning($"GH3 stage package {_stageId} did not import ({stage.Error}{(library == null ? "no band library is installed" : library.Error)})");
             return SourceState.Failed;
         }
         _directory = stage.CacheDirectory;

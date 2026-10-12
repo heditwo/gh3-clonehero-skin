@@ -99,8 +99,8 @@ internal sealed class PerformancePlayer
     // The arm IK strength (strum arm, fret arm) of the last Sample; a retargeted character uses it for its own arm IK.
     public (float Right, float Left) ArmGain { get; private set; }
 
-    // `motion`: a character on a character library profile; its animation set replaces `member`, and the song facial clips
-    // come from the band library member of the role (CharacterMotion).
+    // `motion`: the set that plays (CharacterMotion) with the IK chains and constraints of its rig. For a character library
+    // profile its animation set replaces `member`, and the song facial clips come from the band library member of the role.
     public PerformancePlayer(string role, string directory, PerformanceMember member, BandPose[] bind, StageTimeline timeline,
         int[]? parents = null, IReadOnlyDictionary<string, float>? constants = null, CharacterMotion? motion = null)
     {
@@ -119,12 +119,11 @@ internal sealed class PerformancePlayer
         _commands = timeline.PlaybackCues.Where(c => c.Role == role && c.Type is "stance" or "perform" or "clip").ToArray();
         _armDelta = new BandPose[bind.Length];
         _armTouched = new bool[bind.Length];
-        if (role == "drummer" && parents != null) _rig = new StageGuitarRig(parents, bind, member.Bones, "Bone_IK_Hand_Slave");
-        if (role is "guitarist" or "bassist" && parents != null)
-        {
-            _rig = new StageGuitarRig(parents, bind, member.Bones, ik: motion?.Ik);
-            _armTracks = new[] { StrumTrack(constants), FretTrack(constants), FingerTrack(constants) };
-        }
+        // The IK and the constraints of guitarist_static_tree and drummer_static_tree, with the rig data of the set. The mod
+        // does not run the IK of vocalist_static_tree.
+        if (role is "guitarist" or "bassist" or "drummer" && parents != null && motion != null)
+            _rig = new StageGuitarRig(parents, bind, member.Bones, motion.Ik, motion.Constraints);
+        if (role is "guitarist" or "bassist" && _rig != null) _armTracks = new[] { StrumTrack(constants), FretTrack(constants), FingerTrack(constants) };
         if (role == "drummer") _drummer = new StageDrummer(member, timeline, constants ?? new Dictionary<string, float>());
         _lipSync = StageLipSync.Create(timeline, role, member.Bones);
     }

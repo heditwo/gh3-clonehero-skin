@@ -11,7 +11,8 @@ internal sealed class StageScriptState : IDisposable
     private readonly StageScriptBank _bank;
     private readonly IReadOnlyDictionary<string, StageObjectPlacement> _placements;
     private readonly StageCue[] _commands;
-    private readonly string _venue;
+    // The GH3 zone name of the venue (GetPakManCurrent, <zone>_lightshow_mapping, <zone>_snapshots).
+    private readonly string _zone;
     private readonly Func<uint, double, StageBeamValue?>? _beams;
     private readonly StageTimeline _timeline;
     private readonly uint _pyroScript;
@@ -52,19 +53,18 @@ internal sealed class StageScriptState : IDisposable
     public StageLightScene LightScene { get; private set; } = null!;
     public bool SourcePyro => _pyroScript != 0;
 
-    public StageScriptState(StageScriptBank bank, IReadOnlyDictionary<string, StageObjectPlacement> placements, StageTimeline timeline, string venue,
+    public StageScriptState(StageScriptBank bank, IReadOnlyDictionary<string, StageObjectPlacement> placements, StageTimeline timeline, string zone,
         Func<uint, double, StageBeamValue?>? beams = null, IReadOnlyDictionary<uint, StageScriptActorDefinition>? actors = null, StageLighting? lighting = null,
         Func<StageMaterialTarget, Vector4?>? materialDefaults = null)
     {
         _bank = bank;
         _placements = placements;
-        _venue = venue;
+        _zone = zone;
         _beams = beams;
         _timeline = timeline;
         _lighting = lighting;
         _materialDefaults = materialDefaults;
         _actorDefinitions = actors ?? new Dictionary<uint, StageScriptActorDefinition>();
-        var zone = venue.StartsWith("gh3.") ? "z_" + venue.Substring(4) : venue;
         _sourceLighting = lighting != null && bank.Values.ContainsKey(Gh3Checksum.Value(zone + "_lightshow_mapping"));
         _pyroScript = bank.Values.GetValueOrDefault(Gh3Checksum.Value(zone + "_lightshow_mapping"))?.Field("Pyro_Script")?.Integer ?? 0;
         bool ScriptCue(StageCue cue)
@@ -93,10 +93,9 @@ internal sealed class StageScriptState : IDisposable
         foreach (var (id, placement) in _placements) _objects.Add(Convert.ToUInt32(id, 16), new(placement));
         _runtime = new(_bank.Values, Native, time: Math.Min(_timeline.Start, _commands.FirstOrDefault()?.Time ?? 0)) { Failed = (_, error) => _diagnostics.Add(error.Message) };
         _runtime.Tempo = _timeline.TempoAt;
-        var zone = _venue.StartsWith("gh3.") ? "z_" + _venue.Substring(4) : _venue;
-        _lightShow = _sourceLighting ? new(_bank, _runtime, _lighting!, zone, message => _diagnostics.Add(message)) { NodeFlagChanged = ChangeNodeFlag } : null;
+        _lightShow = _sourceLighting ? new(_bank, _runtime, _lighting!, _zone, message => _diagnostics.Add(message)) { NodeFlagChanged = ChangeNodeFlag } : null;
         Materials = new(_bank, _runtime, message => _diagnostics.Add(message), _materialDefaults);
-        LightScene = new(_bank.NodeValues.Values, _runtime, _lighting, _bank.Values.GetValueOrDefault(Gh3Checksum.Value(zone + "_snapshots")));
+        LightScene = new(_bank.NodeValues.Values, _runtime, _lighting, _bank.Values.GetValueOrDefault(Gh3Checksum.Value(_zone + "_snapshots")));
         RenderControls = new(_lighting, id => _objects.TryGetValue(id, out var obj) && obj.Exists, message => _diagnostics.Add(message));
         Movies = new(_bank, message => _diagnostics.Add(message));
         Tesla = new(_runtime, message => _diagnostics.Add(message));
@@ -462,9 +461,8 @@ internal sealed class StageScriptState : IDisposable
         }
         if (Is("GetPakManCurrent") || Is("GetPakManCurrentName"))
         {
-            var zone = _venue.StartsWith("gh3.") ? "z_" + _venue.Substring(4) : _venue;
             return new(true, new[] { new Gh3QbField(Gh3Checksum.Value(Is("GetPakManCurrent") ? "pak" : "pakname"),
-                Is("GetPakManCurrent") ? new(Gh3QbType.Checksum, -1, _runtime.Intern(zone)) : new(Gh3QbType.String, -1, zone)) });
+                Is("GetPakManCurrent") ? new(Gh3QbType.Checksum, -1, _runtime.Intern(_zone)) : new(Gh3QbType.String, -1, _zone)) });
         }
         if (_actors.TryGetValue(context.Object, out var actor) && actor.Execute(command, parameters, _runtime.Time) is { } animation)
         {

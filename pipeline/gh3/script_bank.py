@@ -24,6 +24,23 @@ def definitions(files, command="qb-data"):
         )
 
 
+def tokens(qb, name):
+    """The tokens of one script of a QB file: [{"op": hex opcode, "value": decoded QB value or None}]."""
+    executable = songtool.path()
+    with tempfile.TemporaryDirectory(prefix="gh3-scripts-", dir="/tmp/opencode") as temporary:
+        path = Path(temporary) / "script.qb"
+        path.write_bytes(qb)
+        rows = json.loads(
+            subprocess.run(
+                ["dotnet", str(executable), "script-tokens", str(path), name],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+        )
+    return [{"op": row["op"], "value": None if row["value"] is None else json.loads(row["value"])} for row in rows]
+
+
 def references(files):
     """{script checksum: [checksums it refers to]}."""
     return {

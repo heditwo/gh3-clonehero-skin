@@ -32,6 +32,10 @@ internal sealed class StagePack
     public Dictionary<string, StagePlacement> Waypoints { get; set; } = new();
     public Dictionary<string, StagePlacement[]> Effects { get; set; } = new();
     public StageCrowdMember[] Crowd { get; set; } = Array.Empty<StageCrowdMember>();
+    // The band plays the small-stage intro and win animations (placements.json smallVenue, GH3 UseSmallVenueAnims).
+    public bool SmallVenue { get; set; }
+    // The GH3 zone name of the venue scripts (scripts.json zone): GetPakManCurrent and the zone definitions.
+    public string Zone { get; set; } = "";
 
     public static bool ValidId(string id) => Regex.IsMatch(id, @"\A[a-z0-9][a-z0-9.-]{0,95}\z");
 
@@ -39,7 +43,7 @@ internal sealed class StagePack
     {
         var pack = JsonSerializer.Deserialize<StagePack>(File.ReadAllText(Path.Combine(directory, "pack.json")),
             Packages.PackageJson.CaseInsensitive);
-        if (pack?.Version != 1 || !ValidId(pack.Id) || pack.Library != "gh3-band-v1" || pack.Band.Count is < 1 or > 4 ||
+        if (pack?.Version != 1 || !ValidId(pack.Id) || !Packages.PackageManifest.ValidId(pack.Library) || !Regex.IsMatch(pack.Zone, @"\A[A-Za-z0-9_]{0,64}\z") || pack.Band.Count is < 1 or > 4 ||
             pack.Band.Keys.Any(r => r is not ("guitarist" or "bassist" or "singer" or "drummer")) ||
             pack.Band.Values.Concat(pack.Waypoints.Values).Any(p => !p.Valid) ||
             pack.Effects.Any(e => e.Key is not ("pyro" or "sparks" or "fireworks" or "smoke") || e.Value.Length > 64 || e.Value.Any(p => !p.Valid)))

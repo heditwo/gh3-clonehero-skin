@@ -47,14 +47,9 @@ internal sealed partial class StageLipSync
     private const float GainCeiling = 1.4f;
     private const float GainCurve = 0.6f;
     private const double EnvelopeLead = 0.04;
-    private static readonly string[] MouthBones =
-    {
-        "Bone_Jaw", "Bone_Mouth_L", "Bone_Mouth_R", "Bone_Lip_Lower_Mid", "Bone_Lip_Upper_Mid", "Bone_Cheek_L", "Bone_Cheek_R",
-        "Bone_Cheek_Upper_L", "Bone_Cheek_Upper_R", "Bone_Lip_Lower_Corner_L", "Bone_Lip_Lower_Corner_R", "Bone_Lip_Lower_L",
-        "Bone_Lip_Lower_R", "Bone_Lip_Upper_Corner_L", "Bone_Lip_Upper_Corner_R", "Bone_Lip_Upper_L", "Bone_Lip_Upper_R", "Bone_Tongue"
-    };
+    private static readonly string[] MouthBones = Packages.HumanoidRoles.Gh3Mouth;
     private const int LowerLipMiddle = 3, UpperLipMiddle = 4;
-    private static readonly string[] LidBones = { "Bone_Eyelid_Upper_L", "Bone_Eyelid_Upper_R" };
+    private static readonly string[] LidBones = Packages.HumanoidRoles.Gh3Lids;
     // Tuned: the dominance of each viseme. The lip consonants (f, v, w, r, sh) show strongly between two vowels; the
     // tongue consonants (t, d, n, s, z, l, k, g, th) change the lips little, so the jaw stays open in legato singing.
     private static readonly float[] Dominance = { 1, 1, 1, 1, 1, 1, 1, 1, 0, 1.4f, 0.5f, 0.3f, 1.2f, 0.4f, 1, 0.3f };

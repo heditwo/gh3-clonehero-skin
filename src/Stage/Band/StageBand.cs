@@ -342,8 +342,7 @@ internal sealed partial class StageBand : IDisposable
         MelonLogger.Msg(FormattableString.Invariant($"[trace] drum t={time:F3} note={_drumHits[_drumHit - 1]:F3} tipMiss={rig.StickTipMiss[0] * 100:F2},{rig.StickTipMiss[1] * 100:F2}cm ") +
             FormattableString.Invariant($"tipHeight={rig.StickTips[0].Y:F3},{rig.StickTips[1].Y:F3} handMiss={rig.HandMiss * 100:F2}cm"));
     }
-    private static readonly string[] TraceBones = { "bone_pelvis", "bone_head", "Bone_IK_Hand_Guitar_R", "Bone_IK_Hand_Guitar_L" };
-    private static readonly string[] TraceFaceBones = { "Bone_Jaw", "Bone_Eyelid_Upper_L", "Bone_Lip_Lower_Mid", "Bone_Brow_L" };
+    private static readonly string[] TraceFaceBones = Packages.HumanoidRoles.Gh3TraceFace.Select(Gh3Checksum.Of).ToArray();
 
     // GH3_SKIN_TRACE: the body clip and its local pose of a few bones, to compare with the GH3 clip on the GH3 skeleton; for
     // the singer also the song facial clip and the local pose of a few face bones.
@@ -352,9 +351,12 @@ internal sealed partial class StageBand : IDisposable
         var raw = new BandPose[(player.Retarget?.Source ?? player.Animation).Parents.Length];
         var (segment, clipTime) = player.Performance!.SampleClip(time, raw);
         var bones = player.Definition!.Bones;
-        string Values(string[] names, BandPose[] pose) => string.Join(";", names.Select(name => Array.IndexOf(bones, Gh3Checksum.Of(name))).Where(i => i >= 0).Select(i =>
+        string Values(IEnumerable<string> checksums, BandPose[] pose) => string.Join(";", checksums.Select(checksum => Array.IndexOf(bones, checksum)).Where(i => i >= 0).Select(i =>
             FormattableString.Invariant($"{i}:{pose[i].Position.X:F6},{pose[i].Position.Y:F6},{pose[i].Position.Z:F6},{pose[i].Rotation.X:F6},{pose[i].Rotation.Y:F6},{pose[i].Rotation.Z:F6},{pose[i].Rotation.W:F6}")));
-        var values = Values(TraceBones, raw);
+        // The hips, the head, and the right and left hand IK targets of the rig.
+        var traced = new[] { Packages.HumanoidRoles.Gh3["hips"], Packages.HumanoidRoles.Gh3["head"] }
+            .Concat(new[] { "right", "left" }.Select(hand => player.Motion.Ik.FirstOrDefault(chain => chain.Hand == hand)?.Target ?? ""));
+        var values = Values(traced, raw);
         var face = player.Role == "singer" ? player.Performance.SampleFace(time, raw) : null;
         MelonLogger.Msg(FormattableString.Invariant($"[trace] band t={time:F3} role={player.Role} profile={ProfileName(player.Motion)} ") +
             FormattableString.Invariant($"set={(player.Motion.IsLibrary ? "library" : player.Motion.SetName)} stance={segment.Stance} clip={segment.Clip} clipTime={clipTime:F4} ") +

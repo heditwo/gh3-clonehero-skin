@@ -428,7 +428,7 @@ internal sealed partial class GameplayStage
             {
                 var lastNote = LastNoteEnd(player);
                 if (lastNote is { } end) WinTime = StageShowFlow.WinTime(end);
-                _timeline = StageShowFlow.Apply(_timeline, pack.Id, lastNote == null ? null : WinTime);
+                _timeline = StageShowFlow.Apply(_timeline, pack.SmallVenue, lastNote == null ? null : WinTime);
                 ShowFlow = true;
                 var manager = player.gameManager;
                 // Clone Hero ends the song at songLength; the win transition needs its full 8 s first.
@@ -442,11 +442,11 @@ internal sealed partial class GameplayStage
             var (clips, clipWorker, clipWait) = _band.WaitForClips();
             steps.Step("band clips");
             _actors.SetTimeline(_timeline);
-            _audio = StageAudio.Load(Path.Combine(library, "audio"), _timeline, pack.Id, GlobalVariables.instance?.isPracticeEnabled == true);
+            _audio = StageAudio.Load(Path.Combine(library, "audio"), _timeline, pack.Zone, GlobalVariables.instance?.isPracticeEnabled == true);
             steps.Step("audio");
             var stageLighting = lighting == null ? null : new StageLighting(lighting, _timeline);
             steps.Step("lighting");
-            _scripts = StageScripts.Load(scriptBank, _assets, _fixtures, _actors, stageLighting, _timeline, pack.Id);
+            _scripts = StageScripts.Load(scriptBank, _assets, _fixtures, _actors, stageLighting, _timeline, pack.Zone);
             steps.Step("scripts");
             if (_scripts != null)
             {
@@ -488,7 +488,7 @@ internal sealed partial class GameplayStage
             steps.Step("collection");
             steps.Finish("stage loaded");
             LoadTiming.FlushSections("stage load");
-            MelonLogger.Msg($"GH3 stage loaded: {_assets.Definition.Name}");
+            MelonLogger.Msg($"GH3 stage loaded: {_assets.Definition.Name} (zone {(pack.Zone.Length > 0 ? pack.Zone : "none")}, {(pack.SmallVenue ? "small" : "normal")} venue intro and win)");
             MelonLogger.Msg($"GH3 stage load time: {loadClock.Elapsed.TotalMilliseconds:0} ms on the main thread " +
                 $"({StageAssets.TexturesUploaded - texturesBefore.Item1} cache textures in {StageAssets.TextureMilliseconds - texturesBefore.Item2:0} ms; " +
                 $"{clips} band clips decoded in {clipWorker:0} ms on worker threads while the main thread waited {clipWait:0} ms; managed heap {GC.GetTotalMemory(false) / BytesPerMegabyte:0} MB)");

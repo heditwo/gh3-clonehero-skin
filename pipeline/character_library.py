@@ -8,15 +8,15 @@ and an animation set: `anim_set` (the `<name>_animations` struct of guitar_anima
 the outfit is 2. create_guitarist (guitar_character.qb) copies the animation set fields of the profile; the bassist of a
 co-op game is made by create_guitarist too, so a character plays the bass with its own set.
 
-- Profiles: one for each distinct (skeleton, ragdoll, IK, scale, animation set). Axel's first outfit is the library
-  profile gh3-guitarist-axel-v1 and is not repeated here.
+- Profiles: one for each distinct (skeleton, ragdoll, IK, scale, animation set), also Axel's first outfit (its rig is
+  the rig of the fixed library profile gh3-guitarist-axel-v1, so its ID has `-outfit1`).
 - Animation sets: one for each distinct (anim_set, strum_anims, finger_anims, fret_anims); the God of Rock uses Axel's,
   the Grim Ripper Morello's clips with the `Normal` strums. The clips of a set come from its anim PAK, the model PAK
   (intro and win clips), the hand clips of perm_anims, and Judy's walk clips (`normal_walk_data`; GH3 plays them on
   every skeleton, the library band moves them to Axel's rig). All sets share one clip folder: GH3 shares clips by name,
   and a name has the same data in every PAK.
-- Clips are stored as local transforms on the library rig gh3-guitarist-axel-v1 (`clipRig`), as the library band clips
-  are. GH3 keys translations relative to the skeleton rest pose (pipeline.gh3.band_formats.sample_animation), so a
+- Clips are stored as local transforms on the rig of the library profile gh3-guitarist-axel-v1 (`clipRig`), as the
+  library band clips are. GH3 keys translations relative to the skeleton rest pose (pipeline.gh3.band_formats.sample_animation), so a
   profile plays a clip with the offset (profile rest position - clip rig rest position) on each position track; this is
   the GH3 result on the profile's own skeleton.
 - Singers: create_band (guitar_character.qb) selects the vocalist profile from the `singer` field of the song (Singer,
@@ -26,9 +26,11 @@ co-op game is made by create_guitarist too, so a character plays the bass with i
   singer_male_animations. vocalist_static_tree uses singer_IK_Params for every vocalist. The singer clips are stored on
   the GH3_Singer_Male rig (the clip rig `singer` of `clipRigs`, the rig of gh3-singer-male-v1), so that the song facial
   clips of the band library member and the set clips take the same offsets.
-- Hair: all accessory chains of the ragdoll (pipeline.library.hair, all_chains). The God of Rock ragdoll and mesh fit
-  the accessory bones of GH3_Guitarist_RockGod, not those of the skeleton of his profile (ACCESSORY_SKELETONS). On the PC port, create_guitarist does
-  not call ragdoll_setaccessorybones for the Grim Ripper (`IsWinPort`), so his profile has no hair.
+- Hair: all accessory chains of the ragdoll (pipeline.library.hair, all_chains). GH3 has a skeleton named for each
+  guitarist profile (`GH3_Guitarist_<name>`, `_2` for outfit 2). When the profile names another skeleton (the God of Rock
+  names Axel's), the ragdoll and the mesh fit the accessory bones of the skeleton of its name: the rig takes them. On the
+  PC port, create_guitarist does not call ragdoll_setaccessorybones for the characters that its `IsWinPort` branch
+  excludes (the Grim Ripper), so their profiles have no hair (pc_port_without_accessories).
 
 Output: assets/libraries/gh3-characters-v1/ (characters.json, clips/<clip>.bin.gz in GH3CLP01).
 
@@ -43,33 +45,38 @@ from pathlib import Path
 
 import numpy as np
 
-from pipeline.characters import CLIP_RIG_PROFILE, SINGERS, outfits, profile_id, qb_items, slug
+from pipeline.characters import SINGERS, outfits, profile_id, qb_items, slug
 from pipeline.gh3.band_formats import clip_bone_count, skeleton
 from pipeline.gh3.data import Source, script
 from pipeline.gh3.formats import find_array, find_struct, key
 from pipeline.gh3.havok import Ragdoll
-from pipeline.library import hair as hair_export
+from pipeline.gh3.script_bank import tokens
+from pipeline.library import hair as hair_export, rigs
 from pipeline.library.direction import flatten, hand_layers, write_clip
 from pipeline.package.profiles import CHARACTER_LIBRARY_ID
 from pipeline.paths import CHARACTER_LIBRARY, GH3_DATA
 
 CLIP_RIG = "GH3_Guitarist_Axel"
+# The fixed profile of the band library on CLIP_RIG (the band library guitarist), for the clipRig label.
+CLIP_RIG_PROFILE = "gh3-guitarist-axel-v1"
 SINGER_CLIP_RIG = "GH3_Singer_Male"
 SINGER_CLIP_RIG_ID = "singer"
 SINGER_CLIP_RIG_PROFILE = "gh3-singer-male-v1"
-# GH3 vocalist_static_tree (guitar_anim_tree.qb): the IK chains of every vocalist.
-SINGER_IK = ("singer", "singer_IK_Params")
+# GH3 IK parameter arrays (guitar_anim_tree.qb) of the profiles: `ik_params` of a guitarist profile (default
+# Hero_Ik_params), and singer_IK_Params of vocalist_static_tree for every vocalist. The IK ID is the start of the name.
+IK_ARRAYS = ("Hero_Ik_params", "Satan_Ik_params", "singer_IK_Params")
+DEFAULT_IK = "Hero_Ik_params"
+SINGER_IK = "singer_IK_Params"
 # The IDs of the singer animation sets (the `<name>_animations` structs of guitar_animation_data_singer_*.qb).
 SINGER_SETS = {"singer_male_animations": "singer-male", "singer_female_animations": "singer-female"}
-# create_guitarist skips ragdoll_setaccessorybones for this character on the PC port (IsWinPort).
-NO_ACCESSORY_PHYSICS = {"Ripper"}
-# The God of Rock profile names Axel's skeleton, and create_band_member gives that skeleton to the model and the ragdoll.
-# His ragdoll and his mesh fit the accessory bones of GH3_Guitarist_RockGod (no profile names it): the hair hangs from
-# the head there, and from the chest on Axel's skeleton. His rig takes those accessory bones; the other bones stay Axel's.
-ACCESSORY_SKELETONS = {"RockGod": "GH3_Guitarist_RockGod"}
-IK_FIELDS = ("bone0", "bone1", "bone2")
-# GH3: ragdoll of Axel's first outfit (Musician_Profiles), the hair of the library guitarist.
-AXEL_RAGDOLL = 0xEAEBB800
+# GH3 script opcodes (src/Gh3/Gh3QbConstants.cs) of the IsWinPort branch of create_guitarist.
+OP_FAST_IF = "47"
+OP_NOT = "39"
+OP_OPEN = "0e"
+OP_ARGUMENT = "2d"
+OP_EQUALS = "07"
+OP_NAME = "16"
+QB_TYPE_CHECKSUM = 13
 
 
 def guitarists(profiles):
@@ -107,23 +114,25 @@ def with_accessories(rig, source, accessories):
     return names, parents, positions, rotations
 
 
-def ik_chains(data, name):
-    chains = []
-    for row in find_array(data, name):
-        chains.append(
-            {
-                "bones": [f"{row[key(f)]:08x}" for f in IK_FIELDS],
-                "target": f"{row[key('boneTarget')]:08x}",
-                "hinge": [
-                    float(row[key("HingeAxis")][0]),
-                    float(row[key("HingeAxis")][1]),
-                    float(row[key("HingeAxis")][2]),
-                ],
-                "cosMax": float(row[key("CosMaxHingeAngle")]),
-                "cosMin": float(row[key("CosMinHingeAngle")]),
-            }
-        )
-    return chains
+def pc_port_without_accessories(scripts):
+    """The `character_id` checksums for which create_guitarist (guitar_character.qb) does not call
+    ragdoll_setaccessorybones on the PC port: `if IsWinPort` then `if NOT (<character_id> = X)` before the call."""
+    code = tokens(script(scripts, "guitar_character"), "create_guitarist")
+
+    def name(index):
+        token = code[index] if index < len(code) else None
+        return token["value"][1] if token and token["op"] == OP_NAME and token["value"][0] == QB_TYPE_CHECKSUM else None
+
+    port = next(
+        i for i in range(1, len(code)) if code[i - 1]["op"] == OP_FAST_IF and name(i) == f"0x{key('IsWinPort'):08x}"
+    )
+    call = next(i for i in range(port, len(code)) if name(i) == f"0x{key('ragdoll_setaccessorybones'):08x}")
+    pattern = [OP_FAST_IF, OP_NOT, OP_OPEN, OP_ARGUMENT, OP_NAME, OP_EQUALS, OP_NAME]
+    for i in range(port, call - len(pattern)):
+        ops = [code[i + k]["op"] for k in range(len(pattern))]
+        if ops == pattern and name(i + 4) == f"0x{key('character_id'):08x}":
+            return {int(name(i + 6), 16)}
+    raise ValueError("create_guitarist has no IsWinPort exclusion before ragdoll_setaccessorybones")
 
 
 def struct_source(scripts, checksum):
@@ -159,6 +168,7 @@ class _Builder:
         }
         self.common = script(self.scripts, "guitar_animation_data")
         self.anim_tree = script(self.scripts, "guitar_anim_tree")
+        self.no_accessories = pc_port_without_accessories(self.scripts)
         self.accessories = hair_export.accessory_bones(self.scripts)
         self.clip_rig = skeleton(self.rigs[key(CLIP_RIG)])
         self.singer_rig = skeleton(self.rigs[key(SINGER_CLIP_RIG)])
@@ -169,12 +179,23 @@ class _Builder:
         self.library = {
             "version": 1,
             "library": CHARACTER_LIBRARY_ID,
-            "clipRig": {"profile": CLIP_RIG_PROFILE, **unity_rig(self.clip_rig)},
-            "clipRigs": {SINGER_CLIP_RIG_ID: {"profile": SINGER_CLIP_RIG_PROFILE, **unity_rig(self.singer_rig)}},
+            "clipRig": {
+                "profile": CLIP_RIG_PROFILE,
+                **unity_rig(self.clip_rig),
+                "points": rigs.points(self.clip_rig[0]),
+            },
+            "clipRigs": {
+                SINGER_CLIP_RIG_ID: {
+                    "profile": SINGER_CLIP_RIG_PROFILE,
+                    **unity_rig(self.singer_rig),
+                    "points": rigs.points(self.singer_rig[0]),
+                }
+            },
             "profiles": {},
             "animations": {},
             "hair": {},
             "ik": {},
+            "constraints": rigs.constraints(self.anim_tree),
         }
         self.sets, self.clips, self.clip_bytes = {}, {}, {}
 
@@ -265,9 +286,12 @@ class _Builder:
             self.library["hair"][hair] = {**member, "ragdoll": hair}
         return hair
 
-    def add_ik(self, ik, qb_name):
+    def add_ik(self, qb_name):
+        """The IK ID of a GH3 IK parameter array (by checksum or name): the start of its name, for example `hero`."""
+        name = next(n for n in IK_ARRAYS if key(n) == (key(qb_name) if isinstance(qb_name, str) else qb_name))
+        ik = name.lower().split("_ik_")[0]
         if ik not in self.library["ik"]:
-            self.library["ik"][ik] = ik_chains(self.anim_tree, qb_name)
+            self.library["ik"][ik] = rigs.ik_chains(self.anim_tree, name)
         return ik
 
     def add_guitarists(self):
@@ -275,8 +299,7 @@ class _Builder:
         for profile in guitarists(self.profiles):
             name = profile[key("name")]
             animations = self.guitarist_set(profile)
-            ik_name = profile.get(key("ik_params"), key("Hero_Ik_params"))
-            ik = self.add_ik("satan" if ik_name == key("Satan_Ik_params") else "hero", ik_name)
+            ik = self.add_ik(profile.get(key("ik_params"), DEFAULT_IK))
             scale = uniform_scale(profile)
             for outfit, rig_name, ragdoll_name, second in outfits(profile):
                 identifier = profile_id(name, second)
@@ -286,14 +309,11 @@ class _Builder:
                         raise ValueError(f"profile {identifier} has two definitions")
                     continue
                 seen[identifier] = signature
-                if identifier == CLIP_RIG_PROFILE:
-                    if rig_name != key(CLIP_RIG) or ragdoll_name != AXEL_RAGDOLL:
-                        raise ValueError("Axel's first outfit is not the library profile")
-                    continue
                 rig = skeleton(self.rigs[rig_name])
-                if name in ACCESSORY_SKELETONS:
-                    rig = with_accessories(rig, skeleton(self.rigs[key(ACCESSORY_SKELETONS[name])]), self.accessories)
-                hair = None if name in NO_ACCESSORY_PHYSICS else self.add_hair(ragdoll_name, rig)
+                named = key(f"GH3_Guitarist_{name}{'_2' if second else ''}")
+                if named != rig_name and named in self.rigs:
+                    rig = with_accessories(rig, skeleton(self.rigs[named]), self.accessories)
+                hair = None if key(name) in self.no_accessories else self.add_hair(ragdoll_name, rig)
                 self.add_profile(
                     identifier,
                     "guitarist",
@@ -313,7 +333,7 @@ class _Builder:
             rig_name, ragdoll_name = profile[key("Skeleton")], profile[key("ragdoll")]
             rig = skeleton(self.rigs[rig_name])
             animations = self.singer_set(profile)
-            ik = self.add_ik(*SINGER_IK)
+            ik = self.add_ik(SINGER_IK)
             hair = self.add_hair(ragdoll_name, rig)
             self.add_profile(
                 identifier, "singer", label, 1, rig_name, rig, uniform_scale(profile), animations, hair, ik

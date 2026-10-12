@@ -8,7 +8,7 @@ internal static class ShowFlowLogicTests
         var source = new StageTimeline(new[] { new StageCue(0, "gh3-camera", "85", 12), new StageCue(30, "gh3-camera", "84") }, "test");
         var win = StageShowFlow.WinTime(20);
         Check(Math.Abs(win - 23.1) < 1e-9, "song_won follows the last note by GH3's PC win delays");
-        var timeline = StageShowFlow.Apply(source, "gh3.dive", win);
+        var timeline = StageShowFlow.Apply(source, smallVenue: true, win);
         Check(timeline.Start == -StageShowFlow.IntroLength, "the intro transition starts 8 s before the song");
         Check(!timeline.Cameras.Any(cue => cue.Time >= win && cue.Value != "win"), "note cameras do not cut away from the win camera");
         Check(timeline.Track("stance", "guitarist").First().Value == "intro_smstg", "small venues use the small-stage intro stance");
@@ -17,7 +17,7 @@ internal static class ShowFlowLogicTests
             "play_win_anims uses the small-stage win stance only for the guitarists");
         Check(timeline.PlaybackCues.Count(cue => cue.Type == "gh3-audio") == 7, "intro and win sounds are scheduled");
         Check(!timeline.Cameras.Any(cue => cue.Value == "default"), "a note camera at the end of the intro takes over from it");
-        var plain = StageShowFlow.Apply(new StageTimeline(Array.Empty<StageCue>(), "test"), "gh3.budokan", null);
+        var plain = StageShowFlow.Apply(new StageTimeline(Array.Empty<StageCue>(), "test"), smallVenue: false, null);
         Check(plain.Track("stance", "bassist").First().Value == "intro", "large venues use the full intro stance");
         Check(plain.Cameras.Any(cue => cue.Value == "default" && cue.Time == 0), "without a note camera the default cameras return at song start");
 
@@ -38,7 +38,7 @@ internal static class ShowFlowLogicTests
         member.Groups["stance_a/transitions/win"] = new[] { "00000001" };
         member.Groups["win/idle/normal/med"] = new[] { "00000002" };
         var won = new PerformancePlayer("bassist", "", member, new[] { new BandPose(Vector3.Zero, Quaternion.Identity) },
-            StageShowFlow.Apply(new StageTimeline(Array.Empty<StageCue>(), "test"), "gh3.budokan", 10));
+            StageShowFlow.Apply(new StageTimeline(Array.Empty<StageCue>(), "test"), smallVenue: false, 10));
         Check(won.At(10.1).Stance == "win" && won.At(10.1).Clip == "00000002", "the win animation starts without a stance transition");
 
         var animation = new YouRockAnimation(174);

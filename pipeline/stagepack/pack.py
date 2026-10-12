@@ -601,6 +601,7 @@ STAGE_PACK_FIELDS = {
     "actors",
     "crowd",
     "scripts",
+    "smallVenue",
 }
 STAGE_PACK_REQUIRED = {"version", "kind", "id", "name", "library", "model", "band", "cameras"}
 SCRIPTS_FIELDS = {
@@ -613,7 +614,10 @@ SCRIPTS_FIELDS = {
     "prefixes",
     "lightVolumes",
     "movies",
+    "zone",
 }
+# The GH3 zone name of a script bank (scripts.json `zone`, for example z_dive).
+ZONE_NAME = re.compile(r"[A-Za-z0-9_]{1,64}")
 ACTOR_FIELDS = {
     "model",
     "transform",
@@ -659,6 +663,8 @@ def _check_manifest(manifest):
         raise ValueError("Invalid stage pack identity or version")
     if not isinstance(manifest["name"], str) or not manifest["name"].strip():
         raise ValueError("A stage needs a display name")
+    if not isinstance(manifest.get("smallVenue", False), bool):
+        raise ValueError("smallVenue must be true or false")
     if not manifest["band"] or set(manifest["band"]) - ROLES:
         raise ValueError("A stage needs one to four known performer placements")
     for placement in manifest["band"].values():
@@ -827,9 +833,12 @@ def _copy_pack_file(source, folder, file, inputs, exists_message):
 
 
 def _compile_scripts(source, folder, path, inputs):
-    """Check and copy scripts.json and the script textures and movies it names."""
+    """Check and copy scripts.json and the script textures and movies it names; returns the GH3 zone name or ""."""
     scripts = load_json(path)
     fields(scripts, SCRIPTS_FIELDS, {"version", "definitions"})
+    zone = scripts.get("zone", "")
+    if not isinstance(zone, str) or zone and not ZONE_NAME.fullmatch(zone):
+        raise ValueError("Invalid stage zone name")
     if (
         scripts["version"] != 1
         or not isinstance(scripts["definitions"], dict)
@@ -903,6 +912,7 @@ def _compile_scripts(source, folder, path, inputs):
                 raise ValueError("Invalid movie frame bank")
         destination_movie.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(movie, destination_movie)
+    return zone
 
 
 def _write_fixture_models(folder, fixture_models, materials, texture_dir):
@@ -1066,10 +1076,11 @@ def compile_stage(source, destination):
         definition["cameraPosition"] = [start[0], start[1] + 3, start[2] - 10]
         definition["cameraTarget"] = [start[0], start[1] + 1, start[2]]
         write_json(folder / "stage.json", definition)
+        zone = ""
         if "scripts" in manifest:
             path = relative(source, manifest["scripts"])
             inputs.append(path)
-            _compile_scripts(source, folder, path, inputs)
+            zone = _compile_scripts(source, folder, path, inputs)
         _write_fixture_models(folder, fixture_models, materials, texture_dir)
         if fixtures:
             write_json(folder / "fixtures" / "fixtures.json", {"version": 1, "housings": fixtures})
@@ -1089,6 +1100,8 @@ def compile_stage(source, destination):
             "waypoints": waypoints,
             "effects": effects,
             "crowd": crowd,
+            "smallVenue": manifest.get("smallVenue", False),
+            "zone": zone,
             "sources": {str(p.relative_to(source)): sha256(p.read_bytes()).hexdigest() for p in inputs},
         }
         pack["files"] = {

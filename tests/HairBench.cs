@@ -116,6 +116,7 @@ internal static class HairBench
                 Member = new PerformanceMember { Bones = profile.Bones, Groups = set.Groups, Layers = set.Layers, Clips = set.Clips },
                 ClipDirectory = Path.Combine(folder, "clips"),
                 Offsets = CharacterMotion.RestOffsets(profile.Bones, profile.Bind, library.SetClipRigs[profile.Animations].Bones, library.SetClipRigs[profile.Animations].Bind),
+                Ik = bank.Ik[profile.Ik], Constraints = bank.Constraints,
             };
             var player = new PerformancePlayer(profile.Role, "", motion.Member, animation.BindPose, timeline, parents, performance.Constants, motion);
             player.Prepare();
@@ -235,7 +236,7 @@ internal static class HairBench
             (_, extraBind, joints, colliders) = CharacterChainRig.Plan(model, identity, identity);
             extraBind = Array.Empty<BandPose>();
             map = identity;
-            retarget = new CharacterRetarget(profile.Bones, animation.Parents, animation.BindPose, new RetargetSkeleton
+            retarget = new CharacterRetarget(profile.Bones, animation.Parents, animation.BindPose, library.SetClipRigs[profile.Animations].Points, new RetargetSkeleton
             {
                 Bones = skeleton.Names, Parents = skeleton.Parents,
                 Bind = skeleton.Bind.Select(b => new BandPose(new(b[0], b[1], b[2]), Quaternion.Normalize(new(b[3], b[4], b[5], b[6])))).ToArray(),
@@ -264,6 +265,7 @@ internal static class HairBench
             Member = new PerformanceMember { Bones = profile.Bones, Groups = set.Groups, Layers = set.Layers, Clips = set.Clips },
             ClipDirectory = Path.Combine(folder, "clips"),
             Offsets = CharacterMotion.RestOffsets(profile.Bones, profile.Bind, library.SetClipRigs[profile.Animations].Bones, library.SetClipRigs[profile.Animations].Bind),
+            Ik = bank.Ik[profile.Ik], Constraints = bank.Constraints,
         };
         var player = new PerformancePlayer(profile.Role, "", motion.Member, animation.BindPose, timeline, animation.Parents, performance.Constants, motion);
         player.Prepare();

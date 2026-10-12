@@ -8,6 +8,11 @@
   "required": ["version", "definitions"],
   "properties": {
     "version": { "const": 1 },
+    "zone": {
+      "description": "Venue only: the GH3 zone name of the script bank (for example z_dive). The scripts read it with GetPakManCurrent, and the venue definitions use it as their name prefix. Absent: no zone.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_]{1,64}$"
+    },
     "definitions": {
       "type": "object",
       "maxProperties": 50000,

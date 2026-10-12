@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.gh3skin.invalid/v1/catalog.schema.json",
   "title": "Library catalog (catalog.json)",
-  "description": "For each band role: rig bones, action groups, layers, and clips. Clip files: direction/<role>/<clip>.q48.br.",
+  "description": "For each band role: rig bones, rig points, IK chains, action groups, layers, and clips; the rig constraints. Clip files: direction/<role>/<clip>.q48.br.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -35,6 +35,9 @@
           "$ref": "library-common.schema.json#/$defs/member"
         }
       }
+    },
+    "constraints": {
+      "$ref": "library-common.schema.json#/$defs/rigConstraints"
     }
   }
 }

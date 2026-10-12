@@ -16,18 +16,17 @@ internal static class StageShowFlow
 
     public static double WinTime(double lastNoteEnd) => lastNoteEnd + WinDelay;
 
-    // UseSmallVenueAnims (guitar_character.qb).
-    public static bool SmallVenue(string venue) => venue is "gh3.party" or "gh3.dive" or "gh3.video" or "gh3.prison" or "gh3.hell";
-
-    public static StageTimeline Apply(StageTimeline timeline, string venue, double? winTime)
+    // `smallVenue`: the stage's placements.json smallVenue (GH3 UseSmallVenueAnims, guitar_character.qb): the small-stage
+    // intro and win animations.
+    public static StageTimeline Apply(StageTimeline timeline, bool smallVenue, double? winTime)
     {
         var cues = new List<StageCue>(timeline.Cues);
-        cues.AddRange(Intro(timeline, venue));
+        cues.AddRange(Intro(timeline, smallVenue));
         if (winTime is { } win)
         {
             // play_outro kills the camera-cut iterator, so later note cameras do not cut away from the win camera.
             cues.RemoveAll(cue => cue.Type is "camera" or "gh3-camera" && cue.Time >= win);
-            cues.AddRange(Win(win, venue));
+            cues.AddRange(Win(win, smallVenue));
         }
         return new StageTimeline(cues, timeline.Source)
         {
@@ -36,7 +35,7 @@ internal static class StageShowFlow
         };
     }
 
-    private static IEnumerable<StageCue> Intro(StageTimeline timeline, string venue)
+    private static IEnumerable<StageCue> Intro(StageTimeline timeline, bool smallVenue)
     {
         const double start = -IntroLength;
         // EndWithDefaultCamera with SyncWithNoteCameras: a note camera less than 2 s after the transition takes over.
@@ -45,7 +44,7 @@ internal static class StageShowFlow
         yield return new(start, "camera", "intro", end - start);
         if (noteCamera == null) yield return new(0, "camera", "default");
         // play_intro_anims: every member changes to its intro stance at once, then queues Stance_A for the end of that animation.
-        var intro = SmallVenue(venue) ? "intro_smstg" : "intro";
+        var intro = smallVenue ? "intro_smstg" : "intro";
         foreach (var role in Members)
         {
             yield return new(start, "stance", role == "drummer" ? "intro" : intro, Role: role, Immediate: true);
@@ -60,7 +59,7 @@ internal static class StageShowFlow
         yield return Audio(-0.2, "SoundEvent", ("event", "Song_Intro_Kick_SFX")); // GH3: see above
     }
 
-    private static IEnumerable<StageCue> Win(double time, string venue)
+    private static IEnumerable<StageCue> Win(double time, bool smallVenue)
     {
         // GuitarEvent_SongWon_Spawned and Common_SongWon_Transition.
         yield return Audio(time, "SoundEvent", ("event", "You_Rock_End_SFX"));
@@ -68,7 +67,7 @@ internal static class StageShowFlow
         yield return Audio(time + HighwayHideDelay, "SoundEvent", ("event", "Crowd_Fast_Surge_Cheer"));
         yield return new(time, "camera", "win", WinLength);
         // play_win_anims: play_special_anim with the win stance, the Idle animation, and the arms disabled.
-        var win = SmallVenue(venue) ? "win_smstg" : "win";
+        var win = smallVenue ? "win_smstg" : "win";
         foreach (var role in Members)
         {
             yield return new(time, "stance", role is "guitarist" or "bassist" ? win : "win", Role: role, Immediate: true);

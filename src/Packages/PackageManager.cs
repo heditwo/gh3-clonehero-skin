@@ -187,6 +187,17 @@ internal sealed class PackageManager
         lock (_gate) return _packages.FirstOrDefault(p => p.Manifest.Kind == kind && p.Manifest.Id == id && !p.SongPackage);
     }
 
+    // The band library of a package: the required library with a catalog (PACKAGE-FORMAT.md section 10), else the
+    // installed one (`requires` is optional).
+    public InstalledPackage? BandLibrary(PackageManifest manifest)
+    {
+        lock (_gate)
+        {
+            var libraries = _packages.Where(p => p.Manifest.IsBandLibrary && !p.SongPackage).ToList();
+            return manifest.Requires.Select(r => libraries.FirstOrDefault(p => p.Manifest.Id == r.Id)).FirstOrDefault(p => p != null) ?? libraries.FirstOrDefault();
+        }
+    }
+
     public IReadOnlyList<InstalledPackage> Packages
     {
         get { lock (_gate) return _packages.ToList(); }
@@ -497,8 +508,8 @@ internal sealed class PackageManager
             {
                 var libraries = package.Manifest.Requires.Select(r => Find(PackageKind.Library, r.Id)).Where(p => p?.State == PackageState.Ready)
                     .ToDictionary(p => p!.Manifest.Id, p => p!.CacheDirectory);
-                var library = libraries.TryGetValue("gh3-band-v1", out var band) ? band : libraries.Values.FirstOrDefault()
-                    ?? throw new PackageException("a character needs the band library (requires gh3-band-v1)");
+                var library = BandLibrary(package.Manifest) is { State: PackageState.Ready } band ? band.CacheDirectory
+                    : throw new PackageException("a character needs a band library in requires");
                 var importer = new CharacterImporter(verified, textures, library, libraries);
                 var result = importer.Import(temporary);
                 CopyPreview(verified, temporary);
@@ -508,8 +519,8 @@ internal sealed class PackageManager
             }
             else if (package.Manifest.Kind == PackageKind.Instrument)
             {
-                var library = Find(PackageKind.Library, "gh3-band-v1") is { State: PackageState.Ready } band ? band.CacheDirectory
-                    : throw new PackageException("an instrument needs the band library (requires gh3-band-v1)");
+                var library = BandLibrary(package.Manifest) is { State: PackageState.Ready } band ? band.CacheDirectory
+                    : throw new PackageException("an instrument needs a band library in requires");
                 var importer = new InstrumentImporter(verified, textures, library);
                 var result = importer.Import(temporary);
                 CopyPreview(verified, temporary);
@@ -519,10 +530,11 @@ internal sealed class PackageManager
             }
             else
             {
-                var library = package.Manifest.Requires.Select(r => Find(PackageKind.Library, r.Id)).FirstOrDefault(p => p?.State == PackageState.Ready);
-                var catalogPath = library == null ? "" : Path.Combine(library.CacheDirectory, "catalog.json");
+                var library = BandLibrary(package.Manifest) is { State: PackageState.Ready } band ? band
+                    : throw new PackageException("a stage needs a band library in requires");
+                var catalogPath = Path.Combine(library.CacheDirectory, "catalog.json");
                 var catalog = File.Exists(catalogPath) ? PackageJson.Object(File.ReadAllBytes(catalogPath)) : null;
-                var compiler = new StageCompiler(verified, textures, catalog);
+                var compiler = new StageCompiler(verified, textures, library.Manifest.Id, catalog);
                 var result = compiler.Compile(temporary);
                 CopyPreview(verified, temporary);
                 verified.VerifyRemaining();

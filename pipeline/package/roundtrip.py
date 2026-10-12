@@ -45,6 +45,7 @@ STAGE_KEYS = (
     "actors",
     "scripts",
     "crowd",
+    "smallVenue",
 )
 # stage.json material fields that the runtime does not read; the GLB keeps the same data in gh3Shader.
 UNREAD_MATERIAL_FIELDS = ("textures", "template", "geometryCutout")
@@ -125,7 +126,9 @@ def venue_round_trip(package, expected):
         "library": library,
         "model": entry["model"],
         "cameras": entry["cameras"],
-        **{key: placements[key] for key in ("band", "waypoints", "effects", "crowd") if key in placements},
+        **{
+            key: placements[key] for key in ("band", "waypoints", "effects", "crowd", "smallVenue") if key in placements
+        },
     }
     for key in ("lighting", "scripts"):
         if key in entry:

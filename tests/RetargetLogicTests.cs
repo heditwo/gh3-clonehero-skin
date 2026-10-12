@@ -131,7 +131,7 @@ internal static class RetargetLogicTests
             Bones = source.Bones, Parents = source.Parents, Bind = source.Bind,
             Humanoid = Body.Select((b, i) => (b.Role, i)).Where(p => p.Role.Length > 0).ToDictionary(p => p.Role, p => p.i),
         };
-        var retarget = new CharacterRetarget(source.Bones, source.Parents, source.Bind, target, "singer");
+        var retarget = new CharacterRetarget(source.Bones, source.Parents, source.Bind, RigFixtures.Points(source.Bones), target, "singer");
         Check(Math.Abs(retarget.HipScale - 1) < 1e-5 && Math.Abs(retarget.TorsoScale - 1) < 1e-5, "the scales of the same skeleton are 1");
         var pose = RandomPose(source, 7, 1.2f);
         var result = new BandPose[source.Bones.Length];
@@ -153,7 +153,7 @@ internal static class RetargetLogicTests
         foreach (var (scale, tPose, seed) in new[] { (1f, false, 1), (0.8f, true, 2), (1.15f, true, 3) })
         {
             var target = Target(scale, tPose, seed);
-            var retarget = new CharacterRetarget(source.Bones, source.Parents, source.Bind, target, "singer");
+            var retarget = new CharacterRetarget(source.Bones, source.Parents, source.Bind, RigFixtures.Points(source.Bones), target, "singer");
             for (var trial = 0; trial < 5; trial++)
             {
                 var pose = RandomPose(source, 100 + trial, trial == 0 ? 0 : 1.0f);
@@ -176,7 +176,7 @@ internal static class RetargetLogicTests
         }
         // A skeleton with two spine bones takes the bottom and top GH3 spine bones.
         var two = Target(1, false, 4, role => role is not "chest");
-        var spine = new CharacterRetarget(source.Bones, source.Parents, source.Bind, two, "singer");
+        var spine = new CharacterRetarget(source.Bones, source.Parents, source.Bind, RigFixtures.Points(source.Bones), two, "singer");
         Check(spine.MappedSource(two.Humanoid["upperChest"]) == Array.IndexOf(source.Bones, Gh3Checksum.Of("bone_chest")) &&
               spine.MappedSource(two.Humanoid["spine"]) == Array.IndexOf(source.Bones, Gh3Checksum.Of("bone_stomach_lower")), "two spine bones map to the bottom and top GH3 spine bones");
     }
@@ -208,7 +208,7 @@ internal static class RetargetLogicTests
             Bones = names.ToArray(), Parents = parents.ToArray(), Bind = bind.ToArray(), Humanoid = humanoid,
             Followers = new[] { (names.Count - 1, twist, 0.5f) },
         };
-        var retarget = new CharacterRetarget(source.Bones, source.Parents, source.Bind, target, "singer");
+        var retarget = new CharacterRetarget(source.Bones, source.Parents, source.Bind, RigFixtures.Points(source.Bones), target, "singer");
         // Turn the GH3 hand 80° about the forearm.
         var pose = source.Bind.ToArray();
         var palm = Array.IndexOf(source.Bones, Gh3Checksum.Of("bone_palm_l"));
@@ -225,7 +225,7 @@ internal static class RetargetLogicTests
 
         // Without a twist bone, the forearm takes half of the turn.
         var plain = Target(1, false, 5);
-        var half = new CharacterRetarget(source.Bones, source.Parents, source.Bind, plain, "singer");
+        var half = new CharacterRetarget(source.Bones, source.Parents, source.Bind, RigFixtures.Points(source.Bones), plain, "singer");
         var plainResult = new BandPose[plain.Bones.Length];
         half.Apply(pose, plainResult, 0, 0);
         var forearmTurn = AngleOf(Quaternion.Inverse(plain.Bind[plain.Humanoid["leftLowerArm"]].Rotation) * plainResult[plain.Humanoid["leftLowerArm"]].Rotation);
@@ -236,7 +236,7 @@ internal static class RetargetLogicTests
     {
         var source = Source();
         var target = Target(0.8f, true, 6);
-        var retarget = new CharacterRetarget(source.Bones, source.Parents, source.Bind, target, "singer");
+        var retarget = new CharacterRetarget(source.Bones, source.Parents, source.Bind, RigFixtures.Points(source.Bones), target, "singer");
         Check(Math.Abs(retarget.HipScale - 0.8f) < 1e-4, $"the hip scale is the hip height ratio ({retarget.HipScale:0.####})");
         var pose = source.Bind.ToArray();
         var pelvis = Array.IndexOf(source.Bones, Gh3Checksum.Of("bone_pelvis"));
@@ -313,7 +313,7 @@ internal static class RetargetLogicTests
             Followers = root["followers"]!.AsArray().Select(f => (Array.IndexOf(names, f!["bone"]!.GetValue<string>()), Array.IndexOf(names, f["source"]!.GetValue<string>()),
                 (float)f["weight"]!.GetValue<double>())).ToArray(),
         };
-        var retarget = new CharacterRetarget(sourceBones, sourceParents, sourceBind, target, root["role"]!.GetValue<string>());
+        var retarget = new CharacterRetarget(sourceBones, sourceParents, sourceBind, RigFixtures.Points(sourceBones), target, root["role"]!.GetValue<string>());
         var result = new BandPose[names.Length];
         float worstPosition = 0, worstAngle = 0;
         foreach (var frame in root["frames"]!.AsArray())
@@ -366,7 +366,7 @@ internal static class RetargetLogicTests
         // The singer rig on the guitarist rig: the bind pose gives the guitarist's own rest pose, and the face bones turn as
         // the singer's face bones turn from their rest pose.
         var bind = Poses(singer.Bind);
-        var retarget = new CharacterRetarget(singer.Bones, singer.Parents, bind, Gh3Skeleton(guitarist), "singer");
+        var retarget = new CharacterRetarget(singer.Bones, singer.Parents, bind, LibraryRigs.Load(library).Role("singer").Points, Gh3Skeleton(guitarist), "singer");
         var result = new BandPose[guitarist.Bones.Length];
         retarget.Apply(bind, result, 0, 0);
         var jaw = Array.IndexOf(guitarist.Bones, Gh3Checksum.Of("Bone_Jaw"));
@@ -386,7 +386,7 @@ internal static class RetargetLogicTests
         // ratio, the character sits at the GH3 seat (no lift), and the hands and the stick tips reach the GH3 places on
         // the scaled kit.
         var drum = Poses(drummer.Bind);
-        var small = new CharacterRetarget(drummer.Bones, drummer.Parents, drum, Gh3Skeleton(drummer, 0.8f), "drummer");
+        var small = new CharacterRetarget(drummer.Bones, drummer.Parents, drum, LibraryRigs.Load(library).Role("drummer").Points, Gh3Skeleton(drummer, 0.8f), "drummer");
         Check(small.HasKit && Math.Abs(small.InstrumentScale - 0.8f) < 1e-4f && Math.Abs(small.SeatLift) < 1e-4f,
             $"the kit scales with the arms ({small.InstrumentScale:0.####}), no seat lift ({small.SeatLift:0.####})");
         var output = new BandPose[drummer.Bones.Length];

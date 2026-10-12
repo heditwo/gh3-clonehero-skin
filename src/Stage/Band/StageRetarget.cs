@@ -104,8 +104,8 @@ internal sealed class CharacterFace
         _shapes = shapes;
         _applied = Enumerable.Repeat(-1f, _weights.Length).ToArray();
         _bind = gh3Bind;
-        _jaw = Array.IndexOf(gh3Bones, Gh3Checksum.Of("Bone_Jaw"));
-        _lids = new[] { "Bone_Eyelid_Upper_L", "Bone_Eyelid_Upper_R" }.Select(n => Array.IndexOf(gh3Bones, Gh3Checksum.Of(n))).Where(i => i >= 0).ToArray();
+        _jaw = Array.IndexOf(gh3Bones, Gh3Checksum.Of(Packages.HumanoidRoles.Gh3Jaw));
+        _lids = Packages.HumanoidRoles.Gh3Lids.Select(n => Array.IndexOf(gh3Bones, Gh3Checksum.Of(n))).Where(i => i >= 0).ToArray();
         _present = CharacterSkeleton.FaceSlots.Select((slot, i) => i < faceNames.Length && faceNames[i].Length > 0 && shapes.Any(s => s.Item2[i] >= 0)).ToArray();
         Summary = string.Join(", ", CharacterSkeleton.FaceSlots.Where((slot, i) => _present[i]));
     }

@@ -273,7 +273,7 @@ internal static class ParticleLogicTests
         var actors = new Dictionary<uint, StageScriptActorDefinition> { [id] = new(actor, animation.Clips.Select(clip => (double)clip.Duration).ToArray(), animation,
             animation.LoadBoneNames(Path.Combine(directory, "actors", actor.Id, "bones.json"))) };
         StageCue Call(double time, string name) => new(time, "gh3-script", new Gh3ScriptEvent("performance", Params(("time", Number(time * 1000)), ("scr", Name(name)))).Encode());
-        using var state = new StageScriptState(bank, placements, new(new[] { Call(0, "z_artdeco_animevent_dragon_start"), Call(1, "z_artdeco_animevent_dragon_stop") }, "dragon particles"), "gh3.artdeco", actors: actors);
+        using var state = new StageScriptState(bank, placements, new(new[] { Call(0, "z_artdeco_animevent_dragon_start"), Call(1, "z_artdeco_animevent_dragon_stop") }, "dragon particles"), StagePack.Load(directory).Zone, actors: actors);
         state.Update(.5);
         Check(state.Particles.Emitters.Count == 3 && state.Particles.Particles.Count > 0, "The original dragon event creates its three source emitters.");
         var samples = state.Particles.Sample(.5).Select(sample => (sample.Emitter, sample.Position, sample.Color, sample.Frame)).ToArray();
@@ -286,7 +286,7 @@ internal static class ParticleLogicTests
         var create = new StageCue(0, "gh3-script", new Gh3ScriptEvent("performance", Params(("time", Number(0)), ("scr", Name("CreateParticleSystem")), ("params", Params(
             ("name", new(13, -1, butterfly)), ("params_script", Name("GP_StarPower_Butterflies01")), ("pos", Vector(0, 1, 0)))))).Encode());
         var destroy = new StageCue(2, "gh3-script", new Gh3ScriptEvent("performance", Params(("time", Number(2000)), ("scr", Name("Destroy")), ("params", Params(("name", new(13, -1, butterfly)))))).Encode());
-        using var butterflies = new StageScriptState(bank, new Dictionary<string, StageObjectPlacement>(), new(new[] { create, destroy }, "butterfly script"), "gh3.artdeco");
+        using var butterflies = new StageScriptState(bank, new Dictionary<string, StageObjectPlacement>(), new(new[] { create, destroy }, "butterfly script"), StagePack.Load(directory).Zone);
         var widths = new List<Vector2>();
         for (var frame = 1; frame < 60; frame++)
         {

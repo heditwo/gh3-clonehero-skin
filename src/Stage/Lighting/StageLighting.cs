@@ -188,6 +188,8 @@ internal sealed class StageLighting
 {
     // Tuned: a color override blends over 0.4 s.
     private const double ColorBlend = 0.4;
+    // GH3: the next-state note keeps the beam positions (Gh3LightshowNote.NextState).
+    private const string NextStateNote = "57";
     private readonly StageLightingFrame[] _frames;
     private readonly List<StageLightingFrame> _scriptFrames = new();
     private bool _scriptControl;
@@ -255,11 +257,11 @@ internal sealed class StageLighting
             }
             var from = frames[^1].Sample(cue.Time);
             var target = Values(snapshot, color, mood == "strobe" && strobeOn, from);
-            if (mood == "strobe" || original.Type == "gh3-note" && original.Value == "57")
+            if (mood == "strobe" || original.Type == "gh3-note" && original.Value == NextStateNote)
                 for (var i = 0; i < target.Beams.Length; i++)
                     target.Beams[i] = target.Beams[i] with { Position = from.Beams[i].Position, Rotation = from.Beams[i].Rotation };
             var duration = mood == "strobe" ? 0 : cue.Type == "color" ? ColorBlend : blend;
-            if (mood != "strobe" && cue.Type != "color" && !(original.Type == "gh3-note" && original.Value == "57"))
+            if (mood != "strobe" && cue.Type != "color" && !(original.Type == "gh3-note" && original.Value == NextStateNote))
                 motion = motion.Select((m, i) => m.Retarget(cue.Time, duration, target.Beams[i])).ToArray();
             frames.Add(new(cue.Time, duration, from, target, snapshot, motion));
         }

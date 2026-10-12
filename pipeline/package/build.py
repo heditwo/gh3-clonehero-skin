@@ -38,7 +38,7 @@ BROTLI_WINDOW = 24
 CLIP_ENCODER = "q48-1"
 # Increment when the texture encoder output changes, so that the texture cache is not reused.
 TEXTURE_ENCODER = "gh3tex02-1"
-PLACEMENT_FIELDS = ("band", "waypoints", "effects", "crowd")
+PLACEMENT_FIELDS = ("band", "waypoints", "effects", "crowd", "smallVenue")
 LIBRARY_ENTRY = {
     "catalog": "catalog.json",
     "band": "band/band.json",

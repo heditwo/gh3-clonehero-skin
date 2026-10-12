@@ -48,7 +48,7 @@ internal static class ScriptBench
         var performance = StagePerformance.Load(Path.Combine(library, "direction", "performance.json"));
         var timeline = StageChartReader.Load(song, Path.Combine(song, "notes.chart"), performance);
         var lighting = new StageLighting(StageLightingBank.Load(directory)!, timeline);
-        using var state = new StageScriptState(bank, placements, timeline, venue, (id, time) => null, actors, lighting);
+        using var state = new StageScriptState(bank, placements, timeline, StagePack.Load(directory).Zone, (id, time) => null, actors, lighting);
         if (Environment.GetEnvironmentVariable("GH3_BENCH_CAMERAS") == "1")
         {
             var pack = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "pack.json"))).RootElement;

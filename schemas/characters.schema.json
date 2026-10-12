@@ -49,9 +49,10 @@
         "type": "array",
         "minItems": 1,
         "maxItems": 8,
-        "items": { "$ref": "#/$defs/ikChain" }
+        "items": { "$ref": "library-common.schema.json#/$defs/ikChain" }
       }
     },
+    "constraints": { "$ref": "library-common.schema.json#/$defs/rigConstraints" },
     "sources": { "$ref": "library-common.schema.json#/$defs/sources" }
   },
   "$defs": {
@@ -63,7 +64,8 @@
         "profile": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
         "bones": { "$ref": "library-common.schema.json#/$defs/bones" },
         "parents": { "$ref": "#/$defs/parents" },
-        "bind": { "$ref": "#/$defs/bind" }
+        "bind": { "$ref": "#/$defs/bind" },
+        "points": { "$ref": "library-common.schema.json#/$defs/rigPoints" }
       }
     },
     "parents": {
@@ -173,18 +175,6 @@
       "if": { "properties": { "type": { "enum": ["hinge", "prismatic"] } }, "required": ["type"] },
       "then": { "required": ["axis", "range"] },
       "else": { "required": ["limits"] }
-    },
-    "ikChain": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["bones", "target", "hinge", "cosMax", "cosMin"],
-      "properties": {
-        "bones": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "$ref": "library-common.schema.json#/$defs/checksum" } },
-        "target": { "$ref": "library-common.schema.json#/$defs/checksum" },
-        "hinge": { "$ref": "common.schema.json#/$defs/vec3" },
-        "cosMax": { "type": "number", "minimum": -1, "maximum": 1 },
-        "cosMin": { "type": "number", "minimum": -1, "maximum": 1 }
-      }
     }
   }
 }

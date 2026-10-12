@@ -29,7 +29,7 @@ internal static class StageScriptEventTests
             var actor = new StageActorDefinition { Object = "actor", Script = "start", AnimationEvents = "events", Clips = new() { ["clip"] = 0 } };
             var actors = new Dictionary<uint, StageScriptActorDefinition> { [Key("actor")] = new(actor, new[] { 1.0 }) };
             StageCue Call(double time, string command) => new(time, "gh3-script", new Gh3ScriptEvent("performance", Params(("time", Gh3ScriptRuntime.Number(time * 1000)), ("scr", Gh3ScriptRuntime.Key(command)))).Encode());
-            using var state = new StageScriptState(bank, placements, new(new[] { Call(.5, "stop"), Call(1, "loop") }, "animation events"), "example.studio", actors: actors);
+            using var state = new StageScriptState(bank, placements, new(new[] { Call(.5, "stop"), Call(1, "loop") }, "animation events"), "", actors: actors);
             state.Update(.24);
             Check(state.Sample(Key("actor"), .24).Visible, "Animation events do not run before their source time.");
             state.Update(.25);
@@ -46,7 +46,7 @@ internal static class StageScriptEventTests
             if (values.ContainsKey(Key("Venue_PulseRed")))
             {
                 placements[Key("actor").ToString("x8")].Script = "Venue_PulseRed";
-                using var pulse = new StageScriptState(bank, placements, new(Array.Empty<StageCue>(), "note events"), "example.studio");
+                using var pulse = new StageScriptState(bank, placements, new(Array.Empty<StageCue>(), "note events"), "");
                 pulse.Update(1);
                 pulse.Raise(Key("hitnote_green"));
                 Check(pulse.Sample(Key("actor"), 1).Scale == Vector3.One, "Other note lanes do not pulse a red-note listener.");

@@ -212,7 +212,8 @@ internal static class PickerLogicTests
         var library = Path.Combine(root, "library");
         Directory.CreateDirectory(Path.Combine(library, "band", "singer"));
         File.WriteAllText(Path.Combine(library, "catalog.json"),
-            "{\"version\":1,\"members\":{\"singer\":{\"bones\":[\"0000000a\",\"0000000b\"]},\"bassist\":{\"bones\":[\"0000000a\",\"0000000c\"]}}}");
+            "{\"version\":1,\"library\":\"gh3-band-v1\",\"members\":{\"singer\":{\"profile\":\"gh3-singer-male-v1\",\"bones\":[\"0000000a\",\"0000000b\"]}," +
+            "\"bassist\":{\"profile\":\"gh3-bassist-v1\",\"bones\":[\"0000000a\",\"0000000c\"]}}}");
         using var writer = new BinaryWriter(File.Create(Path.Combine(library, "band", "singer", "animation.bin")));
         writer.Write(Encoding.ASCII.GetBytes("GH3ANM01"));
         writer.Write(2);
@@ -439,12 +440,33 @@ internal static class PickerLogicTests
         var source = PackageSource.At(folder);
         using var verified = new VerifiedPackage(source, PackageManifest.Parse(source.ReadAll("manifest.json"), PackageKind.Stage, version));
         var output = Path.Combine(root, "stage-cache");
-        new StageCompiler(verified, new TextureJobs(false, 1), null).Compile(output);
+        new StageCompiler(verified, new TextureJobs(false, 1), "gh3-band-v1", null).Compile(output);
         var stage = PackageJson.Object(File.ReadAllBytes(Path.Combine(output, "stage.json")));
         var material = ((JsonObject)stage["materials"]!).Select(pair => (JsonObject)pair.Value!).First(m => PackageJson.Text(m["source"]) == "masked");
         var name = Gh3Checksum.Of("image-1");
         Check(PackageJson.Text(material["mask"]) == name && File.Exists(Path.Combine(output, "textures", name + ".tex")),
             "a '#name' reference to an image without a glTF texture compiles (as pipeline/stagepack/pack.py)");
+        var plain = StagePack.Load(output);
+        Check(!plain.SmallVenue && plain.Zone == "" && plain.Library == "gh3-band-v1", "a stage without smallVenue and scripts has the normal intro and no zone");
+
+        // A creator stage with placements.json smallVenue gets the small-stage intro and win animations of GH3 small venues.
+        var small = Path.Combine(root, "small.chstage");
+        Directory.CreateDirectory(small);
+        File.Copy(Path.Combine(folder, "stage.glb"), Path.Combine(small, "stage.glb"));
+        File.Copy(Path.Combine(folder, "cameras.json"), Path.Combine(small, "cameras.json"));
+        File.WriteAllText(Path.Combine(small, "placements.json"),
+            "{\"version\":1,\"band\":{\"guitarist\":{\"position\":[0,0,0],\"rotation\":[0,0,0,1]}},\"smallVenue\":true}");
+        File.WriteAllText(Path.Combine(small, "scripts.json"), "{\"version\":1,\"zone\":\"z_custom\",\"definitions\":{}}");
+        File.WriteAllText(Path.Combine(small, "manifest.json"), Manifest("chstage/1.0", "test.small",
+            "{\"model\":\"stage.glb\",\"placements\":\"placements.json\",\"cameras\":\"cameras.json\",\"scripts\":\"scripts.json\"}"));
+        var smallSource = PackageSource.At(small);
+        using var smallPackage = new VerifiedPackage(smallSource, PackageManifest.Parse(smallSource.ReadAll("manifest.json"), PackageKind.Stage, version));
+        var smallOutput = Path.Combine(root, "small-cache");
+        new StageCompiler(smallPackage, new TextureJobs(false, 1), "gh3-band-v1", null).Compile(smallOutput);
+        var pack = StagePack.Load(smallOutput);
+        var intro = StageShowFlow.Apply(new StageTimeline(Array.Empty<StageCue>(), "test"), pack.SmallVenue, null);
+        Check(pack.SmallVenue && pack.Zone == "z_custom" && intro.Track("stance", "guitarist").First().Value == "intro_smstg",
+            "a creator stage with smallVenue uses the small-venue intro, and its scripts.json zone reaches the stage");
     }
 
     private static void CheckCacheCleanUp(string root)

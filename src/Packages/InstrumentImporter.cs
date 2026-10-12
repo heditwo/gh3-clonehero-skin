@@ -27,23 +27,25 @@ internal sealed class InstrumentImporter
         Fields(instrument, "instrument.json", new[] { "version", "library", "profile", "kind", "highway", "brand", "model", "series", "finish" },
             "version", "library", "profile", "kind");
         if (Number(instrument["version"], "version") != 1) throw new PackageException("instrument.json version must be 1");
-        if (Text(instrument["library"]) != "gh3-band-v1") throw new PackageException("instrument.json library must be gh3-band-v1");
+        var rigs = LibraryRigs.Load(_library);
+        if (Text(instrument["library"]) != rigs.Library) throw new PackageException($"instrument.json library must be {rigs.Library}");
         var kind = Text(instrument["kind"]) ?? "";
         if (!Kinds.ContainsKey(kind)) throw new PackageException($"instrument.json kind must be guitar or bass, not '{kind}'");
         var profile = Text(instrument["profile"]) ?? "";
-        if (profile is not ("gh3-guitarist-axel-v1" or "gh3-bassist-v1")) throw new PackageException($"instrument.json profile must be gh3-guitarist-axel-v1 or gh3-bassist-v1, not '{profile}'");
+        var holders = rigs.Profiles.Where(p => Kinds.Values.Contains(p.Role)).Select(p => p.Profile).ToArray();
+        if (!holders.Contains(profile)) throw new PackageException($"instrument.json profile must be {string.Join(" or ", holders)}, not '{profile}'");
         var labels = new JsonObject();
         foreach (var field in new[] { "brand", "model", "series", "finish" })
             if (instrument[field] != null) labels[field] = Text(instrument[field]) ?? throw new PackageException($"instrument.json {field} must be text");
         var highway = _model.Highway(instrument["highway"], folder);
-        var role = CharacterImporter.Profiles[profile];
+        var role = rigs.ProfileRole(profile)!;
         var (bones, parents, bind) = CharacterImporter.Rig(_library, role);
         var (names, parts) = _model.ImportModel(folder, _package.Manifest.Entry["model"], profile, bones, parents, bind, new HashSet<string>());
         var body = BandAttachments.BodyJoints(bones, parents);
         var map = names.Select(name => System.Array.IndexOf(bones, name)).ToArray();
         var meshes = BandAttachments.ReadParts(Path.Combine(folder, "meshes.bin"));
         if (meshes.Any(part => !BandAttachments.IsAttachment(part, body, map)))
-            throw new PackageException("a mesh part follows the body joints; weight the instrument to bone_guitar_body");
+            throw new PackageException($"a mesh part follows the body joints; weight the instrument to the instrument bone of the rig (bone-{rigs.Role(role).Points.Instrument})");
         Write(Path.Combine(folder, "instrument.json"), new JsonObject
         {
             ["version"] = 1, ["id"] = _package.Manifest.Id, ["name"] = _package.Manifest.Name, ["kind"] = kind, ["profile"] = profile,

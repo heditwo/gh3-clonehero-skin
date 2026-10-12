@@ -41,7 +41,7 @@ FILES = {"model": "stage.glb", "placements": "placements.json", "cameras": "came
 # Anchor parts and their GH3 bones (pipeline/stagepack/pack.py anchor()).
 PART_BONES = {"head": "bone_head", "hand_left": "Bone_Palm_L", "hand_right": "Bone_Palm_R"}
 PLAYBACK = ("loop", "hold")
-OPTIONAL_PLACEMENTS = ("waypoints", "effects", "crowd")
+OPTIONAL_PLACEMENTS = ("waypoints", "effects", "crowd", "smallVenue")
 # Material extras that the material panel edits. The add-on keeps the other gh3* keys (for example the GH3 shader
 # record) without a change.
 PANEL_MATERIAL_EXTRAS = {
@@ -280,8 +280,9 @@ def open_manifest(manifest):
 
 
 # Placements.
-def build_placements(markers, crowd, issues, keeper=None, keys=()):
-    """keys: optional top-level keys that the file has also when they are empty (as in the opened package)."""
+def build_placements(markers, crowd, issues, keeper=None, keys=(), small_venue=False):
+    """keys: optional top-level keys that the file has also when they are empty (as in the opened package).
+    small_venue: the band plays the small-stage intro and win animations (`smallVenue`)."""
     keeper = keeper or Keeper("compute")
     placements = {"version": 1, "band": {}}
     waypoints = {}
@@ -309,6 +310,8 @@ def build_placements(markers, crowd, issues, keeper=None, keys=()):
             keeper({"role": c["role"], "model": c["model"], "yaw": clean(c["yaw"])}, c.get("owner"), "crowd")
             for c in crowd
         ]
+    if small_venue or "smallVenue" in keys:
+        placements["smallVenue"] = bool(small_venue)
     return placements
 
 

@@ -44,6 +44,27 @@ internal static class HumanoidRoles
         "Bone_Brow_L", "Bone_Brow_R", "Bone_Brow_Mid", "Bone_Brow_Mid_L", "Bone_Brow_Mid_R",
     };
 
+    // GH3: the face bones of the lip sync (StageLipSync) in the order of the rows of its measured shape table
+    // (StageLipSync.Shapes.cs, tools/lipsync-shapes.py); the middle lip bones are rows 3 and 4.
+    public static readonly string[] Gh3Mouth =
+    {
+        "Bone_Jaw", "Bone_Mouth_L", "Bone_Mouth_R", "Bone_Lip_Lower_Mid", "Bone_Lip_Upper_Mid", "Bone_Cheek_L", "Bone_Cheek_R",
+        "Bone_Cheek_Upper_L", "Bone_Cheek_Upper_R", "Bone_Lip_Lower_Corner_L", "Bone_Lip_Lower_Corner_R", "Bone_Lip_Lower_L",
+        "Bone_Lip_Lower_R", "Bone_Lip_Upper_Corner_L", "Bone_Lip_Upper_Corner_R", "Bone_Lip_Upper_L", "Bone_Lip_Upper_R", "Bone_Tongue"
+    };
+    // GH3: the upper eyelids (blinks) and the jaw (the open mouth of a face with blend shapes).
+    public static readonly string[] Gh3Lids = { "Bone_Eyelid_Upper_L", "Bone_Eyelid_Upper_R" };
+    public const string Gh3Jaw = "Bone_Jaw";
+    // GH3: the head, eyes, brows, lower eyelids, and upper cheeks that the singing face moves (StageLipSync.Life), in the
+    // order of its measured poses.
+    public static readonly string[] Gh3FaceLife =
+    {
+        "Bone_Head", "Bone_Eye_L", "Bone_Eye_R", "Bone_Brow_L", "Bone_Brow_R", "Bone_Brow_Mid", "Bone_Brow_Mid_L", "Bone_Brow_Mid_R",
+        "Bone_Eyelid_Lower_L", "Bone_Eyelid_Lower_R", "Bone_Cheek_Upper_L", "Bone_Cheek_Upper_R"
+    };
+    // The face bones of the [trace] band lines.
+    public static readonly string[] Gh3TraceFace = { "Bone_Jaw", "Bone_Eyelid_Upper_L", "Bone_Lip_Lower_Mid", "Bone_Brow_L" };
+
     // The humanoid map of a GH3 rig (bone checksums) from the GH3 bone names: the bones of the Gh3 table, and the three
     // spine roles on bone_stomach_lower, bone_stomach_upper, and bone_chest (SpineSources(3)), so that a GH3 rig maps to
     // itself. The face bones move by name (Gh3Face).

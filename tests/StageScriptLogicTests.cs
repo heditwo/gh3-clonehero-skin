@@ -59,9 +59,9 @@ internal static class StageScriptLogicTests
         var call = new Gh3ScriptEvent("performance", Params(Number("time", 1000),
             new(Gh3Checksum.Value("scr"), Gh3ScriptRuntime.Key("Z_Budokan_Encore_MoveMonster02"))));
         var cue = new StageCue(1, "gh3-script", call.Encode());
-        using var state = new StageScriptState(bank, placements, new(new[] { cue }, "native"), "gh3.budokan");
+        using var state = new StageScriptState(bank, placements, new(new[] { cue }, "native"), "z_budokan");
         using var authored = new StageScriptState(bank, placements,
-            StageChartReader.ReadChart("[Song]\nResolution = 1000\n[SyncTrack]\n0 = B 60000\n[Events]\n1000 = E gh3 " + call.Encode()), "gh3.budokan");
+            StageChartReader.ReadChart("[Song]\nResolution = 1000\n[SyncTrack]\n0 = B 60000\n[Events]\n1000 = E gh3 " + call.Encode()), "z_budokan");
         state.Update(-2);
         state.Update(1.5);
         Check(Math.Abs(state.Objects[key].Sample(1.5).Position.X - (13.51 + 3.95618) / 2) < .00001, "Original monster movement runs from a song command.");

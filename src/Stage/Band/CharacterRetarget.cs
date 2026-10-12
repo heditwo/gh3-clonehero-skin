@@ -121,11 +121,10 @@ internal sealed class CharacterRetarget
     public bool HasKit => _kit >= 0;
 
     public const int ModeChest = 1, ModeHand = 2, ModeStand = 3, ModeKit = 4;
-    // GH3: the throne bone of the drum kit of the drummer rig (name not known); Measured: the 226 throne vertices of
-    // Drum_Set001 are on it, and its top is 0.505 m above the bone.
-    private static readonly string ThroneBone = "fdeaebd9";
+    // Measured: the top of the throne of Drum_Set001 (its 226 vertices are on the rig point `seat`) is 0.505 m above the
+    // seat bone.
     private const float ThroneTop = 0.505f;
-    // Measured: the drum stick mesh of Drum_Set001 goes 0.389 m along +X of Bone_Drum_Stick_L and _R from the bone.
+    // Measured: the drum stick mesh of Drum_Set001 goes 0.389 m along +X of the stick bones from the bone.
     private const float StickLength = 0.389f;
     // Tuned: the throne height stays within 0.25-2 times the GH3 throne.
     private const float MinimumThroneScale = 0.25f;
@@ -134,7 +133,7 @@ internal sealed class CharacterRetarget
     // within 35 cm of the GH3 mouth, fully at 20 cm (GH3 sings with the microphone head 9-15 cm from the mouth).
     private const float MouthFollowStart = 0.35f;
     private const float MouthFollowRange = 0.15f;
-    // Measured: the microphone mesh of Microphone001 ends 0.1 m along -Y of Bone_Mic (its head).
+    // Measured: the microphone mesh of Microphone001 ends 0.1 m along -Y of the microphone bone (its head).
     private const float MicrophoneLength = 0.1f;
     private readonly (int Upper, int Lower) _lips = (-1, -1);
     private readonly (Vector3 Goal, float Gain)[] _mouthGoals;
@@ -148,7 +147,8 @@ internal sealed class CharacterRetarget
     // The hand miss vector of the left and the right arm in the last call (the drum sticks follow the hands).
     private readonly Vector3[] _armMiss;
 
-    public CharacterRetarget(string[] sourceBones, int[] sourceParents, BandPose[] sourceBind, RetargetSkeleton target, string role)
+    // `rigPoints`: the rig points of the GH3 rig that plays (instrument, microphone, mouth, sticks, seat).
+    public CharacterRetarget(string[] sourceBones, int[] sourceParents, BandPose[] sourceBind, RigPoints rigPoints, RetargetSkeleton target, string role)
     {
         _target = target;
         _sourceParents = sourceParents;
@@ -230,7 +230,8 @@ internal sealed class CharacterRetarget
         HipScale = float.IsFinite(targetHip / sourceHip) && targetHip > MinimumBodyLength && sourceHip > MinimumBodyLength ? targetHip / sourceHip : 1;
         var top = spine.Length > 0 ? spine[^1] : "spine";
         _chestTarget = target.InstrumentBone >= 0 ? target.InstrumentBone : T(top);
-        _chestSource = Source(Gh3Checksum.Of("bone_chest"));
+        // The top GH3 spine bone (the chest) carries the instrument.
+        _chestSource = Source(HumanoidRoles.SpineSources(HumanoidRoles.Spine.Length)[^1]);
         var neckT = T("neck") >= 0 ? T("neck") : T("head");
         var neckS = S("neck") >= 0 ? S("neck") : S("head");
         var hipsT = (Position(_restPosition, T("leftUpperLeg")) + Position(_restPosition, T("rightUpperLeg"))) / 2;
@@ -332,14 +333,14 @@ internal sealed class CharacterRetarget
         // the GH3 hand holds it.
         var attachments = new List<(int, int)>();
         var scales = new List<(int, float)>();
-        if (role is "guitarist" or "bassist" && Source(Gh3Checksum.Of("bone_guitar_body")) is var guitar and >= 0)
+        if (role is "guitarist" or "bassist" && Source(rigPoints.Instrument) is var guitar and >= 0)
         {
             attachments.Add((guitar, ModeChest));
             scales.Add((guitar, InstrumentScale));
         }
         var headTarget = T("head");
         var headSource = S("head");
-        if (role == "singer" && Source(Gh3Checksum.Of("bone_mic")) is var mic and >= 0)
+        if (role == "singer" && Source(rigPoints.Microphone) is var mic and >= 0)
         {
             var stand = sourceParents[mic];
             if (stand >= 0 && sourceParents[stand] >= 0 && sourceParents[sourceParents[stand]] < 0 && headTarget >= 0 && headSource >= 0 &&
@@ -357,19 +358,20 @@ internal sealed class CharacterRetarget
                 // The mouth: between the GH3 middle lip bones; on the character, its own lip bones (a GH3 rig), else the
                 // GH3 mouth offset from the head, scaled as the stand.
                 (_mouthTarget, _mouthSource) = (headTarget, headSource);
-                var lipUpper = Source(Gh3Checksum.Of("Bone_Lip_Upper_Mid"));
-                var lipLower = Source(Gh3Checksum.Of("Bone_Lip_Lower_Mid"));
+                var lipUpper = Source(rigPoints.MouthUpper);
+                var lipLower = Source(rigPoints.MouthLower);
                 if (lipUpper >= 0 && lipLower >= 0) _lips = (lipUpper, lipLower);
                 var gh3Mouth = _lips.Upper >= 0 ? (sourceRestP[lipUpper] + sourceRestP[lipLower]) / 2 : sourceRestP[headSource];
-                var ownUpper = target.Gh3Face ? Array.IndexOf(target.Bones, Gh3Checksum.Of("Bone_Lip_Upper_Mid")) : -1;
-                var ownLower = target.Gh3Face ? Array.IndexOf(target.Bones, Gh3Checksum.Of("Bone_Lip_Lower_Mid")) : -1;
+                // A GH3 rig as the skeleton has the GH3 face bones by name (Gh3Face), so also the lip bones of the points.
+                var ownUpper = target.Gh3Face && rigPoints.MouthUpper.Length > 0 ? Array.IndexOf(target.Bones, rigPoints.MouthUpper) : -1;
+                var ownLower = target.Gh3Face && rigPoints.MouthLower.Length > 0 ? Array.IndexOf(target.Bones, rigPoints.MouthLower) : -1;
                 var mouth = ownUpper >= 0 && ownLower >= 0 ? (_restPosition[ownUpper] + _restPosition[ownLower]) / 2
                     : _restPosition[headTarget] + (gh3Mouth - sourceRestP[headSource]) * StandScale;
                 _mouthOffset = Vector3.Transform(mouth - _restPosition[headTarget], Quaternion.Inverse(_restRotation[headTarget]));
             }
         }
-        var stickLeft = Source(Gh3Checksum.Of("Bone_Drum_Stick_L"));
-        var stickRight = Source(Gh3Checksum.Of("Bone_Drum_Stick_R"));
+        var stickLeft = Source(rigPoints.StickLeft);
+        var stickRight = Source(rigPoints.StickRight);
         if (role == "drummer" && stickLeft >= 0 && stickRight >= 0 && sourceParents[stickLeft] is var kit and >= 0 && sourceParents[stickRight] == kit &&
             S("hips") >= 0 && T("hips") >= 0)
         {
@@ -383,7 +385,7 @@ internal sealed class CharacterRetarget
                 index("leftUpperArm") >= 0 && index("rightUpperArm") >= 0 ? (positions[index("leftUpperArm")].Y + positions[index("rightUpperArm")].Y) / 2 : float.NaN;
             var lift = InstrumentScale * (Shoulders(sourceRestP, S) - sourceRestP[S("hips")].Y) - (Shoulders(_restPosition, T) - _restPosition[T("hips")].Y);
             SeatLift = float.IsFinite(lift) ? lift : 0;
-            if (Source(ThroneBone) is var throne and >= 0 && sourceParents[throne] == kit)
+            if (Source(rigPoints.Seat) is var throne and >= 0 && sourceParents[throne] == kit)
             {
                 var height = Math.Clamp((InstrumentScale * ThroneTop + SeatLift) / ThroneTop, MinimumThroneScale, MaximumThroneScale);
                 scales.Add((throne, height / InstrumentScale));

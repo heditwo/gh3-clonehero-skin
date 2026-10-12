@@ -30,9 +30,9 @@ internal sealed partial class GameplayStage
         var headMode = SkinEnvironment.Get(SkinEnvironment.DebugViewHead);
         // GH3_SKIN_DEBUG_VIEW_ROLE: the band member of the head views (default the guitarist).
         var headRole = SkinEnvironment.Get(SkinEnvironment.DebugViewRole) ?? "guitarist";
-        if (headMode == "1" && _band?.Anchor(headRole, Gh3Bones.Head) is { } head)
+        if (headMode == "1" && _band?.Anchor(headRole, Packages.HumanoidRoles.Gh3["head"]) is { } head)
             camera.transform.LookAt(new Vector3(head.Position.X, head.Position.Y, head.Position.Z));
-        if (headMode == "local" && _band?.Anchor(headRole, Gh3Bones.Head) is { } face)
+        if (headMode == "local" && _band?.Anchor(headRole, Packages.HumanoidRoles.Gh3["head"]) is { } face)
         {
             // Position and target in the frame of the head bone (on the Midori rig, local +X points up and +Y to the front of
             // the face), so the camera keeps the same view of the face while the head moves.
@@ -42,7 +42,7 @@ internal sealed partial class GameplayStage
             camera.transform.position = new Vector3(eye.X, eye.Y, eye.Z);
             camera.transform.LookAt(new Vector3(target.X, target.Y, target.Z), new Vector3(up.X, up.Y, up.Z));
         }
-        if (headMode == "through" && _band?.Anchor("guitarist", Gh3Bones.Head) is { } front && _band.Anchor("bassist", Gh3Bones.Head) is { } back)
+        if (headMode == "through" && _band?.Anchor("guitarist", Packages.HumanoidRoles.Gh3["head"]) is { } front && _band.Anchor("bassist", Packages.HumanoidRoles.Gh3["head"]) is { } back)
         {
             // The bassist's face behind the guitarist's head: the camera is view[0] metres past the guitarist's head on the
             // line from the bassist's head, raised by view[1] metres and moved view[2] metres to the side (checks of draw

@@ -95,7 +95,7 @@ internal static class AudioLogicTests
         {
             var source = new[] { new StageCue(1, "crowd", "76"), new StageCue(2, "crowd", "73"),
                 new StageCue(3, "crowd", "78"), new StageCue(4, "crowd", "77"), new StageCue(5, "drum", "70", Velocity: 75) };
-            var low = new StageAudioState(bank, new StageTimeline(source, "original"), "gh3." + venue, "sticks_normal");
+            var low = new StageAudioState(bank, new StageTimeline(source, "original"), "z_" + venue, "sticks_normal");
             low.Update(0, .1f);
             low.Update(1, .1f);
             Check(low.Voices.Count == 1 && low.Voices[0].Loop, "Poor performance suppresses unforced crowd surges but retains the crowd bed.");
@@ -103,7 +103,7 @@ internal static class AudioLogicTests
             Check(low.Voices.Count > 1, "Override notes trigger the source venue swell during poor performance: " + venue + " " + string.Join("; ", low.Diagnostics));
             low.Update(5, .1f);
             Check(low.Diagnostics.Count == 0, "Every tested venue reaction and count-off resolves its sound definition.");
-            var high = new StageAudioState(bank, new StageTimeline(new[] { source[0] }, "surge"), "gh3." + venue, "sticks_normal");
+            var high = new StageAudioState(bank, new StageTimeline(new[] { source[0] }, "surge"), "z_" + venue, "sticks_normal");
             high.Update(0, .9f);
             high.Update(.9, .9f);
             var bed = high.Voices.Single(voice => voice.Loop);
@@ -112,7 +112,7 @@ internal static class AudioLogicTests
             Check(Math.Abs(high.Gain(bed, 2.2) / initial - Math.Pow(10, .5)) < .0001, "A fast surge raises the source crowd bed from -7 dB to +3 dB over 1.2 seconds.");
             high.Update(6.5, .9f);
             Check(Math.Abs(high.Gain(bed, 6.5) / initial - Math.Pow(10, .05)) < .0001, "The delayed fast-surge reset reaches -6 dB after four seconds.");
-            var transition = new StageAudioState(bank, new StageTimeline(Array.Empty<StageCue>(), "crossfade"), "gh3." + venue, "sticks_normal");
+            var transition = new StageAudioState(bank, new StageTimeline(Array.Empty<StageCue>(), "crossfade"), "z_" + venue, "sticks_normal");
             transition.Update(0, .5f);
             transition.Update(.1, .9f);
             transition.Update(.2, .1f);
@@ -124,7 +124,7 @@ internal static class AudioLogicTests
             transition.Update(.4, .9f);
             transition.Update(30, .9f);
             Check(expected.SequenceEqual(transition.Voices.Select(voice => (voice.Sample, voice.Start, voice.End, voice.Gain))), "Backward seek reproduces interrupted fades and source random one-shots.");
-            var training = new StageAudioState(bank, new StageTimeline(Array.Empty<StageCue>(), "training"), "gh3." + venue, "sticks_normal") { Training = true };
+            var training = new StageAudioState(bank, new StageTimeline(Array.Empty<StageCue>(), "training"), "z_" + venue, "sticks_normal") { Training = true };
             training.Update(0, .9f);
             training.Update(10, .1f);
             Check(training.Voices.Count == 0 && training.Diagnostics.Count == 0, "Practice mode does not start performance crowd beds.");

@@ -46,6 +46,10 @@
           "yaw": { "type": "number", "minimum": -360, "maximum": 360 }
         }
       }
+    },
+    "smallVenue": {
+      "type": "boolean",
+      "description": "The band plays the small-stage intro and win animations (GH3 UseSmallVenueAnims). Absent: false."
     }
   }
 }

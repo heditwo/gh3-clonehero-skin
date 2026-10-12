@@ -155,6 +155,14 @@ class SidecarTests(unittest.TestCase):
         )
         self.assertEqual([(s, o) for s, _, o, _ in issues.items], [("WARNING", "a"), ("ERROR", "b")])
 
+    def test_small_venue(self):
+        issues = sidecars.Issues()
+        plain = sidecars.build_placements([band("guitarist", [0, 0, 0])], [], issues)
+        self.assertNotIn("smallVenue", plain)
+        small = sidecars.build_placements([band("guitarist", [0, 0, 0])], [], issues, small_venue=True)
+        self.assertIs(small["smallVenue"], True)
+        self.assertIn("smallVenue", sidecars.open_placements(small)[2])
+
     def test_missing_wide_group_duplicate_roles_and_lights(self):
         issues = sidecars.Issues()
         sidecars.build_cameras([camera("a", [0, 0, 0], ["guitarist"])], [], [], issues)
@@ -536,8 +544,11 @@ class OpenTests(unittest.TestCase):
         scene = sidecars.Issues()
         described = scene_from_package(folder)
         markers, crowd, keys = described["placements"]
-        placements = sidecars.build_placements(markers, crowd, scene, keys=keys)
-        json_close(self, json.loads((folder / "placements.json").read_text()), placements)
+        source_placements = json.loads((folder / "placements.json").read_text())
+        placements = sidecars.build_placements(
+            markers, crowd, scene, keys=keys, small_venue=source_placements.get("smallVenue", False)
+        )
+        json_close(self, source_placements, placements)
         shots, notes, markers = described["cameras"]
         cameras = sidecars.build_cameras(shots, notes, markers, scene)
         source = json.loads((folder / "cameras.json").read_text())

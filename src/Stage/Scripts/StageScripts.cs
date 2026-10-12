@@ -15,7 +15,7 @@ internal sealed class StageScripts : IDisposable
     public StageScriptState State => _state;
     public IReadOnlyDictionary<uint, string> TexturePaths { get; }
 
-    private StageScripts(StageScriptBank bank, StageAssets assets, StageFixtures fixtures, StageActors actors, StageLighting? lighting, StageTimeline timeline, string venue)
+    private StageScripts(StageScriptBank bank, StageAssets assets, StageFixtures fixtures, StageActors actors, StageLighting? lighting, StageTimeline timeline, string zone)
     {
         TexturePaths = bank.TexturePaths;
         _assets = assets;
@@ -23,7 +23,7 @@ internal sealed class StageScripts : IDisposable
         var placements = new Dictionary<string, StageObjectPlacement>(assets.Definition.Objects);
         foreach (var pair in fixtures.Placements) placements.Add(pair.Key, pair.Value);
         foreach (var pair in actors.Placements) placements.Add(pair.Key, pair.Value);
-        _state = new(bank, placements, timeline, venue, (id, time) =>
+        _state = new(bank, placements, timeline, zone, (id, time) =>
         {
             if (lighting == null || !fixtures.ObjectBeams.TryGetValue(id, out var beam)) return null;
             var index = Array.IndexOf(lighting.BeamIds, beam);
@@ -47,14 +47,14 @@ internal sealed class StageScripts : IDisposable
         return File.Exists(path) ? Task.Run(() => StageScriptBank.Load(path, Path.Combine(library, "scripts.json"))) : null;
     }
 
-    public static StageScripts? Load(Task<StageScriptBank>? reading, StageAssets assets, StageFixtures fixtures, StageActors actors, StageLighting? lighting, StageTimeline timeline, string venue)
+    public static StageScripts? Load(Task<StageScriptBank>? reading, StageAssets assets, StageFixtures fixtures, StageActors actors, StageLighting? lighting, StageTimeline timeline, string zone)
     {
         if (reading == null) return null;
         var section = LoadTiming.Now;
         var bank = reading.GetAwaiter().GetResult();
         LoadTiming.Add("scripts: wait for the banks", section);
         section = LoadTiming.Now;
-        var scripts = new StageScripts(bank, assets, fixtures, actors, lighting, timeline, venue);
+        var scripts = new StageScripts(bank, assets, fixtures, actors, lighting, timeline, zone);
         LoadTiming.Add("scripts: state", section);
         return scripts;
     }

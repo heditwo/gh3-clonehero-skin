@@ -29,13 +29,13 @@ internal sealed class StageAudio : IDisposable
         _state = state;
     }
 
-    public static StageAudio? Load(string directory, StageTimeline timeline, string venue, bool training = false)
+    public static StageAudio? Load(string directory, StageTimeline timeline, string zone, bool training = false)
     {
         var path = Path.Combine(directory, "audio.json");
         if (!File.Exists(path)) return null;
         var bank = StageSoundBank.Load(path);
         var countoff = timeline.Countoff.Length > 0 ? timeline.Countoff : DefaultCountoff;
-        return new(directory, bank, new StageAudioState(bank, timeline, venue, countoff) { Training = training });
+        return new(directory, bank, new StageAudioState(bank, timeline, zone, countoff) { Training = training });
     }
 
     public void Update(double time, float rock, bool paused)

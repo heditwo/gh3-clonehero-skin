@@ -216,6 +216,7 @@ def open_markers(scene, placements):
         item = scene.chstage.crowd.add()
         item.role, item.model, item.yaw = row["role"], row["model"], row["yaw"]
         item.kept = sidecars.kept_text(crowd=row["source"])
+    scene.chstage.small_venue = placements.get("smallVenue", False)
     return keys
 
 

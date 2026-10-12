@@ -370,6 +370,7 @@ class CHSTAGE_PT_crowd_cameras(SidebarPanel, Panel):
     def draw(self, context):
         layout = self.layout
         props = context.scene.chstage
+        layout.prop(props, "small_venue")
         layout.label(text="Crowd")
         edit_list(layout, "SCENE", props, "crowd", "chstage.crowd", rows=2)
         layout.label(text="Camera notes")

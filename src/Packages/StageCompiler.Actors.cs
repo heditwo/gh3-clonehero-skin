@@ -7,10 +7,13 @@ namespace Gh3Skin.Packages;
 // The venue's scripts and skinned actors: the script bank copy, and the actor GLBs sampled to clips at 30 fps.
 internal sealed partial class StageCompiler
 {
-    private void CopyScripts(string path, string folder)
+    // Returns the GH3 zone name of the script bank, or "".
+    private string CopyScripts(string path, string folder)
     {
         var scripts = ReadJson(path) as JsonObject ?? throw new PackageException("scripts.json must be an object");
-        Fields(scripts, "scripts.json", new[] { "version", "definitions", "startup", "nodes", "textures", "performanceChanged", "prefixes", "lightVolumes", "movies" }, "version", "definitions");
+        Fields(scripts, "scripts.json", new[] { "version", "zone", "definitions", "startup", "nodes", "textures", "performanceChanged", "prefixes", "lightVolumes", "movies" }, "version", "definitions");
+        var zone = scripts["zone"] == null ? "" : Text(scripts["zone"]) ?? throw new PackageException("invalid stage zone name");
+        if (zone.Length > 0 && !Regex.IsMatch(zone, @"\A[A-Za-z0-9_]{1,64}\z")) throw new PackageException("invalid stage zone name");
         if (Number(scripts["version"], "version") != 1 || scripts["definitions"] is not JsonObject definitions || definitions.Count > 50000)
             throw new PackageException("invalid stage script definitions");
         foreach (var (name, value) in definitions)
@@ -45,6 +48,7 @@ internal sealed partial class StageCompiler
                 if (stream.Read(magic, 0, 8) != 8 || System.Text.Encoding.ASCII.GetString(magic) != "GH3VID01") throw new PackageException("invalid movie frame bank");
             }
         }
+        return zone;
     }
 
     private JsonObject CompileActorEntry(string name, JsonNode actor, string folder)

@@ -21,7 +21,7 @@ internal static class LightOwnershipTests
                 var path = Path.Combine(folder.FullName, "scripts.json");
                 File.WriteAllText(path, json);
                 using var state = new StageScriptState(StageScriptBank.Load(path, library), new Dictionary<string, StageObjectPlacement>(),
-                    new StageTimeline(Array.Empty<StageCue>(), "light ownership"), "example.club");
+                    new StageTimeline(Array.Empty<StageCue>(), "light ownership"), "");
                 if (!state.LightScene.DrivesLighting)
                 {
                     var command = state.LightScene.Execute(Gh3Checksum.Value("SetLightColor"), Gh3ScriptRuntime.Structure(new[] {

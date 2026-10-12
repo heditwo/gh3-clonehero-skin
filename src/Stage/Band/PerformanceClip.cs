@@ -182,10 +182,11 @@ internal sealed class PerformanceClip
     private const double Sqrt1_2 = 0.70710678118654752440;
 
     // Adds an offset for each bone to the position tracks (a clip of the character library clip rig on a profile rig;
-    // CharacterMotion).
+    // CharacterMotion). A profile on the clip rig itself has only zero offsets: the clip stays as it is, so that its poses
+    // are bit for bit the poses of the band library member on the same rig (a sum with zero changes -0 to +0).
     public PerformanceClip Move(Vector3[]? offsets)
     {
-        if (offsets == null) return this;
+        if (offsets == null || Array.TrueForAll(offsets, offset => offset == Vector3.Zero)) return this;
         for (var i = 0; i < _bones.Length; i++)
         {
             if ((_masks[i] & 1) == 0 || _bones[i] >= offsets.Length) continue;

@@ -97,6 +97,11 @@
         "clips"
       ],
       "properties": {
+        "profile": {
+          "description": "The ID of the fixed profile of the role (character.json and instrument.json profile).",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+        },
         "bones": {
           "$ref": "#/$defs/bones"
         },
@@ -108,6 +113,12 @@
         },
         "clips": {
           "$ref": "#/$defs/clips"
+        },
+        "points": {
+          "$ref": "#/$defs/rigPoints"
+        },
+        "ik": {
+          "$ref": "#/$defs/ikChains"
         }
       }
     },
@@ -162,6 +173,121 @@
     "hex64": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "rigPoints": {
+      "description": "The bones of a rig by their use (PACKAGE-FORMAT.md section 10.2). Each value is a bone of the rig.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "instrument": {
+          "$ref": "#/$defs/checksum"
+        },
+        "microphone": {
+          "$ref": "#/$defs/checksum"
+        },
+        "mouthUpper": {
+          "$ref": "#/$defs/checksum"
+        },
+        "mouthLower": {
+          "$ref": "#/$defs/checksum"
+        },
+        "stickLeft": {
+          "$ref": "#/$defs/checksum"
+        },
+        "stickRight": {
+          "$ref": "#/$defs/checksum"
+        },
+        "seat": {
+          "$ref": "#/$defs/checksum"
+        }
+      }
+    },
+    "ikChain": {
+      "description": "One chain of a GH3 IK parameter array: bone0-2, boneTarget, HingeAxis, CosMaxHingeAngle, CosMinHingeAngle. hand: the arm of the chain (right: the strum arm, left: the fret arm); absent for a leg.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bones",
+        "target",
+        "hinge",
+        "cosMax",
+        "cosMin"
+      ],
+      "properties": {
+        "bones": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/checksum"
+          }
+        },
+        "target": {
+          "$ref": "#/$defs/checksum"
+        },
+        "hinge": {
+          "$ref": "common.schema.json#/$defs/vec3"
+        },
+        "cosMax": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        },
+        "cosMin": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        },
+        "hand": {
+          "enum": [
+            "right",
+            "left"
+          ]
+        }
+      }
+    },
+    "ikChains": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/ikChain"
+      }
+    },
+    "rigConstraints": {
+      "description": "GH3 hero_ConstraintBones: twist and split bones that follow a target bone by an amount.",
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "bone",
+          "target",
+          "amount"
+        ],
+        "properties": {
+          "type": {
+            "enum": [
+              "Split",
+              "SplitR",
+              "Twist",
+              "TwistChild"
+            ]
+          },
+          "bone": {
+            "$ref": "#/$defs/checksum"
+          },
+          "target": {
+            "$ref": "#/$defs/checksum"
+          },
+          "amount": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      }
     }
   }
 }

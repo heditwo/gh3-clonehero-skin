@@ -1,18 +1,18 @@
-"""The GH3 venues: their zone names, display names, and stage package IDs."""
+"""The GH3 venues: their zone names and stage package IDs. The display names come from GH3 (pipeline.gh3.levels)."""
 
-# The GH3 zones that the venues step exports, with the venue names of the GH3 menus.
-VENUES = {
-    "z_party": "Backyard Bash",
-    "z_dive": "Mitch's Moose Lounge",
-    "z_video": "Video Shoot",
-    "z_artdeco": "Ye Olde Royal Odeon",
-    "z_prison": "Shanker's Island",
-    "z_wikker": "Desert Rock Tour",
-    "z_budokan": "Kaiju Megadome",
-    "z_hell": "Lou's Inferno",
-    "z_soundcheck": "Soundcheck",
-    "z_credits": "Credits",
-}
+# The GH3 zones that the venues step exports (the rows of LevelZones without z_viewer, the model viewer).
+VENUES = (
+    "z_party",
+    "z_dive",
+    "z_video",
+    "z_artdeco",
+    "z_prison",
+    "z_wikker",
+    "z_budokan",
+    "z_hell",
+    "z_soundcheck",
+    "z_credits",
+)
 
 
 def stage_id(zone: str) -> str:

@@ -4,7 +4,7 @@ import argparse
 from hashlib import sha256
 from pathlib import Path
 
-from pipeline.gh3.data import Source
+from pipeline.gh3.data import Source, script
 from pipeline.library import (
     audio,
     band,
@@ -12,10 +12,11 @@ from pipeline.library import (
     direction,
     hair,
     hand_fire,
+    rigs,
     scripts,
     tesla,
 )
-from pipeline.package.profiles import LIBRARY_ID
+from pipeline.package.profiles import LIBRARY_ID, PROFILES
 from pipeline.paths import GH3_DATA, LIBRARY
 from pipeline.stagepack.pack import load_json, write_json
 
@@ -59,7 +60,16 @@ def prepare(data, output):
     audio.convert(data, output / "audio")
     scripts.convert(data, output / "scripts.json")
     tesla.convert(data, output / "render")
+    write_catalog(data, output)
+    manifest(output)
+    print(output)
+
+
+def write_catalog(data, output):
+    """catalog.json: the fixed profile, the rig, the rig data (pipeline.library.rigs), and the clip tables of each band
+    role."""
     performance = load_json(output / "direction/performance.json")
+    anim_tree = script(Source(data).scripts(), "guitar_anim_tree")
     write_json(
         output / "catalog.json",
         {
@@ -67,17 +77,19 @@ def prepare(data, output):
             "library": LIBRARY_ID,
             "members": {
                 role: {
+                    "profile": next(profile for profile, profile_role in PROFILES.items() if profile_role == role),
                     "bones": member["bones"],
+                    "points": rigs.points(member["bones"]),
+                    **({"ik": rigs.ik_chains(anim_tree, rigs.ROLE_IK[role])} if role in rigs.ROLE_IK else {}),
                     "groups": member["groups"],
                     "layers": member["layers"],
                     "clips": member["clips"],
                 }
                 for role, member in performance["members"].items()
             },
+            "constraints": rigs.constraints(anim_tree),
         },
     )
-    manifest(output)
-    print(output)
 
 
 if __name__ == "__main__":
@@ -86,8 +98,12 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, default=LIBRARY)
     parser.add_argument("--models-only", action="store_true", help="Rebuild only the band and crowd models")
     parser.add_argument("--hair-only", action="store_true", help="Rebuild only the hair physics")
+    parser.add_argument("--catalog-only", action="store_true", help="Rebuild only catalog.json")
     args = parser.parse_args()
-    if args.models_only:
+    if args.catalog_only:
+        write_catalog(args.data, args.output)
+        manifest(args.output)
+    elif args.models_only:
         prepare_models(args.data, args.output)
     elif args.hair_only:
         prepare_hair(args.data, args.output)

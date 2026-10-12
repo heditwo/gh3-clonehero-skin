@@ -11,13 +11,14 @@ internal sealed partial class StageBand
 {
     private sealed record Loaded(Performer Player, List<StageAssets> Assets, HairDefinition? Hair, int[] Parents, int ChainJoints);
 
-    // The set of the band library member of a role. `names`: read the rig bone names (a character needs them).
+    // The set of the band library member of a role. `names`: read the rig bind rows (a character needs them).
     private static CharacterMotion LibraryMotion(string library, string role, BandAnimation rig, HairBank? hair, bool names)
     {
         var roleHair = hair != null && hair.Members.TryGetValue(role, out var found) ? found : null;
-        if (!names) return CharacterMotion.Library(role, rig, roleHair);
-        var (bones, _, bind) = Packages.CharacterImporter.Rig(library, role);
-        return CharacterMotion.Library(role, rig, roleHair, bones, bind);
+        var rigs = Packages.LibraryRigs.Load(library);
+        if (!names) return CharacterMotion.Library(role, rig, roleHair, rigs);
+        var (_, _, bind) = Packages.CharacterImporter.Rig(library, role);
+        return CharacterMotion.Library(role, rig, roleHair, rigs, bind);
     }
 
     // The set that the character plays in the roles of its profile: the set of its character library profile, or the
@@ -183,7 +184,7 @@ internal sealed partial class StageBand
             {
                 Bones = names, Parents = parents, Bind = rest, Humanoid = Packages.HumanoidRoles.FromGh3(profile.Bones), Scale = profile.Scale, Gh3Face = true,
             };
-            constraints = new StageGuitarRig(parents, rest, names, ik: Array.Empty<IkChainDefinition>());
+            constraints = new StageGuitarRig(parents, rest, names, System.Array.Empty<Packages.IkChainDefinition>(), own.Constraints);
             var body = Packages.BandAttachments.BodyJoints(profile.Bones, profile.Parents);
             extras.AddToBody(body, profile.Bones.Length);
             var parts = Packages.BandAttachments.ReadParts(Path.Combine(character.Folder, "meshes.bin"));
@@ -194,7 +195,7 @@ internal sealed partial class StageBand
                 parts: ownParts.Length == 0 ? null : Enumerable.Range(0, parts.Length).Except(ownParts).ToArray());
             hair = HairDefinition.Merge(own.Hair, extras.Joints, extras.Colliders);
         }
-        var retarget = new CharacterRetarget(sourceNames, source.Parents, source.BindPose, target, role);
+        var retarget = new CharacterRetarget(sourceNames, source.Parents, source.BindPose, driver.Points, target, role);
         string note;
         var picked = instrument != null && CanHold(instrument, sourceNames);
         var problem = picked ? LoadPicked(instrument!, sourceNames, source, performer, layer, sourceBones, lighting, surfaceShader, result) : "";

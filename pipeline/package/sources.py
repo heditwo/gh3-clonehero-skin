@@ -13,7 +13,7 @@ from pipeline.package.profiles import LIBRARY_ID
 from pipeline.package.schema import Schemas
 from pipeline.package.validate import Validator
 
-PLACEMENT_FIELDS = ("band", "waypoints", "effects", "crowd")
+PLACEMENT_FIELDS = ("band", "waypoints", "effects", "crowd", "smallVenue")
 MANIFEST_FIELDS = {
     "version",
     "kind",

@@ -24,9 +24,9 @@ internal sealed partial class StageCompiler
         switch (part)
         {
             case "root": return (role, "00000000");
-            case "head": return (role, Key("bone_head"));
-            case "hand_left": return (role, Key("Bone_Palm_L"));
-            case "hand_right": return (role, Key("Bone_Palm_R"));
+            case "head": return (role, HumanoidRoles.Gh3["head"]);
+            case "hand_left": return (role, HumanoidRoles.Gh3["leftHand"]);
+            case "hand_right": return (role, HumanoidRoles.Gh3["rightHand"]);
         }
         if (part.StartsWith("bone."))
         {

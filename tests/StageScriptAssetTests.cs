@@ -20,6 +20,7 @@ internal static class StageScriptAssetTests
         {
             if (!File.Exists(Path.Combine(directory, "scripts.json"))) continue;
             var venue = Path.GetFileName(directory);
+            var zone = StagePack.Load(directory).Zone;
             var placements = JsonSerializer.Deserialize<Scene>(File.ReadAllText(Path.Combine(directory, "stage.json")), options)!.Objects;
             var actors = new Dictionary<uint, StageScriptActorDefinition>();
             if (File.Exists(Path.Combine(directory, "actors.json")))
@@ -50,7 +51,7 @@ internal static class StageScriptAssetTests
             var timeline = new StageTimeline(new[] { 76, 75, 58, 57, 74, 73, 72, 71, 70, 60, 60, 69, 68, 67, 66, 65, 64, 63, 62, 61, 76 }
                 .Select((note, index) => new StageCue(4 + index * .5, "gh3-note", note.ToString())), "script assets");
             var lighting = new StageLighting(StageLightingBank.Load(directory)!, timeline);
-            using var state = new StageScriptState(bank, placements, timeline, venue, (id, time) => {
+            using var state = new StageScriptState(bank, placements, timeline, zone, (id, time) => {
                 var binding = bank.LightVolumes.FirstOrDefault(pair => Gh3QbText.Key(pair.Key) == id).Value;
                 var index = binding == null ? -1 : Array.IndexOf(lighting.BeamIds, Gh3QbText.Key(binding).ToString("x8"));
                 return index < 0 ? beams.GetValueOrDefault(id) : lighting.At(time).SampleBeam(index, time);
@@ -64,7 +65,7 @@ internal static class StageScriptAssetTests
                     Console.WriteLine($"{venue} {position}: ambient {set.Ambient} key {set.Color} dir {set.Direction} sh0 {set.Harmonics[0]} sh1 {set.Harmonics[1]}");
                 }
             state.Update(3, .9f);
-            CheckNodeFlags(venue, bank, placements, directory, beams, actors);
+            CheckNodeFlags(venue, zone, bank, placements, directory, beams, actors);
             if (venue == "gh3.prison")
             {
                 state.Update(7.6, .9f);
@@ -109,7 +110,6 @@ internal static class StageScriptAssetTests
                 if (sample.Clip < 0 || sample.Clip >= actor.Durations.Length || sample.Time < 0 || sample.Time > actor.Durations[sample.Clip])
                     throw new Exception("Script actor sample exceeds its original clip");
             }
-            var zone = "z_" + venue.Substring(4);
             var encoreCues = new List<StageCue>();
             if (bank.Values.TryGetValue(Gh3Checksum.Value(zone + "_Encore_Transition"), out var transition))
             {
@@ -127,7 +127,7 @@ internal static class StageScriptAssetTests
             }
             var encoreTimeline = new StageTimeline(encoreCues, "source encore table");
             var encoreLighting = new StageLighting(StageLightingBank.Load(directory)!, encoreTimeline);
-            using var encore = new StageScriptState(bank, placements, encoreTimeline, venue, (id, time) => {
+            using var encore = new StageScriptState(bank, placements, encoreTimeline, zone, (id, time) => {
                 var binding = bank.LightVolumes.FirstOrDefault(pair => Gh3QbText.Key(pair.Key) == id).Value;
                 var index = binding == null ? -1 : Array.IndexOf(encoreLighting.BeamIds, Gh3QbText.Key(binding).ToString("x8"));
                 return index < 0 ? beams.GetValueOrDefault(id) : encoreLighting.At(time).SampleBeam(index, time);
@@ -156,7 +156,7 @@ internal static class StageScriptAssetTests
     }
 
     // GH3.exe applies the node-flag table after each lightshow mood or performance change; every flag-driven visual node must follow it.
-    private static void CheckNodeFlags(string venue, StageScriptBank bank, Dictionary<string, StageObjectPlacement> placements, string directory,
+    private static void CheckNodeFlags(string venue, string zone, StageScriptBank bank, Dictionary<string, StageObjectPlacement> placements, string directory,
         Dictionary<uint, StageBeamValue> beams, Dictionary<uint, StageScriptActorDefinition> actors)
     {
         uint Flag(Gh3QbValue node) => node.Field("CreatedFromVariable")?.Integer ?? node.Field("CreatedOnProgress")?.Integer ?? 0;
@@ -170,7 +170,7 @@ internal static class StageScriptAssetTests
         var timeline = new StageTimeline(new[] { (1.0, 76), (2, 71), (3, 70), (4, 72), (5, 74) }
             .Select(cue => new StageCue(cue.Item1, "gh3-note", cue.Item2.ToString())), "node flags");
         var lighting = new StageLighting(StageLightingBank.Load(directory)!, timeline);
-        using var state = new StageScriptState(bank, placements, timeline, venue, (id, time) => beams.GetValueOrDefault(id), actors, lighting);
+        using var state = new StageScriptState(bank, placements, timeline, zone, (id, time) => beams.GetValueOrDefault(id), actors, lighting);
         void Expect(double time, float rock, string flag, bool exists)
         {
             state.Update(time, rock);

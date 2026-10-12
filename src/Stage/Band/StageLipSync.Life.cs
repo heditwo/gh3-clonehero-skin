@@ -9,11 +9,7 @@ namespace Gh3Skin;
 // also move a character on its own skeleton (the retarget maps them).
 internal sealed partial class StageLipSync
 {
-    private static readonly string[] LifeBones =
-    {
-        "Bone_Head", "Bone_Eye_L", "Bone_Eye_R", "Bone_Brow_L", "Bone_Brow_R", "Bone_Brow_Mid", "Bone_Brow_Mid_L", "Bone_Brow_Mid_R",
-        "Bone_Eyelid_Lower_L", "Bone_Eyelid_Lower_R", "Bone_Cheek_Upper_L", "Bone_Cheek_Upper_R"
-    };
+    private static readonly string[] LifeBones = Packages.HumanoidRoles.Gh3FaceLife;
     private const int HeadBone = 0;
     private const int FirstEye = 1;
     private const int Eyes = 2;

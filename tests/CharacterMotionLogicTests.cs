@@ -196,13 +196,14 @@ internal static class CharacterMotionLogicTests
             new BandPose(new(0.5f, 1.1f, 0.2f), Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.4f)),
         };
         var hero = new[] { new IkChainDefinition { Bones = new[] { K("Bone_Bicep_R"), K("Bone_Forearm_R"), K("Bone_Palm_R") }, Target = K("Bone_IK_Hand_Guitar_R"),
-            Hinge = new[] { 0f, 0, -1 }, CosMax = -0.97f, CosMin = 0.97f } };
+            Hinge = new[] { 0f, 0, -1 }, CosMax = -0.97f, CosMin = 0.97f, Hand = "right" } };
         var a = bind.ToArray();
         var b = bind.ToArray();
-        new StageGuitarRig(parents, bind, names).Apply(a, 1, 1);
-        new StageGuitarRig(parents, bind, names, ik: hero).Apply(b, 1, 1);
-        Check(a.SequenceEqual(b), "the Hero_Ik_params data gives the built-in guitarist IK");
-        Check(!a.SequenceEqual(bind), "the IK moves the arm");
+        var rig = new StageGuitarRig(parents, bind, names, hero, Array.Empty<RigConstraint>());
+        rig.Apply(a, 1, 1);
+        rig.Apply(b, 0, 1);
+        Check(!a.SequenceEqual(bind), "the IK chain of the data moves the arm");
+        Check(b.SequenceEqual(bind), "an arm chain follows the strength of its hand (right: the strum arm)");
     }
 
     private static void Check(bool condition, string name)

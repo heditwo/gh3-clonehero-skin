@@ -27,6 +27,7 @@ from pipeline.gh3.formats import (
     values,
     word,
 )
+from pipeline.gh3.levels import level_titles, small_venue_zones
 from pipeline.gh3.script_bank import definitions, dependencies, references
 from pipeline.gh3.venue_scripts import literal_positions, script_bytes
 from pipeline.package.profiles import LIBRARY_ID
@@ -452,7 +453,9 @@ def export_actors(source, scripts, global_entries, entries, nodes, directory, zo
     return actors
 
 
-def export(source, scripts, global_entries, zone, directory, global_references=None):  # noqa: C901
+def export(source, scripts, global_entries, zone, directory, global_references=None, levels=None):  # noqa: C901
+    """Export one venue. `levels`: (titles, small venue zones) of pipeline.gh3.levels; read from `scripts` when None."""
+    titles, small_venues = levels or (level_titles(scripts), small_venue_zones(scripts))
     directory.mkdir(parents=True, exist_ok=True)
     entries = source.load(f"ZONES/{zone}.pak.xen")
     qbs = [b for k, n, b in entries if k in (key(".qb"), key(".nqb"))]
@@ -476,6 +479,7 @@ def export(source, scripts, global_entries, zone, directory, global_references=N
         directory / "scripts.json",
         {
             "version": 1,
+            "zone": zone,
             "definitions": script_values,
             "startup": startup,
             "prefixes": prefixes,
@@ -682,7 +686,7 @@ def export(source, scripts, global_entries, zone, directory, global_references=N
         "version": 1,
         "kind": "stage",
         "id": stage_id(zone),
-        "name": VENUES[zone],
+        "name": titles[zone],
         "library": LIBRARY_ID,
         "model": "stage.glb",
         "band": band,
@@ -693,6 +697,8 @@ def export(source, scripts, global_entries, zone, directory, global_references=N
         "actors": actors,
         "scripts": "scripts.json",
     }
+    if key(zone) in small_venues:
+        manifest["smallVenue"] = True
     crowd_models = next(
         (rows for qb in scripts.values() if (rows := find_array(qb, zone + "_crowd_models")) is not None), []
     )
@@ -745,10 +751,11 @@ def main():
     scripts = source.scripts()
     global_entries = {(k, n): b for k, n, b in source.load("ZONES/global.pak.xen")}
     global_references = references(scripts.values())
+    levels = (level_titles(scripts), small_venue_zones(scripts))
     reports = []
     for zone in args.venue or VENUES:
         folder = args.output / stage_id(zone)
-        report = export(source, scripts, global_entries, zone, folder, global_references)
+        report = export(source, scripts, global_entries, zone, folder, global_references, levels)
         report["compiled"] = install(folder, args.compiled)
         reports.append(report)
     write_json(args.output / "conversion-report.json", {"version": 1, "venues": reports})

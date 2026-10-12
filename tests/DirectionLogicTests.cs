@@ -92,7 +92,7 @@ internal static class DirectionLogicTests
             new BandPose(new(0.3f, 0, 0), Quaternion.Identity), new BandPose(new(0.25f, 0, 0), Quaternion.Identity),
             new BandPose(new(0.35f, 1.2f, 0.2f), Quaternion.CreateFromAxisAngle(Vector3.UnitX, 0.7f)), new BandPose(new(0.12f, 0, 0), Quaternion.Identity) };
         var rigPose = rigBind.ToArray();
-        new StageGuitarRig(rigParents, rigBind, rigBones).Apply(rigPose, 1, 1);
+        new StageGuitarRig(rigParents, rigBind, rigBones, RigFixtures.Ik(), RigFixtures.Constraints()).Apply(rigPose, 1, 1);
         Vector3 World(int bone) => bone < 0 ? Vector3.Zero : World(rigParents[bone]) + Vector3.Transform(rigPose[bone].Position, Rotation(rigParents[bone]));
         Quaternion Rotation(int bone) => bone < 0 ? Quaternion.Identity : Rotation(rigParents[bone]) * rigPose[bone].Rotation;
         Check(Vector3.Distance(World(3), World(4)) < 0.0001f, "two-joint IK puts the palm on the guitar target");
@@ -163,7 +163,8 @@ internal static class DirectionLogicTests
             using var reader = new BinaryReader(File.OpenRead(Path.Combine(assets, "budokan", "band", role, "animation.bin")));
             var animation = new BandAnimation(reader);
             var bind = animation.BindPose;
-            var player = new PerformancePlayer(role, directory, definition, bind, timeline, animation.Parents, bank.Constants);
+            var player = new PerformancePlayer(role, directory, definition, bind, timeline, animation.Parents, bank.Constants,
+                RigFixtures.Motion(role, directory, definition));
             player.Prepare();
             for (double time = 0; time < timeline.Cues[^1].Time + 1; time += 0.1)
             {

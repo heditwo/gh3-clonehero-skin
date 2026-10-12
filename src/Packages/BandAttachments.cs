@@ -5,11 +5,11 @@ namespace Gh3Skin.Packages;
 // game adds to a character the parts that the Blender add-on and `python -m pipeline.package.character` leave out.
 internal static class BandAttachments
 {
-    public static readonly string Pelvis = Gh3Checksum.Of("bone_pelvis");
+    public static readonly string Pelvis = HumanoidRoles.Gh3["hips"];
 
     public sealed record Part(uint Material, int[] Dominant);
 
-    // The body joints of a rig: the subtree of the parent of bone_pelvis. The other subtrees of the root are the
+    // The body joints of a rig: the subtree of the parent of the pelvis (the hips bone of the GH3 humanoid map). The other subtrees of the root are the
     // instrument, microphone stand, drum kit, and IK helpers.
     public static HashSet<int> BodyJoints(IReadOnlyList<string> bones, IReadOnlyList<int> parents)
     {

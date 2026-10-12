@@ -34,9 +34,3 @@ internal static class Gh3Keys
         (DefaultGroup, "defaultgroup"), (Band, "band"), (Point, "point"), (Spot, "spot"), (Ambient, "ambient"),
     };
 }
-
-// GH3: bone checksums as the string keys of the band rigs (Gh3Checksum.Of of the bone name).
-internal static class Gh3Bones
-{
-    public const string Head = "ddec28af"; // Bone_Head
-}

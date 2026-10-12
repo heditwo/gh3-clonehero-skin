@@ -16,14 +16,17 @@ internal sealed partial class StageCompiler
     private static readonly string[] Shading = { "lit", "ambient", "unlit" };
     private readonly VerifiedPackage _package;
     private readonly TextureJobs _textures;
+    private readonly string _library;
     private readonly JsonObject? _catalog;
     private readonly List<string> _sources = new();
     public List<string> Warnings { get; } = new();
 
-    public StageCompiler(VerifiedPackage package, TextureJobs textures, JsonObject? libraryCatalog)
+    // `library`: the ID of the band library that the stage requires; `libraryCatalog`: its catalog.json.
+    public StageCompiler(VerifiedPackage package, TextureJobs textures, string library, JsonObject? libraryCatalog)
     {
         _package = package;
         _textures = textures;
+        _library = library;
         _catalog = libraryCatalog?["members"] as JsonObject;
     }
 
@@ -43,6 +46,7 @@ internal sealed partial class StageCompiler
         var band = placements["band"] as JsonObject ?? throw new PackageException("placements.json needs 'band'");
         if (band.Count == 0 || band.Any(pair => !Roles.Contains(pair.Key))) throw new PackageException("a stage needs one to four known performer placements");
         foreach (var (role, placement) in band) Transform(placement, "band " + role);
+        var smallVenue = placements["smallVenue"] != null && (Bool(placements["smallVenue"]) ?? throw new PackageException("placements.json smallVenue must be true or false"));
         var crowd = placements["crowd"] as JsonArray ?? new JsonArray();
         if (crowd.Count > 8) throw new PackageException("invalid crowd members");
         var crowdRoles = new HashSet<string>();
@@ -215,7 +219,7 @@ internal sealed partial class StageCompiler
             ["objectIds"] = new JsonArray(objectIds.Select(g => (JsonNode?)g).ToArray()), ["objects"] = objects,
         };
         Write(Path.Combine(folder, "stage.json"), definitionJson);
-        if (entry.TryGetValue("scripts", out var scriptsPath)) CopyScripts(scriptsPath, folder);
+        var zone = entry.TryGetValue("scripts", out var scriptsPath) ? CopyScripts(scriptsPath, folder) : "";
         foreach (var (name, parts) in fixtureModels)
         {
             var modelFolder = Path.Combine(folder, "fixtures", name);
@@ -238,8 +242,8 @@ internal sealed partial class StageCompiler
         Write(Path.Combine(folder, "lighting.json"), lighting);
         var pack = new JsonObject
         {
-            ["version"] = 1, ["id"] = manifest.Id, ["name"] = manifest.Name, ["library"] = manifest.Requires.FirstOrDefault(r => r.Id.StartsWith("gh3-band-")).Id ?? "gh3-band-v1",
-            ["band"] = Clone(band), ["waypoints"] = waypoints, ["effects"] = Clone(effects), ["crowd"] = Clone(crowd),
+            ["version"] = 1, ["id"] = manifest.Id, ["name"] = manifest.Name, ["library"] = _library,
+            ["band"] = Clone(band), ["waypoints"] = waypoints, ["effects"] = Clone(effects), ["crowd"] = Clone(crowd), ["smallVenue"] = smallVenue, ["zone"] = zone,
             ["package"] = new JsonObject { ["id"] = manifest.Id, ["version"] = manifest.Version.ToString() },
             ["sources"] = new JsonObject(_sources.Distinct().Where(manifest.Files.ContainsKey).Select(name =>
                 KeyValuePair.Create(name, (JsonNode?)manifest.Files[name].Sha256))),

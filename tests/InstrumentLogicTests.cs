@@ -65,7 +65,8 @@ internal static class InstrumentLogicTests
     {
         var library = Path.Combine(root, "library");
         Directory.CreateDirectory(Path.Combine(library, "band", "guitarist"));
-        File.WriteAllText(Path.Combine(library, "catalog.json"), "{\"version\":1,\"members\":{\"guitarist\":{\"bones\":[\"0000000a\",\"0000000b\",\"0000000c\"]}}}");
+        File.WriteAllText(Path.Combine(library, "catalog.json"), "{\"version\":1,\"library\":\"gh3-band-v1\",\"members\":{\"guitarist\":{\"profile\":\"gh3-guitarist-axel-v1\",\"bones\":[\"0000000a\",\"0000000b\",\"0000000c\"]}," +
+            "\"bassist\":{\"profile\":\"gh3-bassist-v1\",\"bones\":[\"0000000a\"]}}}");
         using var writer = new BinaryWriter(File.Create(Path.Combine(library, "band", "guitarist", "animation.bin")));
         writer.Write(Encoding.ASCII.GetBytes("GH3ANM01"));
         writer.Write(3);

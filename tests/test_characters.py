@@ -297,7 +297,7 @@ class InventoryTests(unittest.TestCase):
                 )
             ],
             [
-                "gh3-guitarist-axel-v1",
+                "gh3-guitarist-axel-outfit1-v1",
                 "gh3-guitarist-axel-outfit2-v1",
                 "gh3-guitarist-judy-outfit2-v1",
                 "gh3-guitarist-lou-v1",
@@ -327,7 +327,7 @@ class AccessorySkeletonTests(unittest.TestCase):
 class CharacterLibraryTests(unittest.TestCase):
     def test_profiles_and_sets(self):
         data = json.loads((CHARACTER_LIBRARY / "characters.json").read_text())
-        self.assertEqual(len(data["profiles"]), 22)
+        self.assertEqual(len(data["profiles"]), 23)
         self.assertEqual(
             sorted(data["animations"]),
             [
@@ -368,6 +368,20 @@ class CharacterLibraryTests(unittest.TestCase):
                 profiles["gh3-guitarist-grim-ripper-v1"]["animations"],
             ),
             (0.8999999761581421, "satan", None, "axel", "grim-ripper"),
+        )
+        axel = profiles["gh3-guitarist-axel-outfit1-v1"]
+        self.assertEqual(
+            (axel["animations"], axel["hair"], axel["ik"], axel["bones"]),
+            ("axel", "eaebb800", "hero", data["clipRig"]["bones"]),
+            "Axel's first outfit is a profile on the clip rig with his set and ragdoll",
+        )
+        self.assertEqual(
+            [chain.get("hand") for chain in data["ik"]["hero"]],
+            ["right", "left", None, None],
+            "the arm chains name their hand",
+        )
+        self.assertEqual(
+            sorted(data["clipRig"]["points"]), ["instrument", "mouthLower", "mouthUpper"], "the guitarist rig points"
         )
         self.assertEqual(
             data["animations"]["grim-ripper"]["clips"],

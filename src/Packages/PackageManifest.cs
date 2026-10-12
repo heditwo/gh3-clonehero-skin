@@ -25,6 +25,8 @@ internal sealed class PackageManifest
     public PackageRequirement[] Requires { get; private init; } = Array.Empty<PackageRequirement>();
     public SemanticVersion? MinModVersion { get; private init; }
     public string Preview { get; private init; } = "";
+    // A band library has a catalog (section 10); a character library has only `characters` (section 10.1).
+    public bool IsBandLibrary => Kind == PackageKind.Library && Entry.ContainsKey("catalog");
 
     public static string Extension(PackageKind kind) => kind switch
     {

@@ -12,6 +12,7 @@ internal sealed class CharacterMotionBank
     public Dictionary<string, PerformanceMember> Animations { get; set; } = new();
     public Dictionary<string, HairDefinition> Hair { get; set; } = new();
     public Dictionary<string, IkChainDefinition[]> Ik { get; set; } = new();
+    public RigConstraint[] Constraints { get; set; } = Array.Empty<RigConstraint>();
 
     public static CharacterMotionBank Load(string folder) => Loaded.GetOrAdd(Path.GetFullPath(folder), Read);
 
@@ -26,9 +27,8 @@ internal sealed class CharacterMotionBank
                 member.Groups.Values.Concat(member.Layers.Values).SelectMany(c => c).Any(c => !member.Clips.ContainsKey(c)))
                 throw new InvalidDataException($"Invalid animation set {name}");
         foreach (var (name, chains) in bank.Ik)
-            if (chains.Length is < 1 or > 8 || chains.Any(c => c.Bones.Length != 3 || c.Hinge.Length != 3 || !c.Hinge.All(float.IsFinite) ||
-                    !float.IsFinite(c.CosMax) || !float.IsFinite(c.CosMin) || c.CosMax is < -1 or > 1 || c.CosMin is < -1 or > 1))
-                throw new InvalidDataException($"Invalid IK chains {name}");
+            if (chains.Length < 1 || !IkChainDefinition.ValidChains(chains)) throw new InvalidDataException($"Invalid IK chains {name}");
+        if (!RigConstraint.ValidRows(bank.Constraints)) throw new InvalidDataException("Invalid rig constraints");
         return bank;
     }
 }
@@ -51,7 +51,11 @@ internal sealed class CharacterMotion
     public string ClipDirectory { get; set; } = "";
     public Vector3[]? Offsets { get; init; }
     public HairDefinition? Hair { get; init; }
-    public IkChainDefinition[]? Ik { get; init; }
+    // The IK chains, the twist and split constraints, and the rig points of the rig of the set (catalog.json or
+    // characters.json).
+    public IkChainDefinition[] Ik { get; init; } = Array.Empty<IkChainDefinition>();
+    public RigConstraint[] Constraints { get; init; } = Array.Empty<RigConstraint>();
+    public RigPoints Points { get; init; } = RigPoints.None;
     public string SetName { get; init; } = "";
     // The song facial clips of the band library member of the role, and their offsets to the profile rig.
     public PerformanceMember? Face { get; set; }
@@ -62,13 +66,17 @@ internal sealed class CharacterMotion
     // The band role of the set: the role of the band library member or of the profile.
     public string Role => IsLibrary ? LibraryRole : Profile.Role;
 
-    // The set of the band library member of a role on its rig. `bones` and `bind`: the rig bone names (catalog.json) and
-    // local bind rows; a performer without a character does not need them.
-    public static CharacterMotion Library(string role, BandAnimation rig, HairDefinition? hair, string[]? bones = null, float[][]? bind = null) => new()
+    // The set of the band library member of a role on its rig, with the rig data of the library (catalog.json). `bind`:
+    // the local bind rows; a performer without a character does not need them.
+    public static CharacterMotion Library(string role, BandAnimation rig, HairDefinition? hair, LibraryRigs rigs, float[][]? bind = null)
     {
-        Profile = new CharacterProfile { Role = role, Bones = bones ?? Array.Empty<string>(), Parents = rig.Parents, Bind = bind ?? Array.Empty<float[]>() },
-        Rig = rig, LibraryRole = role, Hair = hair,
-    };
+        var data = rigs.Role(role);
+        return new()
+        {
+            Profile = new CharacterProfile { Role = role, Bones = data.Bones, Parents = rig.Parents, Bind = bind ?? Array.Empty<float[]>() },
+            Rig = rig, LibraryRole = role, Hair = hair, Ik = data.Ik, Constraints = rigs.Constraints, Points = data.Points,
+        };
+    }
 
     public static CharacterMotion Create(CharacterModel character)
     {
@@ -88,7 +96,8 @@ internal sealed class CharacterMotion
             Member = new PerformanceMember { Bones = profile.Bones, Groups = set.Groups, Layers = set.Layers, Clips = set.Clips },
             ClipDirectory = Path.Combine(character.LibraryFolder, "clips"),
             Offsets = RestOffsets(profile.Bones, profile.Bind, library.SetClipRigs[setName].Bones, library.SetClipRigs[setName].Bind),
-            Hair = hair, Ik = bank.Ik.TryGetValue(profile.Ik, out var ik) ? ik : null,
+            Hair = hair, Ik = bank.Ik.TryGetValue(profile.Ik, out var ik) ? ik : Array.Empty<IkChainDefinition>(), Constraints = bank.Constraints,
+            Points = library.SetClipRigs[setName].Points,
         };
     }
 
