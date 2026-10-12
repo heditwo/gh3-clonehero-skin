@@ -46,6 +46,7 @@ internal static class SkinEnvironment
     public const string Seed = "GH3_SKIN_SEED";
     public const string Trace = "GH3_SKIN_TRACE";
     public const string TraceCharge = "GH3_SKIN_TRACE_CHARGE";
+    public const string HumanHud = "GH3_SKIN_HUMAN_HUD";
     public const string Timing = "GH3_SKIN_TIMING";
     public const string TimingReloads = "GH3_SKIN_TIMING_RELOADS";
     public const string Profile = "GH3_SKIN_PROFILE";

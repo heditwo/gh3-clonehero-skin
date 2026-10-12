@@ -60,8 +60,6 @@ internal sealed partial class GameplaySpriteRenderer
         foreach (var graphic in _stockHudGraphics)
             if (graphic != null && !graphic.canvasRenderer.cull)
                 graphic.canvasRenderer.cull = true;
-        // isVisible tells whether a camera drew the part in the last frame, so the first check waits.
-        if (BindingTrace.Enabled && _nextStockHudTrace == 0) _nextStockHudTrace = Time.unscaledTime + StockHudTraceSeconds;
         if (BindingTrace.Enabled && Time.unscaledTime >= _nextStockHudTrace)
         {
             _nextStockHudTrace = Time.unscaledTime + StockHudTraceSeconds;
@@ -80,8 +78,17 @@ internal sealed partial class GameplaySpriteRenderer
         return -1;
     }
 
+    // Clone Hero turns spBar and comboCounter on for a human player and leaves them off for the command-line bot
+    // (measured on Windows under Wine, 2026-10-12), so bot captures never showed them. GH3_SKIN_HUMAN_HUD=1 turns them on
+    // in a bot run, as for a human, to check that they stay hidden.
+    private static readonly bool HumanHud = SkinEnvironment.IsOne(SkinEnvironment.HumanHud);
+
     private void ScanPlayerHud(Il2Cpp.BasePlayer player)
     {
+        if (HumanHud)
+            foreach (var part in new Component?[] { player.spBar, player.comboCounter })
+                if (part != null && !part.gameObject.activeSelf)
+                    part.gameObject.SetActive(true);
         CollectPlayerHud(player.spBar, "spBar");
         CollectPlayerHud(player.comboCounter, "comboCounter");
         CollectPlayerHud(player.healthContainer, "healthContainer");
@@ -148,15 +155,18 @@ internal sealed partial class GameplaySpriteRenderer
         }
     }
 
-    // Verification: the stock HUD parts that would draw (must be none), and the stock player rails.
+    // Verification: the stock HUD parts that a camera would draw (must be none: on, active, not forceRenderingOff, on a
+    // drawn layer; graphics not culled), and the stock highway rails.
     private void TraceStockHud()
     {
         var shown = new List<string>();
         var active = new List<string>();
+        var drawn = 0;
+        foreach (var camera in UnityEngine.Object.FindObjectsOfType<Camera>()) drawn |= camera.cullingMask;
         foreach (var renderer in _stockHud)
             if (renderer != null && renderer.enabled && renderer.gameObject.activeInHierarchy)
             {
-                if (renderer.isVisible) shown.Add(renderer.name);
+                if (!renderer.forceRenderingOff && (drawn & (1 << renderer.gameObject.layer)) != 0) shown.Add(renderer.name);
                 else active.Add(renderer.name);
             }
         foreach (var graphic in _stockHudGraphics)

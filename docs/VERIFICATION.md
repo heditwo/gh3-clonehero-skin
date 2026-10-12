@@ -174,7 +174,9 @@ flock /tmp/opencode/gh3-record.lock env GH3_WINDOWS_TEST_DIR=$HOME/games/clonehe
 
 Without a launch option the game uses Direct3D 11 (DXVK); `-force-glcore` selects OpenGL. Windows paths in variables need the `Z:` drive. Put the frames on a disk folder: `/tmp` here is a RAM disk with a quota, and a full `/tmp` also stops Xwayland (`Could not write pid to lock file`). Settings that the test copy needs: `analytics_opt = 3` in `PlayerData\settings.ini` (else the analytics consent dialog stays on top of the menus), and fonts with the name Arial in the prefix (`C:\windows\Fonts\arial.ttf`, for example Liberation Sans with the font name changed). Without Arial, Unity's IMGUI shows no text in the picker. The zip release of the game runs in portable mode: `Custom` and `Songs` are in `<game>\PlayerData`.
 
-Stock HUD check (all platforms): the log has one `Clone Hero stock HUD hidden (<n>): <parts>; HUDCam features kept: <parts>` line for each song. With `GH3_SKIN_TRACE=1`, each `[trace] stock hud parts=<n> layer=<layer> shown=<n>` line (every 2 s) must have `shown=0`: `shown` counts the stock HUD renderers that a camera drew in the last frame (`Renderer.isVisible`) and the stock highway rails that are on. Look also at the right side of the highway in the frames: no dark rail, no multiplier ball, and no score panel next to the rock meter.
+Stock HUD check (all platforms): the log has one `Clone Hero stock HUD hidden (<n>): <parts>; HUDCam features kept: <parts>` line for each song. With `GH3_SKIN_TRACE=1`, each `[trace] stock hud parts=<n> layer=<layer> shown=<n> hiddenActive=<n>` line (every 2 s) must have `shown=0`: `shown` counts the stock HUD renderers that are on and active, not `forceRenderingOff`, and on a layer that a camera draws, the UI graphics that are not culled, and the stock highway rails that are on. Look also at the right side of the highway in the frames: no dark rail, no multiplier ball, no score panel next to the rock meter, and one "Star Power Ready" text.
+
+Clone Hero turns the player's Star Power bar (`SPBar`) and multiplier (`Combo`) on for a human player and keeps them off for the command-line bot of `--song` and `--player`. Bot captures therefore do not show them. Set `GH3_SKIN_HUMAN_HUD=1` to turn them on in a bot run, as for a human player. For a real human run under Wine, start the game without `--song`, and send the menu and fret keys with XTEST to the nested display (Return joins, the green fret `A` confirms; frets `A S J K L`, strum `Down`, Star Power `H`). On Linux, Clone Hero reads the keyboard from `/dev/input`, so XTEST keys have no effect there.
 
 Run the same chart on Linux with `scripts/capture-preview.sh` and the same `GH3_SKIN_TRACE` and capture variables. Then compare the frames (same song times) and the `[trace]` lines of the two loader logs.
 
@@ -339,6 +341,7 @@ These variables are for checks and captures. Normal play needs none of them.
 | `GH3_SKIN_VIDEO_X`, `GH3_SKIN_VIDEO_Y` | Window position; keep the whole window on the screen |
 | `GH3_SKIN_VIDEO_AUDIO` | `game` records the game's audio, or give a `gpu-screen-recorder` audio source |
 | `GH3_SKIN_PREVIEW_POWER`, `GH3_SKIN_PREVIEW_ROCK` | Display-only charge and rock values for screenshots |
+| `GH3_SKIN_HUMAN_HUD` | `1` turns on the player's Star Power bar and multiplier in a bot run, as Clone Hero does for a human player, to check that the skin hides them |
 | `GH3_SKIN_FORCE_POWER`, `GH3_SKIN_FORCE_ROCK` | Display-only charge and rock values, 0 to 1 |
 | `GH3_SKIN_FORCE_POWER_AT_COMBO` | Applies the forced charge from this streak |
 | `GH3_SKIN_FORCE_COMBO`, `GH3_SKIN_FORCE_COMBO_BREAK` | Adds to the shown streak; breaks it at a value. Tests counters of five or more digits |
