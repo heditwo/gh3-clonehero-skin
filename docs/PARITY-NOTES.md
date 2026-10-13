@@ -127,6 +127,26 @@ Textures `079_1024x16_DXT5`, `090_…`, `100_…` from `global_gfx` (thick: bar,
 - Ready banner: 126 frames at 60 fps cut from the reference recording (calibrated).
 - Active Star Power rails: `sys_Big_Bolt01` (8 × 1 frames at 15 fps) from `010_1024x512_DXT1`, glow `053_128x512_DXT5`; two bolt layers and one glow layer per side (script `0x40d71b70.0xb15abbd3`).
 
+### HUD messages
+
+GH3 has two centre messages in a single-player song: "N Note Streak!" (`hud_show_note_streak_combo`) and "Star Power Ready" (`show_star_power_ready`). Star Power activation has no centre text (`hud_activated_star_power` flashes the score panel), and a broken streak has no message. GH3 shows one centre message at a time:
+
+- `GH3.exe` `0x422ebb` (the streak routine at `0x422bc0`) spawns `hud_show_note_streak_combo` at a streak of exactly 50 and at each multiple of 100 (not in `p2_battle`). The mod shows the multiples of 100 only (the 50-note message is not in the mod).
+- `increase_star_power_guts` (`guitar_starpower.qb`) spawns `show_star_power_ready` when the charge goes from below 50 to 50 or more and Star Power is not in use.
+- `show_star_power_ready` waits, one game frame at a time, while the container `HUD_Note_Streak_Combo1` exists (the streak message). Then it sets `star_power_ready_on_p1 = 1`, returns if Star Power is in use, and plays the banner. It sets `star_power_ready_on_p1 = 0` at its end.
+- `hud_show_note_streak_combo` (`guitar_hud_2d.qb`) waits, one game frame at a time, while `star_power_ready_on_p1` is 1. Then it returns without a message if `HUD_Note_Streak_Combo1` exists. Else it creates the container and plays the message (2.55 s of `DoMorph` steps), and destroys the container at its end.
+- Result: the second message waits for the end of the first one, then plays in full. It does not cut the first one and does not move to another position. A second streak message that comes while a streak message plays is dropped. When the two start in the same frame, the banner plays first (it sets its flag before the streak script runs). Debug script `two_message_test` spawns the two at once to test this rule.
+
+Measured in original GH3 (bot, expert, 60 fps recordings, `~/.cache/hud-messages/gh3-*/gh3.mp4`):
+
+| Song | Chart times | GH3 order | Video times |
+| --- | --- | --- | --- |
+| Story of My Life | 100 notes at 29.90 s, ready at 31.77 s | Streak, then banner | Streak 32.70–35.12 s; banner from 35.22 s (the trigger was at about 34.57 s) |
+| Welcome to the Jungle | Ready at 38.72 s, 100 notes at 39.45 s | Banner, then streak | Banner 41.30–43.42 s (2.12 s); streak from 43.60 s (the trigger was at about 42.03 s) |
+| Number of the Beast | 200 notes and ready at 31.77 s | Banner, then streak | Banner from 34.4 s; "200 Note Streak!" after the banner ends (36.6–37.5 s) |
+
+The mod has the same rule in `CenterMessageQueue`: the message that waits starts when the other one ends (the streak message is 2.45 s, the banner 126 frames = 2.1 s). Activation of Star Power hides the banner at once; a streak message that waits then starts.
+
 ## Hit effects
 
 - `hit_note` → `GuitarEvent_HitNote_Spawned` → after one game frame, `hit_note_fx`: `NoteFX` (`0x42add0`), wait 6 frames, `Destroy2DParticleSystem kill_when_empty`, wait 10 frames, `DestroyScreenElement`.

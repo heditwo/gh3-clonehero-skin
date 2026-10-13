@@ -31,13 +31,15 @@ internal sealed class HighwayHud
         _ready = new ReadyBannerHud(Root, assets);
     }
 
-    public void Update(GameplayState state, float time)
+    public float ReadySeconds => _ready.Seconds;
+
+    public void Update(GameplayState state, float time, int readyFrame)
     {
         _animation.Update(state.StarPowerActive, time);
         _active.enabled = _animation.Frame >= 0;
         _edges.enabled = !_active.enabled;
         _edges.texture = state.StarPowerActive || state.StarPower >= 0.5f ? _blueEdges : _normalEdges;
         if (_active.enabled) _active.texture = _activeFrames[_animation.Frame];
-        _ready.Update(state.StarPower, state.StarPowerActive, time);
+        _ready.Update(readyFrame);
     }
 }

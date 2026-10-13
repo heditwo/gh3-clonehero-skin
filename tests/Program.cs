@@ -26,7 +26,6 @@ if (Environment.GetEnvironmentVariable("GH3_BENCH") is { } benchVenue)
     return;
 }
 
-var animation = new ReadyAnimationTrigger();
 LiteralGuardTests.Run();
 DataGuardTests.Run();
 ComboReelLogicTests.Run();
@@ -78,28 +77,7 @@ PackageLogicTests.Run();
 PickerLogicTests.Run();
 AttachmentLogicTests.Run();
 InstrumentLogicTests.Run();
-Equal(-1, animation.Frame(0, 126), "inactive before threshold");
-animation.Update(0.49f, 10);
-Equal(-1, animation.Frame(10, 126), "inactive below threshold");
-animation.Update(0.5f, 11);
-Equal(0, animation.Frame(11, 126), "starts on threshold crossing");
-animation.Update(1, 12);
-Equal(60, animation.Frame(12, 126), "does not restart while ready");
-Equal(-1, animation.Frame(13.1f, 126), "ends while power remains ready");
-animation.Update(0.25f, 14);
-Equal(-1, animation.Frame(14, 126), "hidden below threshold");
-animation.Update(0.5f, 15);
-Equal(0, animation.Frame(15, 126), "restarts after another crossing");
-animation.Reset();
-Equal(-1, animation.Frame(15, 126), "reset on gameplay scene load");
-animation.Update(0.75f, 20);
-animation.Update(0.7f, 20.2f, active: true);
-Equal(-1, animation.Frame(20.2f, 126), "activation hides the ready banner");
-animation.Update(0.6f, 21, active: true);
-Equal(-1, animation.Frame(21, 126), "active charge cannot trigger ready");
-animation.Update(0, 22);
-animation.Update(0.5f, 23);
-Equal(0, animation.Frame(23, 126), "earned recharge starts another banner");
+CenterMessageTests.Run();
 
 var bulbs = new StarPowerBulbAnimation();
 bulbs.Update(0.49f, false, 0);

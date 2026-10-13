@@ -5,7 +5,7 @@ namespace Gh3Skin;
 
 // GH3's centre-screen gameplay messages drawn from the original message font. Measured: timing and scale keyframes
 // from 60 fps recordings of original GH3 at 1600x900 (My Curse, The Dive). "Star Power Ready" is not drawn here: the
-// GH3 frames of ReadyBannerHud already contain that text.
+// GH3 frames of ReadyBannerHud already contain that text. CenterMessageQueue decides when a message starts.
 internal sealed class MessageHud
 {
     private readonly record struct Key(float Time, float Scale, float Alpha, float Warm);
@@ -50,7 +50,8 @@ internal sealed class MessageHud
     private string _text = "";
     private Key[] _keys = StreakKeys;
     private float _start = float.NegativeInfinity;
-    private int _lastCombo;
+
+    public static float StreakSeconds => StreakKeys[^1].Time;
 
     public MessageHud(Transform parent, string fonts)
     {
@@ -81,19 +82,17 @@ internal sealed class MessageHud
         return texture;
     }
 
-    public void Update(GameplayState state, float time)
+    public void Update(CenterMessageQueue messages, float time)
     {
-        if (state.Combo < _lastCombo) _lastCombo = 0;
-        if (state.Combo >= 100 && state.Combo / 100 > _lastCombo / 100) Show($"{state.Combo / 100 * 100} Note Streak!", StreakKeys, time);
-        _lastCombo = state.Combo;
+        if (messages.StreakStart != _start) Show($"{messages.StreakCombo} Note Streak!", StreakKeys, messages.StreakStart);
         Draw(time);
     }
 
-    private void Show(string text, Key[] keys, float time)
+    private void Show(string text, Key[] keys, float start)
     {
         _text = text;
         _keys = keys;
-        _start = time;
+        _start = start;
         while (_images.Count < text.Length) _images.Add(HudVisual.Image(_root, "glyph", _font.Atlas, new Rect(0, 0, 1, 1)));
     }
 

@@ -18,6 +18,7 @@ internal sealed class GameplayHud
     private RockMeterHud? _rock;
     private ScorePanelHud? _score;
     private MessageHud? _message;
+    private CenterMessageQueue? _centerMessages;
     private RectTransform? _overlayRoot;
     private YouRockHud? _youRock;
     private HudViewport? _screenViewport;
@@ -43,6 +44,7 @@ internal sealed class GameplayHud
         _rock = null;
         _score = null;
         _message = null;
+        _centerMessages = null;
         _overlayRoot = null;
         _youRock = null;
         _screenViewport = null;
@@ -66,6 +68,7 @@ internal sealed class GameplayHud
             new HudFont(_assets.Fonts, "score-font"), new HudFont(_assets.Fonts, "counter-font"));
         HudVisual.Position(_score.Root, ScorePosition);
         if (File.Exists(Path.Combine(_assets.Fonts, "message-font.png"))) _message = new MessageHud(_screenRoot, _assets.Fonts);
+        _centerMessages = new CenterMessageQueue(_message != null ? MessageHud.StreakSeconds : 0, _highway.ReadySeconds);
         _overlayRoot = HudVisual.Group("Screen overlay", _canvas.transform);
         if (File.Exists(Path.Combine(_assets.Fonts, "yourock-font.png"))) _youRock = new YouRockHud(_overlayRoot, _assets.Fonts, _assets.YouRockFlames);
     }
@@ -105,10 +108,11 @@ internal sealed class GameplayHud
         _youRock?.Update(songTime - winTime);
         if (won) return;
         var time = Time.time;
-        _highway!.Update(state, time);
+        _centerMessages!.Update(state.Combo, state.StarPower, state.StarPowerActive, time);
+        _highway!.Update(state, time, _centerMessages.ReadyFrame(time));
         _rock!.Update(state, time);
         _score!.Update(state, time);
-        _message?.Update(state, time);
+        _message?.Update(_centerMessages, time);
     }
 
     public void UpdateHitEffects(Il2Cpp.BasePlayer player, GameplayState state, double songTime) =>

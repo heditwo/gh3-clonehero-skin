@@ -3,11 +3,10 @@ using UnityEngine.UI;
 
 namespace Gh3Skin;
 
-// The Star Power ready banner: the frames cut from the GH3 recording.
+// The Star Power ready banner: the frames cut from the GH3 recording. CenterMessageQueue decides the frame.
 
 internal sealed class ReadyBannerHud
 {
-    private readonly ReadyAnimationTrigger _animation = new();
     private readonly IReadOnlyList<AnimationFrame> _frames;
     private readonly IReadOnlyList<AnimationFrame> _lightningFrames;
     private readonly RawImage _banner;
@@ -23,10 +22,11 @@ internal sealed class ReadyBannerHud
         _lightning = HudVisual.Image(root, "readyLightning", _lightningFrames[0].Texture, _lightningFrames[0].Layout);
     }
 
-    public void Update(float power, bool active, float time)
+    public float Seconds => _frames.Count / 60f;
+
+    public void Update(int frame)
     {
-        _animation.Update(power, time, active);
-        var frame = _animation.Frame(time, _frames.Count);
+        if (frame >= _frames.Count) frame = -1;
         if (_frame == frame) return;
         _frame = frame;
         _banner.enabled = frame >= 0;
