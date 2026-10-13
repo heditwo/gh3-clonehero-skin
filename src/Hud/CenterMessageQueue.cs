@@ -12,7 +12,9 @@ namespace Gh3Skin;
 
 internal sealed class CenterMessageQueue
 {
-    // GH3: GH3.exe 0x422ebb (the streak routine at 0x422bc0) spawns hud_show_note_streak_combo at each multiple of 100.
+    // GH3: GH3.exe 0x422ebb (the streak routine at 0x422bc0) spawns hud_show_note_streak_combo at a streak of exactly
+    // 50 and at each multiple of 100.
+    public const int FirstStreakMessage = 50;
     public const int StreakMessageInterval = 100;
     // GH3: increase_star_power_guts (guitar_starpower.qb) spawns show_star_power_ready when the charge reaches 50.
     private const float ReadyCharge = 0.5f;
@@ -98,8 +100,8 @@ internal sealed class CenterMessageQueue
     // The streak that GH3 announces when the streak goes from previous to current, or null.
     private static int? StreakMessageAt(int previous, int current)
     {
-        return current / StreakMessageInterval > previous / StreakMessageInterval
-            ? current / StreakMessageInterval * StreakMessageInterval
-            : null;
+        if (current / StreakMessageInterval > previous / StreakMessageInterval)
+            return current / StreakMessageInterval * StreakMessageInterval;
+        return previous < FirstStreakMessage && current >= FirstStreakMessage ? FirstStreakMessage : null;
     }
 }

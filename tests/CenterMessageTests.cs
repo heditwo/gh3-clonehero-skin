@@ -15,6 +15,7 @@ internal static class CenterMessageTests
         DroppedMessages();
         ActivationWhileWaiting();
         SingleMessages();
+        FiftyNotes();
     }
 
     private static void ReadyTrigger()
@@ -69,7 +70,7 @@ internal static class CenterMessageTests
         queue.Update(95, 0.5f, false, 38.72f);
         Check(queue.ReadyFrame(38.72f) == 0, "the ready banner starts");
         queue.Update(100, 0.5f, false, 39.45f);
-        Check(queue.StreakStart == float.NegativeInfinity, "the streak message waits while the banner plays");
+        Check(queue.StreakCombo != 100, "the streak message waits while the banner plays");
         queue.Update(120, 0.5f, false, 40.85f);
         Check(Near(queue.StreakStart, 38.72f + Ready) && queue.StreakCombo == 100,
             "the streak message starts at the end of the banner with its own streak");
@@ -126,7 +127,7 @@ internal static class CenterMessageTests
     private static void SingleMessages()
     {
         var queue = new CenterMessageQueue(Streak, Ready);
-        queue.Update(99, 0, false, 1);
+        queue.Update(99, 0, false, -5);
         queue.Update(100, 0, false, 1.1f);
         Check(Near(queue.StreakStart, 1.1f) && queue.StreakCombo == 100, "a streak message alone starts at once");
         queue.Update(0, 0, false, 4);
@@ -139,6 +140,20 @@ internal static class CenterMessageTests
         var noMessages = new CenterMessageQueue(0, Ready);
         noMessages.Update(100, 0.5f, false, 1);
         Check(noMessages.ReadyFrame(1) == 0, "without a message font the banner never waits");
+    }
+
+    private static void FiftyNotes()
+    {
+        var queue = new CenterMessageQueue(Streak, Ready);
+        queue.Update(49, 0, false, 1);
+        queue.Update(50, 0, false, 1.1f);
+        Check(Near(queue.StreakStart, 1.1f) && queue.StreakCombo == 50, "GH3 shows a 50-note streak");
+        queue.Update(150, 0, false, 5);
+        Check(queue.StreakCombo == 150 / CenterMessageQueue.StreakMessageInterval * CenterMessageQueue.StreakMessageInterval,
+            "150 is not a message, the 100 crossing is");
+        queue.Update(0, 0, false, 9);
+        queue.Update(50, 0, false, 9.5f);
+        Check(Near(queue.StreakStart, 9.5f) && queue.StreakCombo == 50, "the 50-note message comes again after a break");
     }
 
     private static bool Near(float a, float b) => Math.Abs(a - b) < 0.001f;

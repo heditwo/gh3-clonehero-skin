@@ -131,7 +131,7 @@ Textures `079_1024x16_DXT5`, `090_…`, `100_…` from `global_gfx` (thick: bar,
 
 GH3 has two centre messages in a single-player song: "N Note Streak!" (`hud_show_note_streak_combo`) and "Star Power Ready" (`show_star_power_ready`). Star Power activation has no centre text (`hud_activated_star_power` flashes the score panel), and a broken streak has no message. GH3 shows one centre message at a time:
 
-- `GH3.exe` `0x422ebb` (the streak routine at `0x422bc0`) spawns `hud_show_note_streak_combo` at a streak of exactly 50 and at each multiple of 100 (not in `p2_battle`). The mod shows the multiples of 100 only (the 50-note message is not in the mod).
+- `GH3.exe` `0x422ebb` (the streak routine at `0x422bc0`) spawns `hud_show_note_streak_combo` at a streak of exactly 50 and at each multiple of 100 (not in `p2_battle`).
 - `increase_star_power_guts` (`guitar_starpower.qb`) spawns `show_star_power_ready` when the charge goes from below 50 to 50 or more and Star Power is not in use.
 - `show_star_power_ready` waits, one game frame at a time, while the container `HUD_Note_Streak_Combo1` exists (the streak message). Then it sets `star_power_ready_on_p1 = 1`, returns if Star Power is in use, and plays the banner. It sets `star_power_ready_on_p1 = 0` at its end.
 - `hud_show_note_streak_combo` (`guitar_hud_2d.qb`) waits, one game frame at a time, while `star_power_ready_on_p1` is 1. Then it returns without a message if `HUD_Note_Streak_Combo1` exists. Else it creates the container and plays the message (2.55 s of `DoMorph` steps), and destroys the container at its end.
